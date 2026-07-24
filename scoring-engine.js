@@ -1,0 +1,341 @@
+/**
+ * FreeScreener Scoring Engine
+ * Category-first, sector-relative, pricing-power-aware stock scoring.
+ * Works in Node (nightly job) and browser (frontend) — no dependencies.
+ *
+ * INPUT SHAPE expected per stock (see data-fetchers.js for how this gets built):
+ * {
+ *   ticker, sector,
+ *   financials: { years: [ {year, revenue, netIncome, fcf, grossMargin, opMargin,
+ *                           roic, sharesOutTTM, eps, dividendPerShare, ebitda,
+ *                           inventoryTurnover, debtToEbitda} ... ] }, // oldest->newest, ~10yrs if available
+ *   valuation: { pe, forwardPe, evEbitda, evFcf, fcfYield, marketCap, ev },
+ *   price: { current },
+ *   quarterly: [ {quarter, revenue, grossMargin, unitsGrowth (optional), inventoryTurnover} ... ], // last 8 qtrs
+ *   earningsCallText: "..." // optional, concatenated recent transcripts
+ * }
+ */
+
+// ---------- Utilities ----------
+
+function mean(arr) { return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
+function stdev(arr) {
+  if (arr.length < 2) return null;
+  const m = mean(arr);
+  return Math.sqrt(mean(arr.map(x => (x - m) ** 2)));
+}
+function cagr(first, last, years) {
+  if (first == null || last == null || first <= 0 || years <= 0) return null;
+  return Math.pow(last / first, 1 / years) - 1;
+}
+function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
+// Map a raw value to 0-100 using a sigmoid-ish clamp around a target
+function scoreBand(value, poor, excellent) {
+  if (value == null) return 50; // neutral if unknown
+  const t = clamp((value - poor) / (excellent - poor), 0, 1);
+  return Math.round(t * 100);
+}
+
+// ---------- 1. Category Classification (do this FIRST) ----------
+
+function classifyCategory(stock) {
+  const yrs = stock.financials.years;
+  if (!yrs || yrs.length < 3) return 'Unknown';
+  const last = yrs[yrs.length - 1];
+  const first3ago = yrs[Math.max(0, yrs.length - 4)];
+  const revCagr3y = cagr(first3ago.revenue, last.revenue, Math.min(3, yrs.length - 1));
+  const avgRoic = mean(yrs.slice(-3).map(y => y.roic).filter(x => x != null));
+  const divYield = stock.valuation.dividendYield || 0;
+  const fcfPayout = last.dividendPerShare && last.fcf && last.sharesOutTTM
+    ? (last.dividendPerShare * last.sharesOutTTM) / last.fcf : null;
+
+  // Turnaround: recent earnings/margin inflection after a down period
+  const marginsLast2 = yrs.slice(-2).map(y => y.grossMargin);
+  const marginInflecting = marginsLast2.length === 2 && marginsLast2[1] > marginsLast2[0];
+  const revDeclinedEarlier = yrs.length >= 4 && yrs[yrs.length - 3].revenue < yrs[yrs.length - 4].revenue;
+
+  if (revDeclinedEarlier && marginInflecting && revCagr3y != null && revCagr3y > -0.05) {
+    return 'Turnaround';
+  }
+  if (avgRoic != null && avgRoic > 0.15 && revCagr3y != null && revCagr3y > 0.08) {
+    return 'Compounder';
+  }
+  if (revCagr3y != null && revCagr3y > 0.15) {
+    return 'Growth';
+  }
+  if (divYield > 0.02 && fcfPayout != null && fcfPayout < 0.75) {
+    return 'Dividend';
+  }
+  return 'Value';
+}
+
+// ---------- 2. Category-Specific Sub-Scores ----------
+
+const CATEGORY_METRICS = {
+  Compounder: (s) => {
+    const yrs = s.financials.years;
+    const avgRoic = mean(yrs.slice(-3).map(y => y.roic).filter(x => x != null));
+    const roicScore = scoreBand(avgRoic, 0.08, 0.30);
+    const grossMargins = yrs.slice(-5).map(y => y.grossMargin).filter(x => x != null);
+    const marginStability = grossMargins.length > 1 ? 100 - clamp((stdev(grossMargins) || 0) * 1000, 0, 100) : 50;
+    const reinvestRate = s.reinvestmentRate != null ? scoreBand(s.reinvestmentRate, 0.1, 0.6) : 50;
+    return { roicScore, marginStability, reinvestRate,
+      composite: Math.round(roicScore * 0.5 + marginStability * 0.25 + reinvestRate * 0.25) };
+  },
+  Growth: (s) => {
+    const yrs = s.financials.years;
+    const last = yrs[yrs.length - 1], first = yrs[Math.max(0, yrs.length - 4)];
+    const revCagr = cagr(first.revenue, last.revenue, Math.min(3, yrs.length - 1));
+    const revScore = scoreBand(revCagr, 0.05, 0.35);
+    const fcfMargins = yrs.slice(-3).map(y => y.fcf && y.revenue ? y.fcf / y.revenue : null).filter(x => x != null);
+    const fcfExpanding = fcfMargins.length >= 2 && (fcfMargins[fcfMargins.length - 1] - fcfMargins[0]);
+    const fcfExpansionScore = scoreBand(fcfExpanding, -0.02, 0.10);
+    const ruleOf40 = (revCagr || 0) * 100 + (fcfMargins.length ? fcfMargins[fcfMargins.length - 1] * 100 : 0);
+    const ruleOf40Score = scoreBand(ruleOf40, 20, 60);
+    return { revScore, fcfExpansionScore, ruleOf40Score,
+      composite: Math.round(revScore * 0.4 + fcfExpansionScore * 0.3 + ruleOf40Score * 0.3) };
+  },
+  Value: (s) => valueTurnaroundScore(s),
+  Turnaround: (s) => valueTurnaroundScore(s),
+  Dividend: (s) => {
+    const yrs = s.financials.years;
+    const last = yrs[yrs.length - 1];
+    const fcfPayout = last.dividendPerShare && last.fcf && last.sharesOutTTM
+      ? (last.dividendPerShare * last.sharesOutTTM) / last.fcf : null;
+    const payoutScore = fcfPayout != null ? 100 - scoreBand(fcfPayout, 0.4, 1.0) : 50;
+    const divHistory = yrs.slice(-5).map(y => y.dividendPerShare).filter(x => x != null);
+    const divCagr = divHistory.length >= 2 ? cagr(divHistory[0], divHistory[divHistory.length - 1], divHistory.length - 1) : null;
+    const divCagrScore = scoreBand(divCagr, 0.0, 0.12);
+    const debtToEbitda = last.debtToEbitda;
+    const leverageScore = debtToEbitda != null ? 100 - scoreBand(debtToEbitda, 1.5, 4.0) : 50;
+    return { payoutScore, divCagrScore, leverageScore,
+      composite: Math.round(payoutScore * 0.4 + divCagrScore * 0.35 + leverageScore * 0.25) };
+  },
+};
+
+function valueTurnaroundScore(s) {
+  const yrs = s.financials.years;
+  const last = yrs[yrs.length - 1];
+  // EV/EBITDA vs own 5yr historical median (historical self-comparison)
+  const histEvEbitda = s.historicalMultiples?.evEbitda || [];
+  const medianEvEbitda = histEvEbitda.length ? median(histEvEbitda) : null;
+  const currentEvEbitda = s.valuation.evEbitda;
+  const discountToHistory = medianEvEbitda && currentEvEbitda
+    ? (medianEvEbitda - currentEvEbitda) / medianEvEbitda : null;
+  const discountScore = scoreBand(discountToHistory, -0.2, 0.4);
+  const fcfYield = s.valuation.fcfYield;
+  const fcfYieldScore = scoreBand(fcfYield, 0.03, 0.10);
+  // Piotroski-lite: count positive signals available from our data
+  let piotroski = 0;
+  if (last.netIncome > 0) piotroski++;
+  if (last.fcf > 0) piotroski++;
+  if (yrs.length >= 2 && last.roic > yrs[yrs.length - 2].roic) piotroski++;
+  if (yrs.length >= 2 && last.grossMargin >= yrs[yrs.length - 2].grossMargin) piotroski++;
+  if (last.debtToEbitda != null && yrs.length >= 2 && last.debtToEbitda <= (yrs[yrs.length - 2].debtToEbitda ?? 999)) piotroski++;
+  const piotroskiScore = scoreBand(piotroski, 1, 5);
+  return { discountScore, fcfYieldScore, piotroskiScore,
+    composite: Math.round(discountScore * 0.4 + fcfYieldScore * 0.35 + piotroskiScore * 0.25) };
+}
+
+function median(arr) {
+  const s = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+// ---------- 3. Sector-Relative Z-Score Normalization ----------
+// Call this AFTER scoring the whole universe, to re-rank within sector.
+function applySectorZScores(scoredStocks) {
+  const bySector = {};
+  for (const s of scoredStocks) {
+    (bySector[s.sector] = bySector[s.sector] || []).push(s);
+  }
+  for (const sector in bySector) {
+    const group = bySector[sector];
+    const vals = group.map(s => s.categoryComposite);
+    const m = mean(vals), sd = stdev(vals) || 1;
+    for (const s of group) {
+      s.sectorZScore = (s.categoryComposite - m) / sd;
+      s.sectorRelativeScore = clamp(Math.round(50 + s.sectorZScore * 15), 0, 100);
+    }
+  }
+  return scoredStocks;
+}
+
+// ---------- 4. Pricing Power Score ----------
+
+const PRICING_KEYWORDS = ['pricing', 'price realization', 'elasticity', 'premium products',
+  'higher mix', 'increased pricing', 'price increases', 'value-based pricing'];
+
+function scorePricingPower(s) {
+  const yrs = s.financials.years;
+  if (!yrs || yrs.length < 2) return { score: 50, signals: [] };
+  const signals = [];
+  let points = 0, maxPoints = 0;
+
+  // Gross margin trend
+  maxPoints += 20;
+  const gm = yrs.slice(-3).map(y => y.grossMargin).filter(x => x != null);
+  if (gm.length >= 2 && gm[gm.length - 1] > gm[0]) { points += 20; signals.push('Gross margin expanding'); }
+
+  // Operating margin stability during inflationary periods (proxy: didn't compress even as revenue grew)
+  maxPoints += 15;
+  const om = yrs.slice(-3).map(y => y.opMargin).filter(x => x != null);
+  if (om.length >= 2 && om[om.length - 1] >= om[0] - 0.01) { points += 15; signals.push('Operating margin resilient'); }
+
+  // Revenue growth vs unit/volume growth (price > volume driven growth)
+  maxPoints += 20;
+  const q = s.quarterly || [];
+  const withUnits = q.filter(x => x.unitsGrowth != null && x.revenue != null);
+  if (withUnits.length) {
+    const last = withUnits[withUnits.length - 1];
+    if (last.revenueGrowth != null && last.unitsGrowth != null && last.revenueGrowth - last.unitsGrowth > 0.03) {
+      points += 20; signals.push('Revenue growth outpacing unit growth (price-led)');
+    }
+  } else { maxPoints -= 20; } // no data available, don't penalize
+
+  // FCF margin expanding
+  maxPoints += 15;
+  const fcfMargins = yrs.slice(-3).map(y => y.fcf && y.revenue ? y.fcf / y.revenue : null).filter(x => x != null);
+  if (fcfMargins.length >= 2 && fcfMargins[fcfMargins.length - 1] > fcfMargins[0]) {
+    points += 15; signals.push('FCF margin expanding');
+  }
+
+  // Inventory turnover stable/improving while margins expand (not just stuffing channel)
+  maxPoints += 10;
+  const invTurns = yrs.slice(-2).map(y => y.inventoryTurnover).filter(x => x != null);
+  if (invTurns.length === 2 && invTurns[1] >= invTurns[0] * 0.95) {
+    points += 10; signals.push('Inventory turnover stable/improving');
+  }
+
+  // Earnings call keyword scan (simple free NLP — no paid AI needed)
+  maxPoints += 20;
+  if (s.earningsCallText) {
+    const text = s.earningsCallText.toLowerCase();
+    const hits = PRICING_KEYWORDS.filter(k => text.includes(k));
+    if (hits.length) {
+      const kwScore = clamp(hits.length * 5, 0, 20);
+      points += kwScore;
+      signals.push(`Earnings call mentions: ${hits.join(', ')}`);
+    }
+  } else { maxPoints -= 20; }
+
+  const score = maxPoints > 0 ? Math.round((points / maxPoints) * 100) : 50;
+  return { score, signals };
+}
+
+// ---------- 5. Dynamic Margin of Safety ----------
+
+function dynamicMOS(category, roic) {
+  // High-ROIC compounders need less margin of safety; low-quality value/turnaround needs more.
+  if (category === 'Compounder' && roic != null) {
+    // 25% ROIC -> ~10% MOS ... 15% ROIC -> ~20% MOS
+    return clamp(0.35 - roic * 1.0, 0.10, 0.25);
+  }
+  if (category === 'Growth') return 0.15;
+  if (category === 'Dividend') return 0.15;
+  if (category === 'Turnaround') return 0.30;
+  return 0.20; // Value default
+}
+
+// ---------- 6. Expected CAGR Model ----------
+// Expected CAGR = Revenue growth x Margin expansion x Share count reduction x Dividend yield x Valuation multiple reversion
+function expectedCAGR(s, category) {
+  const yrs = s.financials.years;
+  const last = yrs[yrs.length - 1];
+  const forwardRevGrowth = s.analystEstimates?.revenueGrowthFwd
+    ?? cagr(yrs[Math.max(0, yrs.length - 4)].revenue, last.revenue, Math.min(3, yrs.length - 1))
+    ?? 0.05;
+
+  const margins3y = yrs.slice(-3).map(y => y.fcf && y.revenue ? y.fcf / y.revenue : null).filter(x => x != null);
+  const marginExpansionAnnualized = margins3y.length >= 2
+    ? (margins3y[margins3y.length - 1] - margins3y[0]) / Math.max(1, margins3y.length - 1) : 0;
+
+  const shares = yrs.slice(-3).map(y => y.sharesOutTTM).filter(x => x != null);
+  const shareCountCagr = shares.length >= 2 ? cagr(shares[0], shares[shares.length - 1], shares.length - 1) : 0;
+  const shareCountReduction = shareCountCagr != null ? -shareCountCagr : 0;
+
+  const dividendYield = s.valuation.dividendYield || 0;
+
+  // Valuation multiple reversion: expected annualized re-rating toward historical median or sector median over ~3-5yrs
+  const histMult = median(s.historicalMultiples?.forwardPe || []);
+  const currentMult = s.valuation.forwardPe;
+  let multipleReversionAnnualized = 0;
+  if (histMult && currentMult) {
+    const totalReversion = (histMult - currentMult) / currentMult;
+    multipleReversionAnnualized = totalReversion / 5; // spread over 5 years
+  }
+
+  const total = forwardRevGrowth + marginExpansionAnnualized + shareCountReduction + dividendYield + multipleReversionAnnualized;
+  return { expectedCAGR: total, breakdown: {
+    forwardRevGrowth, marginExpansionAnnualized, shareCountReduction, dividendYield, multipleReversionAnnualized
+  } };
+}
+
+// ---------- 7. Master Scoring Function ----------
+
+function scoreStock(stock) {
+  const category = classifyCategory(stock);
+  const catFn = CATEGORY_METRICS[category] || CATEGORY_METRICS.Value;
+  const catResult = catFn(stock);
+  const pricingPower = scorePricingPower(stock);
+  const { expectedCAGR: expCagr, breakdown } = expectedCAGR(stock, category);
+  const lastRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
+  const requiredMOS = dynamicMOS(category, lastRoic);
+
+  const currentPrice = stock.price.current;
+  const fairValue = stock.valuation.fairValueEstimate; // computed upstream if available
+  const marginOfSafety = fairValue ? (fairValue - currentPrice) / fairValue : null;
+  const meetsRequiredMOS = marginOfSafety != null ? marginOfSafety >= requiredMOS : null;
+
+  const meetsCAGRTarget = expCagr >= 0.15;
+
+  return {
+    ticker: stock.ticker,
+    sector: stock.sector,
+    category,
+    categoryComposite: catResult.composite,
+    categoryBreakdown: catResult,
+    pricingPowerScore: pricingPower.score,
+    pricingPowerSignals: pricingPower.signals,
+    expectedCAGR: expCagr,
+    cagrBreakdown: breakdown,
+    requiredMOS,
+    marginOfSafety,
+    meetsRequiredMOS,
+    meetsCAGRTarget,
+    qualifiesForBuyList: !!(meetsCAGRTarget && meetsRequiredMOS),
+  };
+}
+
+// ---------- 8. Percentile-Based Rating (apply after scoring full universe) ----------
+
+function applyPercentileRatings(scoredStocks) {
+  const sorted = [...scoredStocks].sort((a, b) => b.sectorRelativeScore - a.sectorRelativeScore);
+  const n = sorted.length;
+  sorted.forEach((s, i) => {
+    const pct = i / n;
+    if (pct <= 0.05) s.rating = 'Strong Buy';
+    else if (pct <= 0.15) s.rating = 'Buy';
+    else if (pct <= 0.65) s.rating = 'Hold/Watch';
+    else s.rating = 'Avoid';
+  });
+  return sorted;
+}
+
+// ---------- Public API ----------
+
+function scoreUniverse(stocks) {
+  const scored = stocks.map(scoreStock);
+  applySectorZScores(scored);
+  return applyPercentileRatings(scored);
+}
+
+const api = {
+  classifyCategory, scoreStock, scoreUniverse,
+  applySectorZScores, applyPercentileRatings,
+  scorePricingPower, dynamicMOS, expectedCAGR,
+};
+
+if (typeof module !== 'undefined' && module.exports) module.exports = api;
+if (typeof window !== 'undefined') window.ScoringEngine = api;
