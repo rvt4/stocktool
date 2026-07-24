@@ -243,31 +243,51 @@ function dynamicMOS(category, roic) {
 function expectedCAGR(s, category) {
   const yrs = s.financials.years;
   const last = yrs[yrs.length - 1];
-  const forwardRevGrowth = s.analystEstimates?.revenueGrowthFwd
+
+  // Every component below is clamped to a generous-but-sane band. Raw SEC XBRL
+  // data (esp. share counts around splits/offerings, or FCF in a low-revenue year)
+  // can produce huge single-year swings that are real but shouldn't be
+  // extrapolated forward as a steady annual rate — clamping prevents a single
+  // noisy data point from producing a nonsensical -400% or +8000% "expected CAGR".
+
+  const rawRevGrowth = s.analystEstimates?.revenueGrowthFwd
     ?? cagr(yrs[Math.max(0, yrs.length - 4)].revenue, last.revenue, Math.min(3, yrs.length - 1))
     ?? 0.05;
+  const forwardRevGrowth = clamp(rawRevGrowth, -0.30, 0.60);
 
   const margins3y = yrs.slice(-3).map(y => y.fcf && y.revenue ? y.fcf / y.revenue : null).filter(x => x != null);
-  const marginExpansionAnnualized = margins3y.length >= 2
+  const rawMarginExpansion = margins3y.length >= 2
     ? (margins3y[margins3y.length - 1] - margins3y[0]) / Math.max(1, margins3y.length - 1) : 0;
+  const marginExpansionAnnualized = clamp(rawMarginExpansion, -0.15, 0.15);
 
   const shares = yrs.slice(-3).map(y => y.sharesOutTTM).filter(x => x != null);
-  const shareCountCagr = shares.length >= 2 ? cagr(shares[0], shares[shares.length - 1], shares.length - 1) : 0;
-  const shareCountReduction = shareCountCagr != null ? -shareCountCagr : 0;
+  const rawShareCountCagr = shares.length >= 2 ? cagr(shares[0], shares[shares.length - 1], shares.length - 1) : 0;
+  const shareCountReduction = clamp(rawShareCountCagr != null ? -rawShareCountCagr : 0, -0.20, 0.20);
 
-  const dividendYield = s.valuation.dividendYield || 0;
+  const dividendYield = clamp(s.valuation.dividendYield || 0, 0, 0.15);
 
-  // Valuation multiple reversion: expected annualized re-rating toward historical median or sector median over ~3-5yrs
+  // Valuation multiple reversion: expected annualized re-rating toward historical median over ~5yrs
   const histMult = median(s.historicalMultiples?.forwardPe || []);
   const currentMult = s.valuation.forwardPe;
   let multipleReversionAnnualized = 0;
   if (histMult && currentMult) {
     const totalReversion = (histMult - currentMult) / currentMult;
-    multipleReversionAnnualized = totalReversion / 5; // spread over 5 years
+    multipleReversionAnnualized = clamp(totalReversion / 5, -0.10, 0.10); // spread over 5 years
   }
 
-  const total = forwardRevGrowth + marginExpansionAnnualized + shareCountReduction + dividendYield + multipleReversionAnnualized;
-  return { expectedCAGR: total, breakdown: {
+  // Flag results built on noisy inputs so the frontend / you can treat them with
+  // appropriately less confidence, rather than silently trusting a clamped-down number.
+  const clampedInputs = [
+    rawRevGrowth !== forwardRevGrowth,
+    rawMarginExpansion !== marginExpansionAnnualized,
+    (rawShareCountCagr != null ? -rawShareCountCagr : 0) !== shareCountReduction,
+  ].some(Boolean);
+
+  const total = clamp(
+    forwardRevGrowth + marginExpansionAnnualized + shareCountReduction + dividendYield + multipleReversionAnnualized,
+    -0.50, 1.00 // belt-and-suspenders clamp on the combined total
+  );
+  return { expectedCAGR: total, lowConfidence: clampedInputs, breakdown: {
     forwardRevGrowth, marginExpansionAnnualized, shareCountReduction, dividendYield, multipleReversionAnnualized
   } };
 }
@@ -279,7 +299,7 @@ function scoreStock(stock) {
   const catFn = CATEGORY_METRICS[category] || CATEGORY_METRICS.Value;
   const catResult = catFn(stock);
   const pricingPower = scorePricingPower(stock);
-  const { expectedCAGR: expCagr, breakdown } = expectedCAGR(stock, category);
+  const { expectedCAGR: expCagr, breakdown, lowConfidence } = expectedCAGR(stock, category);
   const lastRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
   const requiredMOS = dynamicMOS(category, lastRoic);
 
@@ -299,6 +319,7 @@ function scoreStock(stock) {
     pricingPowerScore: pricingPower.score,
     pricingPowerSignals: pricingPower.signals,
     expectedCAGR: expCagr,
+    lowConfidence,
     cagrBreakdown: breakdown,
     requiredMOS,
     marginOfSafety,
@@ -315,10 +336,28 @@ function applyPercentileRatings(scoredStocks) {
   const n = sorted.length;
   sorted.forEach((s, i) => {
     const pct = i / n;
-    if (pct <= 0.05) s.rating = 'Strong Buy';
-    else if (pct <= 0.15) s.rating = 'Buy';
-    else if (pct <= 0.65) s.rating = 'Hold/Watch';
-    else s.rating = 'Avoid';
+    let baseTier;
+    if (pct <= 0.05) baseTier = 'Strong Buy';
+    else if (pct <= 0.15) baseTier = 'Buy';
+    else if (pct <= 0.65) baseTier = 'Hold/Watch';
+    else baseTier = 'Avoid';
+
+    // Sector rank alone isn't enough to call something a buy — gate against
+    // your actual targets so a top-ranked-but-negative-return stock (e.g. a
+    // sector-relative "best of a bad bunch") can't show up as Strong Buy.
+    let rating = baseTier;
+    if (s.expectedCAGR < 0) {
+      rating = 'Avoid'; // never label a negative expected return a buy, regardless of rank
+    } else if (baseTier === 'Strong Buy' && !(s.meetsCAGRTarget && s.meetsRequiredMOS === true)) {
+      rating = s.meetsCAGRTarget ? 'Buy' : 'Hold/Watch';
+    } else if (baseTier === 'Buy' && !s.meetsCAGRTarget) {
+      rating = 'Hold/Watch';
+    } else if ((baseTier === 'Strong Buy' || baseTier === 'Buy') && s.meetsRequiredMOS === false) {
+      rating = 'Hold/Watch'; // confirmed trading above your required margin of safety
+    }
+
+    s.sectorPercentileTier = baseTier; // raw rank kept around for transparency/debugging
+    s.rating = rating;
   });
   return sorted;
 }
