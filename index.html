@@ -25,6 +25,9 @@
   .detail { display: none; background: #131314; padding: 10px 14px; font-size: 0.8rem; color: #bbb; }
   .detail.open { display: table-row; }
   .sig { display: block; margin: 2px 0; }
+  .confHigh { color: #75d99a; }
+  .confMed { color: #e3d18a; }
+  .confLow { color: #e89a9a; }
 </style>
 </head>
 <body>
@@ -45,6 +48,7 @@
         <th data-key="expectedCAGR">Exp. CAGR</th>
         <th data-key="marginOfSafety">MOS</th>
         <th data-key="requiredMOS">Req. MOS</th>
+        <th data-key="confidenceScore">Confidence</th>
         <th data-key="pricingPowerScore">Pricing Power</th>
         <th data-key="categoryComposite">Category Score</th>
         <th data-key="sectorRelativeScore">Sector Rel.</th>
@@ -59,6 +63,7 @@ let sortKey = 'sectorRelativeScore', sortDir = -1;
 
 function pct(x) { return x == null ? '—' : (x * 100).toFixed(1) + '%'; }
 function ratingClass(r) { return r ? r.replace(/[^A-Za-z]/g, '') : ''; }
+function confClass(c) { return c == null ? '' : c >= 70 ? 'confHigh' : c >= 40 ? 'confMed' : 'confLow'; }
 
 async function load() {
   const res = await fetch('data/results.json?_=' + Date.now());
@@ -106,6 +111,7 @@ function render() {
       <td class="${s.expectedCAGR >= 0.15 ? 'pos' : 'neg'}">${pct(s.expectedCAGR)}${cagrFlag}</td>
       <td class="${s.marginOfSafety >= s.requiredMOS ? 'pos' : 'neg'}">${pct(s.marginOfSafety)}${mosFlag}</td>
       <td>${pct(s.requiredMOS)}</td>
+      <td class="${confClass(s.confidenceScore)}">${s.confidenceScore ?? '—'}</td>
       <td>${s.pricingPowerScore}</td>
       <td>${s.categoryComposite}</td>
       <td>${s.sectorRelativeScore}</td>
@@ -121,13 +127,17 @@ function render() {
     const methodsText = s.valuationMethods
       ? Object.entries(s.valuationMethods).filter(([, v]) => v != null).map(([k, v]) => `${methodNames[k] || k}: $${v.toFixed(2)}`).join(' · ') || 'No methods produced a value'
       : 'Not yet valuated';
+    const confDeductions = (s.confidenceDeductions || [])
+      .map(d => `<span class="sig">• −${d.points}: ${d.reason}</span>`).join('') || '<span class="sig">No deductions</span>';
     const detail = document.createElement('tr');
     detail.className = 'detail';
-    detail.innerHTML = `<td colspan="9">
+    detail.innerHTML = `<td colspan="10">
       ${s.lowConfidence ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Multiple growth inputs hit their sanity clamp for this stock — treat the CAGR figure with extra caution.</div>' : ''}
       ${s.marginOfSafetyDistorted ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Raw margin of safety was an extreme value, clamped to ±100% for display.</div>' : ''}
       ${s.methodCount >= 2 && s.methodAgreementScore != null && s.methodAgreementScore < 40 ? `<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Valuation methods disagree significantly (agreement score ${s.methodAgreementScore}/100) — the blended fair value rests on shaky consensus.</div>` : ''}
-      <strong>Growth source:</strong> ${s.growthSource === 'analyst_consensus' ? 'Finnhub analyst consensus' : 'Blended recent-quarter + trailing SEC data'}
+      <strong>Confidence: ${s.confidenceScore ?? '—'}/100</strong>
+      <br>${confDeductions}
+      <br><strong>Growth source:</strong> ${s.growthSource === 'analyst_consensus' ? 'Finnhub analyst consensus' : 'Blended recent-quarter + trailing SEC data'}
       <br><strong>Expected CAGR breakdown:</strong>
       Rev growth ${pct(s.cagrBreakdown.forwardRevGrowth)} ·
       Margin exp. ${pct(s.cagrBreakdown.marginExpansionAnnualized)} ·
@@ -135,7 +145,7 @@ function render() {
       Div yield ${pct(s.cagrBreakdown.dividendYield)} ·
       Multiple reversion ${pct(s.cagrBreakdown.multipleReversionAnnualized)}
       <br><strong>Market-implied growth</strong> (what the current price requires to be fair): ${impliedText}
-      <br><strong>Valuation methods</strong> (blended = median, agreement ${s.methodAgreementScore ?? '—'}/100 from ${s.methodCount} method${s.methodCount === 1 ? '' : 's'}):
+      <br><strong>Valuation methods</strong> (blended = weighted average, agreement ${s.methodAgreementScore ?? '—'}/100 from ${s.methodCount} method${s.methodCount === 1 ? '' : 's'}):
       <br>${methodsText}
       <br><strong>Dilution:</strong> ${s.dilutionRate != null ? pct(s.dilutionRate) + '/yr est.' : '—'}
       ${s.sbcIntensity != null ? ` · SBC is ${pct(s.sbcIntensity)} of revenue` : ''}

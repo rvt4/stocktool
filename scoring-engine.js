@@ -248,6 +248,46 @@ function dynamicMOS(category, roic) {
 }
 
 // ---------- 6. Expected CAGR Model ----------
+
+// Blends up to 4 independent growth signals instead of leaning on a single source.
+// Pure analyst-estimate-or-fallback lets one optimistic analyst on a thin-coverage
+// name (small caps especially — BMNR, FRHC, CRDO-type names) become the ENTIRE growth
+// assumption. Blending means no single input can single-handedly produce a 60-95%
+// "expected CAGR" — it gets pulled back toward the other, typically more conservative,
+// signals. Weights favor analyst estimates (most forward-looking) but meaningfully
+// discount them with historical reality, internally-financeable growth, and what the
+// market is already pricing in.
+function blendedRevenueGrowth(s, yrs, last) {
+  const analystG = s.analystEstimates?.revenueGrowthFwd ?? null;
+  const historicalG = cagr(yrs[Math.max(0, yrs.length - 4)].revenue, last.revenue, Math.min(3, yrs.length - 1));
+
+  // Reinvestment-capacity-implied growth: a Gordon-growth-style ceiling on how fast a
+  // business can plausibly grow itself. ROIC x reinvestment rate ≈ the sustainable
+  // organic growth rate fundable from internally generated returns — independent of
+  // what any analyst is modeling. A company earning 20% ROIC reinvesting half its
+  // earnings can sustainably compound ~10%/yr from its own economics.
+  const avgRoic = mean(yrs.slice(-3).map(y => y.roic).filter(x => x != null));
+  const reinvestRate = s.reinvestmentRate != null ? clamp(s.reinvestmentRate, 0, 1) : 0.4;
+  const reinvestG = avgRoic != null ? clamp(avgRoic * reinvestRate, -0.10, 0.40) : null;
+
+  const marketImpliedG = s.valuation.marketImpliedGrowth ?? null;
+
+  const components = [
+    { key: 'analyst', value: analystG, weight: 0.40 },
+    { key: 'historical', value: historicalG, weight: 0.30 },
+    { key: 'reinvestment', value: reinvestG, weight: 0.20 },
+    { key: 'marketImplied', value: marketImpliedG, weight: 0.10 },
+  ].filter(c => c.value != null);
+
+  if (!components.length) return { blended: 0.05, sourcesUsed: 0, sourcesAvailable: [] };
+
+  // Re-normalize weights across whatever's actually available, rather than diluting
+  // toward zero when a source is missing.
+  const totalWeight = components.reduce((sum, c) => sum + c.weight, 0);
+  const blended = components.reduce((sum, c) => sum + c.value * c.weight, 0) / totalWeight;
+  return { blended, sourcesUsed: components.length, sourcesAvailable: components.map(c => c.key) };
+}
+
 // Expected CAGR = Revenue growth x Margin expansion x Share count reduction x Dividend yield x Valuation multiple reversion
 function expectedCAGR(s, category) {
   const yrs = s.financials.years;
@@ -259,9 +299,8 @@ function expectedCAGR(s, category) {
   // extrapolated forward as a steady annual rate — clamping prevents a single
   // noisy data point from producing a nonsensical -400% or +8000% "expected CAGR".
 
-  const rawRevGrowth = s.analystEstimates?.revenueGrowthFwd
-    ?? cagr(yrs[Math.max(0, yrs.length - 4)].revenue, last.revenue, Math.min(3, yrs.length - 1))
-    ?? 0.05;
+  const { blended: rawRevGrowth, sourcesUsed: revGrowthSources, sourcesAvailable: revGrowthSourcesUsed } =
+    blendedRevenueGrowth(s, yrs, last);
   const forwardRevGrowth = clamp(rawRevGrowth, -0.30, 0.60);
 
   const margins3y = yrs.slice(-3).map(y => y.fcf && y.revenue ? y.fcf / y.revenue : null).filter(x => x != null);
@@ -296,9 +335,56 @@ function expectedCAGR(s, category) {
     forwardRevGrowth + marginExpansionAnnualized + shareCountReduction + dividendYield + multipleReversionAnnualized,
     -0.50, 1.00 // belt-and-suspenders clamp on the combined total
   );
-  return { expectedCAGR: total, lowConfidence: clampedInputs, breakdown: {
+  return { expectedCAGR: total, lowConfidence: clampedInputs, revGrowthSources, revGrowthSourcesUsed, breakdown: {
     forwardRevGrowth, marginExpansionAnnualized, shareCountReduction, dividendYield, multipleReversionAnnualized
   } };
+}
+
+// ---------- 6b. Confidence Score ----------
+// Turns the scattered reliability signals we already compute (thin history, missing
+// analyst data, single-method valuation, method disagreement, cyclicality, negative
+// FCF, heavy SBC, single-source growth) into one visible 0-100 score with itemized
+// deductions, instead of a single opaque lowConfidence boolean. This is what should
+// actually gate a Strong Buy — a stock can clear the CAGR/MOS bar on paper and still
+// be resting on data too thin to trust.
+function computeConfidenceScore(s, category, revGrowthSources, methodAgreementScore, methodCount) {
+  const yrs = s.financials.years || [];
+  const last = yrs[yrs.length - 1] || {};
+  let score = 100;
+  const deductions = [];
+
+  const ded = (points, reason) => { score -= points; deductions.push({ points, reason }); };
+
+  const yearsOfHistory = yrs.length;
+  if (yearsOfHistory < 5) ded(15, `Only ${yearsOfHistory} year(s) of financial history`);
+
+  if (!s.analystEstimates?.revenueGrowthFwd) ded(10, 'No analyst estimates available');
+
+  if (methodCount <= 1) {
+    ded(15, `Only ${methodCount} valuation method produced a value`);
+  } else if (methodAgreementScore != null && methodAgreementScore < 40) {
+    ded(15, `Valuation methods disagree significantly (agreement ${methodAgreementScore}/100)`);
+  }
+
+  const netIncomes = yrs.slice(-5).map(y => y.netIncome).filter(x => x != null);
+  if (netIncomes.some(x => x < 0) && netIncomes.some(x => x > 0)) {
+    ded(10, 'Cyclical earnings — net income has swung positive/negative recently');
+  }
+
+  const negativeFcfYears = yrs.slice(-3).filter(y => y.fcf != null && y.fcf < 0).length;
+  if (negativeFcfYears > 0) ded(negativeFcfYears * 5, `${negativeFcfYears} negative FCF year(s) in the last 3`);
+
+  if (s.recentAcquisition) ded(10, 'Recent acquisition distorts year-over-year comparability');
+
+  const marketCap = s.valuation?.marketCap;
+  const sbcIntensity = last.sbc != null && marketCap ? last.sbc / marketCap : (last.sbcIntensity ?? null);
+  if (sbcIntensity != null && sbcIntensity > 0.05) ded(10, `Heavy SBC (${(sbcIntensity * 100).toFixed(1)}% of market cap)`);
+
+  if (revGrowthSources <= 1) ded(10, 'Growth estimate rests on a single data source');
+
+  if (s.accountingFlag) ded(20, 'Accounting irregularity flagged');
+
+  return { score: clamp(Math.round(score), 0, 100), deductions };
 }
 
 // ---------- 7. Master Scoring Function ----------
@@ -308,9 +394,13 @@ function scoreStock(stock) {
   const catFn = CATEGORY_METRICS[category] || CATEGORY_METRICS.Value;
   const catResult = catFn(stock);
   const pricingPower = scorePricingPower(stock);
-  const { expectedCAGR: expCagr, breakdown, lowConfidence } = expectedCAGR(stock, category);
+  const { expectedCAGR: expCagr, breakdown, lowConfidence, revGrowthSources } = expectedCAGR(stock, category);
   const lastRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
   const requiredMOS = dynamicMOS(category, lastRoic);
+  const confidence = computeConfidenceScore(
+    stock, category, revGrowthSources,
+    stock.valuation.methodAgreementScore ?? null, stock.valuation.methodCount ?? 0
+  );
 
   const currentPrice = stock.price.current;
   const fairValue = stock.valuation.fairValueEstimate; // computed upstream if available
@@ -338,6 +428,8 @@ function scoreStock(stock) {
     pricingPowerSignals: pricingPower.signals,
     expectedCAGR: expCagr,
     lowConfidence,
+    confidenceScore: confidence.score,
+    confidenceDeductions: confidence.deductions,
     cagrBreakdown: breakdown,
     growthSource: stock.valuation.growthSource ?? null,
     marketImpliedGrowth,
@@ -376,6 +468,15 @@ function applyPercentileRatings(scoredStocks) {
   sortedQualifiers.forEach((s, i) => {
     const pct = qn > 0 ? i / qn : 0;
     let rating = pct <= 0.30 ? 'Strong Buy' : 'Buy'; // top 30% of QUALIFIERS, not the whole universe
+    // Confidence score (0-100, itemized in confidenceDeductions) is the real gate now —
+    // it folds in thin history, missing analyst data, single-method valuation, method
+    // disagreement, cyclicality, negative FCF, SBC intensity, and single-source growth
+    // all at once, instead of one boolean tripping on any single issue. A stock can't
+    // get a Strong Buy badge below 70/100 confidence, and can't clear Buy at all below 40 —
+    // the underlying data is too thin to trust the call regardless of how good the
+    // headline numbers look.
+    if (rating === 'Strong Buy' && s.confidenceScore < 70) rating = 'Buy';
+    if (s.confidenceScore < 40) rating = 'Hold/Watch';
     // lowConfidence means multiple CAGR inputs hit their sanity clamp simultaneously —
     // a sign the underlying data for this specific stock is broadly unreliable, not
     // just one noisy year. Don't let that produce a Strong Buy / Buy badge.
@@ -415,6 +516,7 @@ const api = {
   classifyCategory, scoreStock, scoreUniverse,
   applySectorZScores, applyPercentileRatings,
   scorePricingPower, dynamicMOS, expectedCAGR,
+  blendedRevenueGrowth, computeConfidenceScore,
 };
 
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
