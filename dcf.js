@@ -36,8 +36,11 @@ function reverseDCF({ fcfBase, growthYear1, terminalGrowth = 0.025, discountRate
   if (fcfBase == null || fcfBase <= 0 || !sharesOut) {
     return { fairValuePerShare: null, reason: 'missing or non-positive FCF / share count' };
   }
-  // Clamp growth inputs to sane bounds so one bad data point doesn't blow up the model
-  const g1 = Math.max(-0.10, Math.min(0.35, growthYear1 ?? terminalGrowth));
+  // No clamping here — this is the raw calculator. Clamping happens in estimateFairValue()
+  // (the "give me a conservative number" path). solveImpliedGrowth() intentionally calls
+  // this directly, unclamped, because its whole purpose is to find the TRUE growth rate
+  // implied by the market price, even if that rate is unrealistic — that gap IS the signal.
+  const g1 = growthYear1 ?? terminalGrowth;
 
   let fcf = fcfBase;
   let pvSum = 0;
@@ -66,15 +69,19 @@ function reverseDCF({ fcfBase, growthYear1, terminalGrowth = 0.025, discountRate
 
 // Convenience wrapper that pulls what it needs off a stock record
 // (matches the shape built by data-fetchers.js) and returns fair value + margin of safety.
+// This is where growth gets clamped to a conservative band [-10%, 50%] — a single noisy
+// data point (bad share count, one-off FCF swing) shouldn't be able to blow up the
+// fair-value number here, even though solveImpliedGrowth (below) deliberately skips this.
 function estimateFairValue(stock, growthYear1) {
   const yrs = stock.financials.years;
   const last = yrs[yrs.length - 1];
   const discountRate = getDiscountRate(stock.sector);
   const netDebt = (last.longTermDebt || 0) - (last.cash || 0);
+  const clampedGrowth = growthYear1 != null ? Math.max(-0.10, Math.min(0.50, growthYear1)) : growthYear1;
 
   const dcf = reverseDCF({
     fcfBase: last.fcf,
-    growthYear1,
+    growthYear1: clampedGrowth,
     discountRate,
     netDebt,
     sharesOut: last.sharesOutTTM,
@@ -87,6 +94,40 @@ function estimateFairValue(stock, growthYear1) {
   return { ...dcf, marginOfSafety, currentPrice };
 }
 
-const api = { reverseDCF, estimateFairValue, getDiscountRate, SECTOR_DISCOUNT_RATES };
+// Given a target price, solve for the year-1 growth rate that would make the DCF's
+// fair value equal that price — i.e. "what is the market currently pricing in?"
+// Useful as a transparency check: compare this to your own growth estimate rather
+// than letting a single DCF fair-value number silently assert overvaluation.
+// fairValuePerShare increases monotonically with growthYear1 (given discountRate >
+// terminalGrowth, which always holds here), so binary search is safe.
+function solveImpliedGrowth({ fcfBase, terminalGrowth = 0.025, discountRate = 0.095, years = 10, netDebt = 0, sharesOut, targetPricePerShare }) {
+  if (fcfBase == null || fcfBase <= 0 || !sharesOut || !targetPricePerShare) return { impliedGrowth: null, reason: 'missing inputs' };
+  const LO = -0.50, HI = 1.50;
+
+  const valueAt = (g) => reverseDCF({ fcfBase, growthYear1: g, terminalGrowth, discountRate, years, netDebt, sharesOut }).fairValuePerShare;
+  const fvAtLo = valueAt(LO), fvAtHi = valueAt(HI);
+
+  if (fvAtHi != null && fvAtHi < targetPricePerShare) {
+    // Price exceeds what even 150%/yr sustained growth can justify — a real, useful
+    // signal (this is a "growth priced beyond any reasonable DCF path" situation),
+    // not a specific number. Report it as infeasible rather than returning 150% as
+    // if it were a precise answer.
+    return { impliedGrowth: null, reason: 'exceeds_search_range_high', boundFairValue: fvAtHi };
+  }
+  if (fvAtLo != null && fvAtLo > targetPricePerShare) {
+    return { impliedGrowth: null, reason: 'exceeds_search_range_low', boundFairValue: fvAtLo };
+  }
+
+  let lo = LO, hi = HI;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    const fv = valueAt(mid);
+    if (fv == null) return { impliedGrowth: null, reason: 'dcf_error' };
+    if (fv < targetPricePerShare) lo = mid; else hi = mid;
+  }
+  return { impliedGrowth: (lo + hi) / 2, reason: 'converged' };
+}
+
+const api = { reverseDCF, estimateFairValue, getDiscountRate, solveImpliedGrowth, SECTOR_DISCOUNT_RATES };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 if (typeof window !== 'undefined') window.DCF = api;

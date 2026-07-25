@@ -305,10 +305,19 @@ function scoreStock(stock) {
 
   const currentPrice = stock.price.current;
   const fairValue = stock.valuation.fairValueEstimate; // computed upstream if available
-  const marginOfSafety = fairValue ? (fairValue - currentPrice) / fairValue : null;
+  const rawMarginOfSafety = fairValue ? (fairValue - currentPrice) / fairValue : null;
+  // Clamp the *displayed* number — when fair value is small relative to price (common
+  // for cyclical/inflecting names where the DCF's trailing-growth input badly
+  // undershoots the market's forward view), the raw percentage can swing to
+  // meaningless extremes like -400%. The underlying "this is overvalued" signal is
+  // still correct at the extremes; the exact magnitude past ±100% isn't meaningful.
+  const marginOfSafety = rawMarginOfSafety != null ? clamp(rawMarginOfSafety, -1.0, 1.0) : null;
+  const marginOfSafetyDistorted = rawMarginOfSafety != null && rawMarginOfSafety !== marginOfSafety;
   const meetsRequiredMOS = marginOfSafety != null ? marginOfSafety >= requiredMOS : null;
 
   const meetsCAGRTarget = expCagr >= 0.15;
+  const marketImpliedGrowth = stock.valuation.marketImpliedGrowth ?? null;
+  const growthGap = marketImpliedGrowth != null ? marketImpliedGrowth - breakdown.forwardRevGrowth : null;
 
   return {
     ticker: stock.ticker,
@@ -321,8 +330,13 @@ function scoreStock(stock) {
     expectedCAGR: expCagr,
     lowConfidence,
     cagrBreakdown: breakdown,
+    growthSource: stock.valuation.growthSource ?? null,
+    marketImpliedGrowth,
+    marketImpliedGrowthNote: stock.valuation.marketImpliedGrowthNote ?? null,
+    growthGap,
     requiredMOS,
     marginOfSafety,
+    marginOfSafetyDistorted,
     meetsRequiredMOS,
     meetsCAGRTarget,
     qualifiesForBuyList: !!(meetsCAGRTarget && meetsRequiredMOS),
@@ -354,6 +368,12 @@ function applyPercentileRatings(scoredStocks) {
       rating = 'Hold/Watch';
     } else if ((baseTier === 'Strong Buy' || baseTier === 'Buy') && s.meetsRequiredMOS === false) {
       rating = 'Hold/Watch'; // confirmed trading above your required margin of safety
+    }
+    // lowConfidence means multiple CAGR inputs hit their sanity clamp simultaneously —
+    // that's a sign the underlying data for this specific stock is broadly unreliable,
+    // not just one noisy year. Don't let that produce a Strong Buy / Buy badge.
+    if (s.lowConfidence && (rating === 'Strong Buy' || rating === 'Buy')) {
+      rating = 'Hold/Watch';
     }
 
     s.sectorPercentileTier = baseTier; // raw rank kept around for transparency/debugging

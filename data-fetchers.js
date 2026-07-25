@@ -8,7 +8,7 @@
  * which is all we use here (we do NOT use paid analyst-estimate endpoints).
  */
 
-const { estimateFairValue } = require('./dcf');
+const { estimateFairValue, solveImpliedGrowth } = require('./dcf');
 
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || '';
 // SEC requires a real identifying User-Agent (name + email) per their fair-use policy —
@@ -37,6 +37,57 @@ async function fetchSecFacts(ticker) {
   return res.json();
 }
 
+// Extract recent quarterly revenue points from 10-Q filings (same JSON we already
+// fetched for annual data — no extra API call). Used to capture *current* growth
+// momentum rather than relying solely on a 3-year trailing average, which can badly
+// lag an inflecting business (e.g. a cyclical or AI-cycle name accelerating off a trough).
+function parseQuarterlyRevenue(facts, maxQuarters = 8) {
+  const usGaap = facts.facts?.['us-gaap'] || {};
+  const tags = ['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues'];
+  const points = [];
+
+  for (const tag of tags) {
+    const units = usGaap[tag]?.units;
+    if (!units) continue;
+    const arr = units.USD || Object.values(units)[0];
+    if (!arr) continue;
+    arr.filter(x => x.form === '10-Q' && x.start && x.end).forEach(x => {
+      const days = (new Date(x.end) - new Date(x.start)) / 86400000;
+      if (days >= 80 && days <= 100) { // single-quarter duration, not YTD cumulative
+        points.push({ end: x.end, val: x.val });
+      }
+    });
+  }
+
+  const byEnd = {};
+  points.forEach(p => { byEnd[p.end] = p; }); // dedupe, last tag checked wins
+  return Object.values(byEnd).sort((a, b) => new Date(a.end) - new Date(b.end)).slice(-maxQuarters);
+}
+
+// Most recent quarter's YoY revenue growth — a much more current momentum signal
+// than a 3yr trailing CAGR. Looks for a quarter ending ~12 months before the latest one.
+function recentQuarterYoYGrowth(quarters) {
+  if (!quarters || quarters.length < 2) return null;
+  const latest = quarters[quarters.length - 1];
+  const latestDate = new Date(latest.end);
+  let bestMatch = null, bestDiff = Infinity;
+  for (const q of quarters.slice(0, -1)) {
+    const diffDays = Math.abs((latestDate - new Date(q.end)) / 86400000 - 365);
+    if (diffDays < bestDiff) { bestDiff = diffDays; bestMatch = q; }
+  }
+  if (!bestMatch || bestDiff > 45 || bestMatch.val <= 0) return null; // no good YoY match available
+  return latest.val / bestMatch.val - 1;
+}
+
+// Blend recent-quarter momentum with the longer trailing trend. Weighted toward the
+// recent number so an inflecting business isn't dragged down by stale history, but
+// still anchored by the multi-year trend so a single noisy quarter can't dominate.
+function blendedForwardGrowth(trailing3yrCagr, recentQoQYoY) {
+  if (recentQoQYoY == null) return trailing3yrCagr;
+  if (trailing3yrCagr == null) return recentQoQYoY;
+  return recentQoQYoY * 0.65 + trailing3yrCagr * 0.35;
+}
+
 // Extract a clean annual financials series from raw SEC companyfacts JSON.
 // Pulls the most common US-GAAP tags; falls back gracefully if a tag is missing.
 function parseAnnualFinancials(facts, maxYears = 10) {
@@ -61,6 +112,15 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   pullAnnual('GrossProfit', 'grossProfit');
   pullAnnual('OperatingIncomeLoss', 'operatingIncome');
   pullAnnual('NetCashProvidedByUsedInOperatingActivities', 'cfo');
+  // Capex is reported under several different XBRL tags depending on the company —
+  // pull weaker/partial fallbacks FIRST, then the most common tag LAST so it takes
+  // priority wherever it's available (pullAnnual overwrites per-year on each call).
+  // Without these fallbacks, FCF (and therefore fair value / MOS) silently comes back
+  // null for any company that doesn't use the primary tag — this was happening to
+  // several large, well-covered names.
+  pullAnnual('PaymentsToAcquireProductiveAssets', 'capex');
+  pullAnnual('PaymentsForCapitalImprovements', 'capex');
+  pullAnnual('PaymentsToAcquireOtherPropertyPlantAndEquipment', 'capex');
   pullAnnual('PaymentsToAcquirePropertyPlantAndEquipment', 'capex');
   pullAnnual('CommonStockDividendsPerShareDeclared', 'dividendPerShare');
   pullAnnual('CommonStockSharesOutstanding', 'sharesOutTTM');
@@ -122,19 +182,40 @@ async function fetchFinnhubQuote(ticker) {
   return res.json();
 }
 
+// UNCONFIRMED free-tier availability — Finnhub's docs list this endpoint but sources
+// disagree on whether it's actually unlocked on a free key or premium-gated. Wired in
+// with a safe fallback: if it 403s or errors, we just don't get this signal and fall
+// back to the SEC-derived blended growth below. Costs nothing to try.
+async function fetchFinnhubRevenueEstimate(ticker) {
+  if (!FINNHUB_KEY) return null;
+  try {
+    const res = await fetch(`https://finnhub.io/api/v1/stock/revenue-estimate?symbol=${ticker}&freq=annual&token=${FINNHUB_KEY}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const est = json?.data?.[0]; // most recent forward annual estimate
+    if (!est?.revenueAvg || !json?.data?.[1]?.revenueAvg) return null;
+    // forward YoY growth implied by consensus estimate for the next fiscal year
+    return est.revenueAvg / json.data[1].revenueAvg - 1;
+  } catch {
+    return null;
+  }
+}
+
 // --- Assemble the full stock object the scoring engine expects ---
 // Note: sector should be passed in (e.g. from your watchlist.json / index CSV) —
 // we don't call Finnhub's profile endpoint anymore, which halves Finnhub API usage
 // (quote only) and keeps us comfortably under the 60 calls/min free-tier limit
 // even across a 1000+ ticker watchlist.
 async function buildStockRecord(ticker, sector) {
-  const [facts, quote, priceHistory] = await Promise.all([
+  const [facts, quote, priceHistory, finnhubRevGrowth] = await Promise.all([
     fetchSecFacts(ticker),
     fetchFinnhubQuote(ticker).catch(() => null),
     fetchStooqHistory(ticker, 5).catch(() => []),
+    fetchFinnhubRevenueEstimate(ticker).catch(() => null),
   ]);
 
   const years = parseAnnualFinancials(facts);
+  const quarters = parseQuarterlyRevenue(facts);
   const last = years[years.length - 1] || {};
   const currentPrice = quote?.c || (priceHistory.length ? priceHistory[priceHistory.length - 1].close : null);
   const sharesOut = last.sharesOutTTM;
@@ -148,6 +229,18 @@ async function buildStockRecord(ticker, sector) {
 
   years.forEach(y => y.debtToEbitda = y.longTermDebt && y.operatingIncome ? y.longTermDebt / y.operatingIncome : null);
 
+  // Growth signal priority: real analyst consensus (if the Finnhub endpoint worked) >
+  // blended recent-quarter momentum + trailing 3yr trend > trailing 3yr alone.
+  let growthYear1 = null;
+  if (finnhubRevGrowth != null) {
+    growthYear1 = finnhubRevGrowth;
+  } else if (years.length >= 4) {
+    const first = years[years.length - 4];
+    const trailing3yr = first.revenue > 0 ? Math.pow(last.revenue / first.revenue, 1 / 3) - 1 : null;
+    const recentQoQ = recentQuarterYoYGrowth(quarters);
+    growthYear1 = blendedForwardGrowth(trailing3yr, recentQoQ);
+  }
+
   const stockShell = {
     ticker,
     sector: sector || 'Unknown',
@@ -157,30 +250,46 @@ async function buildStockRecord(ticker, sector) {
       ev: marketCap ? marketCap + (last.longTermDebt || 0) - (last.cash || 0) : null,
       dividendYield,
       fairValueEstimate: null,
+      growthSource: finnhubRevGrowth != null ? 'analyst_consensus' : 'blended_sec_data',
     },
     price: { current: currentPrice },
-    quarterly: [], // optional: extend with SEC 10-Q parsing for quarterly pricing-power signal
+    quarterly: quarters,
     historicalMultiples: { evEbitda: [], forwardPe: [] }, // optional: backfill from priceHistory + trailing EPS
     earningsCallText: null, // optional: plug in a free transcript source if you find one
   };
 
-  // Reverse-DCF fair value: use trailing 3yr revenue CAGR as the year-1 growth
-  // input (fading to 2.5% terminal growth over 10yrs — see dcf.js to adjust).
-  if (years.length >= 4) {
-    const first = years[years.length - 4];
-    const growthYear1 = first.revenue > 0 ? Math.pow(last.revenue / first.revenue, 1 / 3) - 1 : null;
+  // Reverse-DCF fair value, using the best available growth signal above (fading to
+  // 2.5% terminal growth over 10yrs — see dcf.js to adjust).
+  if (years.length >= 3 && growthYear1 != null) {
     const dcfResult = estimateFairValue(stockShell, growthYear1);
     stockShell.valuation.fairValueEstimate = dcfResult.fairValuePerShare ?? null;
     stockShell.valuation.dcfAssumptions = dcfResult.assumptions ?? null;
+    // Market-implied growth: what growth rate would the CURRENT price require to be fair,
+    // holding everything else constant? Shown alongside our estimate rather than used to
+    // penalize — lets you judge whether the market's implied story (e.g. an AI-cycle
+    // re-rating) is credible, instead of the tool silently asserting "overvalued."
+    if (dcfResult.marginOfSafety != null) {
+      const impliedResult = solveImpliedGrowth({
+        fcfBase: last.fcf,
+        terminalGrowth: dcfResult.assumptions.terminalGrowth,
+        discountRate: dcfResult.assumptions.discountRate,
+        years: dcfResult.assumptions.years,
+        netDebt: dcfResult.assumptions.netDebt,
+        sharesOut: last.sharesOutTTM,
+        targetPricePerShare: currentPrice,
+      });
+      stockShell.valuation.marketImpliedGrowth = impliedResult.impliedGrowth;
+      stockShell.valuation.marketImpliedGrowthNote = impliedResult.reason !== 'converged' ? impliedResult.reason : null;
+    }
   }
 
   return stockShell;
 }
 
 const api = {
-  fetchSecFacts, parseAnnualFinancials,
+  fetchSecFacts, parseAnnualFinancials, parseQuarterlyRevenue, recentQuarterYoYGrowth, blendedForwardGrowth,
   fetchStooqPrice, fetchStooqHistory,
-  fetchFinnhubProfile, fetchFinnhubQuote,
+  fetchFinnhubProfile, fetchFinnhubQuote, fetchFinnhubRevenueEstimate,
   buildStockRecord, getTickerCikMap,
 };
 

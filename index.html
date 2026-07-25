@@ -97,26 +97,39 @@ function render() {
   rows.forEach(s => {
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
+    const cagrFlag = s.lowConfidence ? ' ⚠️' : '';
+    const mosFlag = s.marginOfSafetyDistorted ? ' ⚠️' : '';
     tr.innerHTML = `
       <td><strong>${s.ticker}</strong></td>
       <td>${s.category}</td>
       <td><span class="badge ${ratingClass(s.rating)}">${s.rating}</span></td>
-      <td class="${s.expectedCAGR >= 0.15 ? 'pos' : 'neg'}">${pct(s.expectedCAGR)}</td>
-      <td class="${s.marginOfSafety >= s.requiredMOS ? 'pos' : 'neg'}">${pct(s.marginOfSafety)}</td>
+      <td class="${s.expectedCAGR >= 0.15 ? 'pos' : 'neg'}">${pct(s.expectedCAGR)}${cagrFlag}</td>
+      <td class="${s.marginOfSafety >= s.requiredMOS ? 'pos' : 'neg'}">${pct(s.marginOfSafety)}${mosFlag}</td>
       <td>${pct(s.requiredMOS)}</td>
       <td>${s.pricingPowerScore}</td>
       <td>${s.categoryComposite}</td>
       <td>${s.sectorRelativeScore}</td>
     `;
+    const impliedText = s.marketImpliedGrowth != null
+      ? pct(s.marketImpliedGrowth)
+      : (s.marketImpliedGrowthNote === 'exceeds_search_range_high'
+          ? 'exceeds any plausible growth rate (>150%/yr) — price may be pricing in something beyond a DCF-justifiable story'
+          : s.marketImpliedGrowthNote === 'exceeds_search_range_low'
+            ? 'below -50%/yr — stock may be priced for permanent decline'
+            : '—');
     const detail = document.createElement('tr');
     detail.className = 'detail';
     detail.innerHTML = `<td colspan="9">
-      <strong>Expected CAGR breakdown:</strong>
+      ${s.lowConfidence ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Multiple growth inputs hit their sanity clamp for this stock — treat the CAGR figure with extra caution.</div>' : ''}
+      ${s.marginOfSafetyDistorted ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Raw margin of safety was an extreme value, clamped to ±100% for display.</div>' : ''}
+      <strong>Growth source:</strong> ${s.growthSource === 'analyst_consensus' ? 'Finnhub analyst consensus' : 'Blended recent-quarter + trailing SEC data'}
+      <br><strong>Expected CAGR breakdown:</strong>
       Rev growth ${pct(s.cagrBreakdown.forwardRevGrowth)} ·
       Margin exp. ${pct(s.cagrBreakdown.marginExpansionAnnualized)} ·
       Buybacks ${pct(s.cagrBreakdown.shareCountReduction)} ·
       Div yield ${pct(s.cagrBreakdown.dividendYield)} ·
       Multiple reversion ${pct(s.cagrBreakdown.multipleReversionAnnualized)}
+      <br><strong>Market-implied growth</strong> (what the current price requires to be fair): ${impliedText}
       <br><strong>Pricing power signals:</strong>
       ${(s.pricingPowerSignals || []).map(sig => `<span class="sig">• ${sig}</span>`).join('') || 'None detected'}
     </td>`;
