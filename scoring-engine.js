@@ -268,7 +268,13 @@ function blendedRevenueGrowth(s, yrs, last) {
   // earnings can sustainably compound ~10%/yr from its own economics.
   const avgRoic = mean(yrs.slice(-3).map(y => y.roic).filter(x => x != null));
   const reinvestRate = s.reinvestmentRate != null ? clamp(s.reinvestmentRate, 0, 1) : 0.4;
-  const reinvestG = avgRoic != null ? clamp(avgRoic * reinvestRate, -0.10, 0.40) : null;
+  // Cap the ROIC INPUT (not just the output) before multiplying. Asset-light compounders
+  // can post 50-90%+ ROIC that's real but not indicative of a sustainable reinvestment
+  // opportunity at that scale — capital gets harder to deploy at the same return as a
+  // business grows. Without this cap, exactly the highest-quality names quietly re-inflate
+  // their own growth estimate through this "objective" ROIC-based channel.
+  const cappedRoicForGrowth = avgRoic != null ? clamp(avgRoic, 0, 0.35) : null;
+  const reinvestG = cappedRoicForGrowth != null ? clamp(cappedRoicForGrowth * reinvestRate, -0.10, 0.25) : null;
 
   const marketImpliedG = s.valuation.marketImpliedGrowth ?? null;
 
@@ -347,7 +353,7 @@ function expectedCAGR(s, category) {
 // deductions, instead of a single opaque lowConfidence boolean. This is what should
 // actually gate a Strong Buy — a stock can clear the CAGR/MOS bar on paper and still
 // be resting on data too thin to trust.
-function computeConfidenceScore(s, category, revGrowthSources, methodAgreementScore, methodCount) {
+function computeConfidenceScore(s, category, revGrowthSources, methodAgreementScore, methodCount, growthGap, marginOfSafetyDistorted) {
   const yrs = s.financials.years || [];
   const last = yrs[yrs.length - 1] || {};
   let score = 100;
@@ -362,9 +368,25 @@ function computeConfidenceScore(s, category, revGrowthSources, methodAgreementSc
 
   if (methodCount <= 1) {
     ded(15, `Only ${methodCount} valuation method produced a value`);
-  } else if (methodAgreementScore != null && methodAgreementScore < 40) {
-    ded(15, `Valuation methods disagree significantly (agreement ${methodAgreementScore}/100)`);
+  } else if (methodAgreementScore != null) {
+    // Continuous scaling instead of a hard "< 40" cliff — an agreement score of 39 and
+    // one of 42 reflect basically the same amount of disagreement between methods and
+    // shouldn't land on opposite sides of a penalty. Full 100/100 agreement = 0 deduction,
+    // 0/100 agreement = 25-point deduction, linear in between.
+    const agreementDeduction = Math.round(clamp((100 - methodAgreementScore) / 100 * 25, 0, 25));
+    if (agreementDeduction > 0) ded(agreementDeduction, `Valuation methods disagree (agreement ${methodAgreementScore}/100)`);
   }
+
+  // Market-implied growth vs. the model's own blended growth estimate is the single
+  // most direct "does this story hold together" check available — if the price only
+  // makes sense assuming 90%+ growth while the model itself is only projecting 30%,
+  // that gap matters more than almost any individual input clamp.
+  if (growthGap != null) {
+    const gapDeduction = Math.round(clamp((Math.abs(growthGap) - 0.15) / 0.15 * 20, 0, 20));
+    if (gapDeduction > 0) ded(gapDeduction, `Market-implied growth diverges sharply from modeled growth (gap ${(growthGap * 100).toFixed(0)}pp)`);
+  }
+
+  if (marginOfSafetyDistorted) ded(10, 'Raw margin of safety was an extreme value before clamping — fair value estimate is likely unreliable here');
 
   const netIncomes = yrs.slice(-5).map(y => y.netIncome).filter(x => x != null);
   if (netIncomes.some(x => x < 0) && netIncomes.some(x => x > 0)) {
@@ -397,10 +419,6 @@ function scoreStock(stock) {
   const { expectedCAGR: expCagr, breakdown, lowConfidence, revGrowthSources } = expectedCAGR(stock, category);
   const lastRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
   const requiredMOS = dynamicMOS(category, lastRoic);
-  const confidence = computeConfidenceScore(
-    stock, category, revGrowthSources,
-    stock.valuation.methodAgreementScore ?? null, stock.valuation.methodCount ?? 0
-  );
 
   const currentPrice = stock.price.current;
   const fairValue = stock.valuation.fairValueEstimate; // computed upstream if available
@@ -414,9 +432,16 @@ function scoreStock(stock) {
   const marginOfSafetyDistorted = rawMarginOfSafety != null && rawMarginOfSafety !== marginOfSafety;
   const meetsRequiredMOS = marginOfSafety != null ? marginOfSafety >= requiredMOS : null;
 
-  const meetsCAGRTarget = expCagr >= 0.15;
   const marketImpliedGrowth = stock.valuation.marketImpliedGrowth ?? null;
   const growthGap = marketImpliedGrowth != null ? marketImpliedGrowth - breakdown.forwardRevGrowth : null;
+
+  const confidence = computeConfidenceScore(
+    stock, category, revGrowthSources,
+    stock.valuation.methodAgreementScore ?? null, stock.valuation.methodCount ?? 0,
+    growthGap, marginOfSafetyDistorted
+  );
+
+  const meetsCAGRTarget = expCagr >= 0.15;
 
   return {
     ticker: stock.ticker,
@@ -481,10 +506,10 @@ function applyPercentileRatings(scoredStocks) {
     // a sign the underlying data for this specific stock is broadly unreliable, not
     // just one noisy year. Don't let that produce a Strong Buy / Buy badge.
     if (s.lowConfidence) rating = 'Hold/Watch';
-    // If 2+ valuation methods substantially disagree with each other, a confident buy
-    // call shouldn't rest on one method's answer when the others say something very
-    // different — even though this stock nominally "qualifies" on the blended number.
-    if (s.methodCount >= 2 && s.methodAgreementScore != null && s.methodAgreementScore < 40) rating = 'Hold/Watch';
+    // Method disagreement, growth-gap size, and clamped MOS all now flow continuously
+    // into confidenceScore itself (see computeConfidenceScore) rather than being a
+    // separate hard cutoff here — a stock with 42/100 agreement and one with 39/100
+    // should be penalized nearly identically, not treated as pass/fail.
     s.sectorPercentileTier = pct <= 0.30 ? 'Strong Buy' : 'Buy';
     s.rating = rating;
   });
