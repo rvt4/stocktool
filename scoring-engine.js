@@ -360,47 +360,47 @@ function scoreStock(stock) {
 // ---------- 8. Percentile-Based Rating (apply after scoring full universe) ----------
 
 function applyPercentileRatings(scoredStocks) {
-  const sorted = [...scoredStocks].sort((a, b) => b.sectorRelativeScore - a.sectorRelativeScore);
-  const n = sorted.length;
-  sorted.forEach((s, i) => {
-    const pct = i / n;
-    let baseTier;
-    if (pct <= 0.05) baseTier = 'Strong Buy';
-    else if (pct <= 0.15) baseTier = 'Buy';
-    else if (pct <= 0.65) baseTier = 'Hold/Watch';
-    else baseTier = 'Avoid';
+  // Split into stocks that actually clear your bar (CAGR + confirmed MOS) and everyone
+  // else. Percentile ranking now happens WITHIN the qualifying pool only, to decide
+  // Strong Buy vs Buy — not across the whole 891-stock universe. The previous version
+  // required a stock to be BOTH in the global top 15% AND meet the absolute CAGR/MOS
+  // thresholds — two independent hard filters stacked together, which is far stricter
+  // than either alone and is what collapsed the Buy list down to 2-3 names. A stock that
+  // clearly clears your explicit bar shouldn't also have to out-rank hundreds of stocks
+  // that don't even qualify.
+  const qualifiers = scoredStocks.filter(s => s.qualifiesForBuyList && s.expectedCAGR >= 0);
+  const nonQualifiers = scoredStocks.filter(s => !(s.qualifiesForBuyList && s.expectedCAGR >= 0));
 
-    // Sector rank alone isn't enough to call something a buy — gate against your
-    // actual targets. qualifiesForBuyList already requires BOTH meetsCAGRTarget AND
-    // meetsRequiredMOS === true (confirmed, not just "not disproven") — using it
-    // directly here closes a real gap: previously a stock with an *unknown* MOS
-    // (fair value data unavailable) could still pass through as Buy/Strong Buy as
-    // long as CAGR looked good. That defeated the whole point of requiring a
-    // confirmed margin of safety.
-    let rating = baseTier;
-    if (s.expectedCAGR < 0) {
-      rating = 'Avoid'; // never label a negative expected return a buy, regardless of rank
-    } else if (!s.qualifiesForBuyList && (baseTier === 'Strong Buy' || baseTier === 'Buy')) {
-      rating = 'Hold/Watch';
-    }
+  const sortedQualifiers = [...qualifiers].sort((a, b) => b.sectorRelativeScore - a.sectorRelativeScore);
+  const qn = sortedQualifiers.length;
+  sortedQualifiers.forEach((s, i) => {
+    const pct = qn > 0 ? i / qn : 0;
+    let rating = pct <= 0.30 ? 'Strong Buy' : 'Buy'; // top 30% of QUALIFIERS, not the whole universe
     // lowConfidence means multiple CAGR inputs hit their sanity clamp simultaneously —
-    // that's a sign the underlying data for this specific stock is broadly unreliable,
-    // not just one noisy year. Don't let that produce a Strong Buy / Buy badge.
-    if (s.lowConfidence && (rating === 'Strong Buy' || rating === 'Buy')) {
-      rating = 'Hold/Watch';
-    }
-    // If we have 2+ valuation methods (DCF, revenue/EPS/EBITDA exit multiples) and they
-    // substantially disagree with each other, that's itself a reason for caution — a
-    // confident buy call shouldn't rest on one method's answer when the others say
-    // something very different.
-    if (s.methodCount >= 2 && s.methodAgreementScore != null && s.methodAgreementScore < 40 && (rating === 'Strong Buy' || rating === 'Buy')) {
-      rating = 'Hold/Watch';
-    }
-
-    s.sectorPercentileTier = baseTier; // raw rank kept around for transparency/debugging
+    // a sign the underlying data for this specific stock is broadly unreliable, not
+    // just one noisy year. Don't let that produce a Strong Buy / Buy badge.
+    if (s.lowConfidence) rating = 'Hold/Watch';
+    // If 2+ valuation methods substantially disagree with each other, a confident buy
+    // call shouldn't rest on one method's answer when the others say something very
+    // different — even though this stock nominally "qualifies" on the blended number.
+    if (s.methodCount >= 2 && s.methodAgreementScore != null && s.methodAgreementScore < 40) rating = 'Hold/Watch';
+    s.sectorPercentileTier = pct <= 0.30 ? 'Strong Buy' : 'Buy';
     s.rating = rating;
   });
-  return sorted;
+
+  // Non-qualifiers: rank by sectorRelativeScore to distinguish "reasonable, just short
+  // of your bar" (Hold/Watch) from "weak across the board" (Avoid). Negative expected
+  // CAGR is always Avoid regardless of rank — never label a negative expected return
+  // as merely "watch."
+  const sortedNonQualifiers = [...nonQualifiers].sort((a, b) => b.sectorRelativeScore - a.sectorRelativeScore);
+  const nqN = sortedNonQualifiers.length;
+  sortedNonQualifiers.forEach((s, i) => {
+    const pct = nqN > 0 ? i / nqN : 0;
+    s.sectorPercentileTier = pct <= 0.65 ? 'Hold/Watch' : 'Avoid';
+    s.rating = s.expectedCAGR < 0 ? 'Avoid' : s.sectorPercentileTier;
+  });
+
+  return [...sortedQualifiers, ...sortedNonQualifiers];
 }
 
 // ---------- Public API ----------
