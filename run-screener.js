@@ -13,6 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const { buildStockRecord } = require('./data-fetchers');
+const { computeSectorExitMultiples, valuateStock } = require('./valuation-methods');
 const { scoreUniverse } = require('./scoring-engine');
 
 const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'), 'utf8'));
@@ -60,6 +61,24 @@ async function run() {
     if (i < watchlist.length - 1) {
       await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY_MS));
     }
+  }
+
+  // --- Second pass: multi-method valuation, now that we have the whole universe ---
+  // Exit-multiple methods need sector median multiples across ALL fetched stocks, which
+  // only exists once the fetch loop above is done. This is why valuation can't happen
+  // per-ticker during the fetch loop anymore.
+  console.log(`Valuating ${records.length} stocks (DCF + revenue/EPS/EBITDA exit multiples)...`);
+  const sectorExitMultiples = computeSectorExitMultiples(records);
+  for (const stock of records) {
+    const result = valuateStock(stock, sectorExitMultiples);
+    stock.valuation.fairValueEstimate = result.blendedFairValue;
+    stock.valuation.valuationMethods = result.methods;
+    stock.valuation.methodAgreementScore = result.agreementScore;
+    stock.valuation.methodCount = result.methodCount;
+    stock.valuation.marketImpliedGrowth = result.marketImpliedGrowth;
+    stock.valuation.marketImpliedGrowthNote = result.marketImpliedGrowthNote;
+    stock.valuation.dilutionRate = result.dilutionRate;
+    stock.valuation.sbcIntensity = result.sbcIntensity;
   }
 
   writeResults(records, false);

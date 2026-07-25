@@ -69,15 +69,18 @@ function reverseDCF({ fcfBase, growthYear1, terminalGrowth = 0.025, discountRate
 
 // Convenience wrapper that pulls what it needs off a stock record
 // (matches the shape built by data-fetchers.js) and returns fair value + margin of safety.
-// This is where growth gets clamped to a conservative band [-10%, 50%] — a single noisy
-// data point (bad share count, one-off FCF swing) shouldn't be able to blow up the
-// fair-value number here, even though solveImpliedGrowth (below) deliberately skips this.
+// This is where growth gets clamped to a CONSERVATIVE band [-10%, 35%] — deliberately
+// tighter than the Expected CAGR headline's clamps. A recent-quarter spike (e.g. from
+// an acquisition, like CELH's Alani Nu deal) can be a legitimate near-term growth driver
+// worth showing in the CAGR estimate, but shouldn't be treated as a 10-year sustained
+// rate in the valuation *gate* — that's how a one-time step-change turns into an inflated
+// fair value and an unrealistic margin of safety.
 function estimateFairValue(stock, growthYear1) {
   const yrs = stock.financials.years;
   const last = yrs[yrs.length - 1];
   const discountRate = getDiscountRate(stock.sector);
   const netDebt = (last.longTermDebt || 0) - (last.cash || 0);
-  const clampedGrowth = growthYear1 != null ? Math.max(-0.10, Math.min(0.50, growthYear1)) : growthYear1;
+  const clampedGrowth = growthYear1 != null ? Math.max(-0.10, Math.min(0.35, growthYear1)) : growthYear1;
 
   const dcf = reverseDCF({
     fcfBase: last.fcf,

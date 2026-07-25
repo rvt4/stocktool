@@ -8,7 +8,9 @@
  * which is all we use here (we do NOT use paid analyst-estimate endpoints).
  */
 
-const { estimateFairValue, solveImpliedGrowth } = require('./dcf');
+// Note: dcf.js is no longer imported here — valuation moved to a second pass in
+// valuation-methods.js, which runs after the full watchlist has been fetched (see
+// run-screener.js). See the comment on buildStockRecord()'s return value below.
 
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || '';
 // SEC requires a real identifying User-Agent (name + email) per their fair-use policy —
@@ -123,11 +125,24 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   pullAnnual('PaymentsToAcquireOtherPropertyPlantAndEquipment', 'capex');
   pullAnnual('PaymentsToAcquirePropertyPlantAndEquipment', 'capex');
   pullAnnual('CommonStockDividendsPerShareDeclared', 'dividendPerShare');
-  pullAnnual('CommonStockSharesOutstanding', 'sharesOutTTM');
+  pullAnnual('CommonStockSharesOutstanding', 'sharesOutTTM'); // cover-page fallback, noisy
+  // Diluted weighted-average share count (income statement denominator) is a much
+  // steadier figure than the cover-page CommonStockSharesOutstanding above — it's a
+  // period average rather than a single point-in-time snapshot, so it's far less prone
+  // to the split/offering-driven noise that caused problems earlier. Pulled AFTER the
+  // fallback so it takes priority wherever available.
+  pullAnnual('WeightedAverageNumberOfDilutedSharesOutstanding', 'sharesOutTTM');
+  pullAnnual('EarningsPerShareDiluted', 'dilutedEPS');
+  // Stock-based compensation — needed to model real dilution cost and flag heavy-SBC
+  // names. Reported under either tag depending on the company.
+  pullAnnual('ShareBasedCompensation', 'sbc');
+  pullAnnual('AllocatedShareBasedCompensationExpense', 'sbc');
   pullAnnual('LongTermDebtNoncurrent', 'longTermDebt');
   pullAnnual('CashAndCashEquivalentsAtCarryingValue', 'cash');
   pullAnnual('InventoryNet', 'inventory');
   pullAnnual('CostOfGoodsAndServicesSold', 'cogs');
+  pullAnnual('DepreciationDepletionAndAmortization', 'da');
+  pullAnnual('DepreciationAmortizationAndAccretionNet', 'da'); // fallback tag
 
   const years = Object.values(byYear)
     .filter(y => y.revenue) // require at least revenue
@@ -141,7 +156,15 @@ function parseAnnualFinancials(facts, maxYears = 10) {
       const invested = (y.longTermDebt || 0) + (y.cash != null ? -y.cash : 0); // rough proxy, refine as needed
       const roic = (y.operatingIncome != null && invested) ? y.operatingIncome / Math.abs(invested) : null;
       const inventoryTurnover = (y.cogs != null && y.inventory) ? y.cogs / y.inventory : null;
-      return { ...y, fcf, grossMargin, opMargin, roic, inventoryTurnover };
+      const ebitda = (y.operatingIncome != null) ? y.operatingIncome + (y.da || 0) : null;
+      // SBC-adjusted FCF: standard FCF (CFO - capex) treats SBC as a non-cash add-back,
+      // but economically it's a real cost — it dilutes existing shareholders just like a
+      // cash expense would. Subtracting it gives a more conservative "true" FCF for
+      // heavy-SBC names (common in software/biotech) where GAAP FCF can look much
+      // healthier than the economic reality once dilution is accounted for.
+      const fcfSBCAdjusted = fcf != null ? fcf - (y.sbc || 0) : null;
+      const sbcIntensity = (y.sbc != null && y.revenue) ? y.sbc / y.revenue : null;
+      return { ...y, fcf, fcfSBCAdjusted, sbcIntensity, grossMargin, opMargin, roic, inventoryTurnover, ebitda };
     });
 
   return years;
@@ -230,15 +253,19 @@ async function buildStockRecord(ticker, sector) {
   years.forEach(y => y.debtToEbitda = y.longTermDebt && y.operatingIncome ? y.longTermDebt / y.operatingIncome : null);
 
   // Growth signal priority: real analyst consensus (if the Finnhub endpoint worked) >
-  // blended recent-quarter momentum + trailing 3yr trend > trailing 3yr alone.
+  // blended recent-quarter momentum + trailing trend. Uses whatever trailing window is
+  // available (up to 3yr) rather than requiring exactly 4 years of history — that
+  // inconsistency was silently dropping every company with only 3 years of clean SEC
+  // data to a null growth signal (and therefore no fair value / no MOS at all).
   let growthYear1 = null;
   if (finnhubRevGrowth != null) {
     growthYear1 = finnhubRevGrowth;
-  } else if (years.length >= 4) {
-    const first = years[years.length - 4];
-    const trailing3yr = first.revenue > 0 ? Math.pow(last.revenue / first.revenue, 1 / 3) - 1 : null;
+  } else if (years.length >= 2) {
+    const lookback = Math.min(3, years.length - 1);
+    const first = years[years.length - 1 - lookback];
+    const trailingCagr = first.revenue > 0 ? Math.pow(last.revenue / first.revenue, 1 / lookback) - 1 : null;
     const recentQoQ = recentQuarterYoYGrowth(quarters);
-    growthYear1 = blendedForwardGrowth(trailing3yr, recentQoQ);
+    growthYear1 = blendedForwardGrowth(trailingCagr, recentQoQ);
   }
 
   const stockShell = {
@@ -249,39 +276,20 @@ async function buildStockRecord(ticker, sector) {
       pe, forwardPe: pe, evEbitda, fcfYield, marketCap,
       ev: marketCap ? marketCap + (last.longTermDebt || 0) - (last.cash || 0) : null,
       dividendYield,
-      fairValueEstimate: null,
       growthSource: finnhubRevGrowth != null ? 'analyst_consensus' : 'blended_sec_data',
+      // NOTE: fairValueEstimate is intentionally NOT computed here anymore. Exit-multiple
+      // valuation methods need to know what peers are currently trading at across the
+      // WHOLE watchlist (e.g. sector median EV/Revenue), which isn't available yet at
+      // this point — we're still fetching one ticker at a time. Fair value now gets
+      // computed in a second pass by valuation-methods.js, after every ticker has been
+      // fetched. See run-screener.js for the two-pass pipeline.
     },
+    growthYear1, // carried through to the valuation pass
     price: { current: currentPrice },
     quarterly: quarters,
     historicalMultiples: { evEbitda: [], forwardPe: [] }, // optional: backfill from priceHistory + trailing EPS
     earningsCallText: null, // optional: plug in a free transcript source if you find one
   };
-
-  // Reverse-DCF fair value, using the best available growth signal above (fading to
-  // 2.5% terminal growth over 10yrs — see dcf.js to adjust).
-  if (years.length >= 3 && growthYear1 != null) {
-    const dcfResult = estimateFairValue(stockShell, growthYear1);
-    stockShell.valuation.fairValueEstimate = dcfResult.fairValuePerShare ?? null;
-    stockShell.valuation.dcfAssumptions = dcfResult.assumptions ?? null;
-    // Market-implied growth: what growth rate would the CURRENT price require to be fair,
-    // holding everything else constant? Shown alongside our estimate rather than used to
-    // penalize — lets you judge whether the market's implied story (e.g. an AI-cycle
-    // re-rating) is credible, instead of the tool silently asserting "overvalued."
-    if (dcfResult.marginOfSafety != null) {
-      const impliedResult = solveImpliedGrowth({
-        fcfBase: last.fcf,
-        terminalGrowth: dcfResult.assumptions.terminalGrowth,
-        discountRate: dcfResult.assumptions.discountRate,
-        years: dcfResult.assumptions.years,
-        netDebt: dcfResult.assumptions.netDebt,
-        sharesOut: last.sharesOutTTM,
-        targetPricePerShare: currentPrice,
-      });
-      stockShell.valuation.marketImpliedGrowth = impliedResult.impliedGrowth;
-      stockShell.valuation.marketImpliedGrowthNote = impliedResult.reason !== 'converged' ? impliedResult.reason : null;
-    }
-  }
 
   return stockShell;
 }

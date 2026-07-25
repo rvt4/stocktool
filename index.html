@@ -117,11 +117,16 @@ function render() {
           : s.marketImpliedGrowthNote === 'exceeds_search_range_low'
             ? 'below -50%/yr — stock may be priced for permanent decline'
             : '—');
+    const methodNames = { dcf: 'DCF (FCF)', dcfSBCAdjusted: 'DCF (SBC-adjusted)', revenueExit: 'Revenue exit multiple', epsExit: 'EPS exit multiple (P/E)', ebitdaExit: 'EV/EBITDA exit multiple' };
+    const methodsText = s.valuationMethods
+      ? Object.entries(s.valuationMethods).filter(([, v]) => v != null).map(([k, v]) => `${methodNames[k] || k}: $${v.toFixed(2)}`).join(' · ') || 'No methods produced a value'
+      : 'Not yet valuated';
     const detail = document.createElement('tr');
     detail.className = 'detail';
     detail.innerHTML = `<td colspan="9">
       ${s.lowConfidence ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Multiple growth inputs hit their sanity clamp for this stock — treat the CAGR figure with extra caution.</div>' : ''}
       ${s.marginOfSafetyDistorted ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Raw margin of safety was an extreme value, clamped to ±100% for display.</div>' : ''}
+      ${s.methodCount >= 2 && s.methodAgreementScore != null && s.methodAgreementScore < 40 ? `<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Valuation methods disagree significantly (agreement score ${s.methodAgreementScore}/100) — the blended fair value rests on shaky consensus.</div>` : ''}
       <strong>Growth source:</strong> ${s.growthSource === 'analyst_consensus' ? 'Finnhub analyst consensus' : 'Blended recent-quarter + trailing SEC data'}
       <br><strong>Expected CAGR breakdown:</strong>
       Rev growth ${pct(s.cagrBreakdown.forwardRevGrowth)} ·
@@ -130,6 +135,10 @@ function render() {
       Div yield ${pct(s.cagrBreakdown.dividendYield)} ·
       Multiple reversion ${pct(s.cagrBreakdown.multipleReversionAnnualized)}
       <br><strong>Market-implied growth</strong> (what the current price requires to be fair): ${impliedText}
+      <br><strong>Valuation methods</strong> (blended = median, agreement ${s.methodAgreementScore ?? '—'}/100 from ${s.methodCount} method${s.methodCount === 1 ? '' : 's'}):
+      <br>${methodsText}
+      <br><strong>Dilution:</strong> ${s.dilutionRate != null ? pct(s.dilutionRate) + '/yr est.' : '—'}
+      ${s.sbcIntensity != null ? ` · SBC is ${pct(s.sbcIntensity)} of revenue` : ''}
       <br><strong>Pricing power signals:</strong>
       ${(s.pricingPowerSignals || []).map(sig => `<span class="sig">• ${sig}</span>`).join('') || 'None detected'}
     </td>`;

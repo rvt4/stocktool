@@ -146,17 +146,26 @@ function median(arr) {
 // ---------- 3. Sector-Relative Z-Score Normalization ----------
 // Call this AFTER scoring the whole universe, to re-rank within sector.
 function applySectorZScores(scoredStocks) {
-  const bySector = {};
+  // Group by (sector, category) together, not sector alone. Different categories use
+  // entirely different scoring formulas (see CATEGORY_METRICS) that aren't on a
+  // comparable scale — a Growth stock's Rule-of-40-driven composite score and a Value
+  // stock's discount-to-historical-multiple composite score are answering different
+  // questions with different typical ranges. Z-scoring them together as if they were
+  // the same measurement systematically advantages whichever category's formula tends
+  // to score higher, regardless of which stock is actually the better opportunity.
+  const groups = {};
   for (const s of scoredStocks) {
-    (bySector[s.sector] = bySector[s.sector] || []).push(s);
+    const key = `${s.sector}|${s.category}`;
+    (groups[key] = groups[key] || []).push(s);
   }
-  for (const sector in bySector) {
-    const group = bySector[sector];
+  for (const key in groups) {
+    const group = groups[key];
     const vals = group.map(s => s.categoryComposite);
     const m = mean(vals), sd = stdev(vals) || 1;
     for (const s of group) {
       s.sectorZScore = (s.categoryComposite - m) / sd;
       s.sectorRelativeScore = clamp(Math.round(50 + s.sectorZScore * 15), 0, 100);
+      s.comparisonGroupSize = group.length; // small groups make z-scores noisy — surfaced for transparency
     }
   }
   return scoredStocks;
@@ -340,6 +349,11 @@ function scoreStock(stock) {
     meetsRequiredMOS,
     meetsCAGRTarget,
     qualifiesForBuyList: !!(meetsCAGRTarget && meetsRequiredMOS),
+    valuationMethods: stock.valuation.valuationMethods ?? null,
+    methodAgreementScore: stock.valuation.methodAgreementScore ?? null,
+    methodCount: stock.valuation.methodCount ?? 0,
+    dilutionRate: stock.valuation.dilutionRate ?? null,
+    sbcIntensity: stock.valuation.sbcIntensity ?? null,
   };
 }
 
@@ -356,23 +370,30 @@ function applyPercentileRatings(scoredStocks) {
     else if (pct <= 0.65) baseTier = 'Hold/Watch';
     else baseTier = 'Avoid';
 
-    // Sector rank alone isn't enough to call something a buy — gate against
-    // your actual targets so a top-ranked-but-negative-return stock (e.g. a
-    // sector-relative "best of a bad bunch") can't show up as Strong Buy.
+    // Sector rank alone isn't enough to call something a buy — gate against your
+    // actual targets. qualifiesForBuyList already requires BOTH meetsCAGRTarget AND
+    // meetsRequiredMOS === true (confirmed, not just "not disproven") — using it
+    // directly here closes a real gap: previously a stock with an *unknown* MOS
+    // (fair value data unavailable) could still pass through as Buy/Strong Buy as
+    // long as CAGR looked good. That defeated the whole point of requiring a
+    // confirmed margin of safety.
     let rating = baseTier;
     if (s.expectedCAGR < 0) {
       rating = 'Avoid'; // never label a negative expected return a buy, regardless of rank
-    } else if (baseTier === 'Strong Buy' && !(s.meetsCAGRTarget && s.meetsRequiredMOS === true)) {
-      rating = s.meetsCAGRTarget ? 'Buy' : 'Hold/Watch';
-    } else if (baseTier === 'Buy' && !s.meetsCAGRTarget) {
+    } else if (!s.qualifiesForBuyList && (baseTier === 'Strong Buy' || baseTier === 'Buy')) {
       rating = 'Hold/Watch';
-    } else if ((baseTier === 'Strong Buy' || baseTier === 'Buy') && s.meetsRequiredMOS === false) {
-      rating = 'Hold/Watch'; // confirmed trading above your required margin of safety
     }
     // lowConfidence means multiple CAGR inputs hit their sanity clamp simultaneously —
     // that's a sign the underlying data for this specific stock is broadly unreliable,
     // not just one noisy year. Don't let that produce a Strong Buy / Buy badge.
     if (s.lowConfidence && (rating === 'Strong Buy' || rating === 'Buy')) {
+      rating = 'Hold/Watch';
+    }
+    // If we have 2+ valuation methods (DCF, revenue/EPS/EBITDA exit multiples) and they
+    // substantially disagree with each other, that's itself a reason for caution — a
+    // confident buy call shouldn't rest on one method's answer when the others say
+    // something very different.
+    if (s.methodCount >= 2 && s.methodAgreementScore != null && s.methodAgreementScore < 40 && (rating === 'Strong Buy' || rating === 'Buy')) {
       rating = 'Hold/Watch';
     }
 
