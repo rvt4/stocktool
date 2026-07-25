@@ -49,7 +49,7 @@ function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
 // Projects revenue, EBITDA, FCF, and diluted share count forward `years`, with growth
 // fading from growthYear1 down to a medium-term rate, and margins drifting toward the
 // company's own recent trend (capped so a single good/bad year can't dominate).
-function projectFinancials(stock, growthYear1, years = 5) {
+function projectFinancials(stock, growthYear1, years = 7) {
   const yrs = stock.financials.years;
   const last = yrs[yrs.length - 1];
   const dilutionRate = estimateDilutionRate(stock);
@@ -146,7 +146,7 @@ function dcfMethods(stock, growthYear1) {
 // current median EV/Revenue as the assumed exit multiple, discounts back, adds PV of
 // interim dividends (not retained FCF — that's already reflected in the higher exit
 // value, so adding it too would double-count).
-function revenueExitMethod(stock, growthYear1, sectorMultiples, years = 5) {
+function revenueExitMethod(stock, growthYear1, sectorMultiples, years = 7) {
   const exitMultiple = sectorMultiples?.evRevenue;
   if (!exitMultiple) return null;
   const { projection } = projectFinancials(stock, growthYear1, years);
@@ -166,7 +166,7 @@ function revenueExitMethod(stock, growthYear1, sectorMultiples, years = 5) {
 }
 
 // Method 3: EPS exit multiple (P/E based).
-function epsExitMethod(stock, growthYear1, sectorMultiples, years = 5) {
+function epsExitMethod(stock, growthYear1, sectorMultiples, years = 7) {
   const exitMultiple = sectorMultiples?.pe;
   if (!exitMultiple) return null;
   const { projection } = projectFinancials(stock, growthYear1, years);
@@ -181,7 +181,7 @@ function epsExitMethod(stock, growthYear1, sectorMultiples, years = 5) {
 }
 
 // Method 4: EV/EBITDA exit multiple.
-function ebitdaExitMethod(stock, growthYear1, sectorMultiples, years = 5) {
+function ebitdaExitMethod(stock, growthYear1, sectorMultiples, years = 7) {
   const exitMultiple = sectorMultiples?.evEbitda;
   if (!exitMultiple) return null;
   const { projection } = projectFinancials(stock, growthYear1, years);
@@ -214,15 +214,28 @@ function pvDividendStream(stock, years, discountRate) {
 
 // ---------- Combine methods ----------
 
-// Blends all available methods into a single headline fair value (median — more robust
-// to one method going haywire than a mean would be) plus an agreement score so you can
-// tell "all four methods roughly agree" from "wildly different answers, treat with
-// caution regardless of the headline number."
-function combineValuations(methods) {
-  const values = Object.values(methods).filter(v => v != null && v > 0);
-  if (!values.length) return { blendedFairValue: null, agreementScore: null, methodCount: 0 };
+// Blends methods via a WEIGHTED average, not an unweighted median. An unweighted median
+// across dcf/dcfSBCAdjusted/revenueExit/epsExit/ebitdaExit systematically biased low:
+// dcf and dcfSBCAdjusted are nearly identical to each other (same methodology, one
+// subtracts SBC), while the three exit-multiple methods are independently more
+// conservative by construction (5-year horizon vs DCF's 10-year, and they assume NO
+// multiple expansion from today's level). That's effectively "2 correlated votes vs 3
+// independently-conservative votes," and a median mechanically favors whichever side
+// has more members — it doesn't average anything, it just picks a side. Weighting fixes
+// this: DCF methods (better-tested, longer horizon) get more combined weight than any
+// single exit-multiple method, without discarding the exit-multiple perspective entirely.
+const METHOD_WEIGHTS = { dcf: 0.28, dcfSBCAdjusted: 0.17, revenueExit: 0.20, epsExit: 0.20, ebitdaExit: 0.15 };
 
-  const blendedFairValue = median(values);
+function combineValuations(methods) {
+  const available = Object.entries(methods).filter(([, v]) => v != null && v > 0);
+  if (!available.length) return { blendedFairValue: null, agreementScore: null, methodCount: 0 };
+
+  const totalWeight = available.reduce((sum, [k]) => sum + (METHOD_WEIGHTS[k] || 0), 0);
+  const blendedFairValue = totalWeight > 0
+    ? available.reduce((sum, [k, v]) => sum + v * (METHOD_WEIGHTS[k] || 0), 0) / totalWeight
+    : median(available.map(([, v]) => v)); // fallback if weights are somehow all zero
+
+  const values = available.map(([, v]) => v);
   let agreementScore = 100;
   if (values.length >= 2) {
     const mean = values.reduce((a, b) => a + b, 0) / values.length;
