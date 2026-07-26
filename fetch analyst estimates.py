@@ -9,11 +9,11 @@ only changes WHERE the cached numbers come from, not how the rest of the app con
 them.
 
 ASSUMPTIONS I'm making that you should double-check / tell me if wrong:
-  1. Your ticker universe lives in a local `tickers.txt` file (one ticker per line) that
-     you already generate/maintain for the Russell 1000 screen. If instead your universe
-     lives in Supabase (e.g. a `screener_results` table from last night's run), swap
-     load_tickers() below for a Supabase SELECT — trivial change, tell me the table/column
-     names and I'll wire it directly.
+  1. RESOLVED: ticker universe reads from `watchlist.json` at the repo root — an array
+     of {"ticker": "...", "sector": "..."} objects, matching your actual stocktool repo
+     structure. This script must run in a job that has that repo checked out (the
+     `actions/checkout@v4` step in the workflow snippet handles this automatically if
+     the workflow file lives in the same repo as watchlist.json).
   2. SUPABASE_URL and SUPABASE_SERVICE_KEY are already GitHub Secrets, since your existing
      FMP-quota-guard system already writes to Supabase from Actions.
   3. Your `analyst_estimates_cache` table's existing columns roughly match what's below —
@@ -50,16 +50,20 @@ TABLE_NAME = "analyst_estimates_cache"
 REQUEST_DELAY_SECONDS = 0.4
 
 
-def load_tickers(path="tickers.txt"):
-    """ASSUMPTION #1: universe lives in a local file. Swap this for a Supabase query
-    if your ticker list actually lives there instead."""
+def load_tickers(path="watchlist.json"):
+    """Reads your existing Russell 1000 universe file — an array of
+    {"ticker": "...", "sector": "..."} objects — rather than a tickers.txt that
+    doesn't exist in your repo."""
+    import json
     if not os.path.exists(path):
-        log.error(f"{path} not found. Populate it with one ticker per line, or tell "
-                  f"me where your ticker universe actually lives so I can wire this "
-                  f"to read from Supabase instead.")
+        log.error(f"{path} not found at repo root. If this script runs in a "
+                  f"different repo/checkout than watchlist.json lives in, adjust "
+                  f"the `path` default or pass --watchlist explicitly.")
         sys.exit(1)
     with open(path) as f:
-        tickers = [line.strip().upper() for line in f if line.strip()]
+        entries = json.load(f)
+    tickers = [e["ticker"].strip().upper() for e in entries if e.get("ticker")]
+    tickers = sorted(set(tickers))  # dedupe defensively, preserve deterministic order
     log.info(f"Loaded {len(tickers)} tickers from {path}")
     return tickers
 
