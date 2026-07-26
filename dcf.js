@@ -1,7 +1,7 @@
 /**
  * Simple reverse-DCF fair value estimator. No external dependencies.
  *
- * Method: project FCF forward `years` (default 10), with growth fading
+ * Method: project FCF forward `years` (default 5), with growth fading
  * linearly from `growthYear1` down to `terminalGrowth`, discount each
  * year's FCF back at `discountRate`, add a Gordon-growth terminal value,
  * subtract net debt, divide by shares outstanding.
@@ -32,20 +32,16 @@ function getDiscountRate(sector) {
   return SECTOR_DISCOUNT_RATES[sector] ?? SECTOR_DISCOUNT_RATES.Unknown;
 }
 
-function reverseDCF({ fcfBase, growthYear1, terminalGrowth = 0.025, discountRate = 0.095, years = 10, netDebt = 0, sharesOut }) {
+function reverseDCF({ fcfBase, growthYear1, terminalGrowth = 0.025, discountRate = 0.095, years = 5, netDebt = 0, sharesOut }) {
   if (fcfBase == null || fcfBase <= 0 || !sharesOut) {
     return { fairValuePerShare: null, reason: 'missing or non-positive FCF / share count' };
   }
-  // No clamping here — this is the raw calculator. Clamping happens in estimateFairValue()
-  // (the "give me a conservative number" path). solveImpliedGrowth() intentionally calls
-  // this directly, unclamped, because its whole purpose is to find the TRUE growth rate
-  // implied by the market price, even if that rate is unrealistic — that gap IS the signal.
   const g1 = growthYear1 ?? terminalGrowth;
 
   let fcf = fcfBase;
   let pvSum = 0;
   for (let t = 1; t <= years; t++) {
-    const g = g1 + (terminalGrowth - g1) * ((t - 1) / (years - 1)); // linear fade to terminal growth
+    const g = g1 + (terminalGrowth - g1) * ((t - 1) / (years - 1));
     fcf = fcf * (1 + g);
     pvSum += fcf / Math.pow(1 + discountRate, t);
   }
@@ -67,14 +63,6 @@ function reverseDCF({ fcfBase, growthYear1, terminalGrowth = 0.025, discountRate
   };
 }
 
-// Convenience wrapper that pulls what it needs off a stock record
-// (matches the shape built by data-fetchers.js) and returns fair value + margin of safety.
-// This is where growth gets clamped to a CONSERVATIVE band [-10%, 35%] — deliberately
-// tighter than the Expected CAGR headline's clamps. A recent-quarter spike (e.g. from
-// an acquisition, like CELH's Alani Nu deal) can be a legitimate near-term growth driver
-// worth showing in the CAGR estimate, but shouldn't be treated as a 10-year sustained
-// rate in the valuation *gate* — that's how a one-time step-change turns into an inflated
-// fair value and an unrealistic margin of safety.
 function estimateFairValue(stock, growthYear1) {
   const yrs = stock.financials.years;
   const last = yrs[yrs.length - 1];
@@ -88,6 +76,9 @@ function estimateFairValue(stock, growthYear1) {
     discountRate,
     netDebt,
     sharesOut: last.sharesOutTTM,
+    years: 5, // explicit, not relying on reverseDCF's default — this is what populates
+              // stock.valuation.fairValueEstimate, which needs to match the 5-year
+              // horizon every other valuation method now uses.
   });
 
   if (!dcf.fairValuePerShare) return dcf;
@@ -97,13 +88,7 @@ function estimateFairValue(stock, growthYear1) {
   return { ...dcf, marginOfSafety, currentPrice };
 }
 
-// Given a target price, solve for the year-1 growth rate that would make the DCF's
-// fair value equal that price — i.e. "what is the market currently pricing in?"
-// Useful as a transparency check: compare this to your own growth estimate rather
-// than letting a single DCF fair-value number silently assert overvaluation.
-// fairValuePerShare increases monotonically with growthYear1 (given discountRate >
-// terminalGrowth, which always holds here), so binary search is safe.
-function solveImpliedGrowth({ fcfBase, terminalGrowth = 0.025, discountRate = 0.095, years = 10, netDebt = 0, sharesOut, targetPricePerShare }) {
+function solveImpliedGrowth({ fcfBase, terminalGrowth = 0.025, discountRate = 0.095, years = 5, netDebt = 0, sharesOut, targetPricePerShare }) {
   if (fcfBase == null || fcfBase <= 0 || !sharesOut || !targetPricePerShare) return { impliedGrowth: null, reason: 'missing inputs' };
   const LO = -0.50, HI = 1.50;
 
@@ -111,10 +96,6 @@ function solveImpliedGrowth({ fcfBase, terminalGrowth = 0.025, discountRate = 0.
   const fvAtLo = valueAt(LO), fvAtHi = valueAt(HI);
 
   if (fvAtHi != null && fvAtHi < targetPricePerShare) {
-    // Price exceeds what even 150%/yr sustained growth can justify — a real, useful
-    // signal (this is a "growth priced beyond any reasonable DCF path" situation),
-    // not a specific number. Report it as infeasible rather than returning 150% as
-    // if it were a precise answer.
     return { impliedGrowth: null, reason: 'exceeds_search_range_high', boundFairValue: fvAtHi };
   }
   if (fvAtLo != null && fvAtLo > targetPricePerShare) {
