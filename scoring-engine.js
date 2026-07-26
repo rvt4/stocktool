@@ -370,7 +370,11 @@ function expectedCAGR(s, category) {
 
   // Valuation multiple reversion: expected annualized re-rating toward historical median over ~5yrs
   const histMult = median(s.historicalMultiples?.forwardPe || []);
-  const currentMult = s.valuation.forwardPe;
+  // Falls back to trailing P/E if forward P/E isn't populated — this component was
+  // silently dead (exactly 0.0%) on EVERY stock without this fallback, which is the
+  // signature of a missing upstream data field (s.valuation.forwardPe never being set
+  // by the data pipeline), not a case where reversion legitimately doesn't apply.
+  const currentMult = s.valuation.forwardPe ?? s.valuation.pe;
   let multipleReversionAnnualized = 0;
   if (histMult && currentMult) {
     const totalReversion = (histMult - currentMult) / currentMult;
@@ -587,6 +591,15 @@ function applyPercentileRatings(scoredStocks) {
     const pct = nqN > 0 ? i / nqN : 0;
     s.sectorPercentileTier = pct <= 0.65 ? 'Hold/Watch' : 'Avoid';
     s.rating = s.expectedCAGR < 0 ? 'Avoid' : s.sectorPercentileTier;
+    // "Avoid" should mean an actual red flag — overvalued (negative MOS), data too
+    // thin to trust (low confidence), or negative growth (handled above) — not just
+    // "ranked in the bottom third of stocks that already missed the CAGR bar." A
+    // reliable, undervalued business that simply grows slower than your target doesn't
+    // belong in the same bucket as one with a real problem; that's a "watch, not a red
+    // flag" story, and the label should say so.
+    if (s.rating === 'Avoid' && s.marginOfSafety != null && s.marginOfSafety > 0 && s.confidenceScore >= 60) {
+      s.rating = 'Hold/Watch';
+    }
   });
 
   return [...sortedQualifiers, ...sortedNonQualifiers];
