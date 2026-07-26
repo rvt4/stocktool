@@ -257,9 +257,31 @@ function dynamicMOS(category, roic) {
 // signals. Weights favor analyst estimates (most forward-looking) but meaningfully
 // discount them with historical reality, internally-financeable growth, and what the
 // market is already pricing in.
+// Median of year-over-year revenue growth rates, rather than a 2-point CAGR between
+// the oldest and newest year. A straight CAGR(start, end) rests entirely on whichever
+// single year happens to be the start point — if that year was a cyclical trough (a bad
+// underwriting year for an insurer, a demand air-pocket for an industrial/trucker), the
+// resulting "3yr CAGR" can look like 40-60% for an otherwise perfectly ordinary mature
+// business, purely as an artifact of the low anchor. The median of individual YoY growth
+// rates uses every year's information and isn't dominated by any single distorted one.
+function robustHistoricalGrowth(yrs) {
+  const yoyRates = [];
+  for (let i = 1; i < yrs.length; i++) {
+    const prev = yrs[i - 1].revenue, curr = yrs[i].revenue;
+    if (prev != null && curr != null && prev > 0) yoyRates.push(curr / prev - 1);
+  }
+  const recentRates = yoyRates.slice(-5); // up to the last 5 YoY readings
+  if (!recentRates.length) return null;
+  const sorted = [...recentRates].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
 function blendedRevenueGrowth(s, yrs, last) {
   const analystG = s.analystEstimates?.revenueGrowthFwd ?? null;
-  const historicalG = cagr(yrs[Math.max(0, yrs.length - 4)].revenue, last.revenue, Math.min(3, yrs.length - 1));
+  const historicalG = robustHistoricalGrowth(yrs);
+  // Kept only for the confidence-score distortion check below — NOT used in the blend.
+  const naiveCagr = cagr(yrs[Math.max(0, yrs.length - 4)].revenue, last.revenue, Math.min(3, yrs.length - 1));
 
   // Reinvestment-capacity-implied growth: a Gordon-growth-style ceiling on how fast a
   // business can plausibly grow itself. ROIC x reinvestment rate ≈ the sustainable
@@ -291,7 +313,11 @@ function blendedRevenueGrowth(s, yrs, last) {
   // toward zero when a source is missing.
   const totalWeight = components.reduce((sum, c) => sum + c.weight, 0);
   const blended = components.reduce((sum, c) => sum + c.value * c.weight, 0) / totalWeight;
-  return { blended, sourcesUsed: components.length, sourcesAvailable: components.map(c => c.key) };
+  // How much a naive 2-point CAGR would have diverged from the robust median — a large
+  // gap is the signature of a cyclical trough base year distorting the historical
+  // growth read, even though it's no longer what actually feeds the blend.
+  const cagrDistortion = naiveCagr != null && historicalG != null ? Math.abs(naiveCagr - historicalG) : null;
+  return { blended, sourcesUsed: components.length, sourcesAvailable: components.map(c => c.key), cagrDistortion };
 }
 
 // Expected CAGR = Revenue growth x Margin expansion x Share count reduction x Dividend yield x Valuation multiple reversion
@@ -305,7 +331,7 @@ function expectedCAGR(s, category) {
   // extrapolated forward as a steady annual rate — clamping prevents a single
   // noisy data point from producing a nonsensical -400% or +8000% "expected CAGR".
 
-  const { blended: rawRevGrowth, sourcesUsed: revGrowthSources, sourcesAvailable: revGrowthSourcesUsed } =
+  const { blended: rawRevGrowth, sourcesUsed: revGrowthSources, sourcesAvailable: revGrowthSourcesUsed, cagrDistortion } =
     blendedRevenueGrowth(s, yrs, last);
   const forwardRevGrowth = clamp(rawRevGrowth, -0.30, 0.60);
 
@@ -341,7 +367,7 @@ function expectedCAGR(s, category) {
     forwardRevGrowth + marginExpansionAnnualized + shareCountReduction + dividendYield + multipleReversionAnnualized,
     -0.50, 1.00 // belt-and-suspenders clamp on the combined total
   );
-  return { expectedCAGR: total, lowConfidence: clampedInputs, revGrowthSources, revGrowthSourcesUsed, breakdown: {
+  return { expectedCAGR: total, lowConfidence: clampedInputs, revGrowthSources, revGrowthSourcesUsed, cagrDistortion, breakdown: {
     forwardRevGrowth, marginExpansionAnnualized, shareCountReduction, dividendYield, multipleReversionAnnualized
   } };
 }
@@ -353,7 +379,7 @@ function expectedCAGR(s, category) {
 // deductions, instead of a single opaque lowConfidence boolean. This is what should
 // actually gate a Strong Buy — a stock can clear the CAGR/MOS bar on paper and still
 // be resting on data too thin to trust.
-function computeConfidenceScore(s, category, revGrowthSources, methodAgreementScore, methodCount, growthGap, marginOfSafetyDistorted) {
+function computeConfidenceScore(s, category, revGrowthSources, methodAgreementScore, methodCount, growthGap, marginOfSafetyDistorted, cagrDistortion) {
   const yrs = s.financials.years || [];
   const last = yrs[yrs.length - 1] || {};
   let score = 100;
@@ -388,6 +414,15 @@ function computeConfidenceScore(s, category, revGrowthSources, methodAgreementSc
 
   if (marginOfSafetyDistorted) ded(10, 'Raw margin of safety was an extreme value before clamping — fair value estimate is likely unreliable here');
 
+  // A naive 2-point CAGR diverging sharply from the median YoY growth rate is the
+  // signature of a cyclical trough base year (a bad underwriting year, a demand
+  // air-pocket) inflating the historical-growth read — common for mature/cyclical
+  // industrials and insurers that show up with implausible 40-60% "expected CAGR."
+  if (cagrDistortion != null) {
+    const distortionDeduction = Math.round(clamp((cagrDistortion - 0.10) / 0.10 * 15, 0, 15));
+    if (distortionDeduction > 0) ded(distortionDeduction, `Historical growth looks distorted by a cyclical base-year effect (naive vs. median YoY growth diverge by ${(cagrDistortion * 100).toFixed(0)}pp)`);
+  }
+
   const netIncomes = yrs.slice(-5).map(y => y.netIncome).filter(x => x != null);
   if (netIncomes.some(x => x < 0) && netIncomes.some(x => x > 0)) {
     ded(10, 'Cyclical earnings — net income has swung positive/negative recently');
@@ -416,7 +451,7 @@ function scoreStock(stock) {
   const catFn = CATEGORY_METRICS[category] || CATEGORY_METRICS.Value;
   const catResult = catFn(stock);
   const pricingPower = scorePricingPower(stock);
-  const { expectedCAGR: expCagr, breakdown, lowConfidence, revGrowthSources } = expectedCAGR(stock, category);
+  const { expectedCAGR: expCagr, breakdown, lowConfidence, revGrowthSources, cagrDistortion } = expectedCAGR(stock, category);
   const lastRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
   const requiredMOS = dynamicMOS(category, lastRoic);
 
@@ -438,7 +473,7 @@ function scoreStock(stock) {
   const confidence = computeConfidenceScore(
     stock, category, revGrowthSources,
     stock.valuation.methodAgreementScore ?? null, stock.valuation.methodCount ?? 0,
-    growthGap, marginOfSafetyDistorted
+    growthGap, marginOfSafetyDistorted, cagrDistortion
   );
 
   const meetsCAGRTarget = expCagr >= 0.15;
