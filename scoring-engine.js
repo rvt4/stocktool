@@ -201,7 +201,23 @@ function scorePricingPower(s) {
     if (last.revenueGrowth != null && last.unitsGrowth != null && last.revenueGrowth - last.unitsGrowth > 0.03) {
       points += 20; signals.push('Revenue growth outpacing unit growth (price-led)');
     }
-  } else { maxPoints -= 20; } // no data available, don't penalize
+  } else {
+    // Software/ad-tech/platform businesses structurally don't report physical unit
+    // volumes, so this signal is unreachable for them even though the underlying
+    // question — is growth price-led or volume-led — still applies. If ARPU (average
+    // revenue per user) is available as a digital-native proxy, use revenue growth vs.
+    // ARPU growth the same way hardware/retail names use revenue growth vs. units growth.
+    // Falls back to excluding the category (no penalty) if neither is available.
+    const withArpu = q.filter(x => x.arpuGrowth != null && x.revenue != null);
+    if (withArpu.length) {
+      const last = withArpu[withArpu.length - 1];
+      if (last.revenueGrowth != null && last.revenueGrowth - last.arpuGrowth > 0.03) {
+        points += 20; signals.push('Revenue growth outpacing ARPU growth (price-led)');
+      }
+    } else {
+      maxPoints -= 20; // no unit or ARPU data available — exclude, don't penalize
+    }
+  }
 
   // FCF margin expanding
   maxPoints += 15;
@@ -210,11 +226,17 @@ function scorePricingPower(s) {
     points += 15; signals.push('FCF margin expanding');
   }
 
-  // Inventory turnover stable/improving while margins expand (not just stuffing channel)
-  maxPoints += 10;
+  // Inventory turnover stable/improving while margins expand (not just stuffing channel).
+  // Only counts toward the denominator when inventory data actually exists — asset-light
+  // businesses (software, ad-tech, services) structurally carry no inventory, and
+  // previously this 10-point category stayed in maxPoints even for them, silently
+  // capping their achievable score below companies that happen to sell physical goods.
   const invTurns = yrs.slice(-2).map(y => y.inventoryTurnover).filter(x => x != null);
-  if (invTurns.length === 2 && invTurns[1] >= invTurns[0] * 0.95) {
-    points += 10; signals.push('Inventory turnover stable/improving');
+  if (invTurns.length === 2) {
+    maxPoints += 10;
+    if (invTurns[1] >= invTurns[0] * 0.95) {
+      points += 10; signals.push('Inventory turnover stable/improving');
+    }
   }
 
   // Earnings call keyword scan (simple free NLP — no paid AI needed)
@@ -390,7 +412,13 @@ function computeConfidenceScore(s, category, revGrowthSources, methodAgreementSc
   const yearsOfHistory = yrs.length;
   if (yearsOfHistory < 5) ded(15, `Only ${yearsOfHistory} year(s) of financial history`);
 
-  if (!s.analystEstimates?.revenueGrowthFwd) ded(10, 'No analyst estimates available');
+  // NOTE: previously docked -10 for "no analyst estimates available." Removed — with
+  // the current FMP free-tier data source, this fires on essentially every stock
+  // (AMZN and META included), which means it isn't measuring anything about THIS
+  // stock's reliability specifically; it's a permanent, universal tax that just lowers
+  // every confidence score by the same amount for no differentiating reason. If a paid
+  // tier or alternate analyst-estimate source gets added later, this is worth
+  // reinstating as a real per-stock signal.
 
   if (methodCount <= 1) {
     ded(15, `Only ${methodCount} valuation method produced a value`);

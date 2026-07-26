@@ -88,7 +88,7 @@ function estimateFairValue(stock, growthYear1) {
   return { ...dcf, marginOfSafety, currentPrice };
 }
 
-function solveImpliedGrowth({ fcfBase, terminalGrowth = 0.025, discountRate = 0.095, years = 5, netDebt = 0, sharesOut, targetPricePerShare }) {
+function solveImpliedGrowth({ fcfBase, terminalGrowth = 0.025, discountRate = 0.095, years = 10, netDebt = 0, sharesOut, targetPricePerShare }) {
   if (fcfBase == null || fcfBase <= 0 || !sharesOut || !targetPricePerShare) return { impliedGrowth: null, reason: 'missing inputs' };
   const LO = -0.50, HI = 1.50;
 

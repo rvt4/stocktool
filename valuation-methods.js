@@ -54,7 +54,7 @@ function projectFinancials(stock, growthYear1, years = 5) {
   const yrs = stock.financials.years;
   const last = yrs[yrs.length - 1];
   const dilutionRate = estimateDilutionRate(stock);
-  const mediumTermGrowth = clamp((growthYear1 ?? 0.05) * 0.4, 0.02, 0.15); // growth decays toward ~40% of its starting rate
+  const mediumTermGrowth = clamp((growthYear1 ?? 0.05) * 0.25, 0.02, 0.08); // decays toward ~25% of its starting rate, capped at 8% — meaningfully closer to DCF's 2.5% terminal assumption than a 35% grower fading only to ~14% would be
 
   const ebitdaMargins = yrs.slice(-3).map(y => y.ebitda != null && y.revenue ? y.ebitda / y.revenue : null).filter(x => x != null);
   const marginTrend = ebitdaMargins.length >= 2 ? clamp((ebitdaMargins[ebitdaMargins.length - 1] - ebitdaMargins[0]) / (ebitdaMargins.length - 1), -0.03, 0.03) : 0;
@@ -94,7 +94,7 @@ function projectFinancials(stock, growthYear1, years = 5) {
     const eps = shares ? netIncome / shares : null;
     projection.push({ year: t, revenue, ebitda, fcf, eps, shares });
   }
-  return { projection, dilutionRate, startMargin, marginTrend };
+  return { projection, dilutionRate, startMargin, marginTrend, mediumTermGrowth };
 }
 
 // ---------- Sector cross-sectional exit multiples ----------
@@ -232,11 +232,16 @@ function smoothedBase(yrs, getter) {
 function revenueExitMethod(stock, growthYear1, sectorMultiples, years = 5) {
   const rawMultiple = sectorMultiples?.evRevenue;
   if (!rawMultiple) return null;
+  const { projection, mediumTermGrowth } = projectFinancials(stock, growthYear1, years);
   const avgRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
+  // Use mediumTermGrowth (what growth has decayed TO by the exit year), not growthYear1
+  // (today's peak rate). A rich multiple justified by today's 30%+ growth doesn't
+  // transfer to year 5 once that growth has already faded toward its medium-term rate —
+  // applying today's growth-implied premium to a company that's since decelerated is
+  // exactly what was inflating every exit-multiple value even after horizon alignment.
   const { multiple: exitMultiple } = meanRevertedMultiple(
-    rawMultiple, stock.historicalMultiples?.evRevenue, avgRoic, growthYear1
+    rawMultiple, stock.historicalMultiples?.evRevenue, avgRoic, mediumTermGrowth
   );
-  const { projection } = projectFinancials(stock, growthYear1, years);
   const exitYear = projection[projection.length - 1];
   const last = stock.financials.years[stock.financials.years.length - 1];
   const netDebt = (last.longTermDebt || 0) - (last.cash || 0);
@@ -256,11 +261,11 @@ function revenueExitMethod(stock, growthYear1, sectorMultiples, years = 5) {
 function epsExitMethod(stock, growthYear1, sectorMultiples, years = 5) {
   const rawMultiple = sectorMultiples?.pe;
   if (!rawMultiple) return null;
+  const { projection, mediumTermGrowth } = projectFinancials(stock, growthYear1, years);
   const avgRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
   const { multiple: exitMultiple } = meanRevertedMultiple(
-    rawMultiple, stock.historicalMultiples?.forwardPe, avgRoic, growthYear1
+    rawMultiple, stock.historicalMultiples?.forwardPe, avgRoic, mediumTermGrowth
   );
-  const { projection } = projectFinancials(stock, growthYear1, years);
   const exitYear = projection[projection.length - 1];
   if (exitYear.eps == null || exitYear.eps <= 0) return null; // P/E is meaningless on negative earnings
 
@@ -275,11 +280,11 @@ function epsExitMethod(stock, growthYear1, sectorMultiples, years = 5) {
 function ebitdaExitMethod(stock, growthYear1, sectorMultiples, years = 5) {
   const rawMultiple = sectorMultiples?.evEbitda;
   if (!rawMultiple) return null;
+  const { projection, mediumTermGrowth } = projectFinancials(stock, growthYear1, years);
   const avgRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
   const { multiple: exitMultiple } = meanRevertedMultiple(
-    rawMultiple, stock.historicalMultiples?.evEbitda, avgRoic, growthYear1
+    rawMultiple, stock.historicalMultiples?.evEbitda, avgRoic, mediumTermGrowth
   );
-  const { projection } = projectFinancials(stock, growthYear1, years);
   const exitYear = projection[projection.length - 1];
   const last = stock.financials.years[stock.financials.years.length - 1];
   const netDebt = (last.longTermDebt || 0) - (last.cash || 0);
@@ -356,7 +361,7 @@ function fiveYearPriceTargetCAGR(stock, growthYear1, sectorMultiples) {
   const currentPrice = stock.price.current;
   if (!currentPrice) return { cagr: null, exitPrice: null, methodsUsed: 0 };
 
-  const { projection } = projectFinancials(stock, growthYear1, years);
+  const { projection, mediumTermGrowth } = projectFinancials(stock, growthYear1, years);
   const exitYear = projection[projection.length - 1];
   const last = stock.financials.years[stock.financials.years.length - 1];
   const netDebt = (last.longTermDebt || 0) - (last.cash || 0);
@@ -364,17 +369,17 @@ function fiveYearPriceTargetCAGR(stock, growthYear1, sectorMultiples) {
 
   const exitPrices = [];
   if (sectorMultiples?.evRevenue && exitYear.shares) {
-    const { multiple } = meanRevertedMultiple(sectorMultiples.evRevenue, stock.historicalMultiples?.evRevenue, avgRoic, growthYear1);
+    const { multiple } = meanRevertedMultiple(sectorMultiples.evRevenue, stock.historicalMultiples?.evRevenue, avgRoic, mediumTermGrowth);
     const price = (exitYear.revenue * multiple - netDebt) / exitYear.shares;
     if (price > 0) exitPrices.push(price);
   }
   if (sectorMultiples?.evEbitda && exitYear.shares) {
-    const { multiple } = meanRevertedMultiple(sectorMultiples.evEbitda, stock.historicalMultiples?.evEbitda, avgRoic, growthYear1);
+    const { multiple } = meanRevertedMultiple(sectorMultiples.evEbitda, stock.historicalMultiples?.evEbitda, avgRoic, mediumTermGrowth);
     const price = (exitYear.ebitda * multiple - netDebt) / exitYear.shares;
     if (price > 0) exitPrices.push(price);
   }
   if (sectorMultiples?.pe && exitYear.eps > 0) {
-    const { multiple } = meanRevertedMultiple(sectorMultiples.pe, stock.historicalMultiples?.forwardPe, avgRoic, growthYear1);
+    const { multiple } = meanRevertedMultiple(sectorMultiples.pe, stock.historicalMultiples?.forwardPe, avgRoic, mediumTermGrowth);
     const price = exitYear.eps * multiple;
     if (price > 0) exitPrices.push(price);
   }
@@ -429,13 +434,16 @@ function valuateStock(stock, sectorExitMultiples) {
   if (marginOfSafety != null) {
     const last = stock.financials.years[stock.financials.years.length - 1];
     const netDebt = (last.longTermDebt || 0) - (last.cash || 0);
-    // years: 5 — was 10, mismatched against every other method's now-5-year horizon.
-    // Solving for "what growth justifies today's price" over a different horizon than
-    // the one everything else uses made this number not comparable to the rest of the
-    // page.
+    // years: 10 here — deliberately NOT matched to the 5-year horizon the other methods
+    // use. This metric answers "what does the market need to believe, full stop" —
+    // a richly-priced durable compounder's valuation is normally justified by growth
+    // spread across 10-15 years, not compressed into 5. Forcing a 5-year window here
+    // made every richly-valued stock's implied growth read as an absurd, uninformative
+    // ">150%/yr" — that was the wrong fix. Method-comparison horizons and "what's the
+    // market pricing in" horizons are different questions and don't need to match.
     const impliedResult = solveImpliedGrowth({
       fcfBase: last.fcf, terminalGrowth: 0.025, discountRate: getDiscountRate(stock.sector),
-      years: 5, netDebt, sharesOut: last.sharesOutTTM, targetPricePerShare: currentPrice,
+      years: 10, netDebt, sharesOut: last.sharesOutTTM, targetPricePerShare: currentPrice,
     });
     marketImpliedGrowth = impliedResult.impliedGrowth;
     marketImpliedGrowthNote = impliedResult.reason !== 'converged' ? impliedResult.reason : null;
