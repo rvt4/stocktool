@@ -368,18 +368,20 @@ function expectedCAGR(s, category) {
 
   const dividendYield = clamp(s.valuation.dividendYield || 0, 0, 0.15);
 
-  // Valuation multiple reversion: expected annualized re-rating toward historical median over ~5yrs
-  const histMult = median(s.historicalMultiples?.forwardPe || []);
-  // Falls back to trailing P/E if forward P/E isn't populated — this component was
-  // silently dead (exactly 0.0%) on EVERY stock without this fallback, which is the
-  // signature of a missing upstream data field (s.valuation.forwardPe never being set
-  // by the data pipeline), not a case where reversion legitimately doesn't apply.
-  const currentMult = s.valuation.forwardPe ?? s.valuation.pe;
-  let multipleReversionAnnualized = 0;
-  if (histMult && currentMult) {
-    const totalReversion = (histMult - currentMult) / currentMult;
-    multipleReversionAnnualized = clamp(totalReversion / 5, -0.10, 0.10); // spread over 5 years
-  }
+  // NOTE: "multiple reversion" used to live here, comparing the stock's OWN historical
+  // forward P/E band to its current forward P/E. That's a self-referential check — it
+  // reads ~0% whenever a stock is trading in line with its own history, even when it's
+  // badly overvalued relative to intrinsic (DCF/exit-multiple) fair value. That's how a
+  // stock like AMD could show a high "Expected CAGR" while every valuation method in
+  // valuation-methods.js said it was trading well above blended fair value: this
+  // function never saw that gap.
+  //
+  // Removed entirely. This function now answers a narrower, deliberately price-agnostic
+  // question: how fast does the business's own per-share economic value compound,
+  // regardless of what you pay for it. The real "what do I actually earn from today's
+  // price" answer lives in fiveYearPriceTargetCAGR() (valuation-methods.js), which
+  // starts at current price and converges to a mean-reverted sector exit multiple —
+  // surfaced as `expectedReturn` in scoreStock() below.
 
   // Flag results built on noisy inputs so the frontend / you can treat them with
   // appropriately less confidence, rather than silently trusting a clamped-down number.
@@ -390,11 +392,11 @@ function expectedCAGR(s, category) {
   ].some(Boolean);
 
   const total = clamp(
-    forwardRevGrowth + marginExpansionAnnualized + shareCountReduction + dividendYield + multipleReversionAnnualized,
+    forwardRevGrowth + marginExpansionAnnualized + shareCountReduction + dividendYield,
     -0.50, 1.00 // belt-and-suspenders clamp on the combined total
   );
-  return { expectedCAGR: total, lowConfidence: clampedInputs, revGrowthSources, revGrowthSourcesUsed, cagrDistortion, breakdown: {
-    forwardRevGrowth, marginExpansionAnnualized, shareCountReduction, dividendYield, multipleReversionAnnualized
+  return { fundamentalGrowthRate: total, lowConfidence: clampedInputs, revGrowthSources, revGrowthSourcesUsed, cagrDistortion, breakdown: {
+    forwardRevGrowth, marginExpansionAnnualized, shareCountReduction, dividendYield
   } };
 }
 
@@ -483,7 +485,15 @@ function scoreStock(stock) {
   const catFn = CATEGORY_METRICS[category] || CATEGORY_METRICS.Value;
   const catResult = catFn(stock);
   const pricingPower = scorePricingPower(stock);
-  const { expectedCAGR: expCagr, breakdown, lowConfidence, revGrowthSources, cagrDistortion } = expectedCAGR(stock, category);
+  const { fundamentalGrowthRate, breakdown, lowConfidence, revGrowthSources, cagrDistortion } = expectedCAGR(stock, category);
+  // Price-aware expected return: starts at TODAY'S actual price and converges to a
+  // mean-reverted sector exit multiple 5 years out (fiveYearPriceTargetCAGR in
+  // valuation-methods.js). This is what should gate "is this a buy at today's price" —
+  // fundamentalGrowthRate deliberately does not know the price you'd pay.
+  // Requires `stock.valuation.fiveYearPriceTarget` to be populated upstream (same place
+  // that already sets `fairValueEstimate` and `valuationMethods` below) — verify
+  // run-screener.js maps the fiveYearPriceTarget object from valuateStock() through.
+  const expectedReturn = stock.valuation.fiveYearPriceTarget?.cagr ?? null;
   const lastRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
   const requiredMOS = dynamicMOS(category, lastRoic);
 
@@ -508,7 +518,11 @@ function scoreStock(stock) {
     growthGap, marginOfSafetyDistorted, cagrDistortion
   );
 
-  const meetsCAGRTarget = expCagr >= 0.15;
+  // Fall back to fundamentalGrowthRate only when a price target genuinely couldn't be
+  // computed (e.g. insufficient exit-multiple data), so stocks don't silently vanish
+  // from qualifying — but this is the weaker, price-agnostic signal, so flag it.
+  const usedFallbackForCAGRTarget = expectedReturn == null;
+  const meetsCAGRTarget = (expectedReturn ?? fundamentalGrowthRate) >= 0.15;
 
   return {
     ticker: stock.ticker,
@@ -518,7 +532,9 @@ function scoreStock(stock) {
     categoryBreakdown: catResult,
     pricingPowerScore: pricingPower.score,
     pricingPowerSignals: pricingPower.signals,
-    expectedCAGR: expCagr,
+    fundamentalGrowthRate,
+    expectedReturn,
+    usedFallbackForCAGRTarget,
     lowConfidence,
     confidenceScore: confidence.score,
     confidenceDeductions: confidence.deductions,
@@ -552,8 +568,8 @@ function applyPercentileRatings(scoredStocks) {
   // than either alone and is what collapsed the Buy list down to 2-3 names. A stock that
   // clearly clears your explicit bar shouldn't also have to out-rank hundreds of stocks
   // that don't even qualify.
-  const qualifiers = scoredStocks.filter(s => s.qualifiesForBuyList && s.expectedCAGR >= 0);
-  const nonQualifiers = scoredStocks.filter(s => !(s.qualifiesForBuyList && s.expectedCAGR >= 0));
+  const qualifiers = scoredStocks.filter(s => s.qualifiesForBuyList && (s.expectedReturn ?? s.fundamentalGrowthRate) >= 0);
+  const nonQualifiers = scoredStocks.filter(s => !(s.qualifiesForBuyList && (s.expectedReturn ?? s.fundamentalGrowthRate) >= 0));
 
   const sortedQualifiers = [...qualifiers].sort((a, b) => b.sectorRelativeScore - a.sectorRelativeScore);
   const qn = sortedQualifiers.length;
@@ -590,7 +606,7 @@ function applyPercentileRatings(scoredStocks) {
   sortedNonQualifiers.forEach((s, i) => {
     const pct = nqN > 0 ? i / nqN : 0;
     s.sectorPercentileTier = pct <= 0.65 ? 'Hold/Watch' : 'Avoid';
-    s.rating = s.expectedCAGR < 0 ? 'Avoid' : s.sectorPercentileTier;
+    s.rating = (s.expectedReturn ?? s.fundamentalGrowthRate) < 0 ? 'Avoid' : s.sectorPercentileTier;
     // "Avoid" should mean an actual red flag — overvalued (negative MOS), data too
     // thin to trust (low confidence), or negative growth (handled above) — not just
     // "ranked in the bottom third of stocks that already missed the CAGR bar." A

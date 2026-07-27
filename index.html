@@ -22,6 +22,7 @@
   .Avoid { background: #4d1f1f; color: #e89a9a; }
   .pos { color: #75d99a; }
   .neg { color: #e89a9a; }
+  .muted { color: #777; }
   .detail { display: none; background: #131314; padding: 10px 14px; font-size: 0.8rem; color: #bbb; }
   .detail.open { display: table-row; }
   .sig { display: block; margin: 2px 0; }
@@ -37,7 +38,7 @@
     <select id="categoryFilter"><option value="">All categories</option></select>
     <select id="ratingFilter"><option value="">All ratings</option></select>
     <input id="tickerSearch" placeholder="Search ticker...">
-    <label style="font-size:0.85rem;color:#aaa;"><input type="checkbox" id="qualifiesOnly"> 15% CAGR + MOS only</label>
+    <label style="font-size:0.85rem;color:#aaa;"><input type="checkbox" id="qualifiesOnly"> 15% return + MOS only</label>
   </div>
   <table id="tbl">
     <thead>
@@ -45,7 +46,8 @@
         <th data-key="ticker">Ticker</th>
         <th data-key="category">Category</th>
         <th data-key="rating">Rating</th>
-        <th data-key="expectedCAGR">Exp. CAGR</th>
+        <th data-key="expectedReturn">Exp. Return</th>
+        <th data-key="fundamentalGrowthRate">Fund. Growth</th>
         <th data-key="marginOfSafety">MOS</th>
         <th data-key="requiredMOS">Req. MOS</th>
         <th data-key="confidenceScore">Confidence</th>
@@ -104,11 +106,16 @@ function render() {
     tr.style.cursor = 'pointer';
     const cagrFlag = s.lowConfidence ? ' ⚠️' : '';
     const mosFlag = s.marginOfSafetyDistorted ? ' ⚠️' : '';
+    const fallbackFlag = s.usedFallbackForCAGRTarget ? ' *' : '';
+    const returnDisplay = s.expectedReturn != null
+      ? `<span class="${s.expectedReturn >= 0.15 ? 'pos' : 'neg'}">${pct(s.expectedReturn)}</span>`
+      : `<span class="muted">n/a${fallbackFlag}</span>`;
     tr.innerHTML = `
       <td><strong>${s.ticker}</strong></td>
       <td>${s.category}</td>
       <td><span class="badge ${ratingClass(s.rating)}">${s.rating}</span></td>
-      <td class="${s.expectedCAGR >= 0.15 ? 'pos' : 'neg'}">${pct(s.expectedCAGR)}${cagrFlag}</td>
+      <td>${returnDisplay}</td>
+      <td class="${s.fundamentalGrowthRate >= 0.15 ? 'pos' : 'neg'}">${pct(s.fundamentalGrowthRate)}${cagrFlag}</td>
       <td class="${s.marginOfSafety >= s.requiredMOS ? 'pos' : 'neg'}">${pct(s.marginOfSafety)}${mosFlag}</td>
       <td>${pct(s.requiredMOS)}</td>
       <td class="${confClass(s.confidenceScore)}">${s.confidenceScore ?? '—'}</td>
@@ -131,19 +138,21 @@ function render() {
       .map(d => `<span class="sig">• −${d.points}: ${d.reason}</span>`).join('') || '<span class="sig">No deductions</span>';
     const detail = document.createElement('tr');
     detail.className = 'detail';
-    detail.innerHTML = `<td colspan="10">
-      ${s.lowConfidence ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Multiple growth inputs hit their sanity clamp for this stock — treat the CAGR figure with extra caution.</div>' : ''}
+    detail.innerHTML = `<td colspan="11">
+      ${s.lowConfidence ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Multiple growth inputs hit their sanity clamp for this stock — treat the fundamental growth figure with extra caution.</div>' : ''}
       ${s.marginOfSafetyDistorted ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Raw margin of safety was an extreme value, clamped to ±100% for display.</div>' : ''}
+      ${s.usedFallbackForCAGRTarget ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ No price-aware return could be computed for this stock (missing exit-multiple data) — the qualify/rating decision fell back to fundamental growth rate alone, which does not account for today\'s entry price.</div>' : ''}
       ${s.methodCount >= 2 && s.methodAgreementScore != null && s.methodAgreementScore < 40 ? `<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Valuation methods disagree significantly (agreement score ${s.methodAgreementScore}/100) — the blended fair value rests on shaky consensus.</div>` : ''}
       <strong>Confidence: ${s.confidenceScore ?? '—'}/100</strong>
       <br>${confDeductions}
       <br><strong>Growth source:</strong> ${s.growthSource === 'analyst_consensus' ? 'Finnhub analyst consensus' : 'Blended recent-quarter + trailing SEC data'}
-      <br><strong>Expected CAGR breakdown:</strong>
+      <br><strong>Expected Return</strong> (price-aware — starts at today's price, converges to a mean-reverted 5yr exit multiple): ${s.expectedReturn != null ? pct(s.expectedReturn) : 'n/a — insufficient exit-multiple data'}
+      <br><strong>Fundamental Growth Rate</strong> (price-agnostic — how fast the business's own per-share value compounds): ${pct(s.fundamentalGrowthRate)}
+      <br><strong>Fund. growth breakdown:</strong>
       Rev growth ${pct(s.cagrBreakdown.forwardRevGrowth)} ·
       Margin exp. ${pct(s.cagrBreakdown.marginExpansionAnnualized)} ·
       Buybacks ${pct(s.cagrBreakdown.shareCountReduction)} ·
-      Div yield ${pct(s.cagrBreakdown.dividendYield)} ·
-      Multiple reversion ${pct(s.cagrBreakdown.multipleReversionAnnualized)}
+      Div yield ${pct(s.cagrBreakdown.dividendYield)}
       <br><strong>Market-implied growth</strong> (what the current price requires to be fair): ${impliedText}
       <br><strong>Valuation methods</strong> (blended = weighted average, agreement ${s.methodAgreementScore ?? '—'}/100 from ${s.methodCount} method${s.methodCount === 1 ? '' : 's'}):
       <br>${methodsText}
