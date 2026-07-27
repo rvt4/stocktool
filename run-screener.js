@@ -190,6 +190,9 @@ async function run() {
     stock.valuation.marketImpliedGrowthNote = result.marketImpliedGrowthNote;
     stock.valuation.dilutionRate = result.dilutionRate;
     stock.valuation.sbcIntensity = result.sbcIntensity;
+    stock.valuation.capitalAllocation = result.capitalAllocation;
+    stock.valuation.analystReliability = result.analystReliability;
+    stock.valuation.reverseDCFGap = result.reverseDCFGap;
     // Powers the price-aware `expectedReturn` field in scoring-engine.js — without this,
     // every stock falls back to the price-agnostic fundamentalGrowthRate for the buy-list
     // gate, silently losing the "is this a buy at today's price" signal.

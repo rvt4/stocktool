@@ -1,4 +1,4 @@
-/** FreeScreener DCF helpers — V3.0 */
+/** FreeScreener DCF helpers — V3.5 */
 const SECTOR_BASE_DISCOUNT_RATES = {
   'Technology': 0.095,
   'Consumer Discretionary': 0.098,
@@ -24,6 +24,8 @@ function getDynamicDiscountRate(stock, category = 'Value') {
   const marketCap = stock?.valuation?.marketCap || 0;
   const avgRoic = mean(yrs.slice(-3).map(y => y.roic).filter(Number.isFinite));
   const debtToEbitda = last.debtToEbitda;
+  const interestCoverage = last.interestCoverage ?? stock?.valuation?.interestCoverage ?? null;
+  const beta = stock?.valuation?.beta ?? null;
   const positiveYears = yrs.slice(-5).filter(y => y.netIncome > 0).length;
   const fcfPositiveYears = yrs.slice(-5).filter(y => y.fcf > 0).length;
   const opMargins = yrs.slice(-5).map(y => y.opMargin).filter(Number.isFinite);
@@ -43,6 +45,8 @@ function getDynamicDiscountRate(stock, category = 'Value') {
     else if (debtToEbitda < 1) rate -= 0.002;
   }
   if (positiveYears <= 2 || fcfPositiveYears <= 2) rate += 0.010;
+  if (interestCoverage != null) { if (interestCoverage < 2) rate += 0.012; else if (interestCoverage > 8) rate -= 0.003; }
+  if (beta != null) rate += clamp((beta - 1) * 0.008, -0.006, 0.012);
   if (marginVolatility > 0.08) rate += 0.008;
   else if (marginVolatility < 0.025) rate -= 0.002;
 

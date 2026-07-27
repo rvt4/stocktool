@@ -1,5 +1,5 @@
 /**
- * FreeScreener V3.0 valuation engine
+ * FreeScreener V3.5 valuation engine
  *
  * V3.0 principles:
  *  - one shared five-year operating projection for every valuation method
@@ -314,6 +314,79 @@ function meanRevertedMultiple(currentMultiple, ownHistoricalMultiples, stockOrRo
   return { multiple: result.multiple, target: result.qualityAdjustedSector, weight: result.qualityPremiumRetained };
 }
 
+// ---------- V3.5 reliability + capital allocation ----------
+function analystReliability(stock) {
+  const e = stock.analystEstimates || {};
+  const n = Number(e.numAnalysts || 0);
+  const meanTarget = e.analystTargetMean;
+  const low = e.analystTargetLow;
+  const high = e.analystTargetHigh;
+  const coverage = clamp(n / 25, 0.25, 1);
+  const dispersion = meanTarget > 0 && low > 0 && high > 0
+    ? clamp((high - low) / meanTarget, 0, 2) : 0.55;
+  const dispersionScore = clamp(1 - dispersion / 1.25, 0.20, 1);
+  const twoYear = e.revenueGrowthCurrentYear != null && e.revenueGrowthNextYear != null ? 1 : 0.72;
+  return clamp(coverage * 0.45 + dispersionScore * 0.35 + twoYear * 0.20, 0.25, 1);
+}
+
+function capitalAllocationScore(stock) {
+  const yrs = stock.financials?.years || [];
+  if (yrs.length < 2) return { score: 50, signals: ['Limited capital-allocation history'] };
+  const last = yrs.at(-1) || {};
+  const prev = yrs.at(-2) || {};
+  const signals = [];
+  let score = 50;
+  const shares = yrs.slice(-4).map(y => y.sharesOutTTM).filter(x => x > 0);
+  const dilution = shares.length >= 2 ? cagr(shares[0], shares.at(-1), shares.length - 1) : null;
+  if (dilution != null && dilution <= -0.01) { score += 15; signals.push('Net share count declining'); }
+  else if (dilution != null && dilution >= 0.03) { score -= 18; signals.push('Meaningful shareholder dilution'); }
+  const debtChange = prev.longTermDebt > 0 ? (last.longTermDebt - prev.longTermDebt) / prev.longTermDebt : null;
+  if (debtChange != null && debtChange <= -0.10) { score += 10; signals.push('Debt declining'); }
+  else if (debtChange != null && debtChange >= 0.25) { score -= 10; signals.push('Debt rising quickly'); }
+  const avgRoic = mean(yrs.slice(-3).map(y => y.roic).filter(Number.isFinite));
+  if (avgRoic != null && avgRoic >= 0.20) { score += 15; signals.push('High returns on invested capital'); }
+  else if (avgRoic != null && avgRoic < 0.06) { score -= 12; signals.push('Low returns on invested capital'); }
+  const payout = stock.valuation?.dividendYield || 0;
+  if (payout > 0.02 && last.fcf > 0) { score += 5; signals.push('Dividend supported by free cash flow'); }
+  const sbcIntensity = last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : 0;
+  if (sbcIntensity > 0.12) { score -= 12; signals.push('Heavy stock-based compensation'); }
+  return { score: Math.round(clamp(score, 0, 100)), signals };
+}
+
+function ownerEarningsFromProjection(stock, model) {
+  const last = stock.financials.years.at(-1) || {};
+  const discountRate = getDynamicDiscountRate(stock, model.category);
+  const terminalGrowth = getDynamicTerminalGrowth(stock, model.category);
+  const netDebt = (last.longTermDebt || 0) - (last.cash || 0);
+  const daMargin = last.da != null && last.revenue > 0 ? clamp(last.da / last.revenue, 0, 0.25)
+    : last.ebitda != null && last.operatingIncome != null && last.revenue > 0
+      ? clamp((last.ebitda - last.operatingIncome) / last.revenue, 0, 0.25) : 0.04;
+  const capexMargin = last.capex != null && last.revenue > 0 ? clamp(last.capex / last.revenue, 0, 0.30) : daMargin;
+  const maintenanceCapexMargin = Math.min(capexMargin, daMargin * 1.10);
+  const sbcMargin = last.sbc != null && last.revenue > 0 ? clamp(last.sbc / last.revenue, 0, 0.25) : 0;
+  let pvExplicit = 0;
+  const yearly = model.projection.map(row => {
+    const ownerEarnings = row.netIncome + row.revenue * daMargin - row.revenue * maintenanceCapexMargin - row.revenue * sbcMargin;
+    const presentValue = ownerEarnings / Math.pow(1 + discountRate, row.year);
+    pvExplicit += presentValue;
+    return { year: row.year, ownerEarnings, presentValue };
+  });
+  const finalOE = yearly.at(-1)?.ownerEarnings;
+  if (!(finalOE > 0) || !(last.sharesOutTTM > 0) || discountRate <= terminalGrowth) {
+    return { fairValuePerShare: null, audit: { reason: 'non-positive owner earnings', yearly, discountRate, terminalGrowth } };
+  }
+  const terminalValue = finalOE * (1 + terminalGrowth) / (discountRate - terminalGrowth);
+  const pvTerminalValue = terminalValue / Math.pow(1 + discountRate, model.projection.length);
+  const enterpriseValue = pvExplicit + pvTerminalValue;
+  const equityValue = enterpriseValue - netDebt;
+  return { fairValuePerShare: equityValue > 0 ? equityValue / last.sharesOutTTM : null, audit: {
+    method: 'Owner Earnings DCF', discountRate, terminalGrowth, daMargin, maintenanceCapexMargin, sbcMargin,
+    pvExplicitOwnerEarnings: pvExplicit, terminalValue, pvTerminalValue,
+    terminalValueShareOfEnterpriseValue: enterpriseValue ? pvTerminalValue / enterpriseValue : null,
+    enterpriseValue, netDebt, equityValue, currentDilutedShares: last.sharesOutTTM, yearly,
+  }};
+}
+
 // ---------- DCF ----------
 function dcfFromProjection(stock, model, { sbcAdjusted = false } = {}) {
   const last = stock.financials.years.at(-1) || {};
@@ -404,35 +477,47 @@ function exitMethod(stock, model, sectorMultiples, type) {
 }
 
 const CATEGORY_METHOD_WEIGHTS = {
-  'Hyper Growth': { dcf: 0.14, dcfSBCAdjusted: 0.08, revenueExit: 0.28, epsExit: 0.34, ebitdaExit: 0.16 },
-  Growth:         { dcf: 0.17, dcfSBCAdjusted: 0.09, revenueExit: 0.24, epsExit: 0.32, ebitdaExit: 0.18 },
-  Compounder:     { dcf: 0.23, dcfSBCAdjusted: 0.12, revenueExit: 0.12, epsExit: 0.31, ebitdaExit: 0.22 },
-  Value:          { dcf: 0.30, dcfSBCAdjusted: 0.14, revenueExit: 0.04, epsExit: 0.24, ebitdaExit: 0.28 },
-  Dividend:       { dcf: 0.34, dcfSBCAdjusted: 0.12, revenueExit: 0.03, epsExit: 0.26, ebitdaExit: 0.25 },
-  Turnaround:     { dcf: 0.20, dcfSBCAdjusted: 0.08, revenueExit: 0.10, epsExit: 0.22, ebitdaExit: 0.40 },
-  Cyclical:       { dcf: 0.22, dcfSBCAdjusted: 0.08, revenueExit: 0.06, epsExit: 0.22, ebitdaExit: 0.42 },
+  'Hyper Growth': { dcf: 0.09, dcfSBCAdjusted: 0.05, ownerEarnings: 0.10, revenueExit: 0.25, epsExit: 0.34, ebitdaExit: 0.17 },
+  Growth:         { dcf: 0.12, dcfSBCAdjusted: 0.06, ownerEarnings: 0.12, revenueExit: 0.21, epsExit: 0.31, ebitdaExit: 0.18 },
+  Compounder:     { dcf: 0.17, dcfSBCAdjusted: 0.08, ownerEarnings: 0.18, revenueExit: 0.10, epsExit: 0.27, ebitdaExit: 0.20 },
+  Value:          { dcf: 0.24, dcfSBCAdjusted: 0.10, ownerEarnings: 0.20, revenueExit: 0.03, epsExit: 0.20, ebitdaExit: 0.23 },
+  Dividend:       { dcf: 0.27, dcfSBCAdjusted: 0.08, ownerEarnings: 0.22, revenueExit: 0.02, epsExit: 0.20, ebitdaExit: 0.21 },
+  Turnaround:     { dcf: 0.16, dcfSBCAdjusted: 0.06, ownerEarnings: 0.12, revenueExit: 0.08, epsExit: 0.20, ebitdaExit: 0.38 },
+  Cyclical:       { dcf: 0.17, dcfSBCAdjusted: 0.06, ownerEarnings: 0.12, revenueExit: 0.05, epsExit: 0.18, ebitdaExit: 0.42 },
 };
 
-function combineValuations(methods, category = 'Value') {
+function methodSpecificReliability(stock, key, value, center) {
+  const last = stock.financials.years.at(-1) || {};
+  const analyst = analystReliability(stock);
+  const ratio = Math.max(value / center, center / value);
+  let r = ratio <= 1.35 ? 1 : ratio <= 1.75 ? 0.82 : ratio <= 2.4 ? 0.58 : 0.32;
+  if (key === 'epsExit') r *= analyst;
+  if (key === 'revenueExit') r *= clamp(0.65 + analyst * 0.35, 0.55, 1);
+  if ((key === 'dcf' || key === 'dcfSBCAdjusted') && !(last.fcf > 0)) r *= 0.25;
+  if (key === 'ownerEarnings' && !(last.netIncome > 0)) r *= 0.35;
+  const sbcIntensity = last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : 0;
+  if (key === 'dcf' && sbcIntensity > 0.10) r *= 0.70;
+  if (key === 'dcfSBCAdjusted' && sbcIntensity < 0.02) r *= 0.75;
+  return clamp(r, 0.15, 1);
+}
+
+function combineValuations(methods, category = 'Value', stock = null) {
   const base = CATEGORY_METHOD_WEIGHTS[category] || CATEGORY_METHOD_WEIGHTS.Value;
   const available = Object.entries(methods).filter(([, v]) => Number.isFinite(v) && v > 0);
   if (!available.length) return { blendedFairValue: null, agreementScore: null, methodCount: 0, effectiveWeights: {}, reliabilityFlags: [] };
   const center = median(available.map(([, v]) => v));
   const reliabilityFlags = [];
   const weighted = available.map(([key, value]) => {
-    const ratio = Math.max(value / center, center / value);
-    const reliability = ratio <= 1.4 ? 1 : ratio <= 1.8 ? 0.80 : ratio <= 2.5 ? 0.55 : 0.30;
-    if (reliability < 1) reliabilityFlags.push({ method: key, value, consensusMedian: center, ratio, reliability });
+    const reliability = stock ? methodSpecificReliability(stock, key, value, center) : 1;
+    if (reliability < 0.98) reliabilityFlags.push({ method: key, value, consensusMedian: center, ratio: Math.max(value / center, center / value), reliability });
     return { key, value, weight: (base[key] || 0) * reliability };
   });
   const blendedFairValue = weightedAverage(weighted);
-  const total = weighted.reduce((s, x) => s + x.weight, 0);
+  const total = weighted.reduce((sum, x) => sum + x.weight, 0);
   const effectiveWeights = Object.fromEntries(weighted.map(x => [x.key, total ? x.weight / total : 0]));
-  const values = available.map(([, v]) => v);
-  const avg = mean(values);
-  const sd = values.length > 1 ? Math.sqrt(mean(values.map(v => (v - avg) ** 2))) : 0;
-  const agreementScore = Math.round(clamp(100 - (avg > 0 ? sd / avg : 1) * 120, 0, 100));
-  return { blendedFairValue, agreementScore, methodCount: values.length, effectiveWeights, reliabilityFlags };
+  const robustDeviations = available.map(([, v]) => Math.abs(v - center) / center);
+  const agreementScore = Math.round(clamp(100 - (median(robustDeviations) || 0) * 150, 0, 100));
+  return { blendedFairValue, agreementScore, methodCount: available.length, effectiveWeights, reliabilityFlags };
 }
 
 function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
@@ -458,14 +543,15 @@ function valuateStock(stock, sectorExitMultiples) {
   const model = projectFinancials(stock, stock.growthYear1, 5);
   const dcf = dcfFromProjection(stock, model, { sbcAdjusted: false });
   const dcfSBCAdjusted = dcfFromProjection(stock, model, { sbcAdjusted: true });
+  const ownerEarnings = ownerEarningsFromProjection(stock, model);
   const revenueExit = exitMethod(stock, model, sectorMultiples, 'revenueExit');
   const epsExit = exitMethod(stock, model, sectorMultiples, 'epsExit');
   const ebitdaExit = exitMethod(stock, model, sectorMultiples, 'ebitdaExit');
   const methods = {
-    dcf: dcf.fairValuePerShare, dcfSBCAdjusted: dcfSBCAdjusted.fairValuePerShare,
+    dcf: dcf.fairValuePerShare, dcfSBCAdjusted: dcfSBCAdjusted.fairValuePerShare, ownerEarnings: ownerEarnings.fairValuePerShare,
     revenueExit: revenueExit.fairValuePerShare, epsExit: epsExit.fairValuePerShare, ebitdaExit: ebitdaExit.fairValuePerShare,
   };
-  const combined = combineValuations(methods, category);
+  const combined = combineValuations(methods, category, stock);
   const exitResults = { revenueExit, epsExit, ebitdaExit };
   const fiveYearPriceTarget = fiveYearPriceTargetCAGR(stock, model, exitResults, combined.effectiveWeights);
   const currentPrice = stock.price.current;
@@ -491,16 +577,17 @@ function valuateStock(stock, sectorExitMultiples) {
     agreementScore: combined.agreementScore, methodCount: combined.methodCount,
     effectiveWeights: combined.effectiveWeights, reliabilityFlags: combined.reliabilityFlags,
     outlierFlags: combined.reliabilityFlags, marginOfSafety, fiveYearPriceTarget,
-    marketImpliedGrowth, marketImpliedGrowthNote,
+    marketImpliedGrowth, marketImpliedGrowthNote, reverseDCFGap: marketImpliedGrowth != null ? model.growthModel.assumptions.year1 - marketImpliedGrowth : null,
+    capitalAllocation: capitalAllocationScore(stock), analystReliability: analystReliability(stock),
     dilutionRate: model.dilutionRate,
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '3.0', category, discountRate, terminalGrowth,
+      version: '3.5', category, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
-      dcf: dcf.audit, dcfSBCAdjusted: dcfSBCAdjusted.audit,
+      dcf: dcf.audit, dcfSBCAdjusted: dcfSBCAdjusted.audit, ownerEarnings: ownerEarnings.audit,
       revenueExit: revenueExit.audit, epsExit: epsExit.audit, ebitdaExit: ebitdaExit.audit,
     },
   };
@@ -509,7 +596,7 @@ function valuateStock(stock, sectorExitMultiples) {
 const api = {
   computeSectorExitMultiples, valuateStock, projectFinancials, estimateDilutionRate,
   combineValuations, meanRevertedMultiple, qualityPremiumWeight, fiveYearPriceTargetCAGR,
-  inferValuationCategory, buildGrowthPath, intelligentExitMultiple,
+  inferValuationCategory, buildGrowthPath, intelligentExitMultiple, analystReliability, capitalAllocationScore, ownerEarningsFromProjection,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 if (typeof window !== 'undefined') window.ValuationMethods = api;
