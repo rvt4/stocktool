@@ -32,6 +32,7 @@ under "SKIP" after the first run.
 import os
 import sys
 import time
+import math
 import logging
 from datetime import datetime, timezone
 
@@ -41,13 +42,34 @@ import yfinance as yf
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("analyst_estimates")
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
+# .rstrip("/") guards against a trailing slash in the secret producing a double slash
+# (e.g. "https://xyz.supabase.co/" + "/rest/v1/...") — PostgREST returns a bare 404
+# "Invalid path specified" for that, which looks like a permissions/routing problem but
+# is really just a string-formatting issue.
+SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 TABLE_NAME = "analyst_estimates_cache"
 
 # Small delay between tickers — yfinance scrapes Yahoo's unofficial endpoints, and going
 # too fast risks a temporary IP-level throttle for the whole run, not just one ticker.
 REQUEST_DELAY_SECONDS = 0.4
+
+
+def clean_number(x):
+    """yfinance/pandas returns NaN (not None) for missing numeric fields. NaN passes
+    right through `is not None` checks, and Python's json.dumps raises on NaN/Infinity
+    by default — one bad ticker's NaN was enough to crash the entire batch upsert and
+    kill the whole run. Route every numeric field through this before it goes in the
+    payload."""
+    if x is None:
+        return None
+    try:
+        x = float(x)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(x) or math.isinf(x):
+        return None
+    return x
 
 
 def load_tickers(path="watchlist.json"):
@@ -87,8 +109,9 @@ def fetch_one(ticker):
             rev_est = t.get_revenue_estimate()
             if rev_est is not None and "0y" in rev_est.index:
                 row = rev_est.loc["0y"]
-                revenue_growth_fwd = float(row.get("growth")) if row.get("growth") is not None else None
-                num_analysts = int(row.get("numberOfAnalysts")) if row.get("numberOfAnalysts") is not None else None
+                revenue_growth_fwd = clean_number(row.get("growth"))
+                raw_num_analysts = clean_number(row.get("numberOfAnalysts"))
+                num_analysts = int(raw_num_analysts) if raw_num_analysts is not None else None
         except Exception as e:
             log.warning(f"{ticker}: revenue estimate fetch failed ({e})")
 
@@ -96,7 +119,7 @@ def fetch_one(ticker):
             eps_est = t.get_earnings_estimate()
             if eps_est is not None and "0y" in eps_est.index:
                 row = eps_est.loc["0y"]
-                eps_growth_fwd = float(row.get("growth")) if row.get("growth") is not None else None
+                eps_growth_fwd = clean_number(row.get("growth"))
         except Exception as e:
             log.warning(f"{ticker}: earnings estimate fetch failed ({e})")
 
@@ -107,9 +130,9 @@ def fetch_one(ticker):
                 # yfinance has returned this as either a dict or a DataFrame across
                 # versions — handle both defensively.
                 if isinstance(targets, dict):
-                    analyst_target_mean = targets.get("mean")
+                    analyst_target_mean = clean_number(targets.get("mean"))
                 elif hasattr(targets, "loc") and "mean" in getattr(targets, "columns", []):
-                    analyst_target_mean = float(targets["mean"].iloc[0])
+                    analyst_target_mean = clean_number(targets["mean"].iloc[0])
         except Exception as e:
             log.warning(f"{ticker}: price target fetch failed ({e})")
 
