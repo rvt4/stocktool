@@ -46,7 +46,16 @@ log = logging.getLogger("analyst_estimates")
 # (e.g. "https://xyz.supabase.co/" + "/rest/v1/...") — PostgREST returns a bare 404
 # "Invalid path specified" for that, which looks like a permissions/routing problem but
 # is really just a string-formatting issue.
-SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
+_raw_supabase_url = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
+# Also guard against the secret holding the FULL REST endpoint
+# ("https://xyz.supabase.co/rest/v1") instead of just the project base URL
+# ("https://xyz.supabase.co") — an easy mistake since Supabase's dashboard surfaces the
+# /rest/v1 URL prominently. Without this, the URL built below duplicates the path
+# (".../rest/v1/rest/v1/analyst_estimates_cache"), which is exactly the kind of thing
+# PostgREST rejects with PGRST125 "Invalid path specified in request URL".
+if _raw_supabase_url.endswith("/rest/v1"):
+    _raw_supabase_url = _raw_supabase_url[: -len("/rest/v1")]
+SUPABASE_URL = _raw_supabase_url
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 TABLE_NAME = "analyst_estimates_cache"
 
@@ -168,7 +177,10 @@ def upsert_batch(rows):
     }
     resp = requests.post(url, headers=headers, json=rows, timeout=30)
     if resp.status_code not in (200, 201, 204):
-        log.error(f"Supabase upsert failed ({resp.status_code}): {resp.text[:500]}")
+        # Log the actual URL that was requested (safe — contains no secret, the key
+        # goes in a header, not the URL) so a routing/path problem shows up directly in
+        # the log instead of requiring another round of guessing.
+        log.error(f"Supabase upsert failed ({resp.status_code}) for URL {resp.url}: {resp.text[:500]}")
     else:
         log.info(f"Upserted {len(rows)} rows to {TABLE_NAME}")
 
@@ -177,6 +189,8 @@ def main():
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         log.error("SUPABASE_URL / SUPABASE_SERVICE_KEY not set — check GitHub Secrets.")
         sys.exit(1)
+
+    log.info(f"Resolved Supabase endpoint: {SUPABASE_URL}/rest/v1/{TABLE_NAME}")
 
     tickers = load_tickers()
     batch = []
