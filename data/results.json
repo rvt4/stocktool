@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-26T17:46:10.551Z",
+  "generatedAt": "2026-07-27T00:19:00.624Z",
   "count": 891,
   "partial": false,
   "stocks": [
@@ -6106,7 +6106,7 @@
       "sectorRelativeScore": 83,
       "comparisonGroupSize": 21,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "LDOS",
@@ -6850,7 +6850,7 @@
       "sectorRelativeScore": 77,
       "comparisonGroupSize": 33,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "PNR",
@@ -8869,7 +8869,7 @@
       "sectorRelativeScore": 72,
       "comparisonGroupSize": 26,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "MTG",
@@ -9112,7 +9112,7 @@
       "sectorRelativeScore": 72,
       "comparisonGroupSize": 71,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "VTRS",
@@ -9170,7 +9170,7 @@
       "sectorRelativeScore": 71,
       "comparisonGroupSize": 41,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "ZS",
@@ -10540,7 +10540,7 @@
       "sectorRelativeScore": 69,
       "comparisonGroupSize": 71,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "GAP",
@@ -11645,7 +11645,7 @@
       "sectorRelativeScore": 68,
       "comparisonGroupSize": 53,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "ADSK",
@@ -13370,7 +13370,7 @@
       "sectorRelativeScore": 65,
       "comparisonGroupSize": 33,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "CPT",
@@ -13496,7 +13496,7 @@
       "sectorRelativeScore": 65,
       "comparisonGroupSize": 11,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "NNN",
@@ -14708,7 +14708,7 @@
       "sectorRelativeScore": 63,
       "comparisonGroupSize": 26,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "SON",
@@ -19031,7 +19031,7 @@
       "sectorRelativeScore": 60,
       "comparisonGroupSize": 36,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "DDS",
@@ -24538,7 +24538,7 @@
       "sectorRelativeScore": 55,
       "comparisonGroupSize": 28,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "AIT",
@@ -25490,7 +25490,7 @@
       "sectorRelativeScore": 54,
       "comparisonGroupSize": 32,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "FAF",
@@ -27729,7 +27729,7 @@
       "sectorRelativeScore": 52,
       "comparisonGroupSize": 91,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "PCTY",
@@ -29270,7 +29270,7 @@
       "sectorRelativeScore": 51,
       "comparisonGroupSize": 26,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "TXRH",
@@ -31466,7 +31466,7 @@
       "sectorRelativeScore": 49,
       "comparisonGroupSize": 3,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "USFD",
@@ -32216,7 +32216,7 @@
       "sectorRelativeScore": 49,
       "comparisonGroupSize": 6,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "VVV",
@@ -34952,7 +34952,7 @@
       "sectorRelativeScore": 47,
       "comparisonGroupSize": 6,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "PL",
@@ -36469,7 +36469,7 @@
       "sectorRelativeScore": 46,
       "comparisonGroupSize": 12,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "WHR",
@@ -37689,7 +37689,7 @@
       "sectorRelativeScore": 44,
       "comparisonGroupSize": 9,
       "sectorPercentileTier": "Hold/Watch",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "MLM",
@@ -38767,7 +38767,7 @@
       "sectorRelativeScore": 43,
       "comparisonGroupSize": 71,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "USB",
@@ -38827,7 +38827,7 @@
       "sectorRelativeScore": 43,
       "comparisonGroupSize": 71,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "TRV",
@@ -38887,7 +38887,7 @@
       "sectorRelativeScore": 43,
       "comparisonGroupSize": 71,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "AFL",
@@ -39071,7 +39071,7 @@
       "sectorRelativeScore": 43,
       "comparisonGroupSize": 71,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "PRU",
@@ -39513,7 +39513,7 @@
       "sectorRelativeScore": 43,
       "comparisonGroupSize": 71,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "WRB",
@@ -39695,7 +39695,7 @@
       "sectorRelativeScore": 43,
       "comparisonGroupSize": 71,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "FNF",
@@ -40129,7 +40129,7 @@
       "sectorRelativeScore": 43,
       "comparisonGroupSize": 71,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "AGO",
@@ -40516,7 +40516,7 @@
       "sectorRelativeScore": 42,
       "comparisonGroupSize": 36,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "APP",
@@ -40701,7 +40701,7 @@
       "sectorRelativeScore": 42,
       "comparisonGroupSize": 36,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "FICO",
@@ -40823,7 +40823,7 @@
       "sectorRelativeScore": 42,
       "comparisonGroupSize": 36,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "INSM",
@@ -41282,7 +41282,7 @@
       "sectorRelativeScore": 42,
       "comparisonGroupSize": 31,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "FDS",
@@ -41399,7 +41399,7 @@
       "sectorRelativeScore": 42,
       "comparisonGroupSize": 31,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "STAG",
@@ -41628,7 +41628,7 @@
       "sectorRelativeScore": 41,
       "comparisonGroupSize": 7,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "BX",
@@ -42133,7 +42133,7 @@
       "sectorRelativeScore": 41,
       "comparisonGroupSize": 23,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "LBRDA",
@@ -42196,7 +42196,7 @@
       "sectorRelativeScore": 41,
       "comparisonGroupSize": 23,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "ABBV",
@@ -42515,7 +42515,7 @@
       "sectorRelativeScore": 40,
       "comparisonGroupSize": 17,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "HPE",
@@ -43671,7 +43671,7 @@
       "sectorRelativeScore": 40,
       "comparisonGroupSize": 33,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "IPGP",
@@ -43801,7 +43801,7 @@
       "sectorRelativeScore": 40,
       "comparisonGroupSize": 33,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "SCHW",
@@ -43917,7 +43917,7 @@
       "sectorRelativeScore": 39,
       "comparisonGroupSize": 21,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "AEE",
@@ -43984,7 +43984,7 @@
       "sectorRelativeScore": 39,
       "comparisonGroupSize": 21,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "ATO",
@@ -44046,7 +44046,7 @@
       "sectorRelativeScore": 39,
       "comparisonGroupSize": 21,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "CNP",
@@ -44109,7 +44109,7 @@
       "sectorRelativeScore": 39,
       "comparisonGroupSize": 21,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "FE",
@@ -44171,7 +44171,7 @@
       "sectorRelativeScore": 39,
       "comparisonGroupSize": 21,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "HUBB",
@@ -44802,7 +44802,7 @@
       "sectorRelativeScore": 38,
       "comparisonGroupSize": 15,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "UNP",
@@ -44985,7 +44985,7 @@
       "sectorRelativeScore": 38,
       "comparisonGroupSize": 91,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "BNY",
@@ -45758,7 +45758,7 @@
       "sectorRelativeScore": 38,
       "comparisonGroupSize": 12,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "BWXT",
@@ -45886,7 +45886,7 @@
       "sectorRelativeScore": 38,
       "comparisonGroupSize": 54,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "SAIA",
@@ -46529,7 +46529,7 @@
       "sectorRelativeScore": 37,
       "comparisonGroupSize": 27,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "ESAB",
@@ -46592,7 +46592,7 @@
       "sectorRelativeScore": 37,
       "comparisonGroupSize": 91,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "ELF",
@@ -47229,7 +47229,7 @@
       "sectorRelativeScore": 36,
       "comparisonGroupSize": 32,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "EQH",
@@ -47293,7 +47293,7 @@
       "sectorRelativeScore": 36,
       "comparisonGroupSize": 71,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "FHN",
@@ -47353,7 +47353,7 @@
       "sectorRelativeScore": 36,
       "comparisonGroupSize": 25,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "PRI",
@@ -48070,7 +48070,7 @@
       "sectorRelativeScore": 35,
       "comparisonGroupSize": 53,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "CASY",
@@ -48313,7 +48313,7 @@
       "sectorRelativeScore": 35,
       "comparisonGroupSize": 12,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "HL",
@@ -49835,7 +49835,7 @@
       "sectorRelativeScore": 33,
       "comparisonGroupSize": 71,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "SMTC",
@@ -50720,7 +50720,7 @@
       "sectorRelativeScore": 32,
       "comparisonGroupSize": 3,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "TECH",
@@ -50972,7 +50972,7 @@
       "sectorRelativeScore": 31,
       "comparisonGroupSize": 91,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "RGEN",
@@ -51104,7 +51104,7 @@
       "sectorRelativeScore": 30,
       "comparisonGroupSize": 21,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "YUM",
@@ -51406,7 +51406,7 @@
       "sectorRelativeScore": 29,
       "comparisonGroupSize": 3,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "CMI",
@@ -51525,7 +51525,7 @@
       "sectorRelativeScore": 29,
       "comparisonGroupSize": 3,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "GWW",
@@ -52773,7 +52773,7 @@
       "sectorRelativeScore": 28,
       "comparisonGroupSize": 9,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "REYN",
@@ -52831,7 +52831,7 @@
       "sectorRelativeScore": 28,
       "comparisonGroupSize": 9,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "WMB",
@@ -53172,7 +53172,7 @@
       "sectorRelativeScore": 27,
       "comparisonGroupSize": 53,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "AAOI",
@@ -53634,7 +53634,7 @@
       "sectorRelativeScore": 26,
       "comparisonGroupSize": 6,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "PCAR",
@@ -54493,7 +54493,7 @@
       "sectorRelativeScore": 23,
       "comparisonGroupSize": 12,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "OLED",
@@ -54677,7 +54677,7 @@
       "sectorRelativeScore": 22,
       "comparisonGroupSize": 21,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "KTOS",
@@ -55060,7 +55060,7 @@
       "sectorRelativeScore": 21,
       "comparisonGroupSize": 33,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "CG",
@@ -55194,7 +55194,7 @@
       "sectorRelativeScore": 21,
       "comparisonGroupSize": 33,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "UWMC",
@@ -55328,7 +55328,7 @@
       "sectorRelativeScore": 20,
       "comparisonGroupSize": 5,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "HAS",
@@ -55455,7 +55455,7 @@
       "sectorRelativeScore": 20,
       "comparisonGroupSize": 27,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "IONS",
@@ -55666,7 +55666,7 @@
       "sectorRelativeScore": 18,
       "comparisonGroupSize": 26,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "GEN",
@@ -55724,7 +55724,7 @@
       "sectorRelativeScore": 15,
       "comparisonGroupSize": 36,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "ICE",
@@ -55917,7 +55917,7 @@
       "sectorRelativeScore": 14,
       "comparisonGroupSize": 54,
       "sectorPercentileTier": "Avoid",
-      "rating": "Avoid"
+      "rating": "Hold/Watch"
     },
     {
       "ticker": "PLNT",
