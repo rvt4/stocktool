@@ -1,494 +1,575 @@
 /**
- * Multi-method valuation. Runs as a SECOND PASS after every ticker in the watchlist
- * has been fetched (see run-screener.js) — exit-multiple methods need to know what
- * peers are currently trading at (sector median EV/Revenue, P/E, EV/EBITDA), which
- * isn't knowable until the whole universe is assembled.
+ * FreeScreener valuation engine v5
  *
- * Four methods, each answering a different question:
- *   1. DCF (FCF-based)       — "what is this business worth from its cash generation?"
- *   2. Revenue exit multiple  — "what would this be worth if revenue hits target and
- *                                the market pays today's typical sector multiple for it?"
- *   3. EPS exit multiple      — same idea, anchored to earnings instead of revenue.
- *   4. EV/EBITDA exit multiple — same idea, anchored to EBITDA (more capital-structure-
- *                                aware than the revenue or P/E methods).
- *
- * All four explicitly model share dilution from SBC rather than assuming a flat share
- * count, since dilution is a real cost that erodes per-share value even when the
- * underlying business is compounding nicely.
+ * Core design:
+ *  1. Build one auditable five-year operating projection.
+ *  2. Use analyst estimates for years 1-2 when available.
+ *  3. Fade growth by business category, but do NOT force year-5 growth to terminal growth.
+ *  4. Apply DCF, Revenue, EPS, and EV/EBITDA methods to the same projection.
+ *  5. Weight methods by category and reliability instead of deleting methods merely
+ *     because they disagree with DCF.
  */
 
-const { reverseDCF, getDiscountRate, solveImpliedGrowth } = require('./dcf');
-
-// ---------- Dilution modeling ----------
-
-// Estimate ongoing share dilution rate from SBC intensity: SBC / market cap approximates
-// "what % of the company is being paid out in new shares each year", which is a more
-// robust free-data proxy than historical share-count deltas (those mix in buybacks,
-// secondary offerings, and the cover-page noise that caused problems earlier). Falls
-// back to historical diluted share CAGR if SBC or market cap isn't available.
-function estimateDilutionRate(stock) {
-  const yrs = stock.financials.years;
-  const last = yrs[yrs.length - 1];
-  const marketCap = stock.valuation.marketCap;
-
-  if (last.sbc != null && marketCap) {
-    return clamp(last.sbc / marketCap, -0.05, 0.15); // SBC-implied dilution, sanity-bounded
-  }
-  const shares = yrs.slice(-3).map(y => y.sharesOutTTM).filter(x => x != null);
-  if (shares.length >= 2) {
-    const cagr = Math.pow(shares[shares.length - 1] / shares[0], 1 / (shares.length - 1)) - 1;
-    return clamp(cagr, -0.10, 0.15); // negative = net buybacks outpacing dilution
-  }
-  return 0.02; // modest default assumption if no data at all
-}
+const { getDiscountRate, solveImpliedGrowth } = require('./dcf');
 
 function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
 function mean(arr) { return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
-
-// ---------- Shared multi-year projection ----------
-
-// Projects revenue, EBITDA, FCF, and diluted share count forward `years`, with growth
-// fading from growthYear1 down to a medium-term rate, and margins drifting toward the
-// company's own recent trend (capped so a single good/bad year can't dominate).
-function projectFinancials(stock, growthYear1, years = 5) {
-  const yrs = stock.financials.years;
-  const last = yrs[yrs.length - 1];
-  const dilutionRate = estimateDilutionRate(stock);
-  const mediumTermGrowth = clamp((growthYear1 ?? 0.05) * 0.25, 0.02, 0.08); // decays toward ~25% of its starting rate, capped at 8% — meaningfully closer to DCF's 2.5% terminal assumption than a 35% grower fading only to ~14% would be
-
-  const ebitdaMargins = yrs.slice(-3).map(y => y.ebitda != null && y.revenue ? y.ebitda / y.revenue : null).filter(x => x != null);
-  const marginTrend = ebitdaMargins.length >= 2 ? clamp((ebitdaMargins[ebitdaMargins.length - 1] - ebitdaMargins[0]) / (ebitdaMargins.length - 1), -0.03, 0.03) : 0;
-  const startMargin = last.ebitda != null && last.revenue ? last.ebitda / last.revenue : 0.10;
-
-  const fcfMargins = yrs.slice(-3).map(y => y.fcf != null && y.revenue ? y.fcf / y.revenue : null).filter(x => x != null);
-  const avgFcfConversion = fcfMargins.length ? fcfMargins.reduce((a, b) => a + b, 0) / fcfMargins.length : 0.10;
-
-  // Net margin projected from the company's OWN trailing net margin + trend — the same
-  // approach already used for EBITDA. Previously EPS was derived as fcf * 0.75, a flat
-  // ratio applied to every stock regardless of its real FCF-to-earnings relationship.
-  // For any company where that relationship isn't actually ~0.75 (heavy capex, heavy
-  // SBC, early-stage names with real FCF but thin GAAP earnings), that proxy produces
-  // a fictional EPS — which is what fed a nonsensically low P/E-based exit value even
-  // while the FCF-based DCF looked reasonable for the same company.
-  const netMargins = yrs.slice(-3).map(y => y.netIncome != null && y.revenue ? y.netIncome / y.revenue : null).filter(x => x != null);
-  const netMarginTrend = netMargins.length >= 2 ? clamp((netMargins[netMargins.length - 1] - netMargins[0]) / (netMargins.length - 1), -0.03, 0.03) : 0;
-  const startNetMargin = last.netIncome != null && last.revenue ? last.netIncome / last.revenue : null;
-
-  const projection = [];
-  let revenue = last.revenue, shares = last.sharesOutTTM;
-  for (let t = 1; t <= years; t++) {
-    const g = (growthYear1 ?? mediumTermGrowth) + (mediumTermGrowth - (growthYear1 ?? mediumTermGrowth)) * ((t - 1) / Math.max(1, years - 1));
-    revenue = revenue * (1 + g);
-    shares = shares * (1 + dilutionRate);
-    const margin = clamp(startMargin + marginTrend * t, 0.02, 0.60);
-    const ebitda = revenue * margin;
-    const fcf = revenue * clamp(avgFcfConversion + marginTrend * t, 0.01, 0.45);
-    // Net margin allowed to go negative (unlike EBITDA/FCF margins) — an early-stage or
-    // reinvestment-heavy company can be GAAP-unprofitable while still cash-generative;
-    // forcing a positive floor would misrepresent exactly the companies where this
-    // distinction matters most.
-    const netMargin = startNetMargin != null
-      ? clamp(startNetMargin + netMarginTrend * t, -0.15, 0.45)
-      : clamp(margin * 0.65, -0.15, 0.45); // fallback proxy only if no net income data exists at all
-    const netIncome = revenue * netMargin;
-    const eps = shares ? netIncome / shares : null;
-    projection.push({ year: t, revenue, ebitda, fcf, eps, shares });
-  }
-  return { projection, dilutionRate, startMargin, marginTrend, mediumTermGrowth };
-}
-
-// ---------- Sector cross-sectional exit multiples ----------
-
-// Computes each sector's median current P/E, EV/Revenue, and EV/EBITDA across the whole
-// fetched universe. Used as the assumed multiple for exit-multiple valuation methods —
-// i.e. "assume the market keeps paying roughly what it pays today for this sector",
-// which avoids needing an external data source for "the right multiple" while still
-// being grounded in real, current cross-sectional data rather than a hardcoded guess.
-function computeSectorExitMultiples(stocks) {
-  const bySector = {};
-  stocks.forEach(s => {
-    const sector = s.sector || 'Unknown';
-    (bySector[sector] = bySector[sector] || { pe: [], evRevenue: [], evEbitda: [] });
-    if (s.valuation.pe > 0 && s.valuation.pe < 100) bySector[sector].pe.push(s.valuation.pe);
-    if (s.valuation.marketCap && s.financials.years.length) {
-      const lastRev = s.financials.years[s.financials.years.length - 1].revenue;
-      if (lastRev > 0) {
-        const evRev = (s.valuation.ev ?? s.valuation.marketCap) / lastRev;
-        if (evRev > 0 && evRev < 50) bySector[sector].evRevenue.push(evRev);
-      }
-    }
-    if (s.valuation.evEbitda > 0 && s.valuation.evEbitda < 80) bySector[sector].evEbitda.push(s.valuation.evEbitda);
-  });
-
-  const medians = {};
-  for (const sector in bySector) {
-    medians[sector] = {
-      pe: median(bySector[sector].pe),
-      evRevenue: median(bySector[sector].evRevenue),
-      evEbitda: median(bySector[sector].evEbitda),
-      sampleSize: bySector[sector].pe.length,
-    };
-  }
-  return medians;
-}
-
 function median(arr) {
   if (!arr.length) return null;
   const s = [...arr].sort((a, b) => a - b);
   const mid = Math.floor(s.length / 2);
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
-
-// ---------- Mean reversion for exit multiples ----------
-
-// Assuming today's sector multiple persists unchanged 7 years out overstates fair value
-// whenever that multiple is currently elevated — multiples compress toward normal far
-// more often, over long horizons, than they stay rich indefinitely. But collapsing every
-// stock's exit multiple straight to "sector normal" would punish genuinely elite,
-// durably-growing businesses that have earned — and can plausibly sustain — a premium.
-//
-// Approach: blend TODAY's sector multiple with a REVERSION TARGET (this specific stock's
-// own long-run historical multiple, if we have it — reverting toward what the market has
-// actually been willing to pay for THIS business is more grounded than reverting toward
-// a generic sector-wide number that mixes in every quality tier). How much of the gap
-// between today's multiple and that target survives into the exit year is set by a 0-1
-// quality score built from ROIC and growth durability: highly profitable, durably-growing
-// businesses keep most of their premium; everyone else reverts most of the way toward
-// their own normal.
-function qualityPremiumWeight(avgRoic, growthYear1) {
-  const roicScore = clamp(((avgRoic ?? 0.08) - 0.08) / (0.30 - 0.08), 0, 1);       // 8% ROIC -> 0, 30%+ -> 1
-  const growthScore = clamp(((growthYear1 ?? 0.05) - 0.05) / (0.25 - 0.05), 0, 1); // 5% growth -> 0, 25%+ -> 1
-  const quality = roicScore * 0.6 + growthScore * 0.4;
-  // Even the very best businesses see SOME multiple compression over a 7-year horizon
-  // (cycles, competition, the arithmetic of getting larger); even weak businesses retain
-  // some of today's multiple rather than snapping instantly to a textbook average. Floor
-  // and ceiling keep the blend from ever being "no reversion" or "total reversion."
-  return clamp(0.30 + quality * 0.55, 0.30, 0.85); // fraction of (current - target) retained
+function cagr(first, last, years) {
+  if (first == null || last == null || first <= 0 || last <= 0 || years <= 0) return null;
+  return Math.pow(last / first, 1 / years) - 1;
+}
+function weightedAverage(items) {
+  const valid = items.filter(x => x.value != null && Number.isFinite(x.value) && x.weight > 0);
+  const totalWeight = valid.reduce((s, x) => s + x.weight, 0);
+  return totalWeight ? valid.reduce((s, x) => s + x.value * x.weight, 0) / totalWeight : null;
+}
+function smoothedBase(yrs, getter) {
+  const recent = yrs.slice(-3).map(getter).filter(x => x != null && Number.isFinite(x));
+  if (!recent.length) return null;
+  if (recent.length === 1) return recent[0];
+  const weights = recent.length === 3 ? [0.2, 0.3, 0.5] : [0.4, 0.6];
+  return recent.reduce((sum, value, i) => sum + value * weights[i], 0);
 }
 
-function meanRevertedMultiple(currentMultiple, ownHistoricalMultiples, avgRoic, growthYear1) {
-  if (currentMultiple == null) return { multiple: null, target: null, weight: null };
+// ---------- Category used by the valuation engine ----------
+// Kept local so the valuation pass does not depend on scoring-engine.js and create a cycle.
+function inferValuationCategory(stock) {
+  const yrs = stock.financials?.years || [];
+  if (yrs.length < 3) return 'Value';
+  const last = yrs[yrs.length - 1];
+  const first = yrs[Math.max(0, yrs.length - 4)];
+  const revCagr3y = cagr(first.revenue, last.revenue, Math.min(3, yrs.length - 1));
+  const avgRoic = mean(yrs.slice(-3).map(y => y.roic).filter(x => x != null));
+  const dividendYield = stock.valuation?.dividendYield || 0;
+  const margins = yrs.slice(-3).map(y => y.opMargin).filter(x => x != null);
+  const marginInflecting = margins.length >= 2 && margins[margins.length - 1] > margins[0] + 0.01;
+  const revenueHadDecline = yrs.slice(-4, -1).some((y, i, arr) => i > 0 && y.revenue < arr[i - 1].revenue);
+
+  if (revenueHadDecline && marginInflecting) return 'Turnaround';
+  if (avgRoic != null && avgRoic > 0.15 && revCagr3y != null && revCagr3y > 0.08) return 'Compounder';
+  if (revCagr3y != null && revCagr3y > 0.15) return 'Growth';
+  if (dividendYield > 0.02) return 'Dividend';
+  return 'Value';
+}
+
+// ---------- Dilution ----------
+function estimateDilutionRate(stock) {
+  const yrs = stock.financials.years;
+  const last = yrs[yrs.length - 1];
+  const marketCap = stock.valuation.marketCap;
+
+  // Prefer actual historical diluted-share CAGR because it already reflects SBC AND buybacks.
+  const shares = yrs.slice(-4).map(y => y.sharesOutTTM).filter(x => x != null && x > 0);
+  const historical = shares.length >= 2 ? cagr(shares[0], shares[shares.length - 1], shares.length - 1) : null;
+  const sbcImplied = last.sbc != null && marketCap ? last.sbc / marketCap : null;
+
+  if (historical != null && sbcImplied != null) {
+    return clamp(historical * 0.70 + sbcImplied * 0.30, -0.10, 0.12);
+  }
+  if (historical != null) return clamp(historical, -0.10, 0.12);
+  if (sbcImplied != null) return clamp(sbcImplied, 0, 0.12);
+  return 0.01;
+}
+
+// ---------- Analyst-aware growth path ----------
+const CATEGORY_YEAR5_GROWTH = {
+  Growth:      { floor: 0.10, retention: 0.50, cap: 0.20 },
+  Compounder:  { floor: 0.08, retention: 0.55, cap: 0.18 },
+  Turnaround:  { floor: 0.05, retention: 0.40, cap: 0.14 },
+  Dividend:    { floor: 0.03, retention: 0.35, cap: 0.08 },
+  Value:       { floor: 0.03, retention: 0.35, cap: 0.10 },
+};
+
+function historicalRevenueGrowth(stock) {
+  const yrs = stock.financials.years;
+  const rates = [];
+  for (let i = 1; i < yrs.length; i++) {
+    if (yrs[i - 1].revenue > 0 && yrs[i].revenue != null) rates.push(yrs[i].revenue / yrs[i - 1].revenue - 1);
+  }
+  return median(rates.slice(-5));
+}
+
+function buildGrowthPath(stock, category, years = 5) {
+  const estimates = stock.analystEstimates || {};
+  const fallback = stock.growthYear1 ?? historicalRevenueGrowth(stock) ?? 0.05;
+  const year1 = clamp(estimates.revenueGrowthCurrentYear ?? estimates.revenueGrowthFwd ?? fallback, -0.25, 0.60);
+
+  let year2 = estimates.revenueGrowthNextYear;
+  if (year2 == null && estimates.revenueCurrentYear > 0 && estimates.revenueNextYear > 0) {
+    year2 = estimates.revenueNextYear / estimates.revenueCurrentYear - 1;
+  }
+  if (year2 == null) year2 = year1 * (category === 'Growth' || category === 'Compounder' ? 0.90 : 0.80);
+  year2 = clamp(year2, -0.20, 0.50);
+
+  const cfg = CATEGORY_YEAR5_GROWTH[category] || CATEGORY_YEAR5_GROWTH.Value;
+  const anchor = Math.max(year1, year2);
+  const sustainableGrowth = (() => {
+    const avgRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
+    const reinvestmentRate = stock.reinvestmentRate != null ? stock.reinvestmentRate : 0.45;
+    return avgRoic != null ? clamp(avgRoic, 0, 0.35) * clamp(reinvestmentRate, 0, 1) : null;
+  })();
+  const categoryYear5 = clamp(anchor * cfg.retention, cfg.floor, cfg.cap);
+  const year5 = sustainableGrowth != null
+    ? clamp(categoryYear5 * 0.75 + sustainableGrowth * 0.25, cfg.floor, cfg.cap)
+    : categoryYear5;
+
+  const path = [year1, year2];
+  for (let t = 3; t <= years; t++) {
+    const progress = (t - 2) / Math.max(1, years - 2);
+    // Smooth-step fade: retains more growth early and fades more near the end.
+    const smooth = progress * progress * (3 - 2 * progress);
+    path.push(year2 + (year5 - year2) * smooth);
+  }
+
+  return {
+    path: path.slice(0, years),
+    source: estimates.revenueGrowthCurrentYear != null || estimates.revenueGrowthFwd != null
+      ? 'analyst_consensus_plus_category_fade'
+      : 'sec_history_plus_category_fade',
+    assumptions: { year1, year2, year5, sustainableGrowth, category },
+  };
+}
+
+// ---------- One shared five-year financial projection ----------
+function projectFinancials(stock, growthInput = null, years = 5) {
+  const yrs = stock.financials.years;
+  const last = yrs[yrs.length - 1];
+  const category = inferValuationCategory(stock);
+  const growthModel = buildGrowthPath(stock, category, years);
+  if (growthInput != null && stock.analystEstimates?.revenueGrowthCurrentYear == null && stock.analystEstimates?.revenueGrowthFwd == null) {
+    growthModel.path[0] = clamp(growthInput, -0.25, 0.60);
+  }
+
+  const dilutionRate = estimateDilutionRate(stock);
+  const estimates = stock.analystEstimates || {};
+
+  const ebitdaMargins = yrs.slice(-4).map(y => y.ebitda != null && y.revenue ? y.ebitda / y.revenue : null).filter(x => x != null);
+  const fcfMargins = yrs.slice(-4).map(y => y.fcf != null && y.revenue ? y.fcf / y.revenue : null).filter(x => x != null);
+  const netMargins = yrs.slice(-4).map(y => y.netIncome != null && y.revenue ? y.netIncome / y.revenue : null).filter(x => x != null);
+
+  const startEbitdaMargin = last.ebitda != null && last.revenue ? last.ebitda / last.revenue : median(ebitdaMargins) ?? 0.10;
+  const startFcfMargin = last.fcf != null && last.revenue ? last.fcf / last.revenue : median(fcfMargins) ?? 0.08;
+  const startNetMargin = last.netIncome != null && last.revenue ? last.netIncome / last.revenue : median(netMargins) ?? 0.06;
+
+  const marginTrend = (arr, maxAnnual) => arr.length >= 2
+    ? clamp((arr[arr.length - 1] - arr[0]) / (arr.length - 1), -maxAnnual, maxAnnual)
+    : 0;
+
+  const ebitdaTrend = marginTrend(ebitdaMargins, 0.025);
+  const fcfTrend = marginTrend(fcfMargins, 0.025);
+  const netTrend = marginTrend(netMargins, 0.025);
+
+  let revenue = last.revenue;
+  let shares = last.sharesOutTTM;
+  const projection = [];
+
+  for (let t = 1; t <= years; t++) {
+    const growth = growthModel.path[t - 1];
+
+    // Use analyst revenue dollars when available; otherwise compound the modeled path.
+    if (t === 1 && estimates.revenueCurrentYear > 0) revenue = estimates.revenueCurrentYear;
+    else if (t === 2 && estimates.revenueNextYear > 0) revenue = estimates.revenueNextYear;
+    else revenue *= (1 + growth);
+
+    shares *= (1 + dilutionRate);
+
+    const ebitdaMargin = clamp(startEbitdaMargin + ebitdaTrend * t, -0.05, 0.60);
+    const fcfMargin = clamp(startFcfMargin + fcfTrend * t, -0.10, 0.50);
+    let netMargin = clamp(startNetMargin + netTrend * t, -0.20, 0.50);
+
+    let eps = shares ? revenue * netMargin / shares : null;
+    if (t === 1 && estimates.epsCurrentYear != null) {
+      eps = estimates.epsCurrentYear;
+      netMargin = revenue ? (eps * shares) / revenue : netMargin;
+    } else if (t === 2 && estimates.epsNextYear != null) {
+      eps = estimates.epsNextYear;
+      netMargin = revenue ? (eps * shares) / revenue : netMargin;
+    }
+
+    const ebitda = revenue * ebitdaMargin;
+    const fcf = revenue * fcfMargin;
+    const netIncome = revenue * netMargin;
+
+    projection.push({
+      year: t,
+      // Anchor forecast labels to the latest reported fiscal year, not the
+      // current calendar year. This keeps a 2025 fiscal base labeled 2026-2030.
+      calendarYear: Number(last.year) + t,
+      growth,
+      revenue,
+      ebitdaMargin,
+      ebitda,
+      fcfMargin,
+      fcf,
+      netMargin,
+      netIncome,
+      eps,
+      shares,
+    });
+  }
+
+  return {
+    projection,
+    category,
+    dilutionRate,
+    growthModel,
+    startingValues: {
+      revenue: last.revenue,
+      ebitda: last.ebitda,
+      fcf: last.fcf,
+      netIncome: last.netIncome,
+      shares: last.sharesOutTTM,
+      ebitdaMargin: startEbitdaMargin,
+      fcfMargin: startFcfMargin,
+      netMargin: startNetMargin,
+    },
+    marginAssumptions: { ebitdaTrend, fcfTrend, netTrend },
+  };
+}
+
+// ---------- Sector multiples ----------
+function computeSectorExitMultiples(stocks) {
+  const bySector = {};
+  for (const stock of stocks) {
+    const sector = stock.sector || 'Unknown';
+    const bucket = bySector[sector] ||= { pe: [], evRevenue: [], evEbitda: [] };
+    const last = stock.financials.years[stock.financials.years.length - 1] || {};
+    if (stock.valuation.pe > 0 && stock.valuation.pe < 120) bucket.pe.push(stock.valuation.pe);
+    if (stock.valuation.ev && last.revenue > 0) {
+      const x = stock.valuation.ev / last.revenue;
+      if (x > 0 && x < 50) bucket.evRevenue.push(x);
+    }
+    if (stock.valuation.evEbitda > 0 && stock.valuation.evEbitda < 100) bucket.evEbitda.push(stock.valuation.evEbitda);
+  }
+
+  const out = {};
+  for (const [sector, b] of Object.entries(bySector)) {
+    out[sector] = {
+      pe: median(b.pe),
+      evRevenue: median(b.evRevenue),
+      evEbitda: median(b.evEbitda),
+      sampleSize: Math.max(b.pe.length, b.evRevenue.length, b.evEbitda.length),
+    };
+  }
+  return out;
+}
+
+function qualityPremiumWeight(stock, exitGrowth) {
+  const avgRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
+  const roicScore = clamp(((avgRoic ?? 0.08) - 0.08) / 0.22, 0, 1);
+  const growthScore = clamp(((exitGrowth ?? 0.05) - 0.04) / 0.16, 0, 1);
+  const pricingPowerScore = clamp((stock.pricingPowerScore ?? 50) / 100, 0, 1);
+  return clamp(0.30 + (roicScore * 0.50 + growthScore * 0.35 + pricingPowerScore * 0.15) * 0.60, 0.30, 0.90);
+}
+
+function meanRevertedMultiple(currentMultiple, ownHistoricalMultiples, stockOrRoic, exitGrowth) {
+  if (currentMultiple == null || currentMultiple <= 0) return { multiple: null, target: null, weight: null };
   const historicalMedian = ownHistoricalMultiples?.length ? median(ownHistoricalMultiples) : null;
-  // No historical benchmark for this specific stock (e.g. recent IPO) — nothing sound to
-  // revert toward, so fall back to the un-reverted current multiple rather than guessing.
+  const stock = stockOrRoic && stockOrRoic.financials ? stockOrRoic : null;
+  const weight = stock ? qualityPremiumWeight(stock, exitGrowth) : 0.55;
   const target = historicalMedian ?? currentMultiple;
-  const weight = qualityPremiumWeight(avgRoic, growthYear1);
-  const multiple = target + weight * (currentMultiple - target);
-  return { multiple, target, weight };
+  return { multiple: target + weight * (currentMultiple - target), target, weight };
 }
 
-// ---------- Valuation methods ----------
-
-// Method 1: DCF, using FCF (the existing conservative-clamped estimateFairValue logic).
-// Also runs an SBC-adjusted variant that treats SBC as a real economic cost.
-//
-// growthYear1 arrives HERE already clamped to [-0.10, 0.35] by valuateStock — the same
-// clamped value every other method receives (see note there). This function no longer
-// clamps independently; it just uses what it's given.
-function dcfMethods(stock, growthYear1, years = 5) {
+// ---------- DCF on the same operating projection ----------
+function dcfFromProjection(stock, model, { sbcAdjusted = false, terminalGrowth = 0.03 } = {}) {
   const yrs = stock.financials.years;
   const last = yrs[yrs.length - 1];
   const discountRate = getDiscountRate(stock.sector);
   const netDebt = (last.longTermDebt || 0) - (last.cash || 0);
+  const baseSbc = last.sbc || 0;
+  const baseRevenue = last.revenue || 1;
+  const sbcMargin = clamp(baseSbc / baseRevenue, 0, 0.30);
 
-  // Smooth the FCF base over the last up-to-3 years (weighted toward the most recent)
-  // instead of anchoring to a single year. A single depressed year — e.g. a heavy
-  // capex/AI-infrastructure buildout year — otherwise crushes the DCF fair value while
-  // EBITDA-based exit multiples (which aren't hit by capex) look normal. That mismatch
-  // is exactly the pattern showing up as DCF-lowest / EV-EBITDA-highest on large,
-  // capital-intensive compounders.
-  const fcfBase = smoothedBase(yrs, y => y.fcf) ?? last.fcf;
-  const sbcAdjustedBase = smoothedBase(yrs, y => y.fcfSBCAdjusted) ?? last.fcfSBCAdjusted;
+  let pvExplicitFCF = 0;
+  const yearly = model.projection.map(row => {
+    const rawFcf = row.fcf;
+    const adjustedFcf = sbcAdjusted ? rawFcf - row.revenue * sbcMargin : rawFcf;
+    const pv = adjustedFcf / Math.pow(1 + discountRate, row.year);
+    pvExplicitFCF += pv;
+    return { year: row.year, fcf: adjustedFcf, discountFactor: Math.pow(1 + discountRate, row.year), presentValue: pv };
+  });
 
-  // years=5 passed explicitly so DCF projects over the SAME horizon as the exit-multiple
-  // methods below — see the note in valuateStock for the dcf.js-side change this requires.
-  const standard = reverseDCF({ fcfBase, growthYear1, discountRate, netDebt, sharesOut: last.sharesOutTTM, years });
-  const sbcAdjusted = sbcAdjustedBase != null
-    ? reverseDCF({ fcfBase: sbcAdjustedBase, growthYear1, discountRate, netDebt, sharesOut: last.sharesOutTTM, years })
-    : { fairValuePerShare: null };
+  const finalFcf = yearly[yearly.length - 1]?.fcf;
+  if (!(finalFcf > 0) || !(last.sharesOutTTM > 0) || discountRate <= terminalGrowth) {
+    return { fairValuePerShare: null, audit: { reason: 'non-positive terminal FCF or missing shares', yearly } };
+  }
+
+  const terminalValue = finalFcf * (1 + terminalGrowth) / (discountRate - terminalGrowth);
+  const pvTerminalValue = terminalValue / Math.pow(1 + discountRate, model.projection.length);
+  const enterpriseValue = pvExplicitFCF + pvTerminalValue;
+  const equityValue = enterpriseValue - netDebt;
+  // This is a present-value equity value, so divide by today's diluted share
+  // count. Exit-period shares belong in future exit-price methods, not a DCF
+  // fair value stated in today's dollars.
+  const fairValuePerShare = equityValue / last.sharesOutTTM;
 
   return {
-    dcf: standard.fairValuePerShare ?? null,
-    dcfSBCAdjusted: sbcAdjusted.fairValuePerShare ?? null,
+    fairValuePerShare: fairValuePerShare > 0 ? fairValuePerShare : null,
+    audit: {
+      method: sbcAdjusted ? 'DCF (SBC-adjusted)' : 'DCF (FCF)',
+      discountRate,
+      terminalGrowth,
+      pvExplicitFCF,
+      terminalValue,
+      pvTerminalValue,
+      terminalValueShareOfEnterpriseValue: enterpriseValue ? pvTerminalValue / enterpriseValue : null,
+      enterpriseValue,
+      netDebt,
+      equityValue,
+      currentDilutedShares: last.sharesOutTTM,
+      projectedSharesAtExit: model.projection[model.projection.length - 1].shares,
+      yearly,
+    },
   };
 }
 
-// Weighted 3-year average of a per-year metric (most recent year weighted heaviest),
-// falling back gracefully as fewer years are available. Reduces the influence of any
-// single one-off year (capex spike, a working-capital swing, a bad quarter) on a value
-// that then gets compounded forward for a decade.
-function smoothedBase(yrs, getter) {
-  const recent = yrs.slice(-3).map(getter).filter(x => x != null);
-  if (!recent.length) return null;
-  if (recent.length === 1) return recent[0];
-  const weights = recent.length === 3 ? [0.2, 0.3, 0.5] : [0.4, 0.6];
-  return recent.reduce((sum, v, i) => sum + v * weights[i], 0);
-}
-
-// Method 2: Revenue exit multiple. Projects revenue N years out, applies the sector's
-// current median EV/Revenue as the assumed exit multiple, discounts back, adds PV of
-// interim dividends (not retained FCF — that's already reflected in the higher exit
-// value, so adding it too would double-count).
-function revenueExitMethod(stock, growthYear1, sectorMultiples, years = 5) {
-  const rawMultiple = sectorMultiples?.evRevenue;
-  if (!rawMultiple) return null;
-  const { projection, mediumTermGrowth } = projectFinancials(stock, growthYear1, years);
-  const avgRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
-  // Use mediumTermGrowth (what growth has decayed TO by the exit year), not growthYear1
-  // (today's peak rate). A rich multiple justified by today's 30%+ growth doesn't
-  // transfer to year 5 once that growth has already faded toward its medium-term rate —
-  // applying today's growth-implied premium to a company that's since decelerated is
-  // exactly what was inflating every exit-multiple value even after horizon alignment.
-  const { multiple: exitMultiple } = meanRevertedMultiple(
-    rawMultiple, stock.historicalMultiples?.evRevenue, avgRoic, mediumTermGrowth
-  );
-  const exitYear = projection[projection.length - 1];
-  const last = stock.financials.years[stock.financials.years.length - 1];
-  const netDebt = (last.longTermDebt || 0) - (last.cash || 0);
-
-  const exitEV = exitYear.revenue * exitMultiple;
-  const exitEquity = exitEV - netDebt;
-  const exitPricePerShare = exitYear.shares ? exitEquity / exitYear.shares : null;
-  if (exitPricePerShare == null) return null;
-
-  const discountRate = getDiscountRate(stock.sector);
-  const pvExitPrice = exitPricePerShare / Math.pow(1 + discountRate, years);
-  const pvDividends = pvDividendStream(stock, years, discountRate);
-  return pvExitPrice + pvDividends;
-}
-
-// Method 3: EPS exit multiple (P/E based).
-function epsExitMethod(stock, growthYear1, sectorMultiples, years = 5) {
-  const rawMultiple = sectorMultiples?.pe;
-  if (!rawMultiple) return null;
-  const { projection, mediumTermGrowth } = projectFinancials(stock, growthYear1, years);
-  const avgRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
-  const { multiple: exitMultiple } = meanRevertedMultiple(
-    rawMultiple, stock.historicalMultiples?.forwardPe, avgRoic, mediumTermGrowth
-  );
-  const exitYear = projection[projection.length - 1];
-  if (exitYear.eps == null || exitYear.eps <= 0) return null; // P/E is meaningless on negative earnings
-
-  const exitPricePerShare = exitYear.eps * exitMultiple;
-  const discountRate = getDiscountRate(stock.sector);
-  const pvExitPrice = exitPricePerShare / Math.pow(1 + discountRate, years);
-  const pvDividends = pvDividendStream(stock, years, discountRate);
-  return pvExitPrice + pvDividends;
-}
-
-// Method 4: EV/EBITDA exit multiple.
-function ebitdaExitMethod(stock, growthYear1, sectorMultiples, years = 5) {
-  const rawMultiple = sectorMultiples?.evEbitda;
-  if (!rawMultiple) return null;
-  const { projection, mediumTermGrowth } = projectFinancials(stock, growthYear1, years);
-  const avgRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
-  const { multiple: exitMultiple } = meanRevertedMultiple(
-    rawMultiple, stock.historicalMultiples?.evEbitda, avgRoic, mediumTermGrowth
-  );
-  const exitYear = projection[projection.length - 1];
-  const last = stock.financials.years[stock.financials.years.length - 1];
-  const netDebt = (last.longTermDebt || 0) - (last.cash || 0);
-
-  const exitEV = exitYear.ebitda * exitMultiple;
-  const exitEquity = exitEV - netDebt;
-  const exitPricePerShare = exitYear.shares ? exitEquity / exitYear.shares : null;
-  if (exitPricePerShare == null) return null;
-
-  const discountRate = getDiscountRate(stock.sector);
-  const pvExitPrice = exitPricePerShare / Math.pow(1 + discountRate, years);
-  const pvDividends = pvDividendStream(stock, years, discountRate);
-  return pvExitPrice + pvDividends;
-}
-
 function pvDividendStream(stock, years, discountRate) {
-  const divYield = stock.valuation.dividendYield || 0;
+  const yieldNow = stock.valuation.dividendYield || 0;
   const price = stock.price.current;
-  if (!divYield || !price) return 0;
+  if (!yieldNow || !price) return 0;
   let pv = 0;
-  let divPerShare = price * divYield;
+  let dividend = price * yieldNow;
   for (let t = 1; t <= years; t++) {
-    pv += divPerShare / Math.pow(1 + discountRate, t);
+    dividend *= 1.03;
+    pv += dividend / Math.pow(1 + discountRate, t);
   }
   return pv;
 }
 
-// ---------- Combine methods ----------
-
-// Blends methods via a WEIGHTED average, not an unweighted median. An unweighted median
-// across dcf/dcfSBCAdjusted/revenueExit/epsExit/ebitdaExit systematically biased low:
-// dcf and dcfSBCAdjusted are nearly identical to each other (same methodology, one
-// subtracts SBC), while the three exit-multiple methods are independently more
-// conservative by construction (5-year horizon vs DCF's 10-year, and they assume NO
-// multiple expansion from today's level). That's effectively "2 correlated votes vs 3
-// independently-conservative votes," and a median mechanically favors whichever side
-// has more members — it doesn't average anything, it just picks a side. Weighting fixes
-// this: DCF methods (better-tested, longer horizon) get more combined weight than any
-// single exit-multiple method, without discarding the exit-multiple perspective entirely.
-const METHOD_WEIGHTS = { dcf: 0.28, dcfSBCAdjusted: 0.17, revenueExit: 0.20, epsExit: 0.20, ebitdaExit: 0.15 };
-
-function combineValuations(methods) {
-  const available = Object.entries(methods).filter(([, v]) => v != null && v > 0);
-  if (!available.length) return { blendedFairValue: null, agreementScore: null, methodCount: 0 };
-
-  const totalWeight = available.reduce((sum, [k]) => sum + (METHOD_WEIGHTS[k] || 0), 0);
-  const blendedFairValue = totalWeight > 0
-    ? available.reduce((sum, [k, v]) => sum + v * (METHOD_WEIGHTS[k] || 0), 0) / totalWeight
-    : median(available.map(([, v]) => v)); // fallback if weights are somehow all zero
-
-  const values = available.map(([, v]) => v);
-  let agreementScore = 100;
-  if (values.length >= 2) {
-    const mean = values.reduce((a, b) => a + b, 0) / values.length;
-    const stdev = Math.sqrt(values.reduce((a, b) => a + (b - mean) ** 2, 0) / values.length);
-    const coefficientOfVariation = mean > 0 ? stdev / mean : 1;
-    agreementScore = Math.round(clamp(100 - coefficientOfVariation * 150, 0, 100));
-  }
-  return { blendedFairValue, agreementScore, methodCount: values.length };
-}
-
-// ---------- Main entry point: valuate one stock given the full universe's exit multiples ----------
-
-// ---------- Explicit 5-year price-target CAGR ----------
-
-// A direct, auditable answer to "what CAGR does this imply over the next 5 years" —
-// project revenue/EBITDA/EPS 5 years out, apply the SAME mean-reverted exit multiples
-// as the methods above, and take the CAGR from today's price to that undiscounted
-// year-5 value (plus dividends collected along the way, added simply rather than
-// reinvested). Deliberately simpler than blendedFairValue: one horizon, one number,
-// every step from today's price to the year-5 answer is visible and checkable by hand.
-function fiveYearPriceTargetCAGR(stock, growthYear1, sectorMultiples) {
-  const years = 5;
-  const currentPrice = stock.price.current;
-  if (!currentPrice) return { cagr: null, exitPrice: null, methodsUsed: 0 };
-
-  const { projection, mediumTermGrowth } = projectFinancials(stock, growthYear1, years);
-  const exitYear = projection[projection.length - 1];
+function exitMethod(stock, model, sectorMultiples, type) {
+  const exit = model.projection[model.projection.length - 1];
   const last = stock.financials.years[stock.financials.years.length - 1];
   const netDebt = (last.longTermDebt || 0) - (last.cash || 0);
-  const avgRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
+  const exitGrowth = exit.growth;
+  const discountRate = getDiscountRate(stock.sector);
+  const years = model.projection.length;
+  const dividends = pvDividendStream(stock, years, discountRate);
 
-  const exitPrices = [];
-  if (sectorMultiples?.evRevenue && exitYear.shares) {
-    const { multiple } = meanRevertedMultiple(sectorMultiples.evRevenue, stock.historicalMultiples?.evRevenue, avgRoic, mediumTermGrowth);
-    const price = (exitYear.revenue * multiple - netDebt) / exitYear.shares;
-    if (price > 0) exitPrices.push(price);
-  }
-  if (sectorMultiples?.evEbitda && exitYear.shares) {
-    const { multiple } = meanRevertedMultiple(sectorMultiples.evEbitda, stock.historicalMultiples?.evEbitda, avgRoic, mediumTermGrowth);
-    const price = (exitYear.ebitda * multiple - netDebt) / exitYear.shares;
-    if (price > 0) exitPrices.push(price);
-  }
-  if (sectorMultiples?.pe && exitYear.eps > 0) {
-    const { multiple } = meanRevertedMultiple(sectorMultiples.pe, stock.historicalMultiples?.forwardPe, avgRoic, mediumTermGrowth);
-    const price = exitYear.eps * multiple;
-    if (price > 0) exitPrices.push(price);
-  }
-  if (!exitPrices.length) return { cagr: null, exitPrice: null, methodsUsed: 0 };
+  let rawMultiple;
+  let historical;
+  let exitEnterpriseValue = null;
+  let exitEquityValue = null;
+  let exitPricePerShare = null;
+  let metricValue = null;
 
-  const exitPrice = mean(exitPrices);
-  const divYield = stock.valuation.dividendYield || 0;
-  const dividendsReceived = divYield * currentPrice * years; // simple, non-reinvested approximation
+  if (type === 'revenueExit') {
+    rawMultiple = sectorMultiples?.evRevenue;
+    historical = stock.historicalMultiples?.evRevenue;
+    metricValue = exit.revenue;
+  } else if (type === 'epsExit') {
+    rawMultiple = sectorMultiples?.pe;
+    historical = stock.historicalMultiples?.forwardPe;
+    metricValue = exit.eps;
+  } else {
+    rawMultiple = sectorMultiples?.evEbitda;
+    historical = stock.historicalMultiples?.evEbitda;
+    metricValue = exit.ebitda;
+  }
+
+  if (!(rawMultiple > 0) || metricValue == null || (type === 'epsExit' && metricValue <= 0)) {
+    return { fairValuePerShare: null, exitPricePerShare: null, audit: { reason: 'missing multiple or exit metric' } };
+  }
+
+  const reverted = meanRevertedMultiple(rawMultiple, historical, stock, exitGrowth);
+  const exitMultiple = reverted.multiple;
+
+  if (type === 'epsExit') {
+    exitPricePerShare = metricValue * exitMultiple;
+    exitEquityValue = exitPricePerShare * exit.shares;
+  } else {
+    exitEnterpriseValue = metricValue * exitMultiple;
+    exitEquityValue = exitEnterpriseValue - netDebt;
+    exitPricePerShare = exit.shares ? exitEquityValue / exit.shares : null;
+  }
+
+  const pvExitPrice = exitPricePerShare != null ? exitPricePerShare / Math.pow(1 + discountRate, years) : null;
+  const fairValuePerShare = pvExitPrice != null ? pvExitPrice + dividends : null;
+
+  return {
+    fairValuePerShare: fairValuePerShare > 0 ? fairValuePerShare : null,
+    exitPricePerShare: exitPricePerShare > 0 ? exitPricePerShare : null,
+    audit: {
+      type,
+      years,
+      exitMetric: metricValue,
+      rawSectorMultiple: rawMultiple,
+      historicalMedianMultiple: reverted.target,
+      qualityPremiumRetained: reverted.weight,
+      exitMultiple,
+      exitEnterpriseValue,
+      netDebt,
+      exitEquityValue,
+      sharesAtExit: exit.shares,
+      exitPricePerShare,
+      discountRate,
+      pvExitPrice,
+      pvDividends: dividends,
+      fairValuePerShare,
+    },
+  };
+}
+
+// ---------- Category-aware method weights ----------
+const CATEGORY_METHOD_WEIGHTS = {
+  Growth:     { dcf: 0.16, dcfSBCAdjusted: 0.09, revenueExit: 0.30, epsExit: 0.30, ebitdaExit: 0.15 },
+  Compounder: { dcf: 0.22, dcfSBCAdjusted: 0.13, revenueExit: 0.15, epsExit: 0.30, ebitdaExit: 0.20 },
+  Value:      { dcf: 0.28, dcfSBCAdjusted: 0.17, revenueExit: 0.05, epsExit: 0.20, ebitdaExit: 0.30 },
+  Dividend:   { dcf: 0.32, dcfSBCAdjusted: 0.13, revenueExit: 0.05, epsExit: 0.25, ebitdaExit: 0.25 },
+  Turnaround: { dcf: 0.18, dcfSBCAdjusted: 0.07, revenueExit: 0.15, epsExit: 0.20, ebitdaExit: 0.40 },
+};
+
+function combineValuations(methods, category = 'Value') {
+  const baseWeights = CATEGORY_METHOD_WEIGHTS[category] || CATEGORY_METHOD_WEIGHTS.Value;
+  const available = Object.entries(methods).filter(([, value]) => value != null && value > 0 && Number.isFinite(value));
+  if (!available.length) return { blendedFairValue: null, agreementScore: null, methodCount: 0, effectiveWeights: {}, reliabilityFlags: [] };
+
+  const center = median(available.map(([, value]) => value));
+  const reliabilityFlags = [];
+  const weighted = available.map(([key, value]) => {
+    const ratio = center > 0 ? Math.max(value / center, center / value) : 1;
+    // Do not delete a method. Smoothly reduce its influence as it moves away from consensus.
+    const reliability = ratio <= 1.5 ? 1 : ratio <= 2 ? 0.75 : ratio <= 3 ? 0.45 : 0.20;
+    if (reliability < 1) reliabilityFlags.push({ method: key, value, consensusMedian: center, ratio, reliability });
+    return { key, value, weight: (baseWeights[key] || 0) * reliability };
+  });
+
+  const blendedFairValue = weightedAverage(weighted);
+  const effectiveWeightTotal = weighted.reduce((s, x) => s + x.weight, 0);
+  const effectiveWeights = Object.fromEntries(weighted.map(x => [x.key, effectiveWeightTotal ? x.weight / effectiveWeightTotal : 0]));
+
+  const values = available.map(([, value]) => value);
+  const avg = mean(values);
+  const stdev = values.length >= 2 ? Math.sqrt(mean(values.map(v => (v - avg) ** 2))) : 0;
+  const cv = avg > 0 ? stdev / avg : 1;
+  const agreementScore = Math.round(clamp(100 - cv * 120, 0, 100));
+
+  return { blendedFairValue, agreementScore, methodCount: values.length, effectiveWeights, reliabilityFlags };
+}
+
+function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
+  const currentPrice = stock.price.current;
+  if (!(currentPrice > 0)) return { cagr: null, exitPrice: null, methodsUsed: 0 };
+
+  const futureItems = Object.entries(exitResults)
+    .filter(([, result]) => result?.exitPricePerShare > 0)
+    .map(([key, result]) => ({ value: result.exitPricePerShare, weight: effectiveWeights[key] || 0 }));
+
+  const exitPrice = weightedAverage(futureItems);
+  if (!(exitPrice > 0)) return { cagr: null, exitPrice: null, methodsUsed: 0 };
+
+  const years = model.projection.length;
+  const dividendYield = stock.valuation.dividendYield || 0;
+  const dividendsReceived = dividendYield * currentPrice * years;
   const totalFutureValue = exitPrice + dividendsReceived;
-  const cagr = Math.pow(totalFutureValue / currentPrice, 1 / years) - 1;
-  return { cagr, exitPrice, dividendsReceived, methodsUsed: exitPrices.length };
+  const cagrValue = Math.pow(totalFutureValue / currentPrice, 1 / years) - 1;
+
+  return {
+    cagr: cagrValue,
+    exitPrice,
+    dividendsReceived,
+    totalFutureValue,
+    methodsUsed: futureItems.length,
+    currentPrice,
+    years,
+  };
 }
 
 function valuateStock(stock, sectorExitMultiples) {
-  // Clamp ONCE, here, and hand the same value to every method. Previously dcfMethods
-  // clamped growthYear1 to [-10%, 35%] internally, but revenueExit/epsExit/ebitdaExit
-  // received the raw, unclamped value straight from upstream (which can run as high as
-  // 60% — see scoring-engine's blended growth clamp) and compounded it for 5 years
-  // before applying today's sector multiple. That asymmetry alone — not just "methods
-  // naturally disagree" — is a structural reason exit-multiple methods have been running
-  // systematically higher than DCF, especially on higher-growth-estimate names.
-  const rawGrowthYear1 = stock.growthYear1;
-  const growthYear1 = rawGrowthYear1 != null ? clamp(rawGrowthYear1, -0.10, 0.35) : rawGrowthYear1;
-  const sectorMultiples = sectorExitMultiples[stock.sector] || sectorExitMultiples['Unknown'];
+  const category = inferValuationCategory(stock);
+  const sectorMultiples = sectorExitMultiples[stock.sector] || sectorExitMultiples.Unknown || {};
+  const model = projectFinancials(stock, stock.growthYear1, 5);
 
-  const { dcf, dcfSBCAdjusted } = dcfMethods(stock, growthYear1);
-  const rawExitMethods = {
-    revenueExit: revenueExitMethod(stock, growthYear1, sectorMultiples),
-    epsExit: epsExitMethod(stock, growthYear1, sectorMultiples),
-    ebitdaExit: ebitdaExitMethod(stock, growthYear1, sectorMultiples),
+  const dcf = dcfFromProjection(stock, model, { sbcAdjusted: false });
+  const dcfSBCAdjusted = dcfFromProjection(stock, model, { sbcAdjusted: true });
+  const revenueExit = exitMethod(stock, model, sectorMultiples, 'revenueExit');
+  const epsExit = exitMethod(stock, model, sectorMultiples, 'epsExit');
+  const ebitdaExit = exitMethod(stock, model, sectorMultiples, 'ebitdaExit');
+
+  const methods = {
+    dcf: dcf.fairValuePerShare,
+    dcfSBCAdjusted: dcfSBCAdjusted.fairValuePerShare,
+    revenueExit: revenueExit.fairValuePerShare,
+    epsExit: epsExit.fairValuePerShare,
+    ebitdaExit: ebitdaExit.fairValuePerShare,
   };
 
-  // GUARDRAIL: historicalMultiples (data-fetchers.js) is currently always empty for
-  // every stock — the "backfill from priceHistory" it depends on was never implemented.
-  // That silently disables meanRevertedMultiple's reversion entirely (target always
-  // collapses to today's raw sector multiple, see the comment there), so every
-  // exit-multiple method right now applies an un-reverted, often ill-fitting sector-wide
-  // multiple to whatever business it's valuing — no correction for how well that sector
-  // number actually fits THIS stock (e.g. a low-margin insurer getting a biotech-heavy
-  // "Healthcare" sector's EV/Revenue multiple). Until the real backfill exists, treat any
-  // exit-multiple result that lands wildly far from the DCF anchor — which doesn't depend
-  // on a peer multiple at all — as more likely a sector-multiple mismatch than a genuine
-  // second opinion, and exclude it from the blend rather than average it in uncritically.
-  const OUTLIER_MULTIPLE = 3;
-  const dcfValues = [dcf, dcfSBCAdjusted].filter(v => v != null && v > 0);
-  const dcfAnchor = dcfValues.length ? mean(dcfValues) : null;
-
-  const outlierFlags = [];
-  const methods = { dcf, dcfSBCAdjusted };
-  for (const [key, value] of Object.entries(rawExitMethods)) {
-    if (value != null && dcfAnchor != null && (value > dcfAnchor * OUTLIER_MULTIPLE || value < dcfAnchor / OUTLIER_MULTIPLE)) {
-      outlierFlags.push({ method: key, value, dcfAnchor, reason: 'exit_multiple_outlier_vs_dcf' });
-      methods[key] = null; // excluded from the blend; raw value still returned below for transparency
-    } else {
-      methods[key] = value;
-    }
-  }
-
-  const { blendedFairValue, agreementScore, methodCount } = combineValuations(methods);
-
-  // Surfaced for transparency (e.g. a "why" detail panel): how much of today's multiple
-  // premium this stock's quality score let it retain, 0.30 (mostly reverted to its own
-  // historical normal) to 0.85 (mostly kept today's rich multiple).
-  const avgRoicForQuality = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
-  const qualityPremiumRetained = qualityPremiumWeight(avgRoicForQuality, growthYear1);
+  const combined = combineValuations(methods, category);
+  const exitResults = { revenueExit, epsExit, ebitdaExit };
+  const fiveYearPriceTarget = fiveYearPriceTargetCAGR(stock, model, exitResults, combined.effectiveWeights);
 
   const currentPrice = stock.price.current;
-  const marginOfSafety = blendedFairValue && currentPrice ? (blendedFairValue - currentPrice) / blendedFairValue : null;
+  const marginOfSafety = combined.blendedFairValue && currentPrice
+    ? (combined.blendedFairValue - currentPrice) / combined.blendedFairValue
+    : null;
 
-  // A direct, auditable answer to "what CAGR does this imply over the next 5 years,"
-  // separate from the discounted, weighted blendedFairValue above. One horizon (5yr,
-  // matching every method now), one undiscounted exit-price calculation, dividends
-  // added simply rather than reinvested — every step visible end to end.
-  const fiveYearPriceTarget = fiveYearPriceTargetCAGR(stock, growthYear1, sectorMultiples);
-
-  let marketImpliedGrowth = null, marketImpliedGrowthNote = null;
-  if (marginOfSafety != null) {
-    const last = stock.financials.years[stock.financials.years.length - 1];
-    const netDebt = (last.longTermDebt || 0) - (last.cash || 0);
-    // years: 10 here — deliberately NOT matched to the 5-year horizon the other methods
-    // use. This metric answers "what does the market need to believe, full stop" —
-    // a richly-priced durable compounder's valuation is normally justified by growth
-    // spread across 10-15 years, not compressed into 5. Forcing a 5-year window here
-    // made every richly-valued stock's implied growth read as an absurd, uninformative
-    // ">150%/yr" — that was the wrong fix. Method-comparison horizons and "what's the
-    // market pricing in" horizons are different questions and don't need to match.
-    const impliedResult = solveImpliedGrowth({
-      fcfBase: last.fcf, terminalGrowth: 0.025, discountRate: getDiscountRate(stock.sector),
-      years: 10, netDebt, sharesOut: last.sharesOutTTM, targetPricePerShare: currentPrice,
+  let marketImpliedGrowth = null;
+  let marketImpliedGrowthNote = null;
+  const last = stock.financials.years[stock.financials.years.length - 1];
+  if (last?.fcf > 0 && last?.sharesOutTTM > 0 && currentPrice > 0) {
+    const implied = solveImpliedGrowth({
+      fcfBase: last.fcf,
+      terminalGrowth: 0.03,
+      discountRate: getDiscountRate(stock.sector),
+      years: 10,
+      netDebt: (last.longTermDebt || 0) - (last.cash || 0),
+      sharesOut: last.sharesOutTTM,
+      targetPricePerShare: currentPrice,
     });
-    marketImpliedGrowth = impliedResult.impliedGrowth;
-    marketImpliedGrowthNote = impliedResult.reason !== 'converged' ? impliedResult.reason : null;
+    marketImpliedGrowth = implied.impliedGrowth;
+    marketImpliedGrowthNote = implied.reason !== 'converged' ? implied.reason : null;
   }
 
   return {
-    methods: { dcf, dcfSBCAdjusted, ...rawExitMethods }, // raw values for display — unfiltered, even excluded ones
-    outlierFlags, // which of the above (if any) were excluded from blendedFairValue and why
-    blendedFairValue,
-    agreementScore,
-    methodCount,
-    qualityPremiumRetained,
+    category,
+    methods,
+    blendedFairValue: combined.blendedFairValue,
+    agreementScore: combined.agreementScore,
+    methodCount: combined.methodCount,
+    effectiveWeights: combined.effectiveWeights,
+    reliabilityFlags: combined.reliabilityFlags,
+    outlierFlags: combined.reliabilityFlags, // backward-compatible frontend field; no method is excluded
     marginOfSafety,
     fiveYearPriceTarget,
     marketImpliedGrowth,
     marketImpliedGrowthNote,
-    dilutionRate: estimateDilutionRate(stock),
-    sbcIntensity: stock.financials.years[stock.financials.years.length - 1]?.sbcIntensity ?? null,
+    dilutionRate: model.dilutionRate,
+    sbcIntensity: last?.sbcIntensity ?? null,
+    projection: model.projection,
+    projectionAssumptions: {
+      category,
+      growthModel: model.growthModel,
+      startingValues: model.startingValues,
+      marginAssumptions: model.marginAssumptions,
+    },
+    methodAudits: {
+      dcf: dcf.audit,
+      dcfSBCAdjusted: dcfSBCAdjusted.audit,
+      revenueExit: revenueExit.audit,
+      epsExit: epsExit.audit,
+      ebitdaExit: ebitdaExit.audit,
+    },
   };
 }
 
-const api = { computeSectorExitMultiples, valuateStock, projectFinancials, estimateDilutionRate, combineValuations, meanRevertedMultiple, qualityPremiumWeight, fiveYearPriceTargetCAGR };
+const api = {
+  computeSectorExitMultiples,
+  valuateStock,
+  projectFinancials,
+  estimateDilutionRate,
+  combineValuations,
+  meanRevertedMultiple,
+  qualityPremiumWeight,
+  fiveYearPriceTargetCAGR,
+  inferValuationCategory,
+  buildGrowthPath,
+};
+
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
+if (typeof window !== 'undefined') window.ValuationMethods = api;

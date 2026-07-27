@@ -15,7 +15,9 @@
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || '';
 // SEC requires a real identifying User-Agent (name + email) per their fair-use policy —
 // requests without one get rejected. Edit this to your own info before running.
-const SEC_HEADERS = { 'User-Agent': 'FreeScreener ryan@example.com' };
+const SEC_HEADERS = {
+  'User-Agent': process.env.SEC_USER_AGENT || 'FreeScreener contact@example.com'
+};
 
 // --- SEC EDGAR: ticker -> CIK map (cached) ---
 let tickerCikMap = null;
@@ -229,7 +231,7 @@ async function fetchFinnhubRevenueEstimate(ticker) {
 // we don't call Finnhub's profile endpoint anymore, which halves Finnhub API usage
 // (quote only) and keeps us comfortably under the 60 calls/min free-tier limit
 // even across a 1000+ ticker watchlist.
-async function buildStockRecord(ticker, sector) {
+async function buildStockRecord(ticker, sector, analystEstimate = null) {
   const [facts, quote, priceHistory, finnhubRevGrowth] = await Promise.all([
     fetchSecFacts(ticker),
     fetchFinnhubQuote(ticker).catch(() => null),
@@ -245,12 +247,16 @@ async function buildStockRecord(ticker, sector) {
   const marketCap = currentPrice && sharesOut ? currentPrice * sharesOut : null;
   const eps = last.netIncome && sharesOut ? last.netIncome / sharesOut : null;
   const pe = currentPrice && eps ? currentPrice / eps : null;
-  const debtToEbitda = last.longTermDebt && last.operatingIncome ? last.longTermDebt / last.operatingIncome : null;
+  const debtToEbitda = last.longTermDebt != null && last.ebitda > 0 ? last.longTermDebt / last.ebitda : null;
   const dividendYield = last.dividendPerShare && currentPrice ? last.dividendPerShare / currentPrice : 0;
   const fcfYield = last.fcf && marketCap ? last.fcf / marketCap : null;
-  const evEbitda = marketCap && last.operatingIncome ? (marketCap + (last.longTermDebt || 0) - (last.cash || 0)) / last.operatingIncome : null;
+  const evEbitda = marketCap && last.ebitda > 0
+    ? (marketCap + (last.longTermDebt || 0) - (last.cash || 0)) / last.ebitda
+    : null;
 
-  years.forEach(y => y.debtToEbitda = y.longTermDebt && y.operatingIncome ? y.longTermDebt / y.operatingIncome : null);
+  years.forEach(y => {
+    y.debtToEbitda = y.longTermDebt != null && y.ebitda > 0 ? y.longTermDebt / y.ebitda : null;
+  });
 
   // Growth signal priority: real analyst consensus (if the Finnhub endpoint worked) >
   // blended recent-quarter momentum + trailing trend. Uses whatever trailing window is
@@ -258,7 +264,10 @@ async function buildStockRecord(ticker, sector) {
   // inconsistency was silently dropping every company with only 3 years of clean SEC
   // data to a null growth signal (and therefore no fair value / no MOS at all).
   let growthYear1 = null;
-  if (finnhubRevGrowth != null) {
+  const cachedAnalystGrowth = analystEstimate?.revenueGrowthCurrentYear ?? analystEstimate?.revenueGrowthFwd ?? null;
+  if (cachedAnalystGrowth != null) {
+    growthYear1 = cachedAnalystGrowth;
+  } else if (finnhubRevGrowth != null) {
     growthYear1 = finnhubRevGrowth;
   } else if (years.length >= 2) {
     const lookback = Math.min(3, years.length - 1);
@@ -276,7 +285,7 @@ async function buildStockRecord(ticker, sector) {
       pe, forwardPe: pe, evEbitda, fcfYield, marketCap,
       ev: marketCap ? marketCap + (last.longTermDebt || 0) - (last.cash || 0) : null,
       dividendYield,
-      growthSource: finnhubRevGrowth != null ? 'analyst_consensus' : 'blended_sec_data',
+      growthSource: cachedAnalystGrowth != null ? 'yfinance_supabase' : (finnhubRevGrowth != null ? 'finnhub_analyst_consensus' : 'blended_sec_data'),
       // NOTE: fairValueEstimate is intentionally NOT computed here anymore. Exit-multiple
       // valuation methods need to know what peers are currently trading at across the
       // WHOLE watchlist (e.g. sector median EV/Revenue), which isn't available yet at
@@ -285,6 +294,7 @@ async function buildStockRecord(ticker, sector) {
       // fetched. See run-screener.js for the two-pass pipeline.
     },
     growthYear1, // carried through to the valuation pass
+    analystEstimates: analystEstimate,
     price: { current: currentPrice },
     quarterly: quarters,
     historicalMultiples: { evEbitda: [], forwardPe: [] }, // optional: backfill from priceHistory + trailing EPS

@@ -99,61 +99,102 @@ def load_tickers(path="watchlist.json"):
     return tickers
 
 
+def _row_value(df, period, field):
+    if df is None or period not in getattr(df, "index", []):
+        return None
+    try:
+        return clean_number(df.loc[period].get(field))
+    except Exception:
+        return None
+
+
 def fetch_one(ticker):
-    """Pull forward revenue growth, EPS growth, and analyst price target for one ticker.
-    Returns None (and logs a SKIP) rather than raising, so one bad ticker never aborts
-    the batch."""
+    """Pull current-year and next-year revenue/EPS consensus plus price targets.
+
+    The extra level estimates let the Node valuation engine project actual revenue and
+    EPS dollars for years 1-2 rather than reducing the entire analyst view to one growth
+    percentage. Missing fields remain None and do not abort the ticker.
+    """
     try:
         t = yf.Ticker(ticker)
 
-        revenue_growth_fwd = None
-        eps_growth_fwd = None
+        revenue_growth_current_year = None
+        revenue_growth_next_year = None
+        revenue_current_year = None
+        revenue_next_year = None
+        eps_growth_current_year = None
+        eps_growth_next_year = None
+        eps_current_year = None
+        eps_next_year = None
         num_analysts = None
 
-        # get_revenue_estimate() returns a DataFrame indexed by period
-        # ('0q','+1q','0y','+1y') with columns like avg, low, high, growth,
-        # numberOfAnalysts. We want the CURRENT-YEAR forward estimate ('0y') as the
-        # single "revenueGrowthFwd" figure your scoring engine expects.
         try:
             rev_est = t.get_revenue_estimate()
-            if rev_est is not None and "0y" in rev_est.index:
-                row = rev_est.loc["0y"]
-                revenue_growth_fwd = clean_number(row.get("growth"))
-                raw_num_analysts = clean_number(row.get("numberOfAnalysts"))
-                num_analysts = int(raw_num_analysts) if raw_num_analysts is not None else None
+            revenue_growth_current_year = _row_value(rev_est, "0y", "growth")
+            revenue_growth_next_year = _row_value(rev_est, "+1y", "growth")
+            revenue_current_year = _row_value(rev_est, "0y", "avg")
+            revenue_next_year = _row_value(rev_est, "+1y", "avg")
+            raw_num_analysts = _row_value(rev_est, "0y", "numberOfAnalysts")
+            num_analysts = int(raw_num_analysts) if raw_num_analysts is not None else None
         except Exception as e:
             log.warning(f"{ticker}: revenue estimate fetch failed ({e})")
 
         try:
             eps_est = t.get_earnings_estimate()
-            if eps_est is not None and "0y" in eps_est.index:
-                row = eps_est.loc["0y"]
-                eps_growth_fwd = clean_number(row.get("growth"))
+            eps_growth_current_year = _row_value(eps_est, "0y", "growth")
+            eps_growth_next_year = _row_value(eps_est, "+1y", "growth")
+            eps_current_year = _row_value(eps_est, "0y", "avg")
+            eps_next_year = _row_value(eps_est, "+1y", "avg")
         except Exception as e:
             log.warning(f"{ticker}: earnings estimate fetch failed ({e})")
 
         analyst_target_mean = None
+        analyst_target_low = None
+        analyst_target_high = None
         try:
             targets = t.get_analyst_price_targets()
-            if targets is not None:
-                # yfinance has returned this as either a dict or a DataFrame across
-                # versions — handle both defensively.
-                if isinstance(targets, dict):
-                    analyst_target_mean = clean_number(targets.get("mean"))
-                elif hasattr(targets, "loc") and "mean" in getattr(targets, "columns", []):
-                    analyst_target_mean = clean_number(targets["mean"].iloc[0])
+            if isinstance(targets, dict):
+                analyst_target_mean = clean_number(targets.get("mean"))
+                analyst_target_low = clean_number(targets.get("low"))
+                analyst_target_high = clean_number(targets.get("high"))
+            elif targets is not None and hasattr(targets, "columns"):
+                for field, target_name in (("mean", "mean"), ("low", "low"), ("high", "high")):
+                    if field in targets.columns and len(targets[field]):
+                        value = clean_number(targets[field].iloc[0])
+                        if target_name == "mean": analyst_target_mean = value
+                        elif target_name == "low": analyst_target_low = value
+                        else: analyst_target_high = value
         except Exception as e:
             log.warning(f"{ticker}: price target fetch failed ({e})")
 
-        if revenue_growth_fwd is None and eps_growth_fwd is None and analyst_target_mean is None:
+        usable = [
+            revenue_growth_current_year, revenue_growth_next_year,
+            revenue_current_year, revenue_next_year,
+            eps_growth_current_year, eps_growth_next_year,
+            eps_current_year, eps_next_year,
+            analyst_target_mean,
+        ]
+        if all(v is None for v in usable):
             log.info(f"SKIP {ticker}: no usable estimate data returned")
             return None
 
         return {
             "ticker": ticker,
-            "revenue_growth_fwd": revenue_growth_fwd,
-            "eps_growth_fwd": eps_growth_fwd,
+            # Backward-compatible columns used by the older scoring engine.
+            "revenue_growth_fwd": revenue_growth_current_year,
+            "eps_growth_fwd": eps_growth_current_year,
+            # Expanded valuation inputs.
+            "revenue_growth_current_year": revenue_growth_current_year,
+            "revenue_growth_next_year": revenue_growth_next_year,
+            "revenue_current_year": revenue_current_year,
+            "revenue_next_year": revenue_next_year,
+            "eps_growth_current_year": eps_growth_current_year,
+            "eps_growth_next_year": eps_growth_next_year,
+            "eps_current_year": eps_current_year,
+            "eps_next_year": eps_next_year,
             "analyst_target_mean": analyst_target_mean,
+            "analyst_target_low": analyst_target_low,
+            "analyst_target_high": analyst_target_high,
             "num_analysts": num_analysts,
             "source": "yfinance",
             "updated_at": datetime.now(timezone.utc).isoformat(),

@@ -29,6 +29,11 @@
   .confHigh { color: #75d99a; }
   .confMed { color: #e3d18a; }
   .confLow { color: #e89a9a; }
+  .detail-section { margin-top: 14px; padding-top: 10px; border-top: 1px solid #2b2b2d; }
+  .detail-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(190px,1fr)); gap: 8px 18px; margin-top: 6px; }
+  .mini-table { width: 100%; margin-top: 8px; font-size: 0.78rem; }
+  .mini-table th, .mini-table td { padding: 5px 7px; white-space: nowrap; }
+  .method-card { margin-top: 8px; padding: 9px; background:#18181a; border:1px solid #29292c; border-radius:6px; }
 </style>
 </head>
 <body>
@@ -66,6 +71,53 @@ let sortKey = 'sectorRelativeScore', sortDir = -1;
 function pct(x) { return x == null ? '—' : (x * 100).toFixed(1) + '%'; }
 function ratingClass(r) { return r ? r.replace(/[^A-Za-z]/g, '') : ''; }
 function confClass(c) { return c == null ? '' : c >= 70 ? 'confHigh' : c >= 40 ? 'confMed' : 'confLow'; }
+
+function money(x) {
+  if (x == null || !Number.isFinite(Number(x))) return '—';
+  const n = Number(x);
+  if (Math.abs(n) >= 1e12) return '$' + (n / 1e12).toFixed(2) + 'T';
+  if (Math.abs(n) >= 1e9) return '$' + (n / 1e9).toFixed(2) + 'B';
+  if (Math.abs(n) >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M';
+  return '$' + n.toFixed(2);
+}
+function num(x, digits = 2) { return x == null || !Number.isFinite(Number(x)) ? '—' : Number(x).toFixed(digits); }
+function analystHtml(s) {
+  const a = s.analystEstimates;
+  if (!a) return '<span class="muted">No cached analyst estimates available.</span>';
+  return `<div class="detail-grid">
+    <div><strong>Revenue growth — current FY:</strong> ${pct(a.revenueGrowthCurrentYear ?? a.revenueGrowthFwd)}</div>
+    <div><strong>Revenue growth — next FY:</strong> ${pct(a.revenueGrowthNextYear)}</div>
+    <div><strong>Revenue estimate — current FY:</strong> ${money(a.revenueCurrentYear)}</div>
+    <div><strong>Revenue estimate — next FY:</strong> ${money(a.revenueNextYear)}</div>
+    <div><strong>EPS estimate — current FY:</strong> ${a.epsCurrentYear == null ? '—' : '$' + num(a.epsCurrentYear)}</div>
+    <div><strong>EPS estimate — next FY:</strong> ${a.epsNextYear == null ? '—' : '$' + num(a.epsNextYear)}</div>
+    <div><strong>EPS growth — current FY:</strong> ${pct(a.epsGrowthCurrentYear ?? a.epsGrowthFwd)}</div>
+    <div><strong>EPS growth — next FY:</strong> ${pct(a.epsGrowthNextYear)}</div>
+    <div><strong>Analyst target:</strong> ${a.analystTargetMean == null ? '—' : '$' + num(a.analystTargetMean)}</div>
+    <div><strong>Target range:</strong> ${a.analystTargetLow == null ? '—' : '$' + num(a.analystTargetLow)} – ${a.analystTargetHigh == null ? '—' : '$' + num(a.analystTargetHigh)}</div>
+    <div><strong>Analysts:</strong> ${a.numAnalysts ?? '—'}</div>
+    <div><strong>Updated:</strong> ${a.updatedAt ? new Date(a.updatedAt).toLocaleDateString() : '—'}</div>
+  </div>`;
+}
+function projectionHtml(s) {
+  const rows = s.valuationProjection || [];
+  if (!rows.length) return '<span class="muted">No projection generated.</span>';
+  return `<div style="overflow-x:auto"><table class="mini-table"><thead><tr><th>Year</th><th>Rev Growth</th><th>Revenue</th><th>EBITDA M.</th><th>FCF M.</th><th>Net M.</th><th>EPS</th><th>Shares</th></tr></thead><tbody>${rows.map(r => `<tr><td>${r.calendarYear ?? r.year}</td><td>${pct(r.growth)}</td><td>${money(r.revenue)}</td><td>${pct(r.ebitdaMargin)}</td><td>${pct(r.fcfMargin)}</td><td>${pct(r.netMargin)}</td><td>${r.eps == null ? '—' : '$' + num(r.eps)}</td><td>${r.shares == null ? '—' : (r.shares / 1e6).toFixed(1) + 'M'}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function auditHtml(s) {
+  const audits = s.valuationMethodAudits || {};
+  const weights = s.effectiveWeights || {};
+  const names = { dcf:'DCF (FCF)', dcfSBCAdjusted:'DCF (SBC-adjusted)', revenueExit:'Revenue exit', epsExit:'EPS exit', ebitdaExit:'EV/EBITDA exit' };
+  return Object.entries(audits).map(([key, a]) => {
+    if (!a) return '';
+    const value = s.valuationMethods?.[key];
+    const weight = weights[key];
+    if (key === 'dcf' || key === 'dcfSBCAdjusted') {
+      return `<div class="method-card"><strong>${names[key]}</strong> — ${value == null ? 'n/a' : '$' + num(value)} ${weight == null ? '' : `(${pct(weight)} weight)`}<div class="detail-grid"><div>Discount rate: ${pct(a.discountRate)}</div><div>Terminal growth: ${pct(a.terminalGrowth)}</div><div>PV explicit FCF: ${money(a.pvExplicitFCF)}</div><div>PV terminal: ${money(a.pvTerminalValue)}</div><div>Terminal share: ${pct(a.terminalValueShareOfEnterpriseValue)}</div><div>Net debt: ${money(a.netDebt)}</div><div>Equity value: ${money(a.equityValue)}</div><div>Exit shares: ${a.sharesAtExit == null ? '—' : (a.sharesAtExit / 1e6).toFixed(1) + 'M'}</div></div></div>`;
+    }
+    return `<div class="method-card"><strong>${names[key]}</strong> — ${value == null ? 'n/a' : '$' + num(value)} ${weight == null ? '' : `(${pct(weight)} weight)`}<div class="detail-grid"><div>Exit metric: ${key === 'epsExit' ? '$' + num(a.exitMetric) : money(a.exitMetric)}</div><div>Sector multiple: ${num(a.rawSectorMultiple)}x</div><div>Exit multiple: ${num(a.exitMultiple)}x</div><div>Quality retained: ${pct(a.qualityPremiumRetained)}</div><div>Exit price: ${a.exitPricePerShare == null ? '—' : '$' + num(a.exitPricePerShare)}</div><div>PV exit price: ${a.pvExitPrice == null ? '—' : '$' + num(a.pvExitPrice)}</div><div>PV dividends: ${a.pvDividends == null ? '—' : '$' + num(a.pvDividends)}</div><div>Net debt: ${money(a.netDebt)}</div></div></div>`;
+  }).join('') || '<span class="muted">No method audit available.</span>';
+}
 
 async function load() {
   const res = await fetch('data/results.json?_=' + Date.now());
@@ -131,13 +183,13 @@ function render() {
             ? 'below -50%/yr — stock may be priced for permanent decline'
             : '—');
     const methodNames = { dcf: 'DCF (FCF)', dcfSBCAdjusted: 'DCF (SBC-adjusted)', revenueExit: 'Revenue exit multiple', epsExit: 'EPS exit multiple (P/E)', ebitdaExit: 'EV/EBITDA exit multiple' };
-    const outlierMethodKeys = new Set((s.outlierFlags || []).map(f => f.method));
+    const reliabilityByMethod = new Map((s.reliabilityFlags || s.outlierFlags || []).map(f => [f.method, f]));
     const methodsText = s.valuationMethods
-      ? Object.entries(s.valuationMethods).filter(([, v]) => v != null).map(([k, v]) =>
-          outlierMethodKeys.has(k)
-            ? `<span style="text-decoration:line-through;color:#888;">${methodNames[k] || k}: $${v.toFixed(2)}</span> (excluded — >3x DCF anchor)`
-            : `${methodNames[k] || k}: $${v.toFixed(2)}`
-        ).join(' · ') || 'No methods produced a value'
+      ? Object.entries(s.valuationMethods).filter(([, v]) => v != null).map(([k, v]) => {
+          const flag = reliabilityByMethod.get(k);
+          const weight = s.effectiveWeights?.[k];
+          return `${methodNames[k] || k}: $${v.toFixed(2)}${weight == null ? '' : ` (${pct(weight)} weight)`}${flag ? ` ⚠ reliability ${Math.round((flag.reliability ?? 1) * 100)}%` : ''}`;
+        }).join(' · ') || 'No methods produced a value'
       : 'Not yet valuated';
     const confDeductions = (s.confidenceDeductions || [])
       .map(d => `<span class="sig">• −${d.points}: ${d.reason}</span>`).join('') || '<span class="sig">No deductions</span>';
@@ -150,7 +202,7 @@ function render() {
       ${s.methodCount >= 2 && s.methodAgreementScore != null && s.methodAgreementScore < 40 ? `<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Valuation methods disagree significantly (agreement score ${s.methodAgreementScore}/100) — the blended fair value rests on shaky consensus.</div>` : ''}
       <strong>Confidence: ${s.confidenceScore ?? '—'}/100</strong>
       <br>${confDeductions}
-      <br><strong>Growth source:</strong> ${s.growthSource === 'analyst_consensus' ? 'Finnhub analyst consensus' : 'Blended recent-quarter + trailing SEC data'}
+      <br><strong>Growth source:</strong> ${s.growthSource === 'yfinance_supabase' ? 'YFinance consensus cached in Supabase' : s.growthSource === 'finnhub_analyst_consensus' ? 'Finnhub analyst consensus' : 'Blended recent-quarter + trailing SEC data'}
       <br><strong>Expected Return</strong> (price-aware — starts at today's price, converges to a mean-reverted 5yr exit multiple): ${s.expectedReturn != null ? pct(s.expectedReturn) : 'n/a — insufficient exit-multiple data'}
       <br><strong>Fundamental Growth Rate</strong> (price-agnostic — how fast the business's own per-share value compounds): ${pct(s.fundamentalGrowthRate)}
       <br><strong>Fund. growth breakdown:</strong>
@@ -165,6 +217,10 @@ function render() {
       ${s.sbcIntensity != null ? ` · SBC is ${pct(s.sbcIntensity)} of revenue` : ''}
       <br><strong>Pricing power signals:</strong>
       ${(s.pricingPowerSignals || []).map(sig => `<span class="sig">• ${sig}</span>`).join('') || 'None detected'}
+      <div class="detail-section"><strong>Analyst consensus</strong>${analystHtml(s)}</div>
+      <div class="detail-section"><strong>Five-year operating projection</strong>${projectionHtml(s)}</div>
+      <div class="detail-section"><strong>Valuation calculation audit</strong>${auditHtml(s)}</div>
+      <div class="detail-section"><strong>Price targets</strong><div class="detail-grid"><div>Current price: ${s.currentPrice == null ? '—' : '$' + num(s.currentPrice)}</div><div>Blended fair value today: ${s.fairValueEstimate == null ? '—' : '$' + num(s.fairValueEstimate)}</div><div>Five-year exit price: ${s.fiveYearPriceTarget?.exitPrice == null ? '—' : '$' + num(s.fiveYearPriceTarget.exitPrice)}</div><div>Five-year expected CAGR: ${pct(s.fiveYearPriceTarget?.cagr)}</div></div></div>
     </td>`;
     tr.onclick = () => detail.classList.toggle('open');
     tbody.appendChild(tr);
