@@ -45,6 +45,9 @@ jobs:
       - name: Run screener
         env:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
         run: node run-screener.js
 
       - name: Commit updated results
