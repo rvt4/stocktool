@@ -39,33 +39,38 @@ function scoreBand(value, poor, excellent) {
 // ---------- 1. Category Classification (do this FIRST) ----------
 
 function classifyCategory(stock) {
-  const yrs = stock.financials.years;
-  if (!yrs || yrs.length < 3) return 'Unknown';
+  const yrs = stock.financials?.years || [];
+  if (yrs.length < 3) return 'Unknown';
   const last = yrs[yrs.length - 1];
-  const first3ago = yrs[Math.max(0, yrs.length - 4)];
-  const revCagr3y = cagr(first3ago.revenue, last.revenue, Math.min(3, yrs.length - 1));
   const avgRoic = mean(yrs.slice(-3).map(y => y.roic).filter(x => x != null));
-  const divYield = stock.valuation.dividendYield || 0;
-  const fcfPayout = last.dividendPerShare && last.fcf && last.sharesOutTTM
-    ? (last.dividendPerShare * last.sharesOutTTM) / last.fcf : null;
+  const divYield = stock.valuation?.dividendYield || 0;
 
-  // Turnaround: recent earnings/margin inflection after a down period
-  const marginsLast2 = yrs.slice(-2).map(y => y.grossMargin);
-  const marginInflecting = marginsLast2.length === 2 && marginsLast2[1] > marginsLast2[0];
-  const revDeclinedEarlier = yrs.length >= 4 && yrs[yrs.length - 3].revenue < yrs[yrs.length - 4].revenue;
+  const histRates = [];
+  for (let i = 1; i < yrs.length; i++) {
+    if (yrs[i - 1].revenue > 0 && yrs[i].revenue > 0) histRates.push(yrs[i].revenue / yrs[i - 1].revenue - 1);
+  }
+  const historicalGrowth = histRates.length ? median(histRates.slice(-5)) : null;
+  const currentForward = stock.analystEstimates?.revenueGrowthCurrentYear
+    ?? stock.analystEstimates?.revenueGrowthFwd
+    ?? stock.growthYear1
+    ?? historicalGrowth
+    ?? 0;
+  const nextForward = stock.analystEstimates?.revenueGrowthNextYear ?? currentForward;
+  const forwardGrowth = mean([currentForward, nextForward].filter(x => x != null)) ?? 0;
 
-  if (revDeclinedEarlier && marginInflecting && revCagr3y != null && revCagr3y > -0.05) {
-    return 'Turnaround';
-  }
-  if (avgRoic != null && avgRoic > 0.15 && revCagr3y != null && revCagr3y > 0.08) {
-    return 'Compounder';
-  }
-  if (revCagr3y != null && revCagr3y > 0.15) {
-    return 'Growth';
-  }
-  if (divYield > 0.02 && fcfPayout != null && fcfPayout < 0.75) {
-    return 'Dividend';
-  }
+  const opMargins = yrs.slice(-4).map(y => y.opMargin).filter(x => x != null);
+  const marginRecovery = opMargins.length >= 2 && opMargins[opMargins.length - 1] > opMargins[0] + 0.015;
+  const recentRevenueDecline = yrs.slice(-4).some((y, i, arr) => i > 0 && y.revenue < arr[i - 1].revenue * 0.97);
+  const positiveIncomeYears = yrs.slice(-4).filter(y => y.netIncome > 0).length;
+
+  // Forward growth takes priority so a current high-growth company is not mislabeled
+  // a turnaround because one older comparison year was weak.
+  if (forwardGrowth >= 0.25) return 'Hyper Growth';
+  if (forwardGrowth >= 0.15) return 'Growth';
+  if (avgRoic != null && avgRoic >= 0.15 && forwardGrowth >= 0.08) return 'Compounder';
+  if (recentRevenueDecline && marginRecovery && forwardGrowth < 0.12) return 'Turnaround';
+  if (recentRevenueDecline && positiveIncomeYears <= 2 && forwardGrowth < 0.08) return 'Cyclical';
+  if (divYield >= 0.025) return 'Dividend';
   return 'Value';
 }
 
@@ -263,9 +268,11 @@ function dynamicMOS(category, roic) {
     // 25% ROIC -> ~10% MOS ... 15% ROIC -> ~20% MOS
     return clamp(0.35 - roic * 1.0, 0.10, 0.25);
   }
+  if (category === 'Hyper Growth') return 0.20;
   if (category === 'Growth') return 0.15;
   if (category === 'Dividend') return 0.15;
   if (category === 'Turnaround') return 0.30;
+  if (category === 'Cyclical') return 0.30;
   return 0.20; // Value default
 }
 
@@ -482,7 +489,7 @@ function computeConfidenceScore(s, category, revGrowthSources, methodAgreementSc
 
 function scoreStock(stock) {
   const category = classifyCategory(stock);
-  const catFn = CATEGORY_METRICS[category] || CATEGORY_METRICS.Value;
+  const catFn = CATEGORY_METRICS[category] || (category === 'Hyper Growth' ? CATEGORY_METRICS.Growth : category === 'Cyclical' ? CATEGORY_METRICS.Value : CATEGORY_METRICS.Value);
   const catResult = catFn(stock);
   const pricingPower = scorePricingPower(stock);
   const { fundamentalGrowthRate, breakdown, lowConfidence, revGrowthSources, cagrDistortion } = expectedCAGR(stock, category);
