@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-27T06:29:41.367Z",
+  "generatedAt": "2026-07-27T10:17:10.796Z",
   "count": 891,
   "partial": false,
   "stocks": [
@@ -5129,7 +5129,7 @@
         "Operating margin resilient"
       ],
       "fundamentalGrowthRate": 0.1310911569458913,
-      "expectedReturn": 0.2388633428371869,
+      "expectedReturn": 0.23402730094558066,
       "usedFallbackForCAGRTarget": false,
       "lowConfidence": false,
       "confidenceScore": 93,
@@ -5150,7 +5150,7 @@
       "marketImpliedGrowthNote": "missing inputs",
       "growthGap": null,
       "requiredMOS": 0.1,
-      "marginOfSafety": 0.48642521783854503,
+      "marginOfSafety": 0.4762834269039902,
       "marginOfSafetyDistorted": false,
       "meetsRequiredMOS": true,
       "meetsCAGRTarget": true,
@@ -5158,9 +5158,9 @@
       "valuationMethods": {
         "dcf": null,
         "dcfSBCAdjusted": null,
-        "revenueExit": 419.15314895094144,
-        "epsExit": 263.0699109261201,
-        "ebitdaExit": 325.4311932543707
+        "revenueExit": 411.04793958256477,
+        "epsExit": 257.94049408997665,
+        "ebitdaExit": 319.16034108565464
       },
       "outlierFlags": [],
       "methodAgreementScore": 71,
