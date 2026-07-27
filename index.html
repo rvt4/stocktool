@@ -141,13 +141,77 @@ async function load() {
   const ratingSel = document.getElementById('ratingFilter');
   ratings.forEach(r => ratingSel.innerHTML += `<option value="${r}">${r}</option>`);
 
-  render();
+  scheduleRender(true);
+}
+
+let renderTimer = null;
+let renderToken = 0;
+
+function scheduleRender(immediate = false) {
+  clearTimeout(renderTimer);
+  const delay = immediate ? 0 : 120;
+  renderTimer = setTimeout(() => {
+    const token = ++renderToken;
+    requestAnimationFrame(() => {
+      if (token === renderToken) render();
+    });
+  }, delay);
+}
+
+function buildDetailHtml(s) {
+  const impliedText = s.marketImpliedGrowth != null
+    ? pct(s.marketImpliedGrowth)
+    : (s.marketImpliedGrowthNote === 'exceeds_search_range_high'
+        ? 'exceeds any plausible growth rate (>150%/yr) — price may be pricing in something beyond a DCF-justifiable story'
+        : s.marketImpliedGrowthNote === 'exceeds_search_range_low'
+          ? 'below -50%/yr — stock may be priced for permanent decline'
+          : '—');
+  const methodNames = { dcf: 'DCF (FCF)', dcfSBCAdjusted: 'DCF (SBC-adjusted)', revenueExit: 'Revenue exit multiple', epsExit: 'EPS exit multiple (P/E)', ebitdaExit: 'EV/EBITDA exit multiple' };
+  const reliabilityByMethod = new Map((s.reliabilityFlags || s.outlierFlags || []).map(f => [f.method, f]));
+  const methodsText = s.valuationMethods
+    ? Object.entries(s.valuationMethods).filter(([, v]) => v != null).map(([k, v]) => {
+        const flag = reliabilityByMethod.get(k);
+        const weight = s.effectiveWeights?.[k];
+        return `${methodNames[k] || k}: $${v.toFixed(2)}${weight == null ? '' : ` (${pct(weight)} weight)`}${flag ? ` ⚠ reliability ${Math.round((flag.reliability ?? 1) * 100)}%` : ''}`;
+      }).join(' · ') || 'No methods produced a value'
+    : 'Not yet valuated';
+  const confDeductions = (s.confidenceDeductions || [])
+    .map(d => `<span class="sig">• −${d.points}: ${d.reason}</span>`).join('') || '<span class="sig">No deductions</span>';
+
+  return `<td colspan="11">
+    ${s.lowConfidence ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Multiple growth inputs hit their sanity clamp for this stock — treat the fundamental growth figure with extra caution.</div>' : ''}
+    ${s.marginOfSafetyDistorted ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Raw margin of safety was an extreme value, clamped to ±100% for display.</div>' : ''}
+    ${s.usedFallbackForCAGRTarget ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ No price-aware return could be computed for this stock (missing exit-multiple data) — the qualify/rating decision fell back to fundamental growth rate alone, which does not account for today\'s entry price.</div>' : ''}
+    ${s.methodCount >= 2 && s.methodAgreementScore != null && s.methodAgreementScore < 40 ? `<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Valuation methods disagree significantly (agreement score ${s.methodAgreementScore}/100) — the blended fair value rests on shaky consensus.</div>` : ''}
+    <strong>Confidence: ${s.confidenceScore ?? '—'}/100</strong>
+    <br>${confDeductions}
+    <br><strong>Growth source:</strong> ${s.growthSource === 'yfinance_supabase' ? 'YFinance consensus cached in Supabase' : s.growthSource === 'finnhub_analyst_consensus' ? 'Finnhub analyst consensus' : 'Blended recent-quarter + trailing SEC data'}
+    <br><strong>Expected Return</strong> (price-aware — starts at today's price, converges to a mean-reverted 5yr exit multiple): ${s.expectedReturn != null ? pct(s.expectedReturn) : 'n/a — insufficient exit-multiple data'}
+    <br><strong>Fundamental Growth Rate</strong> (price-agnostic — how fast the business's own per-share value compounds): ${pct(s.fundamentalGrowthRate)}
+    <br><strong>Fund. growth breakdown:</strong>
+    Rev growth ${pct(s.cagrBreakdown.forwardRevGrowth)} ·
+    Margin exp. ${pct(s.cagrBreakdown.marginExpansionAnnualized)} ·
+    Buybacks ${pct(s.cagrBreakdown.shareCountReduction)} ·
+    Div yield ${pct(s.cagrBreakdown.dividendYield)}
+    <br><strong>Market-implied growth</strong> (what the current price requires to be fair): ${impliedText}
+    <br><strong>Valuation methods</strong> (blended = weighted average, agreement ${s.methodAgreementScore ?? '—'}/100 from ${s.methodCount} method${s.methodCount === 1 ? '' : 's'}):
+    <br>${methodsText}
+    <br><strong>Dilution:</strong> ${s.dilutionRate != null ? pct(s.dilutionRate) + '/yr est.' : '—'}
+    ${s.sbcIntensity != null ? ` · SBC is ${pct(s.sbcIntensity)} of revenue` : ''}
+    <br><strong>Pricing power signals:</strong>
+    ${(s.pricingPowerSignals || []).map(sig => `<span class="sig">• ${sig}</span>`).join('') || 'None detected'}
+    <div class="detail-section"><strong>Analyst consensus</strong>${analystHtml(s)}</div>
+    <div class="detail-section"><strong>Five-year operating projection</strong>${projectionHtml(s)}</div>
+    <div class="detail-section"><strong>V3.0 assumptions</strong><div class="detail-grid"><div>Category: ${s.projectionAssumptions?.category ?? s.category}</div><div>Discount rate: ${pct(s.projectionAssumptions?.discountRate)}</div><div>Terminal growth: ${pct(s.projectionAssumptions?.terminalGrowth)}</div><div>Year-5 growth: ${pct(s.projectionAssumptions?.growthModel?.assumptions?.year5)}</div><div>Target EBITDA margin: ${pct(s.projectionAssumptions?.marginAssumptions?.targetEbitdaMargin)}</div><div>Target FCF margin: ${pct(s.projectionAssumptions?.marginAssumptions?.targetFcfMargin)}</div></div></div>
+    <div class="detail-section"><strong>Valuation calculation audit</strong>${auditHtml(s)}</div>
+    <div class="detail-section"><strong>Price targets</strong><div class="detail-grid"><div>Current price: ${s.currentPrice == null ? '—' : '$' + num(s.currentPrice)}</div><div>Blended fair value today: ${s.fairValueEstimate == null ? '—' : '$' + num(s.fairValueEstimate)}</div><div>Five-year exit price: ${s.fiveYearPriceTarget?.exitPrice == null ? '—' : '$' + num(s.fiveYearPriceTarget.exitPrice)}</div><div>Five-year expected CAGR: ${pct(s.fiveYearPriceTarget?.cagr)}</div></div></div>
+  </td>`;
 }
 
 function render() {
   const cat = document.getElementById('categoryFilter').value;
   const rating = document.getElementById('ratingFilter').value;
-  const search = document.getElementById('tickerSearch').value.toUpperCase();
+  const search = document.getElementById('tickerSearch').value.trim().toUpperCase();
   const qualifiesOnly = document.getElementById('qualifiesOnly').checked;
 
   let rows = allStocks.filter(s =>
@@ -158,11 +222,11 @@ function render() {
   );
   rows.sort((a, b) => ((a[sortKey] ?? -Infinity) - (b[sortKey] ?? -Infinity)) * sortDir);
 
-  const tbody = document.getElementById('tbody');
-  tbody.innerHTML = '';
-  rows.forEach(s => {
+  const fragment = document.createDocumentFragment();
+  for (const s of rows) {
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
+    tr.dataset.ticker = s.ticker;
     const cagrFlag = s.lowConfidence ? ' ⚠️' : '';
     const mosFlag = s.marginOfSafetyDistorted ? ' ⚠️' : '';
     const fallbackFlag = s.usedFallbackForCAGRTarget ? ' *' : '';
@@ -182,69 +246,37 @@ function render() {
       <td>${s.categoryComposite}</td>
       <td>${s.sectorRelativeScore}</td>
     `;
-    const impliedText = s.marketImpliedGrowth != null
-      ? pct(s.marketImpliedGrowth)
-      : (s.marketImpliedGrowthNote === 'exceeds_search_range_high'
-          ? 'exceeds any plausible growth rate (>150%/yr) — price may be pricing in something beyond a DCF-justifiable story'
-          : s.marketImpliedGrowthNote === 'exceeds_search_range_low'
-            ? 'below -50%/yr — stock may be priced for permanent decline'
-            : '—');
-    const methodNames = { dcf: 'DCF (FCF)', dcfSBCAdjusted: 'DCF (SBC-adjusted)', revenueExit: 'Revenue exit multiple', epsExit: 'EPS exit multiple (P/E)', ebitdaExit: 'EV/EBITDA exit multiple' };
-    const reliabilityByMethod = new Map((s.reliabilityFlags || s.outlierFlags || []).map(f => [f.method, f]));
-    const methodsText = s.valuationMethods
-      ? Object.entries(s.valuationMethods).filter(([, v]) => v != null).map(([k, v]) => {
-          const flag = reliabilityByMethod.get(k);
-          const weight = s.effectiveWeights?.[k];
-          return `${methodNames[k] || k}: $${v.toFixed(2)}${weight == null ? '' : ` (${pct(weight)} weight)`}${flag ? ` ⚠ reliability ${Math.round((flag.reliability ?? 1) * 100)}%` : ''}`;
-        }).join(' · ') || 'No methods produced a value'
-      : 'Not yet valuated';
-    const confDeductions = (s.confidenceDeductions || [])
-      .map(d => `<span class="sig">• −${d.points}: ${d.reason}</span>`).join('') || '<span class="sig">No deductions</span>';
+
     const detail = document.createElement('tr');
     detail.className = 'detail';
-    detail.innerHTML = `<td colspan="11">
-      ${s.lowConfidence ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Multiple growth inputs hit their sanity clamp for this stock — treat the fundamental growth figure with extra caution.</div>' : ''}
-      ${s.marginOfSafetyDistorted ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Raw margin of safety was an extreme value, clamped to ±100% for display.</div>' : ''}
-      ${s.usedFallbackForCAGRTarget ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ No price-aware return could be computed for this stock (missing exit-multiple data) — the qualify/rating decision fell back to fundamental growth rate alone, which does not account for today\'s entry price.</div>' : ''}
-      ${s.methodCount >= 2 && s.methodAgreementScore != null && s.methodAgreementScore < 40 ? `<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Valuation methods disagree significantly (agreement score ${s.methodAgreementScore}/100) — the blended fair value rests on shaky consensus.</div>` : ''}
-      <strong>Confidence: ${s.confidenceScore ?? '—'}/100</strong>
-      <br>${confDeductions}
-      <br><strong>Growth source:</strong> ${s.growthSource === 'yfinance_supabase' ? 'YFinance consensus cached in Supabase' : s.growthSource === 'finnhub_analyst_consensus' ? 'Finnhub analyst consensus' : 'Blended recent-quarter + trailing SEC data'}
-      <br><strong>Expected Return</strong> (price-aware — starts at today's price, converges to a mean-reverted 5yr exit multiple): ${s.expectedReturn != null ? pct(s.expectedReturn) : 'n/a — insufficient exit-multiple data'}
-      <br><strong>Fundamental Growth Rate</strong> (price-agnostic — how fast the business's own per-share value compounds): ${pct(s.fundamentalGrowthRate)}
-      <br><strong>Fund. growth breakdown:</strong>
-      Rev growth ${pct(s.cagrBreakdown.forwardRevGrowth)} ·
-      Margin exp. ${pct(s.cagrBreakdown.marginExpansionAnnualized)} ·
-      Buybacks ${pct(s.cagrBreakdown.shareCountReduction)} ·
-      Div yield ${pct(s.cagrBreakdown.dividendYield)}
-      <br><strong>Market-implied growth</strong> (what the current price requires to be fair): ${impliedText}
-      <br><strong>Valuation methods</strong> (blended = weighted average, agreement ${s.methodAgreementScore ?? '—'}/100 from ${s.methodCount} method${s.methodCount === 1 ? '' : 's'}):
-      <br>${methodsText}
-      <br><strong>Dilution:</strong> ${s.dilutionRate != null ? pct(s.dilutionRate) + '/yr est.' : '—'}
-      ${s.sbcIntensity != null ? ` · SBC is ${pct(s.sbcIntensity)} of revenue` : ''}
-      <br><strong>Pricing power signals:</strong>
-      ${(s.pricingPowerSignals || []).map(sig => `<span class="sig">• ${sig}</span>`).join('') || 'None detected'}
-      <div class="detail-section"><strong>Analyst consensus</strong>${analystHtml(s)}</div>
-      <div class="detail-section"><strong>Five-year operating projection</strong>${projectionHtml(s)}</div>
-      <div class="detail-section"><strong>V3.0 assumptions</strong><div class="detail-grid"><div>Category: ${s.projectionAssumptions?.category ?? s.category}</div><div>Discount rate: ${pct(s.projectionAssumptions?.discountRate)}</div><div>Terminal growth: ${pct(s.projectionAssumptions?.terminalGrowth)}</div><div>Year-5 growth: ${pct(s.projectionAssumptions?.growthModel?.assumptions?.year5)}</div><div>Target EBITDA margin: ${pct(s.projectionAssumptions?.marginAssumptions?.targetEbitdaMargin)}</div><div>Target FCF margin: ${pct(s.projectionAssumptions?.marginAssumptions?.targetFcfMargin)}</div></div></div>
-      <div class="detail-section"><strong>Valuation calculation audit</strong>${auditHtml(s)}</div>
-      <div class="detail-section"><strong>Price targets</strong><div class="detail-grid"><div>Current price: ${s.currentPrice == null ? '—' : '$' + num(s.currentPrice)}</div><div>Blended fair value today: ${s.fairValueEstimate == null ? '—' : '$' + num(s.fairValueEstimate)}</div><div>Five-year exit price: ${s.fiveYearPriceTarget?.exitPrice == null ? '—' : '$' + num(s.fiveYearPriceTarget.exitPrice)}</div><div>Five-year expected CAGR: ${pct(s.fiveYearPriceTarget?.cagr)}</div></div></div>
-    </td>`;
-    tr.onclick = () => detail.classList.toggle('open');
-    tbody.appendChild(tr);
-    tbody.appendChild(detail);
-  });
+    detail.dataset.ticker = s.ticker;
+    detail.dataset.loaded = '0';
+
+    tr.addEventListener('click', () => {
+      if (detail.dataset.loaded === '0') {
+        detail.innerHTML = buildDetailHtml(s);
+        detail.dataset.loaded = '1';
+      }
+      detail.classList.toggle('open');
+    });
+
+    fragment.appendChild(tr);
+    fragment.appendChild(detail);
+  }
+
+  document.getElementById('tbody').replaceChildren(fragment);
 }
 
 document.querySelectorAll('th[data-key]').forEach(th => {
   th.onclick = () => {
     const key = th.dataset.key;
     if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = -1; }
-    render();
+    scheduleRender(true);
   };
 });
-['categoryFilter', 'ratingFilter', 'tickerSearch', 'qualifiesOnly'].forEach(id =>
-  document.getElementById(id).addEventListener('input', render));
+['categoryFilter', 'ratingFilter', 'qualifiesOnly'].forEach(id =>
+  document.getElementById(id).addEventListener('input', () => scheduleRender(true)));
+document.getElementById('tickerSearch').addEventListener('input', () => scheduleRender(false));
 
 load();
 </script>
