@@ -9,8 +9,32 @@ permissions:
   contents: write
 
 jobs:
+  fetch-analyst-estimates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install yfinance requests
+
+      - name: Fetch analyst estimates from yfinance
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python fetch_analyst_estimates.py
+
   run-screener:
     runs-on: ubuntu-latest
+    # Waits for analyst_estimates_cache to be refreshed first, so estimates.js reads
+    # tonight's numbers cache-first instead of last night's (or nothing, on a fresh repo).
+    # If this job fails, run-screener won't run either — that's intentional; a screener
+    # pass silently falling back to stale/missing estimates for the whole universe is a
+    # worse outcome than the nightly run skipping for a night.
+    needs: fetch-analyst-estimates
     steps:
       - uses: actions/checkout@v4
 
@@ -30,4 +54,3 @@ jobs:
           git add data/results.json
           git diff --staged --quiet || git commit -m "Nightly screener update $(date -u +%Y-%m-%d)"
           git push
-
