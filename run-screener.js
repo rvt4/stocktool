@@ -73,6 +73,7 @@ async function run() {
     const result = valuateStock(stock, sectorExitMultiples);
     stock.valuation.fairValueEstimate = result.blendedFairValue;
     stock.valuation.valuationMethods = result.methods;
+    stock.valuation.outlierFlags = result.outlierFlags;
     stock.valuation.methodAgreementScore = result.agreementScore;
     stock.valuation.methodCount = result.methodCount;
     stock.valuation.marketImpliedGrowth = result.marketImpliedGrowth;

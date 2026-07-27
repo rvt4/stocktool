@@ -131,8 +131,13 @@ function render() {
             ? 'below -50%/yr — stock may be priced for permanent decline'
             : '—');
     const methodNames = { dcf: 'DCF (FCF)', dcfSBCAdjusted: 'DCF (SBC-adjusted)', revenueExit: 'Revenue exit multiple', epsExit: 'EPS exit multiple (P/E)', ebitdaExit: 'EV/EBITDA exit multiple' };
+    const outlierMethodKeys = new Set((s.outlierFlags || []).map(f => f.method));
     const methodsText = s.valuationMethods
-      ? Object.entries(s.valuationMethods).filter(([, v]) => v != null).map(([k, v]) => `${methodNames[k] || k}: $${v.toFixed(2)}`).join(' · ') || 'No methods produced a value'
+      ? Object.entries(s.valuationMethods).filter(([, v]) => v != null).map(([k, v]) =>
+          outlierMethodKeys.has(k)
+            ? `<span style="text-decoration:line-through;color:#888;">${methodNames[k] || k}: $${v.toFixed(2)}</span> (excluded — >3x DCF anchor)`
+            : `${methodNames[k] || k}: $${v.toFixed(2)}`
+        ).join(' · ') || 'No methods produced a value'
       : 'Not yet valuated';
     const confDeductions = (s.confidenceDeductions || [])
       .map(d => `<span class="sig">• −${d.points}: ${d.reason}</span>`).join('') || '<span class="sig">No deductions</span>';

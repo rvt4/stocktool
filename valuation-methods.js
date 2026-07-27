@@ -406,13 +406,38 @@ function valuateStock(stock, sectorExitMultiples) {
   const sectorMultiples = sectorExitMultiples[stock.sector] || sectorExitMultiples['Unknown'];
 
   const { dcf, dcfSBCAdjusted } = dcfMethods(stock, growthYear1);
-  const methods = {
-    dcf,
-    dcfSBCAdjusted,
+  const rawExitMethods = {
     revenueExit: revenueExitMethod(stock, growthYear1, sectorMultiples),
     epsExit: epsExitMethod(stock, growthYear1, sectorMultiples),
     ebitdaExit: ebitdaExitMethod(stock, growthYear1, sectorMultiples),
   };
+
+  // GUARDRAIL: historicalMultiples (data-fetchers.js) is currently always empty for
+  // every stock — the "backfill from priceHistory" it depends on was never implemented.
+  // That silently disables meanRevertedMultiple's reversion entirely (target always
+  // collapses to today's raw sector multiple, see the comment there), so every
+  // exit-multiple method right now applies an un-reverted, often ill-fitting sector-wide
+  // multiple to whatever business it's valuing — no correction for how well that sector
+  // number actually fits THIS stock (e.g. a low-margin insurer getting a biotech-heavy
+  // "Healthcare" sector's EV/Revenue multiple). Until the real backfill exists, treat any
+  // exit-multiple result that lands wildly far from the DCF anchor — which doesn't depend
+  // on a peer multiple at all — as more likely a sector-multiple mismatch than a genuine
+  // second opinion, and exclude it from the blend rather than average it in uncritically.
+  const OUTLIER_MULTIPLE = 3;
+  const dcfValues = [dcf, dcfSBCAdjusted].filter(v => v != null && v > 0);
+  const dcfAnchor = dcfValues.length ? mean(dcfValues) : null;
+
+  const outlierFlags = [];
+  const methods = { dcf, dcfSBCAdjusted };
+  for (const [key, value] of Object.entries(rawExitMethods)) {
+    if (value != null && dcfAnchor != null && (value > dcfAnchor * OUTLIER_MULTIPLE || value < dcfAnchor / OUTLIER_MULTIPLE)) {
+      outlierFlags.push({ method: key, value, dcfAnchor, reason: 'exit_multiple_outlier_vs_dcf' });
+      methods[key] = null; // excluded from the blend; raw value still returned below for transparency
+    } else {
+      methods[key] = value;
+    }
+  }
+
   const { blendedFairValue, agreementScore, methodCount } = combineValuations(methods);
 
   // Surfaced for transparency (e.g. a "why" detail panel): how much of today's multiple
@@ -450,7 +475,8 @@ function valuateStock(stock, sectorExitMultiples) {
   }
 
   return {
-    methods,
+    methods: { dcf, dcfSBCAdjusted, ...rawExitMethods }, // raw values for display — unfiltered, even excluded ones
+    outlierFlags, // which of the above (if any) were excluded from blendedFairValue and why
     blendedFairValue,
     agreementScore,
     methodCount,

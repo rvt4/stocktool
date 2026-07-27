@@ -550,6 +550,7 @@ function scoreStock(stock) {
     meetsCAGRTarget,
     qualifiesForBuyList: !!(meetsCAGRTarget && meetsRequiredMOS),
     valuationMethods: stock.valuation.valuationMethods ?? null,
+    outlierFlags: stock.valuation.outlierFlags ?? [],
     methodAgreementScore: stock.valuation.methodAgreementScore ?? null,
     methodCount: stock.valuation.methodCount ?? 0,
     dilutionRate: stock.valuation.dilutionRate ?? null,
