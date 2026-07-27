@@ -23,50 +23,107 @@ const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.jso
 const RATE_LIMIT_DELAY_MS = 1100;
 const CHECKPOINT_EVERY = 100; // write partial progress periodically so a mid-run failure isn't a total loss
 
+function normalizeTicker(ticker) {
+  return String(ticker || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\./g, '-');
+}
+
 async function loadAnalystEstimates() {
-  const baseUrl = (process.env.SUPABASE_URL || '').replace(/\/$/, '').replace(/\/rest\/v1$/, '');
-  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || '';
+  const rawUrl = String(process.env.SUPABASE_URL || '').trim();
+  const baseUrl = rawUrl.replace(/\/+$/, '').replace(/\/rest\/v1$/, '');
+  const key = String(
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    ''
+  ).trim();
+
   if (!baseUrl || !key) {
-    console.warn('Supabase credentials missing — analyst estimates will not be loaded.');
-    return new Map();
+    throw new Error(
+      'Supabase credentials are missing in the run-screener job. ' +
+      'Add SUPABASE_URL and SUPABASE_SERVICE_KEY to the Run screener step in nightly.yml.'
+    );
   }
 
-  // Supabase/PostgREST commonly caps a response at 1,000 rows. Fetch in pages so
-  // a Russell 1000-sized universe is not silently truncated.
+  console.log(`Reading analyst estimates from ${baseUrl}/rest/v1/analyst_estimates_cache`);
+
   const pageSize = 1000;
   const rows = [];
+
   for (let offset = 0; ; offset += pageSize) {
-    const url = `${baseUrl}/rest/v1/analyst_estimates_cache?select=*&order=ticker.asc&offset=${offset}&limit=${pageSize}`;
-    const res = await fetch(url, {
-      headers: { apikey: key, Authorization: `Bearer ${key}` },
+    const params = new URLSearchParams({
+      select: '*',
+      order: 'ticker.asc',
+      offset: String(offset),
+      limit: String(pageSize),
     });
+    const url = `${baseUrl}/rest/v1/analyst_estimates_cache?${params}`;
+    const res = await fetch(url, {
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        Accept: 'application/json',
+        Prefer: 'count=exact',
+      },
+    });
+
     if (!res.ok) {
-      console.warn(`Analyst-estimate cache fetch failed: HTTP ${res.status} ${await res.text()}`);
-      return new Map();
+      const body = await res.text();
+      throw new Error(
+        `Analyst-estimate cache fetch failed: HTTP ${res.status}. ` +
+        `${body.slice(0, 800)}`
+      );
     }
+
     const page = await res.json();
+    if (!Array.isArray(page)) {
+      throw new Error('Supabase analyst-estimate response was not a JSON array.');
+    }
+
     rows.push(...page);
+    console.log(`Analyst cache page: offset ${offset}, received ${page.length}, total ${rows.length}`);
     if (page.length < pageSize) break;
   }
 
-  return new Map(rows.map(row => [String(row.ticker || '').toUpperCase(), {
-    revenueGrowthFwd: row.revenue_growth_fwd ?? null,
-    revenueGrowthCurrentYear: row.revenue_growth_current_year ?? row.revenue_growth_fwd ?? null,
-    revenueGrowthNextYear: row.revenue_growth_next_year ?? null,
-    revenueCurrentYear: row.revenue_current_year ?? null,
-    revenueNextYear: row.revenue_next_year ?? null,
-    epsGrowthFwd: row.eps_growth_fwd ?? null,
-    epsGrowthCurrentYear: row.eps_growth_current_year ?? row.eps_growth_fwd ?? null,
-    epsGrowthNextYear: row.eps_growth_next_year ?? null,
-    epsCurrentYear: row.eps_current_year ?? null,
-    epsNextYear: row.eps_next_year ?? null,
-    analystTargetMean: row.analyst_target_mean ?? null,
-    analystTargetLow: row.analyst_target_low ?? null,
-    analystTargetHigh: row.analyst_target_high ?? null,
-    numAnalysts: row.num_analysts ?? null,
-    source: row.source ?? null,
-    updatedAt: row.updated_at ?? null,
-  }]));
+  if (rows.length === 0) {
+    throw new Error(
+      'Supabase returned zero analyst-estimate rows. The screener was stopped rather ' +
+      'than silently generating another results file without analyst data.'
+    );
+  }
+
+  const estimates = new Map();
+  for (const row of rows) {
+    const ticker = normalizeTicker(row.ticker);
+    if (!ticker) continue;
+
+    estimates.set(ticker, {
+      revenueGrowthFwd: row.revenue_growth_fwd ?? null,
+      revenueGrowthCurrentYear: row.revenue_growth_current_year ?? row.revenue_growth_fwd ?? null,
+      revenueGrowthNextYear: row.revenue_growth_next_year ?? null,
+      revenueCurrentYear: row.revenue_current_year ?? null,
+      revenueNextYear: row.revenue_next_year ?? null,
+      epsGrowthFwd: row.eps_growth_fwd ?? null,
+      epsGrowthCurrentYear: row.eps_growth_current_year ?? row.eps_growth_fwd ?? null,
+      epsGrowthNextYear: row.eps_growth_next_year ?? null,
+      epsCurrentYear: row.eps_current_year ?? null,
+      epsNextYear: row.eps_next_year ?? null,
+      analystTargetMean: row.analyst_target_mean ?? null,
+      analystTargetLow: row.analyst_target_low ?? null,
+      analystTargetHigh: row.analyst_target_high ?? null,
+      numAnalysts: row.num_analysts ?? null,
+      source: row.source ?? null,
+      updatedAt: row.updated_at ?? null,
+    });
+  }
+
+  const examples = ['AMD', 'META', 'CRM', 'CELH']
+    .map(ticker => `${ticker}:${estimates.has(ticker) ? 'yes' : 'no'}`)
+    .join(', ');
+  console.log(`Mapped ${estimates.size} analyst records. Spot check — ${examples}`);
+
+  return estimates;
 }
 
 function writeResults(records, partial) {
@@ -88,7 +145,7 @@ async function run() {
   for (let i = 0; i < watchlist.length; i++) {
     const { ticker, sector } = watchlist[i];
     try {
-      const record = await buildStockRecord(ticker, sector, analystEstimates.get(ticker.toUpperCase()) || null);
+      const record = await buildStockRecord(ticker, sector, analystEstimates.get(normalizeTicker(ticker)) || null);
       if (record.financials.years.length >= 3) {
         records.push(record);
       } else {
