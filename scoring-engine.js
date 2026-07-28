@@ -486,64 +486,146 @@ function computeConfidenceScore(s, category, revGrowthSources, methodAgreementSc
 }
 
 
-function computeInvestmentScore(stock, categoryComposite, pricingPowerScore, confidenceScore, expectedReturn, marginOfSafety) {
+function scoreConsistency(values, tolerance) {
+  const clean = values.filter(x => x != null && Number.isFinite(x));
+  if (clean.length < 2) return 50;
+  const avg = mean(clean);
+  const sd = stdev(clean) || 0;
+  return clamp(Math.round(100 - (sd / Math.max(Math.abs(avg), tolerance)) * 75), 0, 100);
+}
+
+function computeV6QualityScore(stock, categoryComposite, pricingPowerScore, confidenceScore) {
+  const yrs = stock.financials?.years || [];
+  const recent = yrs.slice(-5);
+  const last = recent[recent.length - 1] || {};
   const profile = stock.valuation?.businessProfile || {};
   const capitalAllocation = stock.valuation?.capitalAllocation?.score ?? 50;
   const moat = clamp((profile.moatScore ?? 0.5) * 100, 0, 100);
   const durability = clamp((profile.premiumPersistence ?? 0.45) * 100, 0, 100);
   const forecast = clamp((profile.forecastReliability ?? confidenceScore / 100) * 100, 0, 100);
+
+  const roics = recent.map(y => y.roic).filter(x => x != null);
+  const avgRoic = mean(roics);
+  const roicScore = scoreBand(avgRoic, 0.04, 0.30);
+
+  const fcfMargins = recent.map(y => y.fcf != null && y.revenue > 0 ? y.fcf / y.revenue : null).filter(x => x != null);
+  const avgFcfMargin = mean(fcfMargins);
+  const fcfMarginScore = scoreBand(avgFcfMargin, 0.00, 0.25);
+  const fcfPositiveRate = recent.length ? recent.filter(y => y.fcf != null && y.fcf > 0).length / recent.length : 0.5;
+  const fcfConsistencyScore = Math.round(fcfPositiveRate * 65 + scoreConsistency(fcfMargins, 0.05) * 0.35);
+
+  const opMargins = recent.map(y => y.opMargin).filter(x => x != null);
+  const grossMargins = recent.map(y => y.grossMargin).filter(x => x != null);
+  const marginLevel = Math.max(mean(opMargins) ?? 0, (mean(grossMargins) ?? 0) * 0.45);
+  const marginLevelScore = scoreBand(marginLevel, 0.04, 0.30);
+  const marginStabilityScore = Math.round((scoreConsistency(opMargins, 0.05) * 0.6) + (scoreConsistency(grossMargins, 0.10) * 0.4));
+
+  const debtToEbitda = last.debtToEbitda;
+  const balanceSheetScore = debtToEbitda == null ? 60 : clamp(Math.round(100 - scoreBand(debtToEbitda, 0.5, 5.0)), 0, 100);
+
+  const revenueRates = [];
+  for (let i = 1; i < recent.length; i++) {
+    if (recent[i - 1].revenue > 0 && recent[i].revenue > 0) revenueRates.push(recent[i].revenue / recent[i - 1].revenue - 1);
+  }
+  const growthQualityScore = revenueRates.length
+    ? Math.round(scoreBand(median(revenueRates), -0.02, 0.22) * 0.65 + scoreConsistency(revenueRates, 0.08) * 0.35)
+    : 50;
+
+  // V6 quality is explicitly price-agnostic. Durable economics receive the majority
+  // of the weight; category-specific opportunity metrics are intentionally secondary.
+  const rawQuality =
+    moat * 0.22 +
+    roicScore * 0.17 +
+    fcfConsistencyScore * 0.13 +
+    fcfMarginScore * 0.08 +
+    marginLevelScore * 0.10 +
+    marginStabilityScore * 0.08 +
+    pricingPowerScore * 0.08 +
+    capitalAllocation * 0.07 +
+    balanceSheetScore * 0.04 +
+    durability * 0.02 +
+    growthQualityScore * 0.01;
+
+  // Expand the middle of the distribution so elite businesses separate from average
+  // ones instead of clustering in a narrow 55-80 band.
+  const expandedQuality = clamp(50 + (rawQuality - 50) * 1.38, 0, 100);
+
+  return {
+    score: Math.round(expandedQuality),
+    rawScore: Math.round(rawQuality),
+    moatScore: Math.round(moat),
+    roicScore,
+    fcfConsistencyScore,
+    fcfMarginScore,
+    marginLevelScore,
+    marginStabilityScore,
+    pricingPowerScore: Math.round(pricingPowerScore),
+    capitalAllocationScore: Math.round(capitalAllocation),
+    balanceSheetScore,
+    durabilityScore: Math.round(durability),
+    forecastScore: Math.round(forecast),
+    growthQualityScore,
+    categoryComposite: categoryComposite,
+  };
+}
+
+function computeInvestmentScore(stock, categoryComposite, pricingPowerScore, confidenceScore, expectedReturn, marginOfSafety) {
+  const profile = stock.valuation?.businessProfile || {};
+  const capitalAllocation = stock.valuation?.capitalAllocation?.score ?? 50;
+  const moat = clamp((profile.moatScore ?? 0.5) * 100, 0, 100);
+  const forecast = clamp((profile.forecastReliability ?? confidenceScore / 100) * 100, 0, 100);
   const returnScore = expectedReturn == null ? 45 : clamp((expectedReturn - 0.05) / 0.25 * 100, 0, 100);
   const valuationScore = marginOfSafety == null ? 45 : clamp((marginOfSafety + 0.05) / 0.45 * 100, 0, 100);
-
-  // V5 separates the company from the stock. A cheap but mediocre business can score
-  // well on valuation without automatically outranking a durable compounder.
-  const businessQualityScore = Math.round(clamp(
-    categoryComposite * 0.30 +
-    moat * 0.22 +
-    pricingPowerScore * 0.14 +
-    capitalAllocation * 0.12 +
-    durability * 0.12 +
-    forecast * 0.10,
-    0, 100
-  ));
+  const quality = computeV6QualityScore(stock, categoryComposite, pricingPowerScore, confidenceScore);
 
   const valuationAttractivenessScore = Math.round(clamp(
-    returnScore * 0.55 +
-    valuationScore * 0.30 +
-    confidenceScore * 0.15,
+    returnScore * 0.60 + valuationScore * 0.25 + confidenceScore * 0.15,
     0, 100
   ));
 
-  // Portfolio-manager score: quality is the largest input, valuation decides whether
-  // the quality is purchasable, and confidence prevents fragile estimates from ranking
-  // too highly. MOS remains important, but is no longer the dominant ranking factor.
+  // Probability is a transparent evidence score, not a statistical guarantee. It
+  // rewards durable economics and reliable forecasts while penalizing fragile data.
+  const successProbability = Math.round(clamp(
+    quality.score * 0.38 +
+    confidenceScore * 0.24 +
+    forecast * 0.18 +
+    moat * 0.12 +
+    valuationScore * 0.08,
+    5, 95
+  ));
+  const probabilityAdjustedReturn = expectedReturn == null
+    ? null
+    : expectedReturn * (successProbability / 100) + Math.min(expectedReturn, 0) * (1 - successProbability / 100);
+
+  // V6 combines two intentionally independent lenses: Quality and Opportunity.
+  // Quality wins ties; opportunity determines whether today's price is actionable.
   const score = Math.round(clamp(
-    businessQualityScore * 0.30 +
-    moat * 0.20 +
-    returnScore * 0.15 +
-    confidenceScore * 0.10 +
-    valuationScore * 0.10 +
-    pricingPowerScore * 0.05 +
-    capitalAllocation * 0.05 +
-    forecast * 0.05,
+    quality.score * 0.46 +
+    valuationAttractivenessScore * 0.34 +
+    confidenceScore * 0.08 +
+    moat * 0.05 +
+    capitalAllocation * 0.04 +
+    forecast * 0.03,
     0, 100
   ));
 
   const downsideRisk = Math.round(clamp(
-    100 - valuationScore * 0.35 - confidenceScore * 0.25 - moat * 0.20 - businessQualityScore * 0.20,
+    100 - valuationScore * 0.30 - confidenceScore * 0.25 - moat * 0.15 - quality.score * 0.30,
     0, 100
   ));
 
   return {
     score,
-    businessQualityScore,
+    businessQualityScore: quality.score,
     valuationAttractivenessScore,
+    qualityBreakdown: quality,
     moatScore: Math.round(moat),
-    durabilityScore: Math.round(durability),
     forecastScore: Math.round(forecast),
     returnScore: Math.round(returnScore),
     valuationScore: Math.round(valuationScore),
     capitalAllocationScore: Math.round(capitalAllocation),
+    successProbability,
+    probabilityAdjustedReturn,
     downsideRisk,
   };
 }
@@ -603,6 +685,9 @@ function scoreStock(stock) {
     investmentScore: investment.score,
     businessQualityScore: investment.businessQualityScore,
     valuationAttractivenessScore: investment.valuationAttractivenessScore,
+    successProbability: investment.successProbability,
+    probabilityAdjustedReturn: investment.probabilityAdjustedReturn,
+    qualityBreakdown: investment.qualityBreakdown,
     investmentBreakdown: investment,
     businessProfile: stock.valuation.businessProfile ?? null,
     categoryBreakdown: catResult,
@@ -653,8 +738,26 @@ function applyPercentileRatings(scoredStocks) {
   const qualifiers = scoredStocks.filter(s => s.qualifiesForBuyList && (s.expectedReturn ?? s.fundamentalGrowthRate) >= 0);
   const nonQualifiers = scoredStocks.filter(s => !(s.qualifiesForBuyList && (s.expectedReturn ?? s.fundamentalGrowthRate) >= 0));
 
-  // Stage 1: compare like with like. Each category receives its own leaderboard based
-  // primarily on V5 Investment Score, then business quality, then confidence.
+  function assignRank(list, field, rankField, pctField, leaderField) {
+    const sorted = [...list].sort((a, b) =>
+      ((b[field] ?? -Infinity) - (a[field] ?? -Infinity)) ||
+      (b.confidenceScore - a.confidenceScore)
+    );
+    sorted.forEach((s, i) => {
+      s[rankField] = i + 1;
+      s[pctField] = sorted.length <= 1 ? 0 : i / (sorted.length - 1);
+      s[leaderField] = Math.round((1 - s[pctField]) * 100);
+    });
+  }
+
+  // Independent global leaderboards: quality ignores price, opportunity focuses on
+  // return/MOS. This makes it obvious whether a stock is a great business, a cheap
+  // security, or both.
+  assignRank(scoredStocks, 'businessQualityScore', 'qualityRank', 'qualityPercentile', 'qualityLeaderScore');
+  assignRank(scoredStocks, 'valuationAttractivenessScore', 'opportunityRank', 'opportunityPercentile', 'opportunityLeaderScore');
+  assignRank(scoredStocks, 'investmentScore', 'overallRank', 'overallPercentile', 'overallLeaderScore');
+  for (const s of scoredStocks) s.globalUniverseSize = scoredStocks.length;
+
   const categoryRanks = new Map();
   for (const s of scoredStocks) {
     const bucket = categoryRanks.get(s.category) || [];
@@ -665,8 +768,8 @@ function applyPercentileRatings(scoredStocks) {
     bucket.sort((a, b) =>
       (b.investmentScore - a.investmentScore) ||
       (b.businessQualityScore - a.businessQualityScore) ||
-      (b.confidenceScore - a.confidenceScore) ||
-      (b.sectorRelativeScore - a.sectorRelativeScore)
+      (b.valuationAttractivenessScore - a.valuationAttractivenessScore) ||
+      (b.confidenceScore - a.confidenceScore)
     );
     bucket.forEach((s, i) => {
       s.categoryRank = i + 1;
@@ -676,42 +779,34 @@ function applyPercentileRatings(scoredStocks) {
     });
   }
 
-  // Stage 2: assign ratings using absolute return/MOS gates plus category leadership.
   for (const s of qualifiers) {
-    const topPct = s.categoryPercentile ?? 1;
     let rating = 'Buy';
-    const strongByRank = topPct <= 0.20;
-    const strongByQuality = s.investmentScore >= 72 && s.businessQualityScore >= 65;
-    const strongByEvidence = s.confidenceScore >= 65 && !s.lowConfidence;
-    if (strongByRank && strongByQuality && strongByEvidence) rating = 'Strong Buy';
+    const topCategory = (s.categoryPercentile ?? 1) <= 0.20;
+    const topOverall = (s.overallPercentile ?? 1) <= 0.15;
+    const strongQuality = s.businessQualityScore >= 70;
+    const strongOpportunity = s.valuationAttractivenessScore >= 68;
+    const strongEvidence = s.confidenceScore >= 65 && !s.lowConfidence;
+    if (topCategory && topOverall && strongQuality && strongOpportunity && strongEvidence) rating = 'Strong Buy';
     if (s.confidenceScore < 40 || s.lowConfidence) rating = 'Hold/Watch';
-    s.sectorPercentileTier = strongByRank ? 'Strong Buy' : 'Buy';
+    s.sectorPercentileTier = rating;
     s.rating = rating;
   }
 
-  // Stage 3: non-qualifiers are judged by how close they are to the hurdle and by
-  // business quality. A high-quality compounder that narrowly misses MOS is a Watch,
-  // not an Avoid; negative-return or deeply overvalued names remain Avoid.
   for (const s of nonQualifiers) {
     const exp = s.expectedReturn ?? s.fundamentalGrowthRate;
     const severeOvervaluation = s.marginOfSafety != null && s.marginOfSafety < -0.20;
-    const weakBusiness = (s.businessQualityScore ?? 0) < 40;
-    if (exp < 0 || severeOvervaluation || (weakBusiness && s.confidenceScore < 50)) {
-      s.rating = 'Avoid';
-    } else {
-      s.rating = 'Hold/Watch';
-    }
+    const weakBusiness = (s.businessQualityScore ?? 0) < 38;
+    if (exp < 0 || severeOvervaluation || (weakBusiness && s.confidenceScore < 50)) s.rating = 'Avoid';
+    else s.rating = 'Hold/Watch';
     s.sectorPercentileTier = s.rating;
   }
 
-  // Global ordering is portfolio-manager style: rating tier, then Investment Score,
-  // then category leadership. This prevents large pools of statistically cheap Value
-  // stocks from automatically filling the top of the screener.
   const tier = { 'Strong Buy': 4, 'Buy': 3, 'Hold/Watch': 2, 'Avoid': 1 };
   return [...scoredStocks].sort((a, b) =>
     (tier[b.rating] - tier[a.rating]) ||
     (b.investmentScore - a.investmentScore) ||
-    ((b.categoryLeaderScore ?? 0) - (a.categoryLeaderScore ?? 0)) ||
+    (b.businessQualityScore - a.businessQualityScore) ||
+    (b.valuationAttractivenessScore - a.valuationAttractivenessScore) ||
     (b.confidenceScore - a.confidenceScore)
   );
 }
@@ -727,7 +822,7 @@ function scoreUniverse(stocks) {
 const api = {
   classifyCategory, scoreStock, scoreUniverse,
   applySectorZScores, applyPercentileRatings,
-  scorePricingPower, dynamicMOS, expectedCAGR, computeInvestmentScore,
+  scorePricingPower, dynamicMOS, expectedCAGR, computeInvestmentScore, computeV6QualityScore,
   blendedRevenueGrowth, computeConfidenceScore,
 };
 

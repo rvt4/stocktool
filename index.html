@@ -63,10 +63,12 @@
         <th data-key="marginOfSafety">MOS</th>
         <th data-key="requiredMOS">Req. MOS</th>
         <th data-key="investmentScore">Investment</th>
-        <th data-key="businessQualityScore">Business</th>
-        <th data-key="valuationAttractivenessScore">Valuation</th>
+        <th data-key="businessQualityScore">Quality</th>
+        <th data-key="valuationAttractivenessScore">Opportunity</th>
+        <th data-key="successProbability">Success</th>
+        <th data-key="qualityRank">Q Rank</th>
+        <th data-key="opportunityRank">O Rank</th>
         <th data-key="confidenceScore">Confidence</th>
-        <th data-key="categoryLeaderScore">Cat. Leader</th>
       </tr>
     </thead>
     <tbody id="tbody"></tbody>
@@ -74,7 +76,7 @@
 
 <script>
 let allStocks = [];
-let sortKey = 'investmentScore', sortDir = -1;
+let sortKey = 'expectedReturn', sortDir = -1;
 
 function pct(x) { return x == null ? '—' : (x * 100).toFixed(1) + '%'; }
 function ratingClass(r) { return r ? r.replace(/[^A-Za-z]/g, '') : ''; }
@@ -197,7 +199,7 @@ function buildDetailHtml(s) {
   const confDeductions = (s.confidenceDeductions || [])
     .map(d => `<span class="sig">• −${d.points}: ${d.reason}</span>`).join('') || '<span class="sig">No deductions</span>';
 
-  return `<td colspan="12">
+  return `<td colspan="14">
     ${s.lowConfidence ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Multiple growth inputs hit their sanity clamp for this stock — treat the fundamental growth figure with extra caution.</div>' : ''}
     ${s.marginOfSafetyDistorted ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Raw margin of safety was an extreme value, clamped to ±100% for display.</div>' : ''}
     ${s.usedFallbackForCAGRTarget ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ No price-aware return could be computed for this stock (missing exit-multiple data) — the qualify/rating decision fell back to fundamental growth rate alone, which does not account for today\'s entry price.</div>' : ''}
@@ -222,7 +224,38 @@ function buildDetailHtml(s) {
     ${(s.pricingPowerSignals || []).map(sig => `<span class="sig">• ${sig}</span>`).join('') || 'None detected'}
     <div class="detail-section"><strong>Analyst consensus</strong>${analystHtml(s)}</div>
     <div class="detail-section"><strong>Five-year operating projection</strong>${projectionHtml(s)}</div>
-    <div class="detail-section"><strong>V5.0 portfolio-manager model</strong><div class="detail-grid"><div>Category: ${s.projectionAssumptions?.category ?? s.category}</div><div>Valuation engine: ${s.businessProfile?.engine ?? s.projectionAssumptions?.businessProfile?.engine ?? "—"}</div><div>Investment score: ${s.investmentScore ?? "—"}/100</div><div>Business quality: ${s.businessQualityScore ?? "—"}/100</div><div>Valuation attractiveness: ${s.valuationAttractivenessScore ?? "—"}/100</div><div>Category rank: ${s.categoryRank ?? "—"} / ${s.categoryUniverseSize ?? "—"}</div><div>Category leader score: ${s.categoryLeaderScore ?? "—"}/100</div><div>Moat score: ${s.investmentBreakdown?.moatScore ?? "—"}/100</div><div>Premium persistence: ${pct(s.businessProfile?.premiumPersistence ?? s.projectionAssumptions?.businessProfile?.premiumPersistence)}</div><div>Forecast reliability: ${pct(s.businessProfile?.forecastReliability ?? s.projectionAssumptions?.businessProfile?.forecastReliability)}</div><div>Discount rate: ${pct(s.projectionAssumptions?.discountRate)}</div><div>Terminal growth: ${pct(s.projectionAssumptions?.terminalGrowth)}</div><div>Year-5 growth: ${pct(s.projectionAssumptions?.growthModel?.assumptions?.year5)}</div><div>Growth persistence: ${pct(s.projectionAssumptions?.growthModel?.assumptions?.persistenceScore)}</div><div>Historical median growth: ${pct(s.projectionAssumptions?.growthModel?.assumptions?.historicalMedianGrowth)}</div><div>Target EBITDA margin: ${pct(s.projectionAssumptions?.marginAssumptions?.targetEbitdaMargin)}</div><div>Target FCF margin: ${pct(s.projectionAssumptions?.marginAssumptions?.targetFcfMargin)}</div><div>Analyst reliability: ${pct(s.analystReliability)}</div><div>Reverse DCF gap: ${pct(s.reverseDCFGap)}</div></div></div>
+    <div class="detail-section"><strong>V6.0 portfolio-manager model</strong><div class="detail-grid">
+      <div>Category: ${s.projectionAssumptions?.category ?? s.category}</div>
+      <div>Valuation engine: ${s.businessProfile?.engine ?? s.projectionAssumptions?.businessProfile?.engine ?? "—"}</div>
+      <div><strong>Expected return: ${pct(s.expectedReturn)}</strong></div>
+      <div>Probability-adjusted return: ${pct(s.probabilityAdjustedReturn)}</div>
+      <div>Success evidence score: ${s.successProbability ?? "—"}%</div>
+      <div>Investment score: ${s.investmentScore ?? "—"}/100</div>
+      <div>Business quality: ${s.businessQualityScore ?? "—"}/100</div>
+      <div>Opportunity score: ${s.valuationAttractivenessScore ?? "—"}/100</div>
+      <div>Overall rank: ${s.overallRank ?? "—"} / ${s.globalUniverseSize ?? "—"}</div>
+      <div>Quality rank: ${s.qualityRank ?? "—"} / ${s.globalUniverseSize ?? "—"}</div>
+      <div>Opportunity rank: ${s.opportunityRank ?? "—"} / ${s.globalUniverseSize ?? "—"}</div>
+      <div>Category rank: ${s.categoryRank ?? "—"} / ${s.categoryUniverseSize ?? "—"}</div>
+      <div>Moat score: ${s.investmentBreakdown?.moatScore ?? "—"}/100</div>
+      <div>ROIC quality: ${s.qualityBreakdown?.roicScore ?? "—"}/100</div>
+      <div>FCF consistency: ${s.qualityBreakdown?.fcfConsistencyScore ?? "—"}/100</div>
+      <div>Margin quality: ${s.qualityBreakdown?.marginLevelScore ?? "—"}/100</div>
+      <div>Margin stability: ${s.qualityBreakdown?.marginStabilityScore ?? "—"}/100</div>
+      <div>Balance sheet: ${s.qualityBreakdown?.balanceSheetScore ?? "—"}/100</div>
+      <div>Capital allocation: ${s.capitalAllocationScore ?? "—"}/100</div>
+      <div>Premium persistence: ${pct(s.businessProfile?.premiumPersistence ?? s.projectionAssumptions?.businessProfile?.premiumPersistence)}</div>
+      <div>Forecast reliability: ${pct(s.businessProfile?.forecastReliability ?? s.projectionAssumptions?.businessProfile?.forecastReliability)}</div>
+      <div>Discount rate: ${pct(s.projectionAssumptions?.discountRate)}</div>
+      <div>Terminal growth: ${pct(s.projectionAssumptions?.terminalGrowth)}</div>
+      <div>Year-5 growth: ${pct(s.projectionAssumptions?.growthModel?.assumptions?.year5)}</div>
+      <div>Growth persistence: ${pct(s.projectionAssumptions?.growthModel?.assumptions?.persistenceScore)}</div>
+      <div>Historical median growth: ${pct(s.projectionAssumptions?.growthModel?.assumptions?.historicalMedianGrowth)}</div>
+      <div>Target EBITDA margin: ${pct(s.projectionAssumptions?.marginAssumptions?.targetEbitdaMargin)}</div>
+      <div>Target FCF margin: ${pct(s.projectionAssumptions?.marginAssumptions?.targetFcfMargin)}</div>
+      <div>Analyst reliability: ${pct(s.analystReliability)}</div>
+      <div>Reverse DCF gap: ${pct(s.reverseDCFGap)}</div>
+    </div></div>
     <div class="detail-section"><strong>Valuation calculation audit</strong>${auditHtml(s)}</div>
     <div class="detail-section"><strong>Price targets</strong><div class="detail-grid"><div>Current price: ${s.currentPrice == null ? '—' : '$' + num(s.currentPrice)}</div><div>Blended fair value today: ${s.fairValueEstimate == null ? '—' : '$' + num(s.fairValueEstimate)}</div><div>Five-year exit price: ${s.fiveYearPriceTarget?.exitPrice == null ? '—' : '$' + num(s.fiveYearPriceTarget.exitPrice)}</div><div>Five-year expected CAGR: ${pct(s.fiveYearPriceTarget?.cagr)}${s.fiveYearPriceTarget?.cagrWasCapped ? ' (capped; raw ' + pct(s.fiveYearPriceTarget.rawCagr) + ')' : ''}</div></div><div class="detail-grid" style="margin-top:8px"><div>Revenue contribution: ${pct(s.fiveYearPriceTarget?.breakdown?.revenueGrowth)}</div><div>Margin contribution: ${pct(s.fiveYearPriceTarget?.breakdown?.marginExpansion)}</div><div>Share-count contribution: ${pct(s.fiveYearPriceTarget?.breakdown?.shareCountEffect)}</div><div>Dividend contribution: ${pct(s.fiveYearPriceTarget?.breakdown?.dividendContribution)}</div><div>Multiple rerating contribution: ${pct(s.fiveYearPriceTarget?.breakdown?.multipleRerating)}</div></div></div>
   </td>`;
@@ -264,8 +297,10 @@ function render() {
       <td class="${confClass(s.investmentScore)}">${s.investmentScore ?? '—'}</td>
       <td class="${confClass(s.businessQualityScore)}">${s.businessQualityScore ?? '—'}</td>
       <td class="${confClass(s.valuationAttractivenessScore)}">${s.valuationAttractivenessScore ?? '—'}</td>
+      <td class="${confClass(s.successProbability)}">${s.successProbability ?? '—'}%</td>
+      <td>${s.qualityRank ?? '—'}</td>
+      <td>${s.opportunityRank ?? '—'}</td>
       <td class="${confClass(s.confidenceScore)}">${s.confidenceScore ?? '—'}</td>
-      <td>${s.categoryLeaderScore ?? '—'}</td>
     `;
 
     const detail = document.createElement('tr');
