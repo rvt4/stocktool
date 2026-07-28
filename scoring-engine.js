@@ -485,6 +485,22 @@ function computeConfidenceScore(s, category, revGrowthSources, methodAgreementSc
   return { score: clamp(Math.round(score), 0, 100), deductions };
 }
 
+
+function computeInvestmentScore(stock, categoryComposite, pricingPowerScore, confidenceScore, expectedReturn, marginOfSafety) {
+  const profile = stock.valuation?.businessProfile || {};
+  const moat = clamp((profile.moatScore ?? 0.5) * 100, 0, 100);
+  const durability = clamp((profile.premiumPersistence ?? 0.45) * 100, 0, 100);
+  const forecast = clamp((profile.forecastReliability ?? confidenceScore / 100) * 100, 0, 100);
+  const returnScore = expectedReturn == null ? 45 : clamp((expectedReturn + 0.05) / 0.35 * 100, 0, 100);
+  const valuationScore = marginOfSafety == null ? 45 : clamp((marginOfSafety + 0.10) / 0.50 * 100, 0, 100);
+  const downsideRisk = clamp(100 - valuationScore * 0.45 - confidenceScore * 0.30 - moat * 0.25, 0, 100);
+  const score = Math.round(clamp(
+    categoryComposite * 0.20 + pricingPowerScore * 0.10 + confidenceScore * 0.15 +
+    moat * 0.15 + durability * 0.10 + forecast * 0.08 + returnScore * 0.14 + valuationScore * 0.08, 0, 100
+  ));
+  return { score, moatScore: Math.round(moat), durabilityScore: Math.round(durability), forecastScore: Math.round(forecast), returnScore: Math.round(returnScore), valuationScore: Math.round(valuationScore), downsideRisk: Math.round(downsideRisk) };
+}
+
 // ---------- 7. Master Scoring Function ----------
 
 function scoreStock(stock) {
@@ -530,12 +546,16 @@ function scoreStock(stock) {
   // from qualifying — but this is the weaker, price-agnostic signal, so flag it.
   const usedFallbackForCAGRTarget = expectedReturn == null;
   const meetsCAGRTarget = (expectedReturn ?? fundamentalGrowthRate) >= 0.15;
+  const investment = computeInvestmentScore(stock, catResult.composite, pricingPower.score, confidence.score, expectedReturn ?? fundamentalGrowthRate, marginOfSafety);
 
   return {
     ticker: stock.ticker,
     sector: stock.sector,
     category,
     categoryComposite: catResult.composite,
+    investmentScore: investment.score,
+    investmentBreakdown: investment,
+    businessProfile: stock.valuation.businessProfile ?? null,
     categoryBreakdown: catResult,
     pricingPowerScore: pricingPower.score,
     pricingPowerSignals: pricingPower.signals,
@@ -600,7 +620,7 @@ function applyPercentileRatings(scoredStocks) {
     bucket.push(s);
     categoryRanks.set(s.category, bucket);
   }
-  for (const bucket of categoryRanks.values()) bucket.sort((a, b) => b.sectorRelativeScore - a.sectorRelativeScore);
+  for (const bucket of categoryRanks.values()) bucket.sort((a, b) => (b.investmentScore - a.investmentScore) || (b.sectorRelativeScore - a.sectorRelativeScore));
   const categoryPercentile = new Map();
   for (const bucket of categoryRanks.values()) {
     bucket.forEach((s, i) => categoryPercentile.set(s, bucket.length ? i / bucket.length : 0));
@@ -666,7 +686,7 @@ function scoreUniverse(stocks) {
 const api = {
   classifyCategory, scoreStock, scoreUniverse,
   applySectorZScores, applyPercentileRatings,
-  scorePricingPower, dynamicMOS, expectedCAGR,
+  scorePricingPower, dynamicMOS, expectedCAGR, computeInvestmentScore,
   blendedRevenueGrowth, computeConfidenceScore,
 };
 

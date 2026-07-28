@@ -1,5 +1,5 @@
 /**
- * FreeScreener V3.7 valuation engine
+ * FreeScreener V4.0 business-type valuation engine
  *
  * V3.0 principles:
  *  - one shared five-year operating projection for every valuation method
@@ -85,7 +85,7 @@ function estimateDilutionRate(stock) {
   return 0.01;
 }
 
-// ---------- Growth path (V3.7 persistence model) ----------
+// ---------- Growth path (V4 business-model persistence) ----------
 const GROWTH_CONFIG = {
   'Hyper Growth': { floor: 0.10, cap: 0.26, historyWeight: 0.25, sustainableWeight: 0.20, persistenceWeight: 0.30, analystWeight: 0.25 },
   Growth:         { floor: 0.07, cap: 0.18, historyWeight: 0.25, sustainableWeight: 0.20, persistenceWeight: 0.30, analystWeight: 0.25 },
@@ -281,6 +281,56 @@ function projectFinancials(stock, growthInput = null, years = 5) {
   };
 }
 
+
+// ---------- V4 business model profiles ----------
+const BUSINESS_MODELS = {
+  'Hyper Growth': { engine: 'operating-growth', abnormalYears: 7, premiumFloor: 0.42, premiumCeiling: 0.78, moatBase: 0.48 },
+  Growth:         { engine: 'growth-quality', abnormalYears: 6, premiumFloor: 0.34, premiumCeiling: 0.70, moatBase: 0.52 },
+  Compounder:     { engine: 'durable-compounder', abnormalYears: 8, premiumFloor: 0.40, premiumCeiling: 0.76, moatBase: 0.62 },
+  Value:          { engine: 'normalized-earnings', abnormalYears: 4, premiumFloor: 0.12, premiumCeiling: 0.42, moatBase: 0.35 },
+  Dividend:       { engine: 'cash-yield', abnormalYears: 5, premiumFloor: 0.16, premiumCeiling: 0.46, moatBase: 0.44 },
+  Turnaround:     { engine: 'recovery', abnormalYears: 4, premiumFloor: 0.10, premiumCeiling: 0.38, moatBase: 0.28 },
+  Cyclical:       { engine: 'mid-cycle', abnormalYears: 3, premiumFloor: 0.08, premiumCeiling: 0.30, moatBase: 0.24 },
+};
+
+function buildBusinessProfile(stock, category, model = null) {
+  const cfg = BUSINESS_MODELS[category] || BUSINESS_MODELS.Value;
+  const yrs = stock.financials?.years || [];
+  const recent = yrs.slice(-5);
+  const last = recent.at(-1) || {};
+  const avgRoic = mean(recent.slice(-3).map(y => y.roic).filter(Number.isFinite));
+  const gross = recent.map(y => y.grossMargin).filter(Number.isFinite);
+  const fcfMargins = recent.map(y => y.revenue > 0 && Number.isFinite(y.fcf) ? y.fcf / y.revenue : null).filter(Number.isFinite);
+  const opMargins = recent.map(y => y.opMargin).filter(Number.isFinite);
+  const roicQuality = avgRoic == null ? 0.45 : clamp((avgRoic - 0.04) / 0.28, 0, 1);
+  const marginDurability = gross.length >= 2 ? clamp(1 - (Math.max(...gross) - Math.min(...gross)) / 0.16, 0, 1) : 0.50;
+  const cashQuality = clamp(((median(fcfMargins) ?? 0.04) - 0.01) / 0.24, 0, 1);
+  const earningsStability = opMargins.length >= 2 ? clamp(1 - (Math.max(...opMargins) - Math.min(...opMargins)) / 0.18, 0, 1) : 0.45;
+  const pricing = clamp((stock.pricingPowerScore ?? 50) / 100, 0, 1);
+  const capital = clamp(capitalAllocationScore(stock).score / 100, 0, 1);
+  const analyst = analystReliability(stock);
+  const growthPersistence = model?.growthModel?.assumptions?.persistenceScore ?? 0.5;
+  const balanceSheet = last.ebitda > 0
+    ? clamp(1 - Math.max(0, (last.longTermDebt || 0) - (last.cash || 0)) / (last.ebitda * 5), 0, 1)
+    : 0.45;
+  const moatScore = clamp(
+    cfg.moatBase * 0.18 + roicQuality * 0.22 + marginDurability * 0.14 +
+    cashQuality * 0.12 + earningsStability * 0.10 + pricing * 0.12 +
+    capital * 0.07 + balanceSheet * 0.05, 0, 1
+  );
+  const premiumPersistence = clamp(
+    cfg.premiumFloor + (cfg.premiumCeiling - cfg.premiumFloor) *
+    (moatScore * 0.48 + growthPersistence * 0.27 + analyst * 0.15 + capital * 0.10),
+    cfg.premiumFloor, cfg.premiumCeiling
+  );
+  const forecastReliability = clamp(analyst * 0.35 + earningsStability * 0.20 + marginDurability * 0.15 + cashQuality * 0.15 + balanceSheet * 0.15, 0, 1);
+  return {
+    category, engine: cfg.engine, abnormalGrowthYears: cfg.abnormalYears,
+    moatScore, premiumPersistence, forecastReliability,
+    components: { roicQuality, marginDurability, cashQuality, earningsStability, pricing, capitalAllocation: capital, analystReliability: analyst, growthPersistence, balanceSheet },
+  };
+}
+
 // ---------- Sector statistics ----------
 function computeSectorExitMultiples(stocks) {
   const bySector = {};
@@ -342,44 +392,37 @@ function companyCurrentMultiple(stock, type) {
   return null;
 }
 
-function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth) {
+function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, businessProfile = null) {
   if (!(sectorMultiple > 0)) return { multiple: null };
   const current = companyCurrentMultiple(stock, type);
-  const quality = qualityScore01(stock, exitGrowth);
   const category = inferValuationCategory(stock);
+  const profile = businessProfile || buildBusinessProfile(stock, category);
+  const quality = qualityScore01(stock, exitGrowth);
+  const growthScore = clamp(((exitGrowth ?? 0.04) - 0.02) / 0.20, 0, 1);
 
-  // Premium is built from durable business economics rather than a generic
-  // sector-multiple-times-quality shortcut.
-  const growthScore = clamp(((exitGrowth ?? 0.04) - 0.02) / 0.18, 0, 1);
-  const premiumPct = clamp(
-    (quality - 0.50) * 0.90 +
-    (growthScore - 0.40) * (type === 'revenueExit' ? 0.55 : 0.40),
-    -0.35,
-    category === 'Hyper Growth' ? 1.10 : category === 'Growth' ? 0.85 : 0.65
+  // V4 separates operating maturity from valuation-premium persistence. Durable
+  // compounders can mature operationally without automatically reverting to an average multiple.
+  const durablePremiumPct = clamp(
+    (profile.moatScore - 0.45) * 1.05 + (growthScore - 0.35) * (type === 'revenueExit' ? 0.62 : 0.46),
+    -0.38, category === 'Hyper Growth' ? 1.30 : category === 'Growth' ? 1.00 : category === 'Compounder' ? 0.90 : 0.55
   );
-  const qualityAdjustedSector = sectorMultiple * (1 + premiumPct);
-
-  // Current multiples are useful information, but only after hard bounding and with
-  // modest retention. Slow-growth/value names receive less benefit from rerating.
-  const upperBound = category === 'Hyper Growth' ? 2.35 : category === 'Growth' ? 2.05 : category === 'Compounder' ? 1.85 : 1.55;
-  const boundedCurrent = current > 0 ? clamp(current, sectorMultiple * 0.50, sectorMultiple * upperBound) : null;
-  let retain = qualityPremiumWeight(stock, exitGrowth);
-  if (['Value', 'Dividend', 'Cyclical', 'Turnaround'].includes(category)) retain *= 0.72;
-
+  const qualityAdjustedSector = sectorMultiple * (1 + durablePremiumPct);
+  const currentCap = category === 'Hyper Growth' ? 3.0 : category === 'Growth' ? 2.45 : category === 'Compounder' ? 2.25 : category === 'Dividend' ? 1.65 : 1.55;
+  const boundedCurrent = current > 0 ? clamp(current, sectorMultiple * 0.45, sectorMultiple * currentCap) : null;
+  let retain = profile.premiumPersistence;
+  if (type === 'revenueExit' && category === 'Compounder') retain *= 0.90;
+  if (['Value', 'Dividend', 'Turnaround', 'Cyclical'].includes(category)) retain *= 0.72;
+  retain = clamp(retain, 0.08, 0.80);
   const multiple = boundedCurrent != null
     ? qualityAdjustedSector * (1 - retain) + boundedCurrent * retain
     : qualityAdjustedSector;
-  const maxVsSector = category === 'Hyper Growth' ? 2.25 : category === 'Growth' ? 2.0 : category === 'Compounder' ? 1.8 : 1.5;
+  const maxVsSector = category === 'Hyper Growth' ? 2.80 : category === 'Growth' ? 2.35 : category === 'Compounder' ? 2.15 : category === 'Dividend' ? 1.60 : 1.50;
   return {
-    multiple: clamp(multiple, sectorMultiple * 0.50, sectorMultiple * maxVsSector),
-    sectorMultiple,
-    companyCurrentMultiple: current,
-    boundedCompanyMultiple: boundedCurrent,
-    qualityAdjustedSector,
-    qualityPremiumRetained: retain,
-    qualityScore: quality,
-    durablePremiumPct: premiumPct,
-    growthPremiumScore: growthScore,
+    multiple: clamp(multiple, sectorMultiple * 0.45, sectorMultiple * maxVsSector),
+    sectorMultiple, companyCurrentMultiple: current, boundedCompanyMultiple: boundedCurrent,
+    qualityAdjustedSector, qualityPremiumRetained: retain, premiumPersistence: profile.premiumPersistence,
+    moatScore: profile.moatScore, forecastReliability: profile.forecastReliability,
+    qualityScore: quality, durablePremiumPct, growthPremiumScore: growthScore, valuationEngine: profile.engine,
   };
 }
 
@@ -515,7 +558,7 @@ function pvDividendStream(stock, years, discountRate) {
   return pv;
 }
 
-function exitMethod(stock, model, sectorMultiples, type) {
+function exitMethod(stock, model, sectorMultiples, type, businessProfile = null) {
   const exit = model.projection.at(-1);
   const last = stock.financials.years.at(-1) || {};
   const discountRate = getDynamicDiscountRate(stock, model.category);
@@ -528,7 +571,7 @@ function exitMethod(stock, model, sectorMultiples, type) {
   if (!(sectorMultiple > 0) || !Number.isFinite(metricValue) || (type === 'epsExit' && metricValue <= 0)) {
     return { fairValuePerShare: null, exitPricePerShare: null, audit: { reason: 'missing multiple or exit metric' } };
   }
-  const multipleModel = intelligentExitMultiple(stock, type, sectorMultiple, exit.growth);
+  const multipleModel = intelligentExitMultiple(stock, type, sectorMultiple, exit.growth, businessProfile);
   const exitMultiple = multipleModel.multiple;
   let exitEnterpriseValue = null, exitEquityValue = null, exitPricePerShare = null;
   if (type === 'epsExit') {
@@ -563,6 +606,26 @@ const CATEGORY_METHOD_WEIGHTS = {
   Cyclical:       { dcf: 0.19, dcfSBCAdjusted: 0.06, ownerEarnings: 0.10, revenueExit: 0.04, epsExit: 0.17, ebitdaExit: 0.44 },
 };
 
+function businessSpecificWeights(category, profile) {
+  const base = { ...(CATEGORY_METHOD_WEIGHTS[category] || CATEGORY_METHOD_WEIGHTS.Value) };
+  const moat = profile?.moatScore ?? 0.5;
+  const reliability = profile?.forecastReliability ?? 0.5;
+  if (category === 'Hyper Growth') {
+    base.revenueExit += 0.05 * reliability; base.epsExit += 0.04 * reliability;
+    base.dcf *= 0.75; base.ownerEarnings *= 0.70;
+  } else if (category === 'Compounder') {
+    base.ownerEarnings += 0.04 * moat; base.dcf += 0.03 * reliability; base.revenueExit *= 0.80;
+  } else if (category === 'Dividend') {
+    base.dcf += 0.05; base.ownerEarnings += 0.04; base.revenueExit *= 0.45;
+  } else if (category === 'Turnaround') {
+    base.ebitdaExit += 0.05; base.epsExit += 0.03; base.dcf *= 0.80;
+  } else if (category === 'Cyclical') {
+    base.ebitdaExit += 0.07; base.revenueExit *= 0.50; base.dcf *= 0.85;
+  }
+  const total = Object.values(base).reduce((a,b)=>a+b,0);
+  return Object.fromEntries(Object.entries(base).map(([k,v])=>[k,total ? v/total : v]));
+}
+
 function methodSpecificReliability(stock, key, value, center) {
   const last = stock.financials.years.at(-1) || {};
   const analyst = analystReliability(stock);
@@ -579,8 +642,8 @@ function methodSpecificReliability(stock, key, value, center) {
   return clamp(r, 0.15, 1);
 }
 
-function combineValuations(methods, category = 'Value', stock = null) {
-  const base = CATEGORY_METHOD_WEIGHTS[category] || CATEGORY_METHOD_WEIGHTS.Value;
+function combineValuations(methods, category = 'Value', stock = null, businessProfile = null) {
+  const base = businessSpecificWeights(category, businessProfile);
   const available = Object.entries(methods).filter(([, v]) => Number.isFinite(v) && v > 0);
   if (!available.length) return { blendedFairValue: null, agreementScore: null, methodCount: 0, effectiveWeights: {}, reliabilityFlags: [] };
   const center = median(available.map(([, v]) => v));
@@ -657,17 +720,18 @@ function valuateStock(stock, sectorExitMultiples) {
   const category = inferValuationCategory(stock);
   const sectorMultiples = sectorExitMultiples[stock.sector] || sectorExitMultiples.Unknown || {};
   const model = projectFinancials(stock, stock.growthYear1, 5);
+  const businessProfile = buildBusinessProfile(stock, category, model);
   const dcf = dcfFromProjection(stock, model, { sbcAdjusted: false });
   const dcfSBCAdjusted = dcfFromProjection(stock, model, { sbcAdjusted: true });
   const ownerEarnings = ownerEarningsFromProjection(stock, model);
-  const revenueExit = exitMethod(stock, model, sectorMultiples, 'revenueExit');
-  const epsExit = exitMethod(stock, model, sectorMultiples, 'epsExit');
-  const ebitdaExit = exitMethod(stock, model, sectorMultiples, 'ebitdaExit');
+  const revenueExit = exitMethod(stock, model, sectorMultiples, 'revenueExit', businessProfile);
+  const epsExit = exitMethod(stock, model, sectorMultiples, 'epsExit', businessProfile);
+  const ebitdaExit = exitMethod(stock, model, sectorMultiples, 'ebitdaExit', businessProfile);
   const methods = {
     dcf: dcf.fairValuePerShare, dcfSBCAdjusted: dcfSBCAdjusted.fairValuePerShare, ownerEarnings: ownerEarnings.fairValuePerShare,
     revenueExit: revenueExit.fairValuePerShare, epsExit: epsExit.fairValuePerShare, ebitdaExit: ebitdaExit.fairValuePerShare,
   };
-  const combined = combineValuations(methods, category, stock);
+  const combined = combineValuations(methods, category, stock, businessProfile);
   const exitResults = { revenueExit, epsExit, ebitdaExit };
   const fiveYearPriceTarget = fiveYearPriceTargetCAGR(stock, model, exitResults, combined.effectiveWeights);
   const currentPrice = stock.price.current;
@@ -689,7 +753,7 @@ function valuateStock(stock, sectorExitMultiples) {
   }
 
   return {
-    category, methods, blendedFairValue: combined.blendedFairValue,
+    category, businessProfile, methods, blendedFairValue: combined.blendedFairValue,
     agreementScore: combined.agreementScore, methodCount: combined.methodCount,
     effectiveWeights: combined.effectiveWeights, reliabilityFlags: combined.reliabilityFlags,
     outlierFlags: combined.reliabilityFlags, marginOfSafety, fiveYearPriceTarget,
@@ -699,7 +763,7 @@ function valuateStock(stock, sectorExitMultiples) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '3.7', category, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '4.0', category, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
@@ -712,7 +776,7 @@ function valuateStock(stock, sectorExitMultiples) {
 const api = {
   computeSectorExitMultiples, valuateStock, projectFinancials, estimateDilutionRate,
   combineValuations, meanRevertedMultiple, qualityPremiumWeight, fiveYearPriceTargetCAGR,
-  inferValuationCategory, buildGrowthPath, intelligentExitMultiple, analystReliability, capitalAllocationScore, ownerEarningsFromProjection,
+  inferValuationCategory, buildGrowthPath, buildBusinessProfile, businessSpecificWeights, intelligentExitMultiple, analystReliability, capitalAllocationScore, ownerEarningsFromProjection,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 if (typeof window !== 'undefined') window.ValuationMethods = api;
