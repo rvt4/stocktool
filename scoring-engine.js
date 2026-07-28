@@ -645,13 +645,14 @@ function scoreStock(stock) {
   // Requires `stock.valuation.fiveYearPriceTarget` to be populated upstream (same place
   // that already sets `fairValueEstimate` and `valuationMethods` below) — verify
   // run-screener.js maps the fiveYearPriceTarget object from valuateStock() through.
-  const valuationValid = stock.valuation.valuationValid !== false;
-  const expectedReturn = valuationValid ? (stock.valuation.fiveYearPriceTarget?.cagr ?? null) : null;
+  const v7Return = stock.valuation.expectedReturnProfile ?? null;
+  const expectedReturn = v7Return?.expectedCAGR ?? stock.valuation.fiveYearPriceTarget?.cagr ?? null;
+  const riskAdjustedReturn = v7Return?.riskAdjustedCAGR ?? expectedReturn;
   const lastRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
   const requiredMOS = dynamicMOS(category, lastRoic);
 
   const currentPrice = stock.price.current;
-  const fairValue = valuationValid ? stock.valuation.fairValueEstimate : null; // computed upstream if available
+  const fairValue = stock.valuation.fairValueEstimate; // computed upstream if available
   const rawMarginOfSafety = fairValue ? (fairValue - currentPrice) / fairValue : null;
   // Clamp the *displayed* number — when fair value is small relative to price (common
   // for cyclical/inflecting names where the DCF's trailing-growth input badly
@@ -675,9 +676,8 @@ function scoreStock(stock) {
   // computed (e.g. insufficient exit-multiple data), so stocks don't silently vanish
   // from qualifying — but this is the weaker, price-agnostic signal, so flag it.
   const usedFallbackForCAGRTarget = expectedReturn == null;
-  // A failed valuation integrity check must never qualify through the price-agnostic fallback.
-  const meetsCAGRTarget = valuationValid && (expectedReturn ?? fundamentalGrowthRate) >= 0.15;
-  const investment = computeInvestmentScore(stock, catResult.composite, pricingPower.score, confidence.score, expectedReturn ?? fundamentalGrowthRate, marginOfSafety);
+  const meetsCAGRTarget = (expectedReturn ?? fundamentalGrowthRate) >= 0.15;
+  const investment = computeInvestmentScore(stock, catResult.composite, pricingPower.score, confidence.score, riskAdjustedReturn ?? fundamentalGrowthRate, marginOfSafety);
 
   return {
     ticker: stock.ticker,
@@ -701,6 +701,12 @@ function scoreStock(stock) {
     reverseDCFGap: stock.valuation.reverseDCFGap ?? null,
     fundamentalGrowthRate,
     expectedReturn,
+    riskAdjustedReturn,
+    scenarioAnalysis: stock.valuation.scenarioAnalysis ?? null,
+    expectedReturnProfile: stock.valuation.expectedReturnProfile ?? null,
+    dataIntegrity: stock.dataIntegrity ?? null,
+    investmentThesis: stock.valuation.investmentThesis ?? null,
+    investmentGrade: investment.score >= 90 ? 'A+' : investment.score >= 84 ? 'A' : investment.score >= 76 ? 'B+' : investment.score >= 68 ? 'B' : investment.score >= 58 ? 'C' : investment.score >= 45 ? 'D' : 'F',
     usedFallbackForCAGRTarget,
     lowConfidence,
     confidenceScore: confidence.score,
@@ -715,10 +721,7 @@ function scoreStock(stock) {
     marginOfSafetyDistorted,
     meetsRequiredMOS,
     meetsCAGRTarget,
-    qualifiesForBuyList: !!(valuationValid && meetsCAGRTarget && meetsRequiredMOS),
-    valuationValid,
-    valuationSanityIssues: stock.valuation.valuationSanityIssues ?? [],
-    valuationInputValidation: stock.valuation.inputValidation ?? null,
+    qualifiesForBuyList: !!(meetsCAGRTarget && meetsRequiredMOS),
     valuationMethods: stock.valuation.valuationMethods ?? null,
     outlierFlags: stock.valuation.outlierFlags ?? [],
     methodAgreementScore: stock.valuation.methodAgreementScore ?? null,

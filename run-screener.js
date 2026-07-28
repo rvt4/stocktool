@@ -15,6 +15,10 @@ const path = require('path');
 const { buildStockRecord } = require('./data-fetchers');
 const { computeSectorExitMultiples, valuateStock } = require('./valuation-methods');
 const { scoreUniverse } = require('./scoring-engine');
+const { assessDataIntegrity } = require('./engine/data-integrity');
+const { buildScenarios } = require('./engine/scenario-engine');
+const { computeExpectedReturnProfile } = require('./engine/expected-return-engine');
+const { buildInvestmentThesis } = require('./engine/thesis-engine');
 
 const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'), 'utf8'));
 
@@ -198,10 +202,15 @@ async function run() {
     // every stock falls back to the price-agnostic fundamentalGrowthRate for the buy-list
     // gate, silently losing the "is this a buy at today's price" signal.
     stock.valuation.fiveYearPriceTarget = result.fiveYearPriceTarget;
-    stock.valuation.valuationValid = result.valuationValid;
-    stock.valuation.valuationSanityIssues = result.valuationSanityIssues;
-    stock.valuation.inputValidation = result.inputValidation;
-    stock.valuation.rawValuationMethods = result.rawMethods;
+
+    // V7 Milestone 1: auditable data integrity + bear/base/bull return distribution.
+    const dataIntegrity = assessDataIntegrity(stock);
+    const scenarioAnalysis = buildScenarios(stock, result, dataIntegrity);
+    const expectedReturnProfile = computeExpectedReturnProfile(stock, scenarioAnalysis, dataIntegrity);
+    stock.dataIntegrity = dataIntegrity;
+    stock.valuation.scenarioAnalysis = scenarioAnalysis;
+    stock.valuation.expectedReturnProfile = expectedReturnProfile;
+    stock.valuation.investmentThesis = buildInvestmentThesis(stock, expectedReturnProfile);
   }
 
   writeResults(records, false);

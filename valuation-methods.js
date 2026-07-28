@@ -1,5 +1,5 @@
 /**
- * FreeScreener V4.0 business-type valuation engine
+ * FreeScreener V7.0 core valuation engine
  *
  * V3.0 principles:
  *  - one shared five-year operating projection for every valuation method
@@ -39,41 +39,6 @@ function historicalMedianGrowth(yrs) {
     if (yrs[i - 1].revenue > 0 && yrs[i].revenue > 0) rates.push(yrs[i].revenue / yrs[i - 1].revenue - 1);
   }
   return median(rates.slice(-5));
-}
-
-function validateValuationInputs(stock) {
-  const last = stock.financials?.years?.at(-1) || {};
-  const price = stock.price?.current;
-  const shares = last.sharesOutTTM;
-  const issues = [];
-
-  if (!(last.revenue > 0)) issues.push('missing_or_nonpositive_revenue');
-  if (!(shares > 0)) issues.push('missing_or_nonpositive_shares');
-  if (!(price > 0)) issues.push('missing_or_nonpositive_price');
-
-  if (shares > 0 && last.netIncome != null && last.dilutedEPS != null && Math.abs(last.dilutedEPS) > 1e-6) {
-    const impliedShares = Math.abs(last.netIncome / last.dilutedEPS);
-    const ratio = Math.max(shares / impliedShares, impliedShares / shares);
-    if (Number.isFinite(ratio) && ratio > 2.0) issues.push('share_count_eps_denominator_mismatch');
-  }
-
-  const marketCap = price > 0 && shares > 0 ? price * shares : null;
-  if (marketCap != null && last.revenue > 0) {
-    const priceToSales = marketCap / last.revenue;
-    if (priceToSales < 0.01 || priceToSales > 250) issues.push('implausible_market_cap_to_revenue');
-  }
-
-  return { valid: issues.length === 0, issues, shares, price, marketCap };
-}
-
-function sanitizeValuationResult(value, currentPrice, method) {
-  if (!(value > 0) || !Number.isFinite(value)) return { value: null, issue: `${method}:invalid_value` };
-  if (!(currentPrice > 0)) return { value, issue: null };
-  const ratio = value / currentPrice;
-  // This is a data-integrity circuit breaker, not a valuation opinion.
-  // A method above 100x or below 0.005x price is almost certainly a units/split error.
-  if (ratio > 100 || ratio < 0.005) return { value: null, issue: `${method}:implausible_price_ratio` };
-  return { value, issue: null };
 }
 
 // ---------- V3 category inference ----------
@@ -752,7 +717,6 @@ function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
 }
 
 function valuateStock(stock, sectorExitMultiples) {
-  const inputValidation = validateValuationInputs(stock);
   const category = inferValuationCategory(stock);
   const sectorMultiples = sectorExitMultiples[stock.sector] || sectorExitMultiples.Unknown || {};
   const model = projectFinancials(stock, stock.growthYear1, 5);
@@ -763,19 +727,10 @@ function valuateStock(stock, sectorExitMultiples) {
   const revenueExit = exitMethod(stock, model, sectorMultiples, 'revenueExit', businessProfile);
   const epsExit = exitMethod(stock, model, sectorMultiples, 'epsExit', businessProfile);
   const ebitdaExit = exitMethod(stock, model, sectorMultiples, 'ebitdaExit', businessProfile);
-  const rawMethods = {
+  const methods = {
     dcf: dcf.fairValuePerShare, dcfSBCAdjusted: dcfSBCAdjusted.fairValuePerShare, ownerEarnings: ownerEarnings.fairValuePerShare,
     revenueExit: revenueExit.fairValuePerShare, epsExit: epsExit.fairValuePerShare, ebitdaExit: ebitdaExit.fairValuePerShare,
   };
-  const valuationSanityIssues = [...inputValidation.issues];
-  const methods = {};
-  for (const [key, value] of Object.entries(rawMethods)) {
-    const sanitized = inputValidation.valid
-      ? sanitizeValuationResult(value, stock.price.current, key)
-      : { value: null, issue: `${key}:invalid_inputs` };
-    methods[key] = sanitized.value;
-    if (sanitized.issue) valuationSanityIssues.push(sanitized.issue);
-  }
   const combined = combineValuations(methods, category, stock, businessProfile);
   const exitResults = { revenueExit, epsExit, ebitdaExit };
   const fiveYearPriceTarget = fiveYearPriceTargetCAGR(stock, model, exitResults, combined.effectiveWeights);
@@ -798,10 +753,7 @@ function valuateStock(stock, sectorExitMultiples) {
   }
 
   return {
-    category, businessProfile, methods, rawMethods, blendedFairValue: combined.blendedFairValue,
-    valuationValid: inputValidation.valid && combined.blendedFairValue > 0,
-    valuationSanityIssues: [...new Set(valuationSanityIssues)],
-    inputValidation,
+    category, businessProfile, methods, blendedFairValue: combined.blendedFairValue,
     agreementScore: combined.agreementScore, methodCount: combined.methodCount,
     effectiveWeights: combined.effectiveWeights, reliabilityFlags: combined.reliabilityFlags,
     outlierFlags: combined.reliabilityFlags, marginOfSafety, fiveYearPriceTarget,
@@ -811,7 +763,7 @@ function valuateStock(stock, sectorExitMultiples) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '4.0', category, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '7.0-core', category, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
@@ -825,7 +777,6 @@ const api = {
   computeSectorExitMultiples, valuateStock, projectFinancials, estimateDilutionRate,
   combineValuations, meanRevertedMultiple, qualityPremiumWeight, fiveYearPriceTargetCAGR,
   inferValuationCategory, buildGrowthPath, buildBusinessProfile, businessSpecificWeights, intelligentExitMultiple, analystReliability, capitalAllocationScore, ownerEarningsFromProjection,
-  validateValuationInputs, sanitizeValuationResult,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 if (typeof window !== 'undefined') window.ValuationMethods = api;

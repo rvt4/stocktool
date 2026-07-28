@@ -146,63 +146,79 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   pullAnnual('DepreciationDepletionAndAmortization', 'da');
   pullAnnual('DepreciationAmortizationAndAccretionNet', 'da'); // fallback tag
 
-  // Normalize SEC share counts before any per-share or market-cap calculation.
-  // Some Company Facts records expose share values in thousands or millions.
-  // Reconcile reported shares against the independent diluted-EPS denominator:
-  // implied diluted shares = abs(net income / diluted EPS).
+  // SEC Company Facts normally reports share counts as raw shares, but a small
+  // number of filings expose values scaled in thousands or millions. Reconcile
+  // the reported value against the independently implied diluted share count:
+  //
+  //     diluted shares ~= net income / diluted EPS
+  //
+  // This prevents a value such as 716.4 (meaning 716.4 million shares) from
+  // being interpreted as only 716 shares and inflating per-share valuations.
   const shareScaleCandidates = [1, 1e3, 1e6, 1e9];
-  const detectedScales = [];
+  const detectedShareScales = [];
 
   Object.values(byYear).forEach(y => {
     const rawShares = Number(y.sharesOutTTM);
-    if (!(rawShares > 0)) return;
+    if (!Number.isFinite(rawShares) || rawShares <= 0) return;
 
     y.rawSharesOutTTM = rawShares;
-    let scale = 1;
 
     const netIncome = Number(y.netIncome);
     const dilutedEPS = Number(y.dilutedEPS);
     const impliedShares =
       Number.isFinite(netIncome) &&
       Number.isFinite(dilutedEPS) &&
-      Math.abs(dilutedEPS) > 1e-6
+      Math.abs(dilutedEPS) > 0.000001
         ? Math.abs(netIncome / dilutedEPS)
         : null;
 
-    if (impliedShares > 0) {
+    let selectedScale = 1;
+
+    if (Number.isFinite(impliedShares) && impliedShares > 0) {
       let best = null;
-      for (const candidateScale of shareScaleCandidates) {
-        const normalized = rawShares * candidateScale;
-        const logError = Math.abs(Math.log(normalized / impliedShares));
+
+      for (const scale of shareScaleCandidates) {
+        const candidate = rawShares * scale;
+        const logError = Math.abs(Math.log(candidate / impliedShares));
+
         if (!best || logError < best.logError) {
-          best = { scale: candidateScale, logError };
+          best = { scale, candidate, logError };
         }
       }
 
-      // Only accept a scale when the two independent denominators agree closely.
-      if (best && best.logError <= Math.log(1.35)) scale = best.scale;
+      // Accept the inferred scale only when the resulting share count is within
+      // roughly 35% of net-income / diluted-EPS. This avoids "fixing" legitimate
+      // values when the SEC facts for a year are internally inconsistent.
+      if (best && best.logError <= Math.log(1.35)) {
+        selectedScale = best.scale;
+      }
     } else if (rawShares < 100000) {
-      // Conservative fallback for large public companies when EPS is unavailable.
-      scale = 1e6;
+      // Conservative fallback for years without usable EPS. The screener covers
+      // established U.S. companies, so a sub-100k diluted share count is almost
+      // certainly a thousands/millions unit issue.
+      selectedScale = 1e6;
     }
 
-    y.sharesScaleApplied = scale;
-    y.sharesOutTTM = rawShares * scale;
-    if (scale !== 1) detectedScales.push(scale);
+    y.sharesScaleApplied = selectedScale;
+    y.sharesOutTTM = rawShares * selectedScale;
+
+    if (selectedScale !== 1) detectedShareScales.push(selectedScale);
   });
 
-  // Use the dominant reconciled scale for isolated years with missing EPS.
-  if (detectedScales.length) {
-    const counts = detectedScales.reduce((acc, scale) => {
+  // Apply the most frequently detected non-unit scale to any other obviously
+  // tiny years that lacked enough information for direct reconciliation.
+  if (detectedShareScales.length) {
+    const scaleCounts = detectedShareScales.reduce((acc, scale) => {
       acc[scale] = (acc[scale] || 0) + 1;
       return acc;
     }, {});
     const dominantScale = Number(
-      Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]
+      Object.entries(scaleCounts).sort((a, b) => b[1] - a[1])[0][0]
     );
 
     Object.values(byYear).forEach(y => {
       if (
+        Number.isFinite(y.sharesOutTTM) &&
         y.sharesOutTTM > 0 &&
         y.sharesOutTTM < 100000 &&
         (y.sharesScaleApplied == null || y.sharesScaleApplied === 1)
