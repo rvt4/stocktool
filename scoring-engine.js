@@ -488,17 +488,64 @@ function computeConfidenceScore(s, category, revGrowthSources, methodAgreementSc
 
 function computeInvestmentScore(stock, categoryComposite, pricingPowerScore, confidenceScore, expectedReturn, marginOfSafety) {
   const profile = stock.valuation?.businessProfile || {};
+  const capitalAllocation = stock.valuation?.capitalAllocation?.score ?? 50;
   const moat = clamp((profile.moatScore ?? 0.5) * 100, 0, 100);
   const durability = clamp((profile.premiumPersistence ?? 0.45) * 100, 0, 100);
   const forecast = clamp((profile.forecastReliability ?? confidenceScore / 100) * 100, 0, 100);
-  const returnScore = expectedReturn == null ? 45 : clamp((expectedReturn + 0.05) / 0.35 * 100, 0, 100);
-  const valuationScore = marginOfSafety == null ? 45 : clamp((marginOfSafety + 0.10) / 0.50 * 100, 0, 100);
-  const downsideRisk = clamp(100 - valuationScore * 0.45 - confidenceScore * 0.30 - moat * 0.25, 0, 100);
-  const score = Math.round(clamp(
-    categoryComposite * 0.20 + pricingPowerScore * 0.10 + confidenceScore * 0.15 +
-    moat * 0.15 + durability * 0.10 + forecast * 0.08 + returnScore * 0.14 + valuationScore * 0.08, 0, 100
+  const returnScore = expectedReturn == null ? 45 : clamp((expectedReturn - 0.05) / 0.25 * 100, 0, 100);
+  const valuationScore = marginOfSafety == null ? 45 : clamp((marginOfSafety + 0.05) / 0.45 * 100, 0, 100);
+
+  // V5 separates the company from the stock. A cheap but mediocre business can score
+  // well on valuation without automatically outranking a durable compounder.
+  const businessQualityScore = Math.round(clamp(
+    categoryComposite * 0.30 +
+    moat * 0.22 +
+    pricingPowerScore * 0.14 +
+    capitalAllocation * 0.12 +
+    durability * 0.12 +
+    forecast * 0.10,
+    0, 100
   ));
-  return { score, moatScore: Math.round(moat), durabilityScore: Math.round(durability), forecastScore: Math.round(forecast), returnScore: Math.round(returnScore), valuationScore: Math.round(valuationScore), downsideRisk: Math.round(downsideRisk) };
+
+  const valuationAttractivenessScore = Math.round(clamp(
+    returnScore * 0.55 +
+    valuationScore * 0.30 +
+    confidenceScore * 0.15,
+    0, 100
+  ));
+
+  // Portfolio-manager score: quality is the largest input, valuation decides whether
+  // the quality is purchasable, and confidence prevents fragile estimates from ranking
+  // too highly. MOS remains important, but is no longer the dominant ranking factor.
+  const score = Math.round(clamp(
+    businessQualityScore * 0.30 +
+    moat * 0.20 +
+    returnScore * 0.15 +
+    confidenceScore * 0.10 +
+    valuationScore * 0.10 +
+    pricingPowerScore * 0.05 +
+    capitalAllocation * 0.05 +
+    forecast * 0.05,
+    0, 100
+  ));
+
+  const downsideRisk = Math.round(clamp(
+    100 - valuationScore * 0.35 - confidenceScore * 0.25 - moat * 0.20 - businessQualityScore * 0.20,
+    0, 100
+  ));
+
+  return {
+    score,
+    businessQualityScore,
+    valuationAttractivenessScore,
+    moatScore: Math.round(moat),
+    durabilityScore: Math.round(durability),
+    forecastScore: Math.round(forecast),
+    returnScore: Math.round(returnScore),
+    valuationScore: Math.round(valuationScore),
+    capitalAllocationScore: Math.round(capitalAllocation),
+    downsideRisk,
+  };
 }
 
 // ---------- 7. Master Scoring Function ----------
@@ -554,6 +601,8 @@ function scoreStock(stock) {
     category,
     categoryComposite: catResult.composite,
     investmentScore: investment.score,
+    businessQualityScore: investment.businessQualityScore,
+    valuationAttractivenessScore: investment.valuationAttractivenessScore,
     investmentBreakdown: investment,
     businessProfile: stock.valuation.businessProfile ?? null,
     categoryBreakdown: catResult,
@@ -601,78 +650,70 @@ function scoreStock(stock) {
 // ---------- 8. Percentile-Based Rating (apply after scoring full universe) ----------
 
 function applyPercentileRatings(scoredStocks) {
-  // Split into stocks that actually clear your bar (CAGR + confirmed MOS) and everyone
-  // else. Percentile ranking now happens WITHIN the qualifying pool only, to decide
-  // Strong Buy vs Buy — not across the whole 891-stock universe. The previous version
-  // required a stock to be BOTH in the global top 15% AND meet the absolute CAGR/MOS
-  // thresholds — two independent hard filters stacked together, which is far stricter
-  // than either alone and is what collapsed the Buy list down to 2-3 names. A stock that
-  // clearly clears your explicit bar shouldn't also have to out-rank hundreds of stocks
-  // that don't even qualify.
   const qualifiers = scoredStocks.filter(s => s.qualifiesForBuyList && (s.expectedReturn ?? s.fundamentalGrowthRate) >= 0);
   const nonQualifiers = scoredStocks.filter(s => !(s.qualifiesForBuyList && (s.expectedReturn ?? s.fundamentalGrowthRate) >= 0));
 
-  // Rank Strong Buys within each valuation category so a large pool of cheap Value
-  // names cannot crowd every Growth/Compounder candidate out of the top tier.
+  // Stage 1: compare like with like. Each category receives its own leaderboard based
+  // primarily on V5 Investment Score, then business quality, then confidence.
   const categoryRanks = new Map();
-  for (const s of qualifiers) {
+  for (const s of scoredStocks) {
     const bucket = categoryRanks.get(s.category) || [];
     bucket.push(s);
     categoryRanks.set(s.category, bucket);
   }
-  for (const bucket of categoryRanks.values()) bucket.sort((a, b) => (b.investmentScore - a.investmentScore) || (b.sectorRelativeScore - a.sectorRelativeScore));
-  const categoryPercentile = new Map();
   for (const bucket of categoryRanks.values()) {
-    bucket.forEach((s, i) => categoryPercentile.set(s, bucket.length ? i / bucket.length : 0));
+    bucket.sort((a, b) =>
+      (b.investmentScore - a.investmentScore) ||
+      (b.businessQualityScore - a.businessQualityScore) ||
+      (b.confidenceScore - a.confidenceScore) ||
+      (b.sectorRelativeScore - a.sectorRelativeScore)
+    );
+    bucket.forEach((s, i) => {
+      s.categoryRank = i + 1;
+      s.categoryUniverseSize = bucket.length;
+      s.categoryPercentile = bucket.length <= 1 ? 0 : i / (bucket.length - 1);
+      s.categoryLeaderScore = Math.round((1 - s.categoryPercentile) * 100);
+    });
   }
-  const sortedQualifiers = [...qualifiers].sort((a, b) => b.sectorRelativeScore - a.sectorRelativeScore);
-  sortedQualifiers.forEach((s) => {
-    const pct = categoryPercentile.get(s) ?? 0;
-    let rating = pct <= 0.25 ? 'Strong Buy' : 'Buy';
-    // Confidence score (0-100, itemized in confidenceDeductions) is the real gate now —
-    // it folds in thin history, missing analyst data, single-method valuation, method
-    // disagreement, cyclicality, negative FCF, SBC intensity, and single-source growth
-    // all at once, instead of one boolean tripping on any single issue. A stock can't
-    // get a Strong Buy badge below 70/100 confidence, and can't clear Buy at all below 40 —
-    // the underlying data is too thin to trust the call regardless of how good the
-    // headline numbers look.
-    if (rating === 'Strong Buy' && s.confidenceScore < 70) rating = 'Buy';
-    if (s.confidenceScore < 40) rating = 'Hold/Watch';
-    // lowConfidence means multiple CAGR inputs hit their sanity clamp simultaneously —
-    // a sign the underlying data for this specific stock is broadly unreliable, not
-    // just one noisy year. Don't let that produce a Strong Buy / Buy badge.
-    if (s.lowConfidence) rating = 'Hold/Watch';
-    // Method disagreement, growth-gap size, and clamped MOS all now flow continuously
-    // into confidenceScore itself (see computeConfidenceScore) rather than being a
-    // separate hard cutoff here — a stock with 42/100 agreement and one with 39/100
-    // should be penalized nearly identically, not treated as pass/fail.
-    s.sectorPercentileTier = pct <= 0.25 ? 'Strong Buy' : 'Buy';
-    s.categoryPercentile = pct;
-    s.rating = rating;
-  });
 
-  // Non-qualifiers: rank by sectorRelativeScore to distinguish "reasonable, just short
-  // of your bar" (Hold/Watch) from "weak across the board" (Avoid). Negative expected
-  // CAGR is always Avoid regardless of rank — never label a negative expected return
-  // as merely "watch."
-  const sortedNonQualifiers = [...nonQualifiers].sort((a, b) => b.sectorRelativeScore - a.sectorRelativeScore);
-  const nqN = sortedNonQualifiers.length;
-  sortedNonQualifiers.forEach((s, i) => {
-    const pct = nqN > 0 ? i / nqN : 0;
-    s.sectorPercentileTier = pct <= 0.65 ? 'Hold/Watch' : 'Avoid';
-    s.rating = (s.expectedReturn ?? s.fundamentalGrowthRate) < 0 ? 'Avoid' : s.sectorPercentileTier;
-    // "Avoid" should mean an actual red flag — overvalued (negative MOS), data too
-    // thin to trust (low confidence), or negative growth (handled above) — not just
-    // "ranked in the bottom third of stocks that already missed the CAGR bar." A
-    // reliable, undervalued business that simply grows slower than your target doesn't
-    // belong in the same bucket as one with a real problem; that's a "watch, not a red
-    // flag" story, and the label should say so.
-    if (s.rating === 'Avoid' && s.marginOfSafety != null && s.marginOfSafety > 0 && s.confidenceScore >= 60) {
+  // Stage 2: assign ratings using absolute return/MOS gates plus category leadership.
+  for (const s of qualifiers) {
+    const topPct = s.categoryPercentile ?? 1;
+    let rating = 'Buy';
+    const strongByRank = topPct <= 0.20;
+    const strongByQuality = s.investmentScore >= 72 && s.businessQualityScore >= 65;
+    const strongByEvidence = s.confidenceScore >= 65 && !s.lowConfidence;
+    if (strongByRank && strongByQuality && strongByEvidence) rating = 'Strong Buy';
+    if (s.confidenceScore < 40 || s.lowConfidence) rating = 'Hold/Watch';
+    s.sectorPercentileTier = strongByRank ? 'Strong Buy' : 'Buy';
+    s.rating = rating;
+  }
+
+  // Stage 3: non-qualifiers are judged by how close they are to the hurdle and by
+  // business quality. A high-quality compounder that narrowly misses MOS is a Watch,
+  // not an Avoid; negative-return or deeply overvalued names remain Avoid.
+  for (const s of nonQualifiers) {
+    const exp = s.expectedReturn ?? s.fundamentalGrowthRate;
+    const severeOvervaluation = s.marginOfSafety != null && s.marginOfSafety < -0.20;
+    const weakBusiness = (s.businessQualityScore ?? 0) < 40;
+    if (exp < 0 || severeOvervaluation || (weakBusiness && s.confidenceScore < 50)) {
+      s.rating = 'Avoid';
+    } else {
       s.rating = 'Hold/Watch';
     }
-  });
+    s.sectorPercentileTier = s.rating;
+  }
 
-  return [...sortedQualifiers, ...sortedNonQualifiers];
+  // Global ordering is portfolio-manager style: rating tier, then Investment Score,
+  // then category leadership. This prevents large pools of statistically cheap Value
+  // stocks from automatically filling the top of the screener.
+  const tier = { 'Strong Buy': 4, 'Buy': 3, 'Hold/Watch': 2, 'Avoid': 1 };
+  return [...scoredStocks].sort((a, b) =>
+    (tier[b.rating] - tier[a.rating]) ||
+    (b.investmentScore - a.investmentScore) ||
+    ((b.categoryLeaderScore ?? 0) - (a.categoryLeaderScore ?? 0)) ||
+    (b.confidenceScore - a.confidenceScore)
+  );
 }
 
 // ---------- Public API ----------
