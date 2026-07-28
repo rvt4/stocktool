@@ -570,64 +570,15 @@ function computeV6QualityScore(stock, categoryComposite, pricingPowerScore, conf
 }
 
 function computeInvestmentScore(stock, categoryComposite, pricingPowerScore, confidenceScore, expectedReturn, marginOfSafety) {
-  const profile = stock.valuation?.businessProfile || {};
-  const capitalAllocation = stock.valuation?.capitalAllocation?.score ?? 50;
-  const moat = clamp((profile.moatScore ?? 0.5) * 100, 0, 100);
-  const forecast = clamp((profile.forecastReliability ?? confidenceScore / 100) * 100, 0, 100);
-  const returnScore = expectedReturn == null ? 45 : clamp((expectedReturn - 0.05) / 0.25 * 100, 0, 100);
-  const valuationScore = marginOfSafety == null ? 45 : clamp((marginOfSafety + 0.05) / 0.45 * 100, 0, 100);
-  const quality = computeV6QualityScore(stock, categoryComposite, pricingPowerScore, confidenceScore);
-
-  const valuationAttractivenessScore = Math.round(clamp(
-    returnScore * 0.60 + valuationScore * 0.25 + confidenceScore * 0.15,
-    0, 100
-  ));
-
-  // Probability is a transparent evidence score, not a statistical guarantee. It
-  // rewards durable economics and reliable forecasts while penalizing fragile data.
-  const successProbability = Math.round(clamp(
-    quality.score * 0.38 +
-    confidenceScore * 0.24 +
-    forecast * 0.18 +
-    moat * 0.12 +
-    valuationScore * 0.08,
-    5, 95
-  ));
-  const probabilityAdjustedReturn = expectedReturn == null
-    ? null
-    : expectedReturn * (successProbability / 100) + Math.min(expectedReturn, 0) * (1 - successProbability / 100);
-
-  // V6 combines two intentionally independent lenses: Quality and Opportunity.
-  // Quality wins ties; opportunity determines whether today's price is actionable.
-  const score = Math.round(clamp(
-    quality.score * 0.46 +
-    valuationAttractivenessScore * 0.34 +
-    confidenceScore * 0.08 +
-    moat * 0.05 +
-    capitalAllocation * 0.04 +
-    forecast * 0.03,
-    0, 100
-  ));
-
-  const downsideRisk = Math.round(clamp(
-    100 - valuationScore * 0.30 - confidenceScore * 0.25 - moat * 0.15 - quality.score * 0.30,
-    0, 100
-  ));
-
-  return {
-    score,
-    businessQualityScore: quality.score,
-    valuationAttractivenessScore,
-    qualityBreakdown: quality,
-    moatScore: Math.round(moat),
-    forecastScore: Math.round(forecast),
-    returnScore: Math.round(returnScore),
-    valuationScore: Math.round(valuationScore),
-    capitalAllocationScore: Math.round(capitalAllocation),
-    successProbability,
-    probabilityAdjustedReturn,
-    downsideRisk,
-  };
+  const profile=stock.valuation?.businessProfile||{}, ca=stock.valuation?.capitalAllocation?.score??50;
+  const moat=clamp((profile.moatScore??.5)*100,0,100), forecast=clamp((profile.forecastReliability??confidenceScore/100)*100,0,100);
+  const quality=computeV6QualityScore(stock,categoryComposite,pricingPowerScore,confidenceScore);
+  const comp=stock.valuation?.compounder?.score??50, protect=stock.valuation?.downside?.protectionScore??50, integrity=stock.dataIntegrity?.score??60;
+  const ret=expectedReturn==null?35:clamp((expectedReturn-.04)/.22*100,0,100), val=marginOfSafety==null?40:clamp((marginOfSafety+.05)/.45*100,0,100);
+  const opportunity=Math.round(clamp(ret*.48+val*.24+confidenceScore*.12+protect*.10+integrity*.06,0,100));
+  const success=Math.round(clamp(quality.score*.30+comp*.18+confidenceScore*.18+forecast*.11+moat*.09+protect*.09+integrity*.05,5,95));
+  const score=Math.round(clamp(quality.score*.35+opportunity*.20+comp*.15+pricingPowerScore*.10+protect*.10+ca*.05+confidenceScore*.05,0,100));
+  return {score,portfolioManagerScore:score,businessQualityScore:quality.score,valuationAttractivenessScore:opportunity,qualityBreakdown:quality,moatScore:Math.round(moat),forecastScore:Math.round(forecast),returnScore:Math.round(ret),valuationScore:Math.round(val),capitalAllocationScore:Math.round(ca),compounderScore:Math.round(comp),downsideProtectionScore:Math.round(protect),dataIntegrityScore:Math.round(integrity),successProbability:success,probabilityAdjustedReturn:expectedReturn==null?null:expectedReturn*success/100,downsideRisk:100-Math.round(protect)};
 }
 
 // ---------- 7. Master Scoring Function ----------
@@ -685,6 +636,17 @@ function scoreStock(stock) {
     category,
     categoryComposite: catResult.composite,
     investmentScore: investment.score,
+    portfolioManagerScore: investment.portfolioManagerScore,
+    compounderScore: stock.valuation.compounder?.score ?? investment.compounderScore,
+    compounderGrade: stock.valuation.compounder?.grade ?? null,
+    compounderBreakdown: stock.valuation.compounder ?? null,
+    pricingPowerV2Score: stock.valuation.pricingPowerV2?.score ?? pricingPower.score,
+    pricingPowerV2: stock.valuation.pricingPowerV2 ?? null,
+    downsideRiskScore: stock.valuation.downside?.score ?? investment.downsideRisk,
+    downsideProtectionScore: stock.valuation.downside?.protectionScore ?? investment.downsideProtectionScore,
+    permanentLossProbability: stock.valuation.downside?.permanentLossProbability ?? null,
+    downsideAnalysis: stock.valuation.downside ?? null,
+    industryModel: stock.valuation.industryModel ?? null,
     businessQualityScore: investment.businessQualityScore,
     valuationAttractivenessScore: investment.valuationAttractivenessScore,
     successProbability: investment.successProbability,
@@ -706,7 +668,7 @@ function scoreStock(stock) {
     expectedReturnProfile: stock.valuation.expectedReturnProfile ?? null,
     dataIntegrity: stock.dataIntegrity ?? null,
     investmentThesis: stock.valuation.investmentThesis ?? null,
-    investmentGrade: investment.score >= 90 ? 'A+' : investment.score >= 84 ? 'A' : investment.score >= 76 ? 'B+' : investment.score >= 68 ? 'B' : investment.score >= 58 ? 'C' : investment.score >= 45 ? 'D' : 'F',
+    investmentGrade: investment.score >= 88 ? 'A+' : investment.score >= 80 ? 'A' : investment.score >= 73 ? 'B+' : investment.score >= 65 ? 'B' : investment.score >= 55 ? 'C' : investment.score >= 42 ? 'D' : 'F',
     usedFallbackForCAGRTarget,
     lowConfidence,
     confidenceScore: confidence.score,
@@ -787,36 +749,8 @@ function applyPercentileRatings(scoredStocks) {
     });
   }
 
-  for (const s of qualifiers) {
-    let rating = 'Buy';
-    const topCategory = (s.categoryPercentile ?? 1) <= 0.20;
-    const topOverall = (s.overallPercentile ?? 1) <= 0.15;
-    const strongQuality = s.businessQualityScore >= 70;
-    const strongOpportunity = s.valuationAttractivenessScore >= 68;
-    const strongEvidence = s.confidenceScore >= 65 && !s.lowConfidence;
-    if (topCategory && topOverall && strongQuality && strongOpportunity && strongEvidence) rating = 'Strong Buy';
-    if (s.confidenceScore < 40 || s.lowConfidence) rating = 'Hold/Watch';
-    s.sectorPercentileTier = rating;
-    s.rating = rating;
-  }
+  return assignSelectiveRatings(scoredStocks);
 
-  for (const s of nonQualifiers) {
-    const exp = s.expectedReturn ?? s.fundamentalGrowthRate;
-    const severeOvervaluation = s.marginOfSafety != null && s.marginOfSafety < -0.20;
-    const weakBusiness = (s.businessQualityScore ?? 0) < 38;
-    if (exp < 0 || severeOvervaluation || (weakBusiness && s.confidenceScore < 50)) s.rating = 'Avoid';
-    else s.rating = 'Hold/Watch';
-    s.sectorPercentileTier = s.rating;
-  }
-
-  const tier = { 'Strong Buy': 4, 'Buy': 3, 'Hold/Watch': 2, 'Avoid': 1 };
-  return [...scoredStocks].sort((a, b) =>
-    (tier[b.rating] - tier[a.rating]) ||
-    (b.investmentScore - a.investmentScore) ||
-    (b.businessQualityScore - a.businessQualityScore) ||
-    (b.valuationAttractivenessScore - a.valuationAttractivenessScore) ||
-    (b.confidenceScore - a.confidenceScore)
-  );
 }
 
 // ---------- Public API ----------

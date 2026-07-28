@@ -19,6 +19,10 @@ const { assessDataIntegrity } = require('./engine/data-integrity');
 const { buildScenarios } = require('./engine/scenario-engine');
 const { computeExpectedReturnProfile } = require('./engine/expected-return-engine');
 const { buildInvestmentThesis } = require('./engine/thesis-engine');
+const { inferIndustryModel } = require('./engine/industry-engine');
+const { computePricingPowerV2 } = require('./engine/pricing-power-engine');
+const { computeCompounderScore } = require('./engine/compounder-engine');
+const { computeDownsideRisk } = require('./engine/downside-engine');
 
 const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'), 'utf8'));
 
@@ -211,6 +215,14 @@ async function run() {
     stock.valuation.scenarioAnalysis = scenarioAnalysis;
     stock.valuation.expectedReturnProfile = expectedReturnProfile;
     stock.valuation.investmentThesis = buildInvestmentThesis(stock, expectedReturnProfile);
+    const industryModel = inferIndustryModel(stock);
+    const pricingPowerV2 = computePricingPowerV2(stock, industryModel);
+    const compounder = computeCompounderScore(stock, pricingPowerV2, industryModel);
+    const downside = computeDownsideRisk(stock, scenarioAnalysis, dataIntegrity, industryModel);
+    stock.valuation.industryModel = industryModel;
+    stock.valuation.pricingPowerV2 = pricingPowerV2;
+    stock.valuation.compounder = compounder;
+    stock.valuation.downside = downside;
   }
 
   writeResults(records, false);
