@@ -592,11 +592,23 @@ function applyPercentileRatings(scoredStocks) {
   const qualifiers = scoredStocks.filter(s => s.qualifiesForBuyList && (s.expectedReturn ?? s.fundamentalGrowthRate) >= 0);
   const nonQualifiers = scoredStocks.filter(s => !(s.qualifiesForBuyList && (s.expectedReturn ?? s.fundamentalGrowthRate) >= 0));
 
+  // Rank Strong Buys within each valuation category so a large pool of cheap Value
+  // names cannot crowd every Growth/Compounder candidate out of the top tier.
+  const categoryRanks = new Map();
+  for (const s of qualifiers) {
+    const bucket = categoryRanks.get(s.category) || [];
+    bucket.push(s);
+    categoryRanks.set(s.category, bucket);
+  }
+  for (const bucket of categoryRanks.values()) bucket.sort((a, b) => b.sectorRelativeScore - a.sectorRelativeScore);
+  const categoryPercentile = new Map();
+  for (const bucket of categoryRanks.values()) {
+    bucket.forEach((s, i) => categoryPercentile.set(s, bucket.length ? i / bucket.length : 0));
+  }
   const sortedQualifiers = [...qualifiers].sort((a, b) => b.sectorRelativeScore - a.sectorRelativeScore);
-  const qn = sortedQualifiers.length;
-  sortedQualifiers.forEach((s, i) => {
-    const pct = qn > 0 ? i / qn : 0;
-    let rating = pct <= 0.30 ? 'Strong Buy' : 'Buy'; // top 30% of QUALIFIERS, not the whole universe
+  sortedQualifiers.forEach((s) => {
+    const pct = categoryPercentile.get(s) ?? 0;
+    let rating = pct <= 0.25 ? 'Strong Buy' : 'Buy';
     // Confidence score (0-100, itemized in confidenceDeductions) is the real gate now —
     // it folds in thin history, missing analyst data, single-method valuation, method
     // disagreement, cyclicality, negative FCF, SBC intensity, and single-source growth
@@ -614,7 +626,8 @@ function applyPercentileRatings(scoredStocks) {
     // into confidenceScore itself (see computeConfidenceScore) rather than being a
     // separate hard cutoff here — a stock with 42/100 agreement and one with 39/100
     // should be penalized nearly identically, not treated as pass/fail.
-    s.sectorPercentileTier = pct <= 0.30 ? 'Strong Buy' : 'Buy';
+    s.sectorPercentileTier = pct <= 0.25 ? 'Strong Buy' : 'Buy';
+    s.categoryPercentile = pct;
     s.rating = rating;
   });
 

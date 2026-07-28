@@ -114,15 +114,33 @@ function projectionHtml(s) {
 function auditHtml(s) {
   const audits = s.valuationMethodAudits || {};
   const weights = s.effectiveWeights || {};
-  const names = { dcf:'DCF (FCF)', dcfSBCAdjusted:'DCF (SBC-adjusted)', revenueExit:'Revenue exit', epsExit:'EPS exit', ebitdaExit:'EV/EBITDA exit' };
+  const names = {
+    dcf: 'DCF (FCF)',
+    dcfSBCAdjusted: 'DCF (SBC-adjusted)',
+    ownerEarnings: 'Owner Earnings DCF',
+    revenueExit: 'Revenue exit',
+    epsExit: 'EPS exit',
+    ebitdaExit: 'EV/EBITDA exit'
+  };
+
   return Object.entries(audits).map(([key, a]) => {
     if (!a) return '';
     const value = s.valuationMethods?.[key];
     const weight = weights[key];
+    const title = names[key] || a.method || key;
+    const valueText = value == null ? 'n/a' : '$' + num(value);
+    const weightText = weight == null ? '' : `(${pct(weight)} weight)`;
+
     if (key === 'dcf' || key === 'dcfSBCAdjusted') {
-      return `<div class="method-card"><strong>${names[key]}</strong> — ${value == null ? 'n/a' : '$' + num(value)} ${weight == null ? '' : `(${pct(weight)} weight)`}<div class="detail-grid"><div>Discount rate: ${pct(a.discountRate)}</div><div>Terminal growth: ${pct(a.terminalGrowth)}</div><div>PV explicit FCF: ${money(a.pvExplicitFCF)}</div><div>PV terminal: ${money(a.pvTerminalValue)}</div><div>Terminal share: ${pct(a.terminalValueShareOfEnterpriseValue)}</div><div>Net debt: ${money(a.netDebt)}</div><div>Equity value: ${money(a.equityValue)}</div><div>Exit shares: ${a.sharesAtExit == null ? '—' : (a.sharesAtExit / 1e6).toFixed(1) + 'M'}</div></div></div>`;
+      const shares = a.sharesAtExit ?? a.currentDilutedShares;
+      return `<div class="method-card"><strong>${title}</strong> — ${valueText} ${weightText}<div class="detail-grid"><div>Discount rate: ${pct(a.discountRate)}</div><div>Terminal growth: ${pct(a.terminalGrowth)}</div><div>PV explicit FCF: ${money(a.pvExplicitFCF)}</div><div>PV terminal: ${money(a.pvTerminalValue)}</div><div>Terminal share: ${pct(a.terminalValueShareOfEnterpriseValue)}</div><div>Net debt: ${money(a.netDebt)}</div><div>Equity value: ${money(a.equityValue)}</div><div>Shares used: ${shares == null ? '—' : (shares / 1e6).toFixed(1) + 'M'}</div></div></div>`;
     }
-    return `<div class="method-card"><strong>${names[key]}</strong> — ${value == null ? 'n/a' : '$' + num(value)} ${weight == null ? '' : `(${pct(weight)} weight)`}<div class="detail-grid"><div>Exit metric: ${key === 'epsExit' ? '$' + num(a.exitMetric) : money(a.exitMetric)}</div><div>Sector multiple: ${num(a.sectorMultiple ?? a.rawSectorMultiple)}x</div><div>Company multiple today: ${num(a.companyCurrentMultiple)}x</div><div>Quality-adjusted sector: ${num(a.qualityAdjustedSector)}x</div><div>Exit multiple: ${num(a.exitMultiple)}x</div><div>Quality retained: ${pct(a.qualityPremiumRetained)}</div><div>Exit price: ${a.exitPricePerShare == null ? '—' : '$' + num(a.exitPricePerShare)}</div><div>PV exit price: ${a.pvExitPrice == null ? '—' : '$' + num(a.pvExitPrice)}</div><div>PV dividends: ${a.pvDividends == null ? '—' : '$' + num(a.pvDividends)}</div><div>Net debt: ${money(a.netDebt)}</div></div></div>`;
+
+    if (key === 'ownerEarnings') {
+      return `<div class="method-card"><strong>${title}</strong> — ${valueText} ${weightText}<div class="detail-grid"><div>Discount rate: ${pct(a.discountRate)}</div><div>Terminal growth: ${pct(a.terminalGrowth)}</div><div>PV explicit owner earnings: ${money(a.pvExplicitOwnerEarnings)}</div><div>PV terminal: ${money(a.pvTerminalValue)}</div><div>Terminal share: ${pct(a.terminalValueShareOfEnterpriseValue)}</div><div>D&amp;A margin: ${pct(a.daMargin)}</div><div>Maintenance capex margin: ${pct(a.maintenanceCapexMargin)}</div><div>SBC margin: ${pct(a.sbcMargin)}</div><div>Net debt: ${money(a.netDebt)}</div><div>Equity value: ${money(a.equityValue)}</div><div>Shares used: ${a.currentDilutedShares == null ? '—' : (a.currentDilutedShares / 1e6).toFixed(1) + 'M'}</div></div></div>`;
+    }
+
+    return `<div class="method-card"><strong>${title}</strong> — ${valueText} ${weightText}<div class="detail-grid"><div>Exit metric: ${key === 'epsExit' ? '$' + num(a.exitMetric) : money(a.exitMetric)}</div><div>Sector multiple: ${num(a.sectorMultiple ?? a.rawSectorMultiple)}x</div><div>Company multiple today: ${num(a.companyCurrentMultiple)}x</div><div>Quality-adjusted sector: ${num(a.qualityAdjustedSector)}x</div><div>Exit multiple: ${num(a.exitMultiple)}x</div><div>Quality retained: ${pct(a.qualityPremiumRetained)}</div><div>Durable premium: ${pct(a.durablePremiumPct)}</div><div>Quality score: ${pct(a.qualityScore)}</div><div>Exit price: ${a.exitPricePerShare == null ? '—' : '$' + num(a.exitPricePerShare)}</div><div>PV exit price: ${a.pvExitPrice == null ? '—' : '$' + num(a.pvExitPrice)}</div><div>PV dividends: ${a.pvDividends == null ? '—' : '$' + num(a.pvDividends)}</div><div>Net debt: ${money(a.netDebt)}</div></div></div>`;
   }).join('') || '<span class="muted">No method audit available.</span>';
 }
 
@@ -203,9 +221,9 @@ function buildDetailHtml(s) {
     ${(s.pricingPowerSignals || []).map(sig => `<span class="sig">• ${sig}</span>`).join('') || 'None detected'}
     <div class="detail-section"><strong>Analyst consensus</strong>${analystHtml(s)}</div>
     <div class="detail-section"><strong>Five-year operating projection</strong>${projectionHtml(s)}</div>
-    <div class="detail-section"><strong>V3.5 assumptions</strong><div class="detail-grid"><div>Category: ${s.projectionAssumptions?.category ?? s.category}</div><div>Discount rate: ${pct(s.projectionAssumptions?.discountRate)}</div><div>Terminal growth: ${pct(s.projectionAssumptions?.terminalGrowth)}</div><div>Year-5 growth: ${pct(s.projectionAssumptions?.growthModel?.assumptions?.year5)}</div><div>Target EBITDA margin: ${pct(s.projectionAssumptions?.marginAssumptions?.targetEbitdaMargin)}</div><div>Target FCF margin: ${pct(s.projectionAssumptions?.marginAssumptions?.targetFcfMargin)}</div><div>Analyst reliability: ${pct(s.analystReliability)}</div><div>Reverse DCF gap: ${pct(s.reverseDCFGap)}</div></div></div>
+    <div class="detail-section"><strong>V3.6 assumptions</strong><div class="detail-grid"><div>Category: ${s.projectionAssumptions?.category ?? s.category}</div><div>Discount rate: ${pct(s.projectionAssumptions?.discountRate)}</div><div>Terminal growth: ${pct(s.projectionAssumptions?.terminalGrowth)}</div><div>Year-5 growth: ${pct(s.projectionAssumptions?.growthModel?.assumptions?.year5)}</div><div>Target EBITDA margin: ${pct(s.projectionAssumptions?.marginAssumptions?.targetEbitdaMargin)}</div><div>Target FCF margin: ${pct(s.projectionAssumptions?.marginAssumptions?.targetFcfMargin)}</div><div>Analyst reliability: ${pct(s.analystReliability)}</div><div>Reverse DCF gap: ${pct(s.reverseDCFGap)}</div></div></div>
     <div class="detail-section"><strong>Valuation calculation audit</strong>${auditHtml(s)}</div>
-    <div class="detail-section"><strong>Price targets</strong><div class="detail-grid"><div>Current price: ${s.currentPrice == null ? '—' : '$' + num(s.currentPrice)}</div><div>Blended fair value today: ${s.fairValueEstimate == null ? '—' : '$' + num(s.fairValueEstimate)}</div><div>Five-year exit price: ${s.fiveYearPriceTarget?.exitPrice == null ? '—' : '$' + num(s.fiveYearPriceTarget.exitPrice)}</div><div>Five-year expected CAGR: ${pct(s.fiveYearPriceTarget?.cagr)}</div></div></div>
+    <div class="detail-section"><strong>Price targets</strong><div class="detail-grid"><div>Current price: ${s.currentPrice == null ? '—' : '$' + num(s.currentPrice)}</div><div>Blended fair value today: ${s.fairValueEstimate == null ? '—' : '$' + num(s.fairValueEstimate)}</div><div>Five-year exit price: ${s.fiveYearPriceTarget?.exitPrice == null ? '—' : '$' + num(s.fiveYearPriceTarget.exitPrice)}</div><div>Five-year expected CAGR: ${pct(s.fiveYearPriceTarget?.cagr)}${s.fiveYearPriceTarget?.cagrWasCapped ? ' (capped; raw ' + pct(s.fiveYearPriceTarget.rawCagr) + ')' : ''}</div></div><div class="detail-grid" style="margin-top:8px"><div>Revenue contribution: ${pct(s.fiveYearPriceTarget?.breakdown?.revenueGrowth)}</div><div>Margin contribution: ${pct(s.fiveYearPriceTarget?.breakdown?.marginExpansion)}</div><div>Share-count contribution: ${pct(s.fiveYearPriceTarget?.breakdown?.shareCountEffect)}</div><div>Dividend contribution: ${pct(s.fiveYearPriceTarget?.breakdown?.dividendContribution)}</div><div>Multiple rerating contribution: ${pct(s.fiveYearPriceTarget?.breakdown?.multipleRerating)}</div></div></div>
   </td>`;
 }
 

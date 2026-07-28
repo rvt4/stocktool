@@ -263,16 +263,31 @@ function computeSectorExitMultiples(stocks) {
 
 function qualityScore01(stock, exitGrowth) {
   const yrs = stock.financials.years;
+  const last = yrs.at(-1) || {};
   const avgRoic = mean(yrs.slice(-3).map(y => y.roic).filter(Number.isFinite));
   const roic = clamp(((avgRoic ?? 0.08) - 0.06) / 0.24, 0, 1);
-  const growth = clamp(((exitGrowth ?? 0.04) - 0.02) / 0.16, 0, 1);
+  const growth = clamp(((exitGrowth ?? 0.04) - 0.02) / 0.18, 0, 1);
   const pricing = clamp((stock.pricingPowerScore ?? 50) / 100, 0, 1);
   const fcfMargins = yrs.slice(-3).map(y => y.fcf != null && y.revenue ? y.fcf / y.revenue : null).filter(Number.isFinite);
   const conversion = clamp(((median(fcfMargins) ?? 0.05) - 0.02) / 0.23, 0, 1);
-  return clamp(roic * 0.40 + growth * 0.30 + pricing * 0.15 + conversion * 0.15, 0, 1);
+  const grossMargins = yrs.slice(-4).map(y => y.grossMargin).filter(Number.isFinite);
+  const marginDurability = grossMargins.length >= 2
+    ? clamp(1 - (Math.max(...grossMargins) - Math.min(...grossMargins)) / 0.18, 0, 1)
+    : 0.50;
+  const capitalAllocation = clamp((capitalAllocationScore(stock).score || 50) / 100, 0, 1);
+  const balanceSheet = last.ebitda > 0
+    ? clamp(1 - Math.max(0, (last.longTermDebt || 0) - (last.cash || 0)) / (last.ebitda * 5), 0, 1)
+    : 0.45;
+  return clamp(
+    roic * 0.27 + growth * 0.22 + pricing * 0.14 + conversion * 0.13 +
+    marginDurability * 0.09 + capitalAllocation * 0.09 + balanceSheet * 0.06,
+    0, 1
+  );
 }
 function qualityPremiumWeight(stock, exitGrowth) {
-  return clamp(0.30 + qualityScore01(stock, exitGrowth) * 0.55, 0.30, 0.85);
+  // Retain only part of today's company-specific premium. This is deliberately lower
+  // than V3.5 so a temporarily euphoric current multiple cannot dominate the terminal value.
+  return clamp(0.18 + qualityScore01(stock, exitGrowth) * 0.42, 0.18, 0.60);
 }
 
 function companyCurrentMultiple(stock, type) {
@@ -287,22 +302,40 @@ function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth) {
   if (!(sectorMultiple > 0)) return { multiple: null };
   const current = companyCurrentMultiple(stock, type);
   const quality = qualityScore01(stock, exitGrowth);
-  const growthPremium = clamp((exitGrowth - 0.04) * (type === 'revenueExit' ? 2.8 : 2.0), -0.20, 0.55);
-  const qualityPremium = (quality - 0.50) * 0.55;
-  const qualityAdjustedSector = sectorMultiple * clamp(1 + growthPremium + qualityPremium, 0.60, 1.65);
-  const boundedCurrent = current > 0 ? clamp(current, sectorMultiple * 0.45, sectorMultiple * 2.0) : null;
-  const retain = qualityPremiumWeight(stock, exitGrowth);
+  const category = inferValuationCategory(stock);
+
+  // Premium is built from durable business economics rather than a generic
+  // sector-multiple-times-quality shortcut.
+  const growthScore = clamp(((exitGrowth ?? 0.04) - 0.02) / 0.18, 0, 1);
+  const premiumPct = clamp(
+    (quality - 0.50) * 0.90 +
+    (growthScore - 0.40) * (type === 'revenueExit' ? 0.55 : 0.40),
+    -0.35,
+    category === 'Hyper Growth' ? 1.10 : category === 'Growth' ? 0.85 : 0.65
+  );
+  const qualityAdjustedSector = sectorMultiple * (1 + premiumPct);
+
+  // Current multiples are useful information, but only after hard bounding and with
+  // modest retention. Slow-growth/value names receive less benefit from rerating.
+  const upperBound = category === 'Hyper Growth' ? 2.35 : category === 'Growth' ? 2.05 : category === 'Compounder' ? 1.85 : 1.55;
+  const boundedCurrent = current > 0 ? clamp(current, sectorMultiple * 0.50, sectorMultiple * upperBound) : null;
+  let retain = qualityPremiumWeight(stock, exitGrowth);
+  if (['Value', 'Dividend', 'Cyclical', 'Turnaround'].includes(category)) retain *= 0.72;
+
   const multiple = boundedCurrent != null
     ? qualityAdjustedSector * (1 - retain) + boundedCurrent * retain
     : qualityAdjustedSector;
+  const maxVsSector = category === 'Hyper Growth' ? 2.25 : category === 'Growth' ? 2.0 : category === 'Compounder' ? 1.8 : 1.5;
   return {
-    multiple: clamp(multiple, sectorMultiple * 0.50, sectorMultiple * 1.85),
+    multiple: clamp(multiple, sectorMultiple * 0.50, sectorMultiple * maxVsSector),
     sectorMultiple,
     companyCurrentMultiple: current,
     boundedCompanyMultiple: boundedCurrent,
     qualityAdjustedSector,
     qualityPremiumRetained: retain,
     qualityScore: quality,
+    durablePremiumPct: premiumPct,
+    growthPremiumScore: growthScore,
   };
 }
 
@@ -477,13 +510,13 @@ function exitMethod(stock, model, sectorMultiples, type) {
 }
 
 const CATEGORY_METHOD_WEIGHTS = {
-  'Hyper Growth': { dcf: 0.09, dcfSBCAdjusted: 0.05, ownerEarnings: 0.10, revenueExit: 0.25, epsExit: 0.34, ebitdaExit: 0.17 },
-  Growth:         { dcf: 0.12, dcfSBCAdjusted: 0.06, ownerEarnings: 0.12, revenueExit: 0.21, epsExit: 0.31, ebitdaExit: 0.18 },
-  Compounder:     { dcf: 0.17, dcfSBCAdjusted: 0.08, ownerEarnings: 0.18, revenueExit: 0.10, epsExit: 0.27, ebitdaExit: 0.20 },
-  Value:          { dcf: 0.24, dcfSBCAdjusted: 0.10, ownerEarnings: 0.20, revenueExit: 0.03, epsExit: 0.20, ebitdaExit: 0.23 },
-  Dividend:       { dcf: 0.27, dcfSBCAdjusted: 0.08, ownerEarnings: 0.22, revenueExit: 0.02, epsExit: 0.20, ebitdaExit: 0.21 },
-  Turnaround:     { dcf: 0.16, dcfSBCAdjusted: 0.06, ownerEarnings: 0.12, revenueExit: 0.08, epsExit: 0.20, ebitdaExit: 0.38 },
-  Cyclical:       { dcf: 0.17, dcfSBCAdjusted: 0.06, ownerEarnings: 0.12, revenueExit: 0.05, epsExit: 0.18, ebitdaExit: 0.42 },
+  'Hyper Growth': { dcf: 0.10, dcfSBCAdjusted: 0.06, ownerEarnings: 0.08, revenueExit: 0.25, epsExit: 0.34, ebitdaExit: 0.17 },
+  Growth:         { dcf: 0.14, dcfSBCAdjusted: 0.07, ownerEarnings: 0.10, revenueExit: 0.20, epsExit: 0.31, ebitdaExit: 0.18 },
+  Compounder:     { dcf: 0.20, dcfSBCAdjusted: 0.09, ownerEarnings: 0.13, revenueExit: 0.10, epsExit: 0.27, ebitdaExit: 0.21 },
+  Value:          { dcf: 0.28, dcfSBCAdjusted: 0.11, ownerEarnings: 0.14, revenueExit: 0.03, epsExit: 0.20, ebitdaExit: 0.24 },
+  Dividend:       { dcf: 0.31, dcfSBCAdjusted: 0.09, ownerEarnings: 0.15, revenueExit: 0.02, epsExit: 0.20, ebitdaExit: 0.23 },
+  Turnaround:     { dcf: 0.19, dcfSBCAdjusted: 0.07, ownerEarnings: 0.10, revenueExit: 0.08, epsExit: 0.20, ebitdaExit: 0.36 },
+  Cyclical:       { dcf: 0.20, dcfSBCAdjusted: 0.07, ownerEarnings: 0.10, revenueExit: 0.05, epsExit: 0.18, ebitdaExit: 0.40 },
 };
 
 function methodSpecificReliability(stock, key, value, center) {
@@ -494,7 +527,8 @@ function methodSpecificReliability(stock, key, value, center) {
   if (key === 'epsExit') r *= analyst;
   if (key === 'revenueExit') r *= clamp(0.65 + analyst * 0.35, 0.55, 1);
   if ((key === 'dcf' || key === 'dcfSBCAdjusted') && !(last.fcf > 0)) r *= 0.25;
-  if (key === 'ownerEarnings' && !(last.netIncome > 0)) r *= 0.35;
+  if (key === 'ownerEarnings' && !(last.netIncome > 0)) r *= 0.25;
+  if (key === 'ownerEarnings') r *= 0.90; // keep this newer method below a 15% effective influence in normal cases
   const sbcIntensity = last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : 0;
   if (key === 'dcf' && sbcIntensity > 0.10) r *= 0.70;
   if (key === 'dcfSBCAdjusted' && sbcIntensity < 0.02) r *= 0.75;
@@ -512,9 +546,21 @@ function combineValuations(methods, category = 'Value', stock = null) {
     if (reliability < 0.98) reliabilityFlags.push({ method: key, value, consensusMedian: center, ratio: Math.max(value / center, center / value), reliability });
     return { key, value, weight: (base[key] || 0) * reliability };
   });
-  const blendedFairValue = weightedAverage(weighted);
-  const total = weighted.reduce((sum, x) => sum + x.weight, 0);
-  const effectiveWeights = Object.fromEntries(weighted.map(x => [x.key, total ? x.weight / total : 0]));
+  let total = weighted.reduce((sum, x) => sum + x.weight, 0);
+  let normalized = weighted.map(x => ({ ...x, normalizedWeight: total ? x.weight / total : 0 }));
+
+  // Owner Earnings is useful corroboration but is newer and more assumption-sensitive.
+  // Hard-cap its effective influence at 15%, then redistribute excess proportionally.
+  const owner = normalized.find(x => x.key === 'ownerEarnings');
+  if (owner && owner.normalizedWeight > 0.15) {
+    const excess = owner.normalizedWeight - 0.15;
+    owner.normalizedWeight = 0.15;
+    const others = normalized.filter(x => x.key !== 'ownerEarnings');
+    const otherTotal = others.reduce((sum, x) => sum + x.normalizedWeight, 0);
+    if (otherTotal > 0) others.forEach(x => { x.normalizedWeight += excess * x.normalizedWeight / otherTotal; });
+  }
+  const blendedFairValue = normalized.reduce((sum, x) => sum + x.value * x.normalizedWeight, 0);
+  const effectiveWeights = Object.fromEntries(normalized.map(x => [x.key, x.normalizedWeight]));
   const robustDeviations = available.map(([, v]) => Math.abs(v - center) / center);
   const agreementScore = Math.round(clamp(100 - (median(robustDeviations) || 0) * 150, 0, 100));
   return { blendedFairValue, agreementScore, methodCount: available.length, effectiveWeights, reliabilityFlags };
@@ -526,14 +572,40 @@ function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
   const future = Object.entries(exitResults)
     .filter(([, r]) => r?.exitPricePerShare > 0)
     .map(([key, r]) => ({ value: r.exitPricePerShare, weight: effectiveWeights[key] || 0 }));
-  const exitPrice = weightedAverage(future);
-  if (!(exitPrice > 0)) return { cagr: null, exitPrice: null, methodsUsed: 0 };
+  const rawExitPrice = weightedAverage(future);
+  if (!(rawExitPrice > 0)) return { cagr: null, exitPrice: null, methodsUsed: 0 };
   const years = model.projection.length;
   const dividendsReceived = (stock.valuation.dividendYield || 0) * currentPrice * years;
-  const totalFutureValue = exitPrice + dividendsReceived;
+  const totalFutureValue = rawExitPrice + dividendsReceived;
+  const rawCagr = Math.pow(totalFutureValue / currentPrice, 1 / years) - 1;
+
+  // Data/split errors can otherwise create four-digit expected CAGRs. Preserve the raw
+  // value for audit, but cap the actionable screener signal at a generous 60% annually.
+  const cagrValue = clamp(rawCagr, -0.75, 0.60);
+  const last = stock.financials.years.at(-1) || {};
+  const exit = model.projection.at(-1) || {};
+  const startRevenue = last.revenue;
+  const startNetMargin = last.revenue > 0 ? last.netIncome / last.revenue : null;
+  const startShares = last.sharesOutTTM;
+  const revenueGrowth = cagr(startRevenue, exit.revenue, years);
+  const marginExpansion = startNetMargin > 0 && exit.netMargin > 0
+    ? Math.pow(exit.netMargin / startNetMargin, 1 / years) - 1 : null;
+  const shareCountEffect = startShares > 0 && exit.shares > 0
+    ? Math.pow(startShares / exit.shares, 1 / years) - 1 : null;
+  const dividendContribution = clamp(stock.valuation.dividendYield || 0, 0, 0.20);
+  const operatingContribution = [revenueGrowth, marginExpansion, shareCountEffect]
+    .filter(Number.isFinite).reduce((a, b) => a + b, 0);
+  const multipleRerating = Number.isFinite(operatingContribution)
+    ? cagrValue - operatingContribution - dividendContribution : null;
+
   return {
-    cagr: Math.pow(totalFutureValue / currentPrice, 1 / years) - 1,
-    exitPrice, dividendsReceived, totalFutureValue, methodsUsed: future.length, currentPrice, years,
+    cagr: cagrValue, rawCagr, cagrWasCapped: rawCagr !== cagrValue,
+    exitPrice: rawExitPrice, dividendsReceived, totalFutureValue,
+    methodsUsed: future.length, currentPrice, years,
+    breakdown: {
+      revenueGrowth, marginExpansion, shareCountEffect,
+      dividendContribution, multipleRerating,
+    },
   };
 }
 
@@ -583,7 +655,7 @@ function valuateStock(stock, sectorExitMultiples) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '3.5', category, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '3.6', category, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
