@@ -645,12 +645,13 @@ function scoreStock(stock) {
   // Requires `stock.valuation.fiveYearPriceTarget` to be populated upstream (same place
   // that already sets `fairValueEstimate` and `valuationMethods` below) — verify
   // run-screener.js maps the fiveYearPriceTarget object from valuateStock() through.
-  const expectedReturn = stock.valuation.fiveYearPriceTarget?.cagr ?? null;
+  const valuationValid = stock.valuation.valuationValid !== false;
+  const expectedReturn = valuationValid ? (stock.valuation.fiveYearPriceTarget?.cagr ?? null) : null;
   const lastRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
   const requiredMOS = dynamicMOS(category, lastRoic);
 
   const currentPrice = stock.price.current;
-  const fairValue = stock.valuation.fairValueEstimate; // computed upstream if available
+  const fairValue = valuationValid ? stock.valuation.fairValueEstimate : null; // computed upstream if available
   const rawMarginOfSafety = fairValue ? (fairValue - currentPrice) / fairValue : null;
   // Clamp the *displayed* number — when fair value is small relative to price (common
   // for cyclical/inflecting names where the DCF's trailing-growth input badly
@@ -674,7 +675,8 @@ function scoreStock(stock) {
   // computed (e.g. insufficient exit-multiple data), so stocks don't silently vanish
   // from qualifying — but this is the weaker, price-agnostic signal, so flag it.
   const usedFallbackForCAGRTarget = expectedReturn == null;
-  const meetsCAGRTarget = (expectedReturn ?? fundamentalGrowthRate) >= 0.15;
+  // A failed valuation integrity check must never qualify through the price-agnostic fallback.
+  const meetsCAGRTarget = valuationValid && (expectedReturn ?? fundamentalGrowthRate) >= 0.15;
   const investment = computeInvestmentScore(stock, catResult.composite, pricingPower.score, confidence.score, expectedReturn ?? fundamentalGrowthRate, marginOfSafety);
 
   return {
@@ -713,7 +715,10 @@ function scoreStock(stock) {
     marginOfSafetyDistorted,
     meetsRequiredMOS,
     meetsCAGRTarget,
-    qualifiesForBuyList: !!(meetsCAGRTarget && meetsRequiredMOS),
+    qualifiesForBuyList: !!(valuationValid && meetsCAGRTarget && meetsRequiredMOS),
+    valuationValid,
+    valuationSanityIssues: stock.valuation.valuationSanityIssues ?? [],
+    valuationInputValidation: stock.valuation.inputValidation ?? null,
     valuationMethods: stock.valuation.valuationMethods ?? null,
     outlierFlags: stock.valuation.outlierFlags ?? [],
     methodAgreementScore: stock.valuation.methodAgreementScore ?? null,

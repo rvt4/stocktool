@@ -146,6 +146,74 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   pullAnnual('DepreciationDepletionAndAmortization', 'da');
   pullAnnual('DepreciationAmortizationAndAccretionNet', 'da'); // fallback tag
 
+  // Normalize SEC share counts before any per-share or market-cap calculation.
+  // Some Company Facts records expose share values in thousands or millions.
+  // Reconcile reported shares against the independent diluted-EPS denominator:
+  // implied diluted shares = abs(net income / diluted EPS).
+  const shareScaleCandidates = [1, 1e3, 1e6, 1e9];
+  const detectedScales = [];
+
+  Object.values(byYear).forEach(y => {
+    const rawShares = Number(y.sharesOutTTM);
+    if (!(rawShares > 0)) return;
+
+    y.rawSharesOutTTM = rawShares;
+    let scale = 1;
+
+    const netIncome = Number(y.netIncome);
+    const dilutedEPS = Number(y.dilutedEPS);
+    const impliedShares =
+      Number.isFinite(netIncome) &&
+      Number.isFinite(dilutedEPS) &&
+      Math.abs(dilutedEPS) > 1e-6
+        ? Math.abs(netIncome / dilutedEPS)
+        : null;
+
+    if (impliedShares > 0) {
+      let best = null;
+      for (const candidateScale of shareScaleCandidates) {
+        const normalized = rawShares * candidateScale;
+        const logError = Math.abs(Math.log(normalized / impliedShares));
+        if (!best || logError < best.logError) {
+          best = { scale: candidateScale, logError };
+        }
+      }
+
+      // Only accept a scale when the two independent denominators agree closely.
+      if (best && best.logError <= Math.log(1.35)) scale = best.scale;
+    } else if (rawShares < 100000) {
+      // Conservative fallback for large public companies when EPS is unavailable.
+      scale = 1e6;
+    }
+
+    y.sharesScaleApplied = scale;
+    y.sharesOutTTM = rawShares * scale;
+    if (scale !== 1) detectedScales.push(scale);
+  });
+
+  // Use the dominant reconciled scale for isolated years with missing EPS.
+  if (detectedScales.length) {
+    const counts = detectedScales.reduce((acc, scale) => {
+      acc[scale] = (acc[scale] || 0) + 1;
+      return acc;
+    }, {});
+    const dominantScale = Number(
+      Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]
+    );
+
+    Object.values(byYear).forEach(y => {
+      if (
+        y.sharesOutTTM > 0 &&
+        y.sharesOutTTM < 100000 &&
+        (y.sharesScaleApplied == null || y.sharesScaleApplied === 1)
+      ) {
+        y.rawSharesOutTTM = y.rawSharesOutTTM ?? y.sharesOutTTM;
+        y.sharesScaleApplied = dominantScale;
+        y.sharesOutTTM *= dominantScale;
+      }
+    });
+  }
+
   const years = Object.values(byYear)
     .filter(y => y.revenue) // require at least revenue
     .sort((a, b) => a.year - b.year)

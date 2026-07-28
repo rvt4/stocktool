@@ -198,6 +198,10 @@ async function run() {
     // every stock falls back to the price-agnostic fundamentalGrowthRate for the buy-list
     // gate, silently losing the "is this a buy at today's price" signal.
     stock.valuation.fiveYearPriceTarget = result.fiveYearPriceTarget;
+    stock.valuation.valuationValid = result.valuationValid;
+    stock.valuation.valuationSanityIssues = result.valuationSanityIssues;
+    stock.valuation.inputValidation = result.inputValidation;
+    stock.valuation.rawValuationMethods = result.rawMethods;
   }
 
   writeResults(records, false);
