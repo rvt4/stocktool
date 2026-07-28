@@ -1,5 +1,5 @@
 /**
- * FreeScreener V3.5 valuation engine
+ * FreeScreener V3.7 valuation engine
  *
  * V3.0 principles:
  *  - one shared five-year operating projection for every valuation method
@@ -85,20 +85,44 @@ function estimateDilutionRate(stock) {
   return 0.01;
 }
 
-// ---------- Growth path ----------
+// ---------- Growth path (V3.7 persistence model) ----------
 const GROWTH_CONFIG = {
-  'Hyper Growth': { floor: 0.12, retention: 0.42, cap: 0.24 },
-  Growth:         { floor: 0.08, retention: 0.42, cap: 0.18 },
-  Compounder:     { floor: 0.07, retention: 0.50, cap: 0.16 },
-  Turnaround:     { floor: 0.03, retention: 0.30, cap: 0.10 },
-  Cyclical:       { floor: 0.02, retention: 0.20, cap: 0.08 },
-  Dividend:       { floor: 0.02, retention: 0.35, cap: 0.07 },
-  Value:          { floor: 0.02, retention: 0.30, cap: 0.08 },
+  'Hyper Growth': { floor: 0.10, cap: 0.26, historyWeight: 0.25, sustainableWeight: 0.20, persistenceWeight: 0.30, analystWeight: 0.25 },
+  Growth:         { floor: 0.07, cap: 0.18, historyWeight: 0.25, sustainableWeight: 0.20, persistenceWeight: 0.30, analystWeight: 0.25 },
+  Compounder:     { floor: 0.055, cap: 0.14, historyWeight: 0.25, sustainableWeight: 0.25, persistenceWeight: 0.30, analystWeight: 0.20 },
+  Turnaround:     { floor: 0.025, cap: 0.11, historyWeight: 0.20, sustainableWeight: 0.15, persistenceWeight: 0.20, analystWeight: 0.45 },
+  Cyclical:       { floor: 0.015, cap: 0.08, historyWeight: 0.15, sustainableWeight: 0.15, persistenceWeight: 0.15, analystWeight: 0.55 },
+  Dividend:       { floor: 0.018, cap: 0.07, historyWeight: 0.25, sustainableWeight: 0.25, persistenceWeight: 0.20, analystWeight: 0.30 },
+  Value:          { floor: 0.018, cap: 0.09, historyWeight: 0.25, sustainableWeight: 0.20, persistenceWeight: 0.20, analystWeight: 0.35 },
 };
+
+function growthPersistenceScore(stock, category, year1, year2) {
+  const yrs = stock.financials?.years || [];
+  const recent = yrs.slice(-4);
+  const avgRoic = mean(recent.map(y => y.roic).filter(Number.isFinite));
+  const grossMargins = recent.map(y => y.grossMargin).filter(Number.isFinite);
+  const grossMarginStability = grossMargins.length >= 2
+    ? 1 - clamp((Math.max(...grossMargins) - Math.min(...grossMargins)) / 0.12, 0, 1)
+    : 0.5;
+  const fcfPositiveRate = recent.length ? recent.filter(y => y.fcf > 0).length / recent.length : 0.5;
+  const pricing = clamp((stock.pricingPowerScore ?? stock.pricingPower?.score ?? 50) / 100, 0, 1);
+  const analyst = analystReliability(stock);
+  const capAlloc = clamp((capitalAllocationScore(stock).score ?? 50) / 100, 0, 1);
+  const roicScore = avgRoic == null ? 0.5 : clamp((avgRoic - 0.05) / 0.25, 0, 1);
+  const forwardConsistency = 1 - clamp(Math.abs(year1 - year2) / 0.50, 0, 1);
+  const categoryBoost = category === 'Hyper Growth' ? 0.05 : category === 'Compounder' ? 0.04 : 0;
+  return clamp(
+    roicScore * 0.24 + grossMarginStability * 0.14 + fcfPositiveRate * 0.14 +
+    pricing * 0.14 + analyst * 0.14 + capAlloc * 0.10 +
+    forwardConsistency * 0.10 + categoryBoost,
+    0, 1
+  );
+}
 
 function buildGrowthPath(stock, category, years = 5) {
   const e = stock.analystEstimates || {};
-  const fallback = stock.growthYear1 ?? historicalMedianGrowth(stock.financials.years) ?? 0.05;
+  const histMedian = historicalMedianGrowth(stock.financials.years);
+  const fallback = stock.growthYear1 ?? histMedian ?? 0.05;
   const year1 = clamp(e.revenueGrowthCurrentYear ?? e.revenueGrowthFwd ?? fallback, -0.25, 0.65);
   let year2 = e.revenueGrowthNextYear;
   if (year2 == null && e.revenueCurrentYear > 0 && e.revenueNextYear > 0) year2 = e.revenueNextYear / e.revenueCurrentYear - 1;
@@ -109,24 +133,44 @@ function buildGrowthPath(stock, category, years = 5) {
   const avgRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(Number.isFinite));
   const reinvest = clamp(stock.reinvestmentRate ?? 0.40, 0.10, 0.80);
   const sustainable = avgRoic != null ? clamp(avgRoic, 0, 0.35) * reinvest : null;
-  const anchor = Math.max(0, mean([year1, year2]) ?? year1);
-  const categoryTarget = clamp(anchor * cfg.retention, cfg.floor, cfg.cap);
-  const year5 = sustainable != null
-    ? clamp(categoryTarget * 0.80 + sustainable * 0.20, cfg.floor, cfg.cap)
-    : categoryTarget;
+  const persistence = growthPersistenceScore(stock, category, year1, year2);
+
+  const analystAnchor = clamp(Math.max(0, year2), cfg.floor, cfg.cap);
+  const historyAnchor = clamp(Math.max(0, histMedian ?? year2), cfg.floor, cfg.cap);
+  const sustainableAnchor = clamp(Math.max(0, sustainable ?? cfg.floor), cfg.floor, cfg.cap);
+  const persistenceAnchor = cfg.floor + (cfg.cap - cfg.floor) * persistence;
+
+  let year5 = analystAnchor * cfg.analystWeight + historyAnchor * cfg.historyWeight +
+    sustainableAnchor * cfg.sustainableWeight + persistenceAnchor * cfg.persistenceWeight;
+  const forwardAnchor = Math.max(0, mean([year1, year2]) ?? year1);
+  const maxRetention = category === 'Hyper Growth' ? 0.58
+    : category === 'Growth' ? 0.62
+    : category === 'Compounder' ? 0.72
+    : 0.85;
+  year5 = clamp(year5, cfg.floor, Math.min(cfg.cap, Math.max(cfg.floor, forwardAnchor * maxRetention)));
 
   const path = [year1, year2];
   for (let t = 3; t <= years; t++) {
     const p = (t - 2) / Math.max(1, years - 2);
-    const smooth = p * p * (3 - 2 * p);
-    path.push(year2 + (year5 - year2) * smooth);
+    const exponent = category === 'Hyper Growth' ? 1.55
+      : category === 'Growth' ? 1.35
+      : category === 'Compounder' ? 1.15
+      : category === 'Turnaround' ? 0.90
+      : 1.0;
+    const eased = Math.pow(p, exponent);
+    path.push(year2 + (year5 - year2) * eased);
   }
+
   return {
     path: path.slice(0, years),
     source: e.revenueGrowthCurrentYear != null || e.revenueGrowthFwd != null
-      ? 'analyst_consensus_plus_v3_fade'
-      : 'sec_history_plus_v3_fade',
-    assumptions: { year1, year2, year5, sustainableGrowth: sustainable, category },
+      ? 'analyst_consensus_plus_v3_7_persistence_fade'
+      : 'sec_history_plus_v3_7_persistence_fade',
+    assumptions: {
+      year1, year2, year5, sustainableGrowth: sustainable,
+      historicalMedianGrowth: histMedian, persistenceScore: persistence,
+      analystAnchor, historyAnchor, sustainableAnchor, persistenceAnchor, category,
+    },
   };
 }
 
@@ -510,13 +554,13 @@ function exitMethod(stock, model, sectorMultiples, type) {
 }
 
 const CATEGORY_METHOD_WEIGHTS = {
-  'Hyper Growth': { dcf: 0.10, dcfSBCAdjusted: 0.06, ownerEarnings: 0.08, revenueExit: 0.25, epsExit: 0.34, ebitdaExit: 0.17 },
-  Growth:         { dcf: 0.14, dcfSBCAdjusted: 0.07, ownerEarnings: 0.10, revenueExit: 0.20, epsExit: 0.31, ebitdaExit: 0.18 },
-  Compounder:     { dcf: 0.20, dcfSBCAdjusted: 0.09, ownerEarnings: 0.13, revenueExit: 0.10, epsExit: 0.27, ebitdaExit: 0.21 },
-  Value:          { dcf: 0.28, dcfSBCAdjusted: 0.11, ownerEarnings: 0.14, revenueExit: 0.03, epsExit: 0.20, ebitdaExit: 0.24 },
-  Dividend:       { dcf: 0.31, dcfSBCAdjusted: 0.09, ownerEarnings: 0.15, revenueExit: 0.02, epsExit: 0.20, ebitdaExit: 0.23 },
-  Turnaround:     { dcf: 0.19, dcfSBCAdjusted: 0.07, ownerEarnings: 0.10, revenueExit: 0.08, epsExit: 0.20, ebitdaExit: 0.36 },
-  Cyclical:       { dcf: 0.20, dcfSBCAdjusted: 0.07, ownerEarnings: 0.10, revenueExit: 0.05, epsExit: 0.18, ebitdaExit: 0.40 },
+  'Hyper Growth': { dcf: 0.05, dcfSBCAdjusted: 0.04, ownerEarnings: 0.06, revenueExit: 0.30, epsExit: 0.34, ebitdaExit: 0.21 },
+  Growth:         { dcf: 0.10, dcfSBCAdjusted: 0.06, ownerEarnings: 0.09, revenueExit: 0.23, epsExit: 0.31, ebitdaExit: 0.21 },
+  Compounder:     { dcf: 0.19, dcfSBCAdjusted: 0.08, ownerEarnings: 0.14, revenueExit: 0.10, epsExit: 0.27, ebitdaExit: 0.22 },
+  Value:          { dcf: 0.30, dcfSBCAdjusted: 0.10, ownerEarnings: 0.15, revenueExit: 0.02, epsExit: 0.19, ebitdaExit: 0.24 },
+  Dividend:       { dcf: 0.34, dcfSBCAdjusted: 0.08, ownerEarnings: 0.16, revenueExit: 0.01, epsExit: 0.18, ebitdaExit: 0.23 },
+  Turnaround:     { dcf: 0.18, dcfSBCAdjusted: 0.06, ownerEarnings: 0.10, revenueExit: 0.08, epsExit: 0.20, ebitdaExit: 0.38 },
+  Cyclical:       { dcf: 0.19, dcfSBCAdjusted: 0.06, ownerEarnings: 0.10, revenueExit: 0.04, epsExit: 0.17, ebitdaExit: 0.44 },
 };
 
 function methodSpecificReliability(stock, key, value, center) {
@@ -655,7 +699,7 @@ function valuateStock(stock, sectorExitMultiples) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '3.6', category, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '3.7', category, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
