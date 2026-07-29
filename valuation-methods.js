@@ -1,5 +1,5 @@
 /**
- * FreeScreener V7.0 core valuation engine
+ * StockTool V2 lifecycle/moat-aware valuation engine
  *
  * V3.0 principles:
  *  - one shared five-year operating projection for every valuation method
@@ -22,6 +22,9 @@ const { buildMarketExpectations } = require('./engine/market-expectations');
 const { simulateReturns } = require('./engine/monte-carlo-engine');
 const { selectValuationMethods } = require('./engine/method-selection-engine');
 const { generateForecast } = require('./engine/forecast-engine');
+const { classifyLifecycle } = require('./engine/lifecycle-engine');
+const { computeMoat } = require('./engine/moat-engine');
+const { deriveExitMultiple } = require('./engine/fade-engine');
 
 function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
 function mean(arr) { return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
@@ -348,83 +351,23 @@ function companyCurrentMultiple(stock, type) {
   return null;
 }
 
-function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, businessProfile = null) {
-  if (!(sectorMultiple > 0)) return { multiple: null };
+function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, businessProfile = null, lifecycle = null, moat = null) {
   const current = companyCurrentMultiple(stock, type);
-  const category = inferValuationCategory(stock);
-  const profile = businessProfile || buildBusinessProfile(stock, category);
-  const quality = qualityScore01(stock, exitGrowth);
-  const growthScore = clamp(((exitGrowth ?? 0.04) - 0.02) / 0.20, 0, 1);
-
-  // V4 separates operating maturity from valuation-premium persistence. Durable
-  // compounders can mature operationally without automatically reverting to an average multiple.
-  const durablePremiumPct = clamp(
-    (profile.moatScore - 0.45) * 1.05 + (growthScore - 0.35) * (type === 'revenueExit' ? 0.62 : 0.46),
-    -0.38, category === 'Hyper Growth' ? 1.30 : category === 'Growth' ? 1.00 : category === 'Compounder' ? 0.90 : 0.55
-  );
-  const qualityAdjustedSector = sectorMultiple * (1 + durablePremiumPct);
-  const currentCap = category === 'Hyper Growth' ? 3.0 : category === 'Growth' ? 2.45 : category === 'Compounder' ? 2.25 : category === 'Dividend' ? 1.65 : 1.55;
-  const boundedCurrent = current > 0 ? clamp(current, sectorMultiple * 0.45, sectorMultiple * currentCap) : null;
-  // Quality-adjusted mean reversion: quality can justify a durable premium to the
-  // sector, but it should not automatically preserve an unusually high CURRENT
-  // multiple for five years. Retention falls as the current premium becomes more
-  // extreme and as terminal growth matures. This prevents optimistic rerating from
-  // dominating the five-year target for names such as AMD or BKNG.
-  const currentPremiumRatio = boundedCurrent != null && sectorMultiple > 0
-    ? boundedCurrent / sectorMultiple
-    : null;
-  const maturityFactor = exitGrowth == null ? 0.85
-    : exitGrowth < 0.05 ? 0.52
-    : exitGrowth < 0.08 ? 0.65
-    : exitGrowth < 0.12 ? 0.78
-    : exitGrowth < 0.18 ? 0.90
-    : 1.00;
-  const premiumExtremityFactor = currentPremiumRatio == null ? 1
-    : currentPremiumRatio >= 2.50 ? 0.40
-    : currentPremiumRatio >= 2.00 ? 0.52
-    : currentPremiumRatio >= 1.60 ? 0.68
-    : currentPremiumRatio >= 1.30 ? 0.84
-    : 1.00;
-  const categoryRetentionCap = category === 'Hyper Growth' ? 0.58
-    : category === 'Growth' ? 0.52
-    : category === 'Compounder' ? 0.48
-    : category === 'Dividend' ? 0.34
-    : 0.30;
-  let retain = (0.08 + profile.premiumPersistence * 0.48) * maturityFactor * premiumExtremityFactor;
-  if (type === 'revenueExit') retain *= category === 'Hyper Growth' ? 0.82 : 0.62;
-  if (['Value', 'Dividend', 'Turnaround', 'Cyclical'].includes(category)) retain *= 0.72;
-  if (stock.valuation?.industryModel?.model === 'semiconductors-hardware') retain *= 0.82;
-  retain = clamp(retain, 0.04, categoryRetentionCap);
-  const multiple = boundedCurrent != null
-    ? qualityAdjustedSector * (1 - retain) + boundedCurrent * retain
-    : qualityAdjustedSector;
-  const maxVsSector = category === 'Hyper Growth' ? 2.80 : category === 'Growth' ? 2.35 : category === 'Compounder' ? 2.15 : category === 'Dividend' ? 1.60 : 1.50;
-  const preDisciplineMultiple = clamp(multiple, sectorMultiple * 0.45, sectorMultiple * maxVsSector);
-  const disciplined = applyExitMultipleDiscipline({
-    type, rawMultiple: preDisciplineMultiple, exitGrowth,
-    quality, forecastReliability: profile.forecastReliability,
-    industry: stock.valuation?.industryModel?.model || null,
+  const life = lifecycle || classifyLifecycle(stock);
+  const moatProfile = moat || computeMoat(stock, life);
+  const result = deriveExitMultiple({
+    current,
+    sector: sectorMultiple,
+    exitGrowth,
+    lifecycle: life,
+    moat: moatProfile,
+    type,
   });
-  return {
-    multiple: disciplined.multiple,
-    rawMultipleBeforeGrowthCeiling: preDisciplineMultiple,
-    growthBasedCeiling: disciplined.ceiling,
-    multipleWasCapped: disciplined.wasCapped,
-    sectorMultiple, companyCurrentMultiple: current, boundedCompanyMultiple: boundedCurrent,
-    qualityAdjustedSector, qualityPremiumRetained: retain, premiumPersistence: profile.premiumPersistence,
-    currentPremiumRatio, maturityFactor, premiumExtremityFactor, categoryRetentionCap,
-    meanReversionModel: 'quality-adjusted-v2',
-    moatScore: profile.moatScore, forecastReliability: profile.forecastReliability,
-    qualityScore: quality, durablePremiumPct, growthPremiumScore: growthScore, valuationEngine: profile.engine,
-  };
-}
-
-// Backward-compatible export name.
-function meanRevertedMultiple(currentMultiple, ownHistoricalMultiples, stockOrRoic, exitGrowth) {
-  const stock = stockOrRoic?.financials ? stockOrRoic : null;
-  if (!stock) return { multiple: currentMultiple, target: currentMultiple, weight: 0.5 };
-  const result = intelligentExitMultiple(stock, 'epsExit', currentMultiple, exitGrowth);
-  return { multiple: result.multiple, target: result.qualityAdjustedSector, weight: result.qualityPremiumRetained };
+  if (!(result.multiple > 0)) return result;
+  // A final broad sanity rail catches bad source data without forcing elite growth
+  // companies back to the average sector multiple.
+  const hardCap = type === 'revenueExit' ? 45 : type === 'epsExit' ? 85 : 65;
+  return { ...result, multiple: clamp(result.multiple, 1, hardCap) };
 }
 
 // ---------- V3.5 reliability + capital allocation ----------
@@ -551,7 +494,7 @@ function pvDividendStream(stock, years, discountRate) {
   return pv;
 }
 
-function exitMethod(stock, model, sectorMultiples, type, businessProfile = null) {
+function exitMethod(stock, model, sectorMultiples, type, businessProfile = null, lifecycle = null, moat = null) {
   const exit = model.projection.at(-1);
   const last = stock.financials.years.at(-1) || {};
   const discountRate = getDynamicDiscountRate(stock, model.category);
@@ -564,7 +507,7 @@ function exitMethod(stock, model, sectorMultiples, type, businessProfile = null)
   if (!(sectorMultiple > 0) || !Number.isFinite(metricValue) || (type === 'epsExit' && metricValue <= 0)) {
     return { fairValuePerShare: null, exitPricePerShare: null, audit: { reason: 'missing multiple or exit metric' } };
   }
-  const multipleModel = intelligentExitMultiple(stock, type, sectorMultiple, exit.growth, businessProfile);
+  const multipleModel = intelligentExitMultiple(stock, type, sectorMultiple, exit.growth, businessProfile, lifecycle, moat);
   const exitMultiple = multipleModel.multiple;
   let exitEnterpriseValue = null, exitEquityValue = null, exitPricePerShare = null;
   if (type === 'epsExit') {
@@ -815,16 +758,21 @@ function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
 }
 
 function valuateStock(stock, sectorExitMultiples, calibration = null) {
-  const category = inferValuationCategory(stock);
+  const lifecycle = classifyLifecycle(stock);
+  const category = lifecycle.stage === 'Elite Compounder' ? 'Compounder'
+    : lifecycle.stage === 'Dividend Compounder' ? 'Dividend'
+    : ['Financial','Utility','Asset Heavy','Mature'].includes(lifecycle.stage) ? 'Value'
+    : lifecycle.stage;
   const sectorMultiples = sectorExitMultiples[stock.sector] || sectorExitMultiples.Unknown || {};
-  const model = projectFinancials(stock, stock.growthYear1, 5, calibration);
-  const businessProfile = buildBusinessProfile(stock, category, model);
+  const model = projectFinancials(stock, stock.growthYear1, lifecycle.forecastYears, calibration);
+  const moat = computeMoat(stock, lifecycle);
+  const businessProfile = { ...buildBusinessProfile(stock, category, model), moatScore: moat.score / 100, moatV2: moat, lifecycle };
   const dcf = dcfFromProjection(stock, model, { sbcAdjusted: false });
   const dcfSBCAdjusted = dcfFromProjection(stock, model, { sbcAdjusted: true });
   const ownerEarnings = ownerEarningsFromProjection(stock, model);
-  const revenueExit = exitMethod(stock, model, sectorMultiples, 'revenueExit', businessProfile);
-  const epsExit = exitMethod(stock, model, sectorMultiples, 'epsExit', businessProfile);
-  const ebitdaExit = exitMethod(stock, model, sectorMultiples, 'ebitdaExit', businessProfile);
+  const revenueExit = exitMethod(stock, model, sectorMultiples, 'revenueExit', businessProfile, lifecycle, moat);
+  const epsExit = exitMethod(stock, model, sectorMultiples, 'epsExit', businessProfile, lifecycle, moat);
+  const ebitdaExit = exitMethod(stock, model, sectorMultiples, 'ebitdaExit', businessProfile, lifecycle, moat);
   const methods = {
     dcf: dcf.fairValuePerShare, dcfSBCAdjusted: dcfSBCAdjusted.fairValuePerShare, ownerEarnings: ownerEarnings.fairValuePerShare,
     revenueExit: revenueExit.fairValuePerShare, epsExit: epsExit.fairValuePerShare, ebitdaExit: ebitdaExit.fairValuePerShare,
@@ -872,7 +820,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   const monteCarlo = simulateReturns(stock, returnEngineV2, combined.agreementScore, Math.round((businessProfile.forecastReliability || 0.5) * 100));
 
   return {
-    category, businessProfile, methods, blendedFairValue: finalFairValue,
+    category, lifecycle, moat, businessProfile, methods, blendedFairValue: finalFairValue,
     intrinsicValue: consensus.intrinsicValue,
     marketValue: consensus.marketValue,
     valuationConsensus: consensus,
@@ -888,7 +836,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '9.0-adaptive-calibrated', category, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '2.0-lifecycle-moat-dynamic-horizon', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {

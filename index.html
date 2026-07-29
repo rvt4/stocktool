@@ -272,37 +272,31 @@ function buildDetailHtml(s) {
     <br><strong>Capital allocation:</strong> ${s.capitalAllocationScore ?? '—'}/100 ${(s.capitalAllocationSignals || []).map(sig => `<span class="sig">• ${sig}</span>`).join('')}
     <br><strong>Pricing power signals:</strong>
     ${(s.pricingPowerSignals || []).map(sig => `<span class="sig">• ${sig}</span>`).join('') || 'None detected'}
-    <div class="detail-section"><strong>V7 Milestone 2 decision engine</strong><div class="detail-grid">
-<div><strong>Investment grade:</strong> ${s.investmentGrade ?? '—'}</div><div><strong>Portfolio-manager score:</strong> ${s.portfolioManagerScore ?? '—'}/100</div>
-<div><strong>Expected CAGR:</strong> ${pct(s.expectedReturn)}</div><div><strong>Confidence:</strong> ${s.confidenceScore ?? '—'}/100</div>
-<div><strong>Compounder:</strong> ${s.compounderScore ?? '—'}/100 (${s.compounderGrade ?? '—'})</div><div><strong>Pricing Power 2.0:</strong> ${s.pricingPowerV2Score ?? '—'}/100</div>
-<div><strong>Downside protection:</strong> ${s.downsideProtectionScore ?? '—'}/100</div><div><strong>Permanent-loss probability:</strong> ${pct(s.permanentLossProbability)}</div>
-<div><strong>Industry model:</strong> ${s.industryModel?.model ?? 'general'}</div><div><strong>Data integrity:</strong> ${s.dataIntegrity?.score ?? '—'}/100</div></div>
-<div style="margin-top:8px"><strong>Bear / Base / Bull:</strong> ${s.scenarioAnalysis?.scenarios ? `Bear ${pct(s.scenarioAnalysis.scenarios.bear.cagr)} (${pct(s.scenarioAnalysis.scenarios.bear.probability)}) · Base ${pct(s.scenarioAnalysis.scenarios.base.cagr)} (${pct(s.scenarioAnalysis.scenarios.base.probability)}) · Bull ${pct(s.scenarioAnalysis.scenarios.bull.cagr)} (${pct(s.scenarioAnalysis.scenarios.bull.probability)})` : '—'}</div>
-<div style="margin-top:8px"><strong>Compounder strengths:</strong>${(s.compounderBreakdown?.strengths||[]).map(x=>`<span class="sig">• ${x}</span>`).join('')||' None identified'}</div>
-<div style="margin-top:8px"><strong>Downside risks:</strong>${(s.downsideAnalysis?.risks||[]).map(x=>`<span class="sig">• ${x}</span>`).join('')||' No major modeled risks'}</div></div>
-<div class="detail-section"><strong>Analyst consensus</strong>${analystHtml(s)}</div>
-    <div class="detail-section"><strong>V7 Milestone 3 learning & portfolio layer</strong><div class="detail-grid">
-<div><strong>Calibration:</strong> ${s.calibrationActive ? 'Active' : 'Collecting history'} (${s.calibration?.observationCount ?? 0} mature observations)</div>
-<div><strong>Forecast adjustment:</strong> ${pct(s.calibrationAdjustment)}</div>
-<div><strong>Model-portfolio eligible:</strong> ${s.portfolioProfile?.eligibleForModelPortfolio ? 'Yes' : 'No'}</div>
-<div><strong>Position tier:</strong> ${s.portfolioProfile?.positionTier ?? '—'}</div>
-<div><strong>Suggested max weight:</strong> ${pct(s.portfolioProfile?.suggestedMaxWeight)}</div>
-<div><strong>Conviction score:</strong> ${s.portfolioProfile?.convictionScore ?? '—'}/100</div>
+    <div class="detail-section"><strong>Business classification & moat</strong><div class="detail-grid">
+<div><strong>Lifecycle:</strong> ${s.lifecycle?.stage ?? s.projectionAssumptions?.lifecycle?.stage ?? s.category ?? '—'}</div>
+<div><strong>Forecast horizon:</strong> ${s.lifecycle?.forecastYears ?? s.projectionAssumptions?.forecastHorizon ?? '—'} years</div>
+<div><strong>Moat:</strong> ${s.moat?.score ?? Math.round((s.businessProfile?.moatScore ?? 0) * 100)}/100 (${s.moat?.grade ?? '—'})</div>
+<div><strong>Excess-return duration:</strong> ${s.moat?.excessReturnYears ?? '—'} years</div>
+<div><strong>Fade speed:</strong> ${s.moat?.fadeSpeed ?? s.lifecycle?.multipleFade ?? '—'}</div>
+<div><strong>Forward growth:</strong> ${pct(s.lifecycle?.forwardGrowth)}</div>
+<div><strong>ROIC:</strong> ${pct(s.lifecycle?.avgRoic)}</div>
+<div><strong>Positive FCF history:</strong> ${pct(s.lifecycle?.positiveFcfRate)}</div>
 </div></div>
-    <div class="detail-section"><strong>V7 Milestone 4 institutional valuation</strong><div class="detail-grid">
+<div class="detail-section"><strong>Valuation summary</strong><div class="detail-grid">
 <div><strong>Intrinsic value:</strong> ${s.intrinsicValue == null ? '—' : '$' + num(s.intrinsicValue)}</div>
 <div><strong>Market-based value:</strong> ${s.marketValue == null ? '—' : '$' + num(s.marketValue)}</div>
 <div><strong>Actionable fair value:</strong> ${s.fairValueEstimate == null ? '—' : '$' + num(s.fairValueEstimate)}</div>
-<div><strong>Consensus regime:</strong> ${s.valuationConsensus?.agreementRegime ?? '—'}</div>
-<div><strong>Intrinsic weighting:</strong> ${pct(s.valuationConsensus?.intrinsicWeight)}</div>
-<div><strong>Multiple-dominated return:</strong> ${s.returnEngineV2?.multipleDominated ? 'Yes — lower confidence' : 'No'}</div>
+<div><strong>Expected CAGR:</strong> ${pct(s.expectedReturn)}</div>
+<div><strong>Agreement:</strong> ${s.methodAgreementScore ?? '—'}/100</div>
+<div><strong>Confidence:</strong> ${s.confidenceScore ?? '—'}/100</div>
+<div><strong>Calibration:</strong> ${s.calibrationActive ? 'Active' : 'Collecting history'} (${s.calibration?.observationCount ?? 0} observations)</div>
+<div><strong>Suggested max weight:</strong> ${pct(s.portfolioProfile?.suggestedMaxWeight)}</div>
 </div>
 <div style="margin-top:8px"><strong>Market expectations:</strong> ${s.marketExpectations?.summary ?? '—'}</div>
-<div style="margin-top:8px"><strong>Monte Carlo CAGR:</strong> ${s.monteCarlo ? `10th ${pct(s.monteCarlo.p10)} · 25th ${pct(s.monteCarlo.p25)} · Median ${pct(s.monteCarlo.median)} · 75th ${pct(s.monteCarlo.p75)} · 90th ${pct(s.monteCarlo.p90)}` : '—'}</div>
-<div style="margin-top:8px"><strong>Probabilities:</strong> ${s.monteCarlo ? `15%+ CAGR ${pct(s.monteCarlo.probability15Plus)} · Beat 10% ${pct(s.monteCarlo.probabilityBeatMarket)} · Negative return ${pct(s.monteCarlo.probabilityNegative)}` : '—'}</div>
+<div style="margin-top:8px"><strong>Monte Carlo CAGR:</strong> ${s.monteCarlo ? `10th ${pct(s.monteCarlo.p10)} · Median ${pct(s.monteCarlo.median)} · 90th ${pct(s.monteCarlo.p90)}` : '—'}</div>
 </div>
-    <div class="detail-section"><strong>Five-year operating projection</strong>${projectionHtml(s)}</div>
+<div class="detail-section"><strong>Analyst consensus</strong>${analystHtml(s)}</div>
+    <div class="detail-section"><strong>Dynamic operating projection</strong>${projectionHtml(s)}</div>
     <div class="detail-section"><strong>V6.0 portfolio-manager model</strong><div class="detail-grid">
       <div>Category: ${s.projectionAssumptions?.category ?? s.category}</div>
       <div>Valuation engine: ${s.businessProfile?.engine ?? s.projectionAssumptions?.businessProfile?.engine ?? "—"}</div>

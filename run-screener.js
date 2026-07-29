@@ -159,7 +159,7 @@ async function run() {
   try {
     forecastHistory = JSON.parse(fs.readFileSync(forecastHistoryPath, 'utf8'));
   } catch (_) {
-    // First Milestone 3 run starts a new local history file.
+    // First calibration run starts a new local history file.
   }
   for (let i = 0; i < watchlist.length; i++) {
     const { ticker, sector } = watchlist[i];
@@ -195,7 +195,7 @@ async function run() {
   const sectorExitMultiples = computeSectorExitMultiples(records);
   const currentByTicker = new Map(records.map(stock => [stock.ticker, stock]));
   const calibration = buildCalibration(forecastHistory, currentByTicker);
-  console.log(`Milestone 3 calibration: ${calibration.observationCount} mature observations${calibration.isCalibrated ? ' (active)' : ' (collecting history)'}.`);
+  console.log(`Calibration: ${calibration.observationCount} mature observations${calibration.isCalibrated ? ' (active)' : ' (collecting history)'}.`);
   for (const stock of records) {
     // Industry must be known before valuation so method suitability can influence
     // the reliability-weighted blend (for example, cash-flow methods dominate for
@@ -222,6 +222,8 @@ async function run() {
     stock.valuation.reverseDCFGap = result.reverseDCFGap;
     stock.valuation.businessProfile = result.businessProfile;
     stock.valuation.category = result.category;
+    stock.valuation.lifecycle = result.lifecycle;
+    stock.valuation.moat = result.moat;
     // Powers the price-aware `expectedReturn` field in scoring-engine.js — without this,
     // every stock falls back to the price-agnostic fundamentalGrowthRate for the buy-list
     // gate, silently losing the "is this a buy at today's price" signal.
@@ -233,13 +235,13 @@ async function run() {
     stock.valuation.marketExpectations = result.marketExpectations;
     stock.valuation.monteCarlo = result.monteCarlo;
 
-    // V7 Milestone 1: auditable data integrity + bear/base/bull return distribution.
+    // Auditable data integrity + bear/base/bull return distribution.
     const dataIntegrity = assessDataIntegrity(stock);
     const scenarioAnalysis = buildScenarios(stock, result, dataIntegrity);
     const rawExpectedReturnProfile = computeExpectedReturnProfile(stock, scenarioAnalysis, dataIntegrity);
     let expectedReturnProfile = applyCalibration(rawExpectedReturnProfile, stock, calibration);
 
-    // Milestone 4 is now the source of truth for expected return. Milestone 1's
+    // The lifecycle/moat valuation is the source of truth for expected return. The
     // scenario engine remains useful for downside/uncertainty penalties, but its
     // independently calculated expected CAGR could overwhelm the new conservative
     // model (BKNG was still showing ~78%). Re-anchor the profile to institutional-v2.

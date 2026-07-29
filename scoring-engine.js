@@ -596,7 +596,7 @@ function scoreStock(stock) {
   // Requires `stock.valuation.fiveYearPriceTarget` to be populated upstream (same place
   // that already sets `fairValueEstimate` and `valuationMethods` below) — verify
   // run-screener.js maps the fiveYearPriceTarget object from valuateStock() through.
-  // Milestone 4 is the authoritative price-aware return model. The older
+  // The lifecycle/moat model is the authoritative price-aware return model. The older
   // scenario profile can still provide uncertainty penalties, but it must not replace
   // the institutional return with an independently generated (and sometimes extreme)
   // CAGR such as BKNG's former 70%+ result.
@@ -634,7 +634,7 @@ function scoreStock(stock) {
   // computed (e.g. insufficient exit-multiple data), so stocks don't silently vanish
   // from qualifying — but this is the weaker, price-agnostic signal, so flag it.
   const usedFallbackForCAGRTarget = expectedReturn == null;
-  // Milestone 3: fundamental growth is informative but cannot justify a Buy rating
+  // Fundamental growth is informative but cannot justify a Buy rating
   // because it ignores today's entry price. Missing valuation remains explicitly unrated.
   const hasPriceAwareValuation = Number.isFinite(expectedReturn) && Number.isFinite(fairValue) && (stock.valuation.methodCount ?? 0) > 0;
   const meetsCAGRTarget = hasPriceAwareValuation && expectedReturn >= 0.15;
@@ -664,6 +664,8 @@ function scoreStock(stock) {
     qualityBreakdown: investment.qualityBreakdown,
     investmentBreakdown: investment,
     businessProfile: stock.valuation.businessProfile ?? null,
+    lifecycle: stock.valuation.lifecycle ?? null,
+    moat: stock.valuation.moat ?? null,
     categoryBreakdown: catResult,
     pricingPowerScore: pricingPower.score,
     pricingPowerSignals: pricingPower.signals,
