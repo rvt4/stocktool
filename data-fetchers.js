@@ -96,6 +96,7 @@ function blendedForwardGrowth(trailing3yrCagr, recentQoQYoY) {
 // Pulls the most common US-GAAP tags; falls back gracefully if a tag is missing.
 function parseAnnualFinancials(facts, maxYears = 10) {
   const usGaap = facts.facts?.['us-gaap'] || {};
+  const dei = facts.facts?.dei || {};
   const byYear = {}; // year -> partial record
 
   function pullAnnual(tag, field) {
@@ -107,6 +108,26 @@ function parseAnnualFinancials(facts, maxYears = 10) {
       const year = x.fy;
       byYear[year] = byYear[year] || { year };
       byYear[year][field] = x.val;
+    });
+  }
+
+  // Point-in-time DEI facts (especially EntityCommonStockSharesOutstanding) do not
+  // consistently carry fp='FY'. Keep them as a last-resort share candidate keyed to
+  // the filing fiscal year. For multi-class issuers this is not automatically summed;
+  // the later reconciliation step chooses the candidate that best agrees with EPS,
+  // prior years, or market-cap evidence.
+  function pullDeiAnnual(tag, field) {
+    const units = dei[tag]?.units;
+    if (!units) return;
+    const arr = units.shares || Object.values(units)[0];
+    if (!arr) return;
+    arr.filter(x => x.form === '10-K').forEach(x => {
+      const year = x.fy || (x.end ? new Date(x.end).getUTCFullYear() : null);
+      if (!year || !Number.isFinite(Number(x.val))) return;
+      byYear[year] = byYear[year] || { year };
+      const key = `${field}Candidates`;
+      byYear[year][key] = byYear[year][key] || [];
+      byYear[year][key].push({ value: Number(x.val), source: `dei:${tag}` });
     });
   }
 
@@ -135,7 +156,11 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   // fallback so it takes priority wherever available.
   pullAnnual('WeightedAverageNumberOfSharesOutstandingBasicAndDiluted', 'sharesOutTTM');
   pullAnnual('WeightedAverageNumberOfDilutedSharesOutstanding', 'sharesOutTTM');
+  pullAnnual('WeightedAverageNumberOfSharesOutstandingDiluted', 'sharesOutTTM');
+  pullAnnual('WeightedAverageNumberOfShareOutstandingBasicAndDiluted', 'sharesOutTTM');
   pullAnnual('EarningsPerShareDiluted', 'dilutedEPS');
+  pullAnnual('EarningsPerShareDilutedIncludingExtraordinaryItems', 'dilutedEPS');
+  pullDeiAnnual('EntityCommonStockSharesOutstanding', 'sharesOutTTM');
   // Stock-based compensation — needed to model real dilution cost and flag heavy-SBC
   // names. Reported under either tag depending on the company.
   pullAnnual('ShareBasedCompensation', 'sbc');
@@ -157,6 +182,22 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   // being interpreted as only 716 shares and inflating per-share valuations.
   const shareScaleCandidates = [1, 1e3, 1e6, 1e9];
   const detectedShareScales = [];
+
+  // Use a DEI cover-page candidate only when the income-statement denominator is
+  // absent. Multiple contexts/classes can exist; choose the largest plausible value,
+  // then let the EPS/prior-year reconciliation below validate or replace it.
+  Object.values(byYear).forEach(y => {
+    if (!(Number.isFinite(Number(y.sharesOutTTM)) && Number(y.sharesOutTTM) > 0)) {
+      const candidates = (y.sharesOutTTMCandidates || [])
+        .map(c => ({ ...c, value: Number(c.value) }))
+        .filter(c => Number.isFinite(c.value) && c.value > 0);
+      if (candidates.length) {
+        const chosen = candidates.sort((a, b) => b.value - a.value)[0];
+        y.sharesOutTTM = chosen.value;
+        y.sharesCandidateSource = chosen.source;
+      }
+    }
+  });
 
   Object.values(byYear).forEach(y => {
     const rawShares = Number(y.sharesOutTTM);
@@ -239,9 +280,9 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   for (let i = 0; i < orderedRawYears.length; i++) {
     const y = orderedRawYears[i];
     if (Number.isFinite(y.sharesOutTTM) && y.sharesOutTTM > 0) {
-      y.sharesSource = y.sharesScaleApplied && y.sharesScaleApplied !== 1
-        ? 'sec_diluted_scaled'
-        : 'sec_diluted';
+      y.sharesSource = y.sharesCandidateSource
+        ? `${y.sharesCandidateSource}${y.sharesScaleApplied && y.sharesScaleApplied !== 1 ? '_scaled' : ''}`
+        : (y.sharesScaleApplied && y.sharesScaleApplied !== 1 ? 'sec_diluted_scaled' : 'sec_diluted');
       continue;
     }
 
@@ -370,6 +411,28 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   const quarters = parseQuarterlyRevenue(facts);
   const last = years[years.length - 1] || {};
   const currentPrice = quote?.c || (priceHistory.length ? priceHistory[priceHistory.length - 1].close : null);
+
+  // Final live-data repair for the rare issuer whose SEC Company Facts omit every
+  // usable diluted-share denominator (Visa is the known example). Finnhub profile2
+  // reports marketCapitalization in USD millions. We call it ONLY for missing-share
+  // records, so normal runs remain at one Finnhub request per ticker.
+  if (!(last.sharesOutTTM > 100000) && currentPrice > 0) {
+    try {
+      const profile = await fetchFinnhubProfile(ticker);
+      const profileMarketCap = Number(profile?.marketCapitalization) * 1e6;
+      const impliedShares = profileMarketCap > 0 ? profileMarketCap / currentPrice : null;
+      if (Number.isFinite(impliedShares) && impliedShares > 100000 && impliedShares < 1e11) {
+        last.sharesOutTTM = impliedShares;
+        last.rawSharesOutTTM = null;
+        last.sharesScaleApplied = null;
+        last.sharesSource = 'finnhub_market_cap_div_price';
+        last.sharesFallbackMarketCap = profileMarketCap;
+      }
+    } catch (_) {
+      // Leave valuation unavailable rather than inventing a denominator.
+    }
+  }
+
   const sharesOut = last.sharesOutTTM;
   const marketCap = currentPrice && sharesOut ? currentPrice * sharesOut : null;
   const eps = last.netIncome && sharesOut ? last.netIncome / sharesOut : null;

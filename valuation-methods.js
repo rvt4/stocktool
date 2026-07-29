@@ -597,80 +597,168 @@ function exitMethod(stock, model, sectorMultiples, type, businessProfile = null)
 }
 
 const CATEGORY_METHOD_WEIGHTS = {
-  'Hyper Growth': { dcf: 0.05, dcfSBCAdjusted: 0.04, ownerEarnings: 0.06, revenueExit: 0.30, epsExit: 0.34, ebitdaExit: 0.21 },
-  Growth:         { dcf: 0.10, dcfSBCAdjusted: 0.06, ownerEarnings: 0.09, revenueExit: 0.23, epsExit: 0.31, ebitdaExit: 0.21 },
-  Compounder:     { dcf: 0.19, dcfSBCAdjusted: 0.08, ownerEarnings: 0.14, revenueExit: 0.10, epsExit: 0.27, ebitdaExit: 0.22 },
-  Value:          { dcf: 0.30, dcfSBCAdjusted: 0.10, ownerEarnings: 0.15, revenueExit: 0.02, epsExit: 0.19, ebitdaExit: 0.24 },
-  Dividend:       { dcf: 0.34, dcfSBCAdjusted: 0.08, ownerEarnings: 0.16, revenueExit: 0.01, epsExit: 0.18, ebitdaExit: 0.23 },
-  Turnaround:     { dcf: 0.18, dcfSBCAdjusted: 0.06, ownerEarnings: 0.10, revenueExit: 0.08, epsExit: 0.20, ebitdaExit: 0.38 },
-  Cyclical:       { dcf: 0.19, dcfSBCAdjusted: 0.06, ownerEarnings: 0.10, revenueExit: 0.04, epsExit: 0.17, ebitdaExit: 0.44 },
+  'Hyper Growth': { dcf: 0.13, dcfSBCAdjusted: 0.08, ownerEarnings: 0.08, revenueExit: 0.24, epsExit: 0.27, ebitdaExit: 0.20 },
+  Growth:         { dcf: 0.19, dcfSBCAdjusted: 0.09, ownerEarnings: 0.10, revenueExit: 0.17, epsExit: 0.25, ebitdaExit: 0.20 },
+  Compounder:     { dcf: 0.27, dcfSBCAdjusted: 0.10, ownerEarnings: 0.15, revenueExit: 0.07, epsExit: 0.21, ebitdaExit: 0.20 },
+  Value:          { dcf: 0.31, dcfSBCAdjusted: 0.10, ownerEarnings: 0.15, revenueExit: 0.02, epsExit: 0.18, ebitdaExit: 0.24 },
+  Dividend:       { dcf: 0.35, dcfSBCAdjusted: 0.09, ownerEarnings: 0.16, revenueExit: 0.01, epsExit: 0.17, ebitdaExit: 0.22 },
+  Turnaround:     { dcf: 0.22, dcfSBCAdjusted: 0.07, ownerEarnings: 0.10, revenueExit: 0.05, epsExit: 0.18, ebitdaExit: 0.38 },
+  Cyclical:       { dcf: 0.22, dcfSBCAdjusted: 0.07, ownerEarnings: 0.10, revenueExit: 0.03, epsExit: 0.15, ebitdaExit: 0.43 },
 };
 
-function businessSpecificWeights(category, profile) {
-  const base = { ...(CATEGORY_METHOD_WEIGHTS[category] || CATEGORY_METHOD_WEIGHTS.Value) };
-  const moat = profile?.moatScore ?? 0.5;
-  const reliability = profile?.forecastReliability ?? 0.5;
-  if (category === 'Hyper Growth') {
-    base.revenueExit += 0.05 * reliability; base.epsExit += 0.04 * reliability;
-    base.dcf *= 0.75; base.ownerEarnings *= 0.70;
-  } else if (category === 'Compounder') {
-    base.ownerEarnings += 0.04 * moat; base.dcf += 0.03 * reliability; base.revenueExit *= 0.80;
-  } else if (category === 'Dividend') {
-    base.dcf += 0.05; base.ownerEarnings += 0.04; base.revenueExit *= 0.45;
-  } else if (category === 'Turnaround') {
-    base.ebitdaExit += 0.05; base.epsExit += 0.03; base.dcf *= 0.80;
-  } else if (category === 'Cyclical') {
-    base.ebitdaExit += 0.07; base.revenueExit *= 0.50; base.dcf *= 0.85;
-  }
-  const total = Object.values(base).reduce((a,b)=>a+b,0);
-  return Object.fromEntries(Object.entries(base).map(([k,v])=>[k,total ? v/total : v]));
+const INDUSTRY_METHOD_OVERRIDES = {
+  // Cash generation is the primary anchor for capital-intensive/cyclical chip names.
+  // Revenue multiples remain corroborative, not decisive.
+  'semiconductors-hardware': { dcf: 0.34, dcfSBCAdjusted: 0.11, ownerEarnings: 0.16, revenueExit: 0.05, epsExit: 0.16, ebitdaExit: 0.18 },
+  software:                  { dcf: 0.22, dcfSBCAdjusted: 0.12, ownerEarnings: 0.09, revenueExit: 0.23, epsExit: 0.18, ebitdaExit: 0.16 },
+  financials:                { dcf: 0.28, dcfSBCAdjusted: 0.05, ownerEarnings: 0.22, revenueExit: 0.02, epsExit: 0.28, ebitdaExit: 0.15 },
+  utilities:                 { dcf: 0.38, dcfSBCAdjusted: 0.06, ownerEarnings: 0.18, revenueExit: 0.01, epsExit: 0.17, ebitdaExit: 0.20 },
+  energy:                    { dcf: 0.25, dcfSBCAdjusted: 0.06, ownerEarnings: 0.14, revenueExit: 0.02, epsExit: 0.13, ebitdaExit: 0.40 },
+  reit:                      { dcf: 0.24, dcfSBCAdjusted: 0.04, ownerEarnings: 0.18, revenueExit: 0.03, epsExit: 0.11, ebitdaExit: 0.40 },
+};
+
+function normalizedWeights(weights) {
+  const total = Object.values(weights).reduce((a, b) => a + Math.max(0, b || 0), 0);
+  return Object.fromEntries(Object.entries(weights).map(([k, v]) => [k, total ? Math.max(0, v || 0) / total : 0]));
 }
 
-function methodSpecificReliability(stock, key, value, center) {
+function businessSpecificWeights(category, profile, industryModel = null) {
+  const modelName = industryModel?.model || null;
+  const starting = INDUSTRY_METHOD_OVERRIDES[modelName] || CATEGORY_METHOD_WEIGHTS[category] || CATEGORY_METHOD_WEIGHTS.Value;
+  const base = { ...starting };
+  const moat = profile?.moatScore ?? 0.5;
+  const reliability = profile?.forecastReliability ?? 0.5;
+
+  if (!INDUSTRY_METHOD_OVERRIDES[modelName]) {
+    if (category === 'Hyper Growth') {
+      base.revenueExit += 0.025 * reliability; base.epsExit += 0.02 * reliability;
+    } else if (category === 'Compounder') {
+      base.ownerEarnings += 0.025 * moat; base.dcf += 0.025 * reliability;
+    } else if (category === 'Dividend') {
+      base.dcf += 0.04; base.ownerEarnings += 0.025;
+    } else if (category === 'Turnaround' || category === 'Cyclical') {
+      base.ebitdaExit += 0.035;
+    }
+  }
+  return normalizedWeights(base);
+}
+
+function cashFlowAnchor(methods) {
+  const values = ['dcf', 'dcfSBCAdjusted', 'ownerEarnings']
+    .map(k => methods[k])
+    .filter(v => Number.isFinite(v) && v > 0);
+  return values.length ? median(values) : null;
+}
+
+function methodSpecificReliability(stock, key, value, center, anchor = null) {
   const last = stock.financials.years.at(-1) || {};
   const analyst = analystReliability(stock);
   const ratio = Math.max(value / center, center / value);
-  let r = ratio <= 1.35 ? 1 : ratio <= 1.75 ? 0.82 : ratio <= 2.4 ? 0.58 : 0.32;
+  let r = ratio <= 1.35 ? 1 : ratio <= 1.75 ? 0.82 : ratio <= 2.4 ? 0.55 : 0.25;
+
   if (key === 'epsExit') r *= analyst;
-  if (key === 'revenueExit') r *= clamp(0.65 + analyst * 0.35, 0.55, 1);
+  if (key === 'revenueExit') r *= clamp(0.58 + analyst * 0.32, 0.50, 0.90);
   if ((key === 'dcf' || key === 'dcfSBCAdjusted') && !(last.fcf > 0)) r *= 0.25;
   if (key === 'ownerEarnings' && !(last.netIncome > 0)) r *= 0.25;
-  if (key === 'ownerEarnings') r *= 0.90; // keep this newer method below a 15% effective influence in normal cases
+  if (key === 'ownerEarnings') r *= 0.90;
+
   const sbcIntensity = last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : 0;
   if (key === 'dcf' && sbcIntensity > 0.10) r *= 0.70;
   if (key === 'dcfSBCAdjusted' && sbcIntensity < 0.02) r *= 0.75;
-  return clamp(r, 0.15, 1);
+
+  // When all three exit methods cluster together at a much higher value than the
+  // independently calculated cash-flow methods, the ordinary cross-method median is
+  // misleading. Penalize the exit method against the cash-flow anchor as well. This
+  // directly addresses AMAT-like cases where $800-$1,000 exit values overwhelm a
+  // roughly $350-$400 DCF merely because there are more exit methods than DCF methods.
+  if (anchor > 0 && ['revenueExit', 'epsExit', 'ebitdaExit'].includes(key)) {
+    const anchorRatio = value / anchor;
+    const anchorPenalty = anchorRatio <= 1.35 ? 1
+      : anchorRatio <= 1.75 ? 0.78
+      : anchorRatio <= 2.25 ? 0.48
+      : anchorRatio <= 3.0 ? 0.25
+      : 0.12;
+    r *= anchorPenalty;
+  }
+
+  const industry = stock.valuation?.industryModel?.model;
+  if (industry === 'semiconductors-hardware') {
+    if (key === 'revenueExit') r *= 0.65;
+    if (key === 'epsExit' || key === 'ebitdaExit') r *= 0.85;
+  } else if (industry === 'software' && key === 'revenueExit') {
+    r *= 1.08;
+  } else if (industry === 'financials' && key === 'revenueExit') {
+    r *= 0.35;
+  }
+
+  return clamp(r, 0.05, 1);
+}
+
+function redistributeCaps(normalized, caps) {
+  // Iteratively cap methods and redistribute excess to uncapped methods in proportion
+  // to their existing weights. This preserves a 100% total without letting a single
+  // assumption-sensitive method dominate the blended fair value.
+  for (let pass = 0; pass < 4; pass++) {
+    let excess = 0;
+    const receivers = [];
+    for (const item of normalized) {
+      const cap = caps[item.key];
+      if (cap != null && item.normalizedWeight > cap) {
+        excess += item.normalizedWeight - cap;
+        item.normalizedWeight = cap;
+      } else {
+        receivers.push(item);
+      }
+    }
+    if (excess <= 1e-12 || !receivers.length) break;
+    const receiverTotal = receivers.reduce((sum, x) => sum + x.normalizedWeight, 0);
+    if (receiverTotal <= 0) break;
+    receivers.forEach(x => { x.normalizedWeight += excess * x.normalizedWeight / receiverTotal; });
+  }
+  const total = normalized.reduce((sum, x) => sum + x.normalizedWeight, 0);
+  if (total > 0) normalized.forEach(x => { x.normalizedWeight /= total; });
+  return normalized;
 }
 
 function combineValuations(methods, category = 'Value', stock = null, businessProfile = null) {
-  const base = businessSpecificWeights(category, businessProfile);
+  const base = businessSpecificWeights(category, businessProfile, stock?.valuation?.industryModel);
   const available = Object.entries(methods).filter(([, v]) => Number.isFinite(v) && v > 0);
   if (!available.length) return { blendedFairValue: null, agreementScore: null, methodCount: 0, effectiveWeights: {}, reliabilityFlags: [] };
   const center = median(available.map(([, v]) => v));
+  const anchor = cashFlowAnchor(methods);
   const reliabilityFlags = [];
   const weighted = available.map(([key, value]) => {
-    const reliability = stock ? methodSpecificReliability(stock, key, value, center) : 1;
-    if (reliability < 0.98) reliabilityFlags.push({ method: key, value, consensusMedian: center, ratio: Math.max(value / center, center / value), reliability });
+    const reliability = stock ? methodSpecificReliability(stock, key, value, center, anchor) : 1;
+    if (reliability < 0.98) reliabilityFlags.push({
+      method: key, value, consensusMedian: center, cashFlowAnchor: anchor,
+      ratio: Math.max(value / center, center / value),
+      anchorRatio: anchor > 0 ? value / anchor : null,
+      reliability,
+    });
     return { key, value, weight: (base[key] || 0) * reliability };
   });
-  let total = weighted.reduce((sum, x) => sum + x.weight, 0);
+  const total = weighted.reduce((sum, x) => sum + x.weight, 0);
   let normalized = weighted.map(x => ({ ...x, normalizedWeight: total ? x.weight / total : 0 }));
 
-  // Owner Earnings is useful corroboration but is newer and more assumption-sensitive.
-  // Hard-cap its effective influence at 15%, then redistribute excess proportionally.
-  const owner = normalized.find(x => x.key === 'ownerEarnings');
-  if (owner && owner.normalizedWeight > 0.15) {
-    const excess = owner.normalizedWeight - 0.15;
-    owner.normalizedWeight = 0.15;
-    const others = normalized.filter(x => x.key !== 'ownerEarnings');
-    const otherTotal = others.reduce((sum, x) => sum + x.normalizedWeight, 0);
-    if (otherTotal > 0) others.forEach(x => { x.normalizedWeight += excess * x.normalizedWeight / otherTotal; });
-  }
+  const industry = stock?.valuation?.industryModel?.model;
+  const caps = {
+    ownerEarnings: 0.15,
+    revenueExit: industry === 'software' ? 0.28 : industry === 'semiconductors-hardware' ? 0.08 : 0.18,
+    epsExit: industry === 'semiconductors-hardware' ? 0.18 : 0.30,
+    ebitdaExit: industry === 'semiconductors-hardware' ? 0.22 : 0.42,
+  };
+  normalized = redistributeCaps(normalized, caps);
+
   const blendedFairValue = normalized.reduce((sum, x) => sum + x.value * x.normalizedWeight, 0);
   const effectiveWeights = Object.fromEntries(normalized.map(x => [x.key, x.normalizedWeight]));
   const robustDeviations = available.map(([, v]) => Math.abs(v - center) / center);
-  const agreementScore = Math.round(clamp(100 - (median(robustDeviations) || 0) * 150, 0, 100));
-  return { blendedFairValue, agreementScore, methodCount: available.length, effectiveWeights, reliabilityFlags };
+  const anchorDivergence = anchor > 0
+    ? available.filter(([k]) => ['revenueExit', 'epsExit', 'ebitdaExit'].includes(k))
+      .map(([, v]) => Math.abs(v - anchor) / anchor)
+    : [];
+  const disagreement = Math.max(median(robustDeviations) || 0, (median(anchorDivergence) || 0) * 0.65);
+  const agreementScore = Math.round(clamp(100 - disagreement * 150, 0, 100));
+  return { blendedFairValue, agreementScore, methodCount: available.length, effectiveWeights, reliabilityFlags, cashFlowAnchor: anchor };
 }
 
 function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {

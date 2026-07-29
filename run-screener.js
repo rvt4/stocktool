@@ -197,6 +197,11 @@ async function run() {
   const calibration = buildCalibration(forecastHistory, currentByTicker);
   console.log(`Milestone 3 calibration: ${calibration.observationCount} mature observations${calibration.isCalibrated ? ' (active)' : ' (collecting history)'}.`);
   for (const stock of records) {
+    // Industry must be known before valuation so method suitability can influence
+    // the reliability-weighted blend (for example, cash-flow methods dominate for
+    // semiconductors while revenue multiples receive more room for software).
+    const industryModel = inferIndustryModel(stock);
+    stock.valuation.industryModel = industryModel;
     const result = valuateStock(stock, sectorExitMultiples);
     stock.valuation.fairValueEstimate = result.blendedFairValue;
     stock.valuation.valuationMethods = result.methods;
@@ -224,8 +229,6 @@ async function run() {
 
     // V7 Milestone 1: auditable data integrity + bear/base/bull return distribution.
     const dataIntegrity = assessDataIntegrity(stock);
-    const industryModel = inferIndustryModel(stock);
-    stock.valuation.industryModel = industryModel;
     const scenarioAnalysis = buildScenarios(stock, result, dataIntegrity);
     const rawExpectedReturnProfile = computeExpectedReturnProfile(stock, scenarioAnalysis, dataIntegrity);
     const expectedReturnProfile = applyCalibration(rawExpectedReturnProfile, stock, calibration);

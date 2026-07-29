@@ -1,35 +1,26 @@
-FreeScreener V7 — Milestone 1 (Core Decision Engine)
+FreeScreener V7 valuation repair
 
-Replace:
+Changed files:
 - data-fetchers.js
 - valuation-methods.js
 - run-screener.js
-- scoring-engine.js
 
-Add the entire engine/ folder:
-- engine/data-integrity.js
-- engine/scenario-engine.js
-- engine/expected-return-engine.js
-- engine/thesis-engine.js
+What changed:
+1. Missing-share repair
+   - Adds SEC DEI EntityCommonStockSharesOutstanding as a fallback candidate.
+   - Adds alternate diluted-share and diluted-EPS tags.
+   - Reconciles share candidates with net income / diluted EPS.
+   - For the rare stock still missing shares, conditionally calls Finnhub profile2 and derives shares from market cap / current price.
+   - Records the share source for auditability.
 
-What this milestone adds:
-1. Data Integrity Score and explicit issue list.
-2. Bear / Base / Bull five-year CAGR scenarios.
-3. Probability-weighted expected CAGR.
-4. Risk-adjusted CAGR after downside, uncertainty, and data penalties.
-5. Return Quality Score.
-6. Investment Grade (A+ through F).
-7. Plain-English investment thesis, strengths, and risks.
-8. V7 scoring uses risk-adjusted return rather than only the deterministic base case.
+2. Reliability-weighted valuation blending
+   - Determines the industry model before valuation.
+   - Adds industry-specific starting weights.
+   - Uses a cash-flow anchor made from DCF, SBC-adjusted DCF, and Owner Earnings.
+   - Penalizes exit valuations that diverge materially from the cash-flow anchor.
+   - Caps Revenue Exit influence at 8% for semiconductor/hardware companies.
+   - Caps EPS and EV/EBITDA exit influence for semiconductor/hardware companies.
+   - Keeps more room for Revenue Exit when the company is classified as software.
+   - Makes agreement scoring reflect divergence from both the method median and cash-flow anchor.
 
-This is Milestone 1, not the final V7 build. Industry-specific models, expanded
-pricing-power inputs, portfolio manager mode, and historical forecast tracking
-belong in later milestones.
-
-Install:
-1. Copy the four root JavaScript files into the same locations as before.
-2. Add the new engine folder at the project root, next to run-screener.js.
-3. Run: node run-screener.js
-4. Commit the newly generated data/results.json.
-
-All included JavaScript files passed node --check.
+Upload these three files into the repository root, replacing the existing versions, then rerun the nightly workflow.
