@@ -23,6 +23,9 @@ const { inferIndustryModel } = require('./engine/industry-engine');
 const { computePricingPowerV2 } = require('./engine/pricing-power-engine');
 const { computeCompounderScore } = require('./engine/compounder-engine');
 const { computeDownsideRisk } = require('./engine/downside-engine');
+const { buildCalibration, applyCalibration } = require('./engine/calibration-engine');
+const { updateForecastHistory } = require('./engine/forecast-tracker');
+const { computePortfolioProfile } = require('./engine/portfolio-engine');
 
 const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'), 'utf8'));
 
@@ -143,6 +146,7 @@ function writeResults(records, partial) {
     stocks: scored,
   };
   fs.writeFileSync(path.join(__dirname, 'data', 'results.json'), JSON.stringify(output, null, 2));
+  return scored;
 }
 
 async function run() {
@@ -150,6 +154,13 @@ async function run() {
   const analystEstimates = await loadAnalystEstimates();
   console.log(`Loaded analyst estimates for ${analystEstimates.size} tickers from Supabase.`);
   const startTime = Date.now();
+  const forecastHistoryPath = path.join(__dirname, 'data', 'forecast-history.json');
+  let forecastHistory = { version: 1, snapshots: [] };
+  try {
+    forecastHistory = JSON.parse(fs.readFileSync(forecastHistoryPath, 'utf8'));
+  } catch (_) {
+    // First Milestone 3 run starts a new local history file.
+  }
   for (let i = 0; i < watchlist.length; i++) {
     const { ticker, sector } = watchlist[i];
     try {
@@ -182,6 +193,9 @@ async function run() {
   // per-ticker during the fetch loop anymore.
   console.log(`Valuating ${records.length} stocks (DCF + revenue/EPS/EBITDA exit multiples)...`);
   const sectorExitMultiples = computeSectorExitMultiples(records);
+  const currentByTicker = new Map(records.map(stock => [stock.ticker, stock]));
+  const calibration = buildCalibration(forecastHistory, currentByTicker);
+  console.log(`Milestone 3 calibration: ${calibration.observationCount} mature observations${calibration.isCalibrated ? ' (active)' : ' (collecting history)'}.`);
   for (const stock of records) {
     const result = valuateStock(stock, sectorExitMultiples);
     stock.valuation.fairValueEstimate = result.blendedFairValue;
@@ -202,6 +216,7 @@ async function run() {
     stock.valuation.analystReliability = result.analystReliability;
     stock.valuation.reverseDCFGap = result.reverseDCFGap;
     stock.valuation.businessProfile = result.businessProfile;
+    stock.valuation.category = result.category;
     // Powers the price-aware `expectedReturn` field in scoring-engine.js — without this,
     // every stock falls back to the price-agnostic fundamentalGrowthRate for the buy-list
     // gate, silently losing the "is this a buy at today's price" signal.
@@ -209,23 +224,28 @@ async function run() {
 
     // V7 Milestone 1: auditable data integrity + bear/base/bull return distribution.
     const dataIntegrity = assessDataIntegrity(stock);
+    const industryModel = inferIndustryModel(stock);
+    stock.valuation.industryModel = industryModel;
     const scenarioAnalysis = buildScenarios(stock, result, dataIntegrity);
-    const expectedReturnProfile = computeExpectedReturnProfile(stock, scenarioAnalysis, dataIntegrity);
+    const rawExpectedReturnProfile = computeExpectedReturnProfile(stock, scenarioAnalysis, dataIntegrity);
+    const expectedReturnProfile = applyCalibration(rawExpectedReturnProfile, stock, calibration);
     stock.dataIntegrity = dataIntegrity;
     stock.valuation.scenarioAnalysis = scenarioAnalysis;
     stock.valuation.expectedReturnProfile = expectedReturnProfile;
+    stock.valuation.calibration = calibration;
     stock.valuation.investmentThesis = buildInvestmentThesis(stock, expectedReturnProfile);
-    const industryModel = inferIndustryModel(stock);
     const pricingPowerV2 = computePricingPowerV2(stock, industryModel);
     const compounder = computeCompounderScore(stock, pricingPowerV2, industryModel);
     const downside = computeDownsideRisk(stock, scenarioAnalysis, dataIntegrity, industryModel);
-    stock.valuation.industryModel = industryModel;
     stock.valuation.pricingPowerV2 = pricingPowerV2;
     stock.valuation.compounder = compounder;
     stock.valuation.downside = downside;
+    stock.valuation.portfolioProfile = computePortfolioProfile(stock);
   }
 
-  writeResults(records, false);
+  const scored = writeResults(records, false);
+  const updatedHistory = updateForecastHistory(forecastHistory, scored);
+  fs.writeFileSync(forecastHistoryPath, JSON.stringify(updatedHistory, null, 2));
   console.log(`Done. Wrote ${records.length} scored stocks to data/results.json`);
 }
 

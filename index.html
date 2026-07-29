@@ -235,6 +235,14 @@ function buildDetailHtml(s) {
 <div style="margin-top:8px"><strong>Compounder strengths:</strong>${(s.compounderBreakdown?.strengths||[]).map(x=>`<span class="sig">• ${x}</span>`).join('')||' None identified'}</div>
 <div style="margin-top:8px"><strong>Downside risks:</strong>${(s.downsideAnalysis?.risks||[]).map(x=>`<span class="sig">• ${x}</span>`).join('')||' No major modeled risks'}</div></div>
 <div class="detail-section"><strong>Analyst consensus</strong>${analystHtml(s)}</div>
+    <div class="detail-section"><strong>V7 Milestone 3 learning & portfolio layer</strong><div class="detail-grid">
+<div><strong>Calibration:</strong> ${s.calibrationActive ? 'Active' : 'Collecting history'} (${s.calibration?.observationCount ?? 0} mature observations)</div>
+<div><strong>Forecast adjustment:</strong> ${pct(s.calibrationAdjustment)}</div>
+<div><strong>Model-portfolio eligible:</strong> ${s.portfolioProfile?.eligibleForModelPortfolio ? 'Yes' : 'No'}</div>
+<div><strong>Position tier:</strong> ${s.portfolioProfile?.positionTier ?? '—'}</div>
+<div><strong>Suggested max weight:</strong> ${pct(s.portfolioProfile?.suggestedMaxWeight)}</div>
+<div><strong>Conviction score:</strong> ${s.portfolioProfile?.convictionScore ?? '—'}/100</div>
+</div></div>
     <div class="detail-section"><strong>Five-year operating projection</strong>${projectionHtml(s)}</div>
     <div class="detail-section"><strong>V6.0 portfolio-manager model</strong><div class="detail-grid">
       <div>Category: ${s.projectionAssumptions?.category ?? s.category}</div>

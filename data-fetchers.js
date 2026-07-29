@@ -133,6 +133,7 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   // period average rather than a single point-in-time snapshot, so it's far less prone
   // to the split/offering-driven noise that caused problems earlier. Pulled AFTER the
   // fallback so it takes priority wherever available.
+  pullAnnual('WeightedAverageNumberOfSharesOutstandingBasicAndDiluted', 'sharesOutTTM');
   pullAnnual('WeightedAverageNumberOfDilutedSharesOutstanding', 'sharesOutTTM');
   pullAnnual('EarningsPerShareDiluted', 'dilutedEPS');
   // Stock-based compensation — needed to model real dilution cost and flag heavy-SBC
@@ -228,6 +229,48 @@ function parseAnnualFinancials(facts, maxYears = 10) {
         y.sharesOutTTM *= dominantScale;
       }
     });
+  }
+
+  // Repair a missing latest-year denominator from internally consistent evidence.
+  // Some issuers (notably multi-class filers) omit the diluted-share fact for the
+  // newest FY even though earlier years and EPS remain available. A missing latest
+  // denominator previously caused every per-share valuation method to return n/a.
+  const orderedRawYears = Object.values(byYear).sort((a, b) => a.year - b.year);
+  for (let i = 0; i < orderedRawYears.length; i++) {
+    const y = orderedRawYears[i];
+    if (Number.isFinite(y.sharesOutTTM) && y.sharesOutTTM > 0) {
+      y.sharesSource = y.sharesScaleApplied && y.sharesScaleApplied !== 1
+        ? 'sec_diluted_scaled'
+        : 'sec_diluted';
+      continue;
+    }
+
+    const income = Number(y.netIncome);
+    const dilutedEPS = Number(y.dilutedEPS);
+    const implied = Number.isFinite(income) && Number.isFinite(dilutedEPS) && Math.abs(dilutedEPS) > 1e-6
+      ? Math.abs(income / dilutedEPS)
+      : null;
+    if (Number.isFinite(implied) && implied > 100000) {
+      y.sharesOutTTM = implied;
+      y.rawSharesOutTTM = null;
+      y.sharesScaleApplied = null;
+      y.sharesSource = 'net_income_div_diluted_eps';
+      continue;
+    }
+
+    // Final conservative fallback: carry the closest prior diluted denominator.
+    // Only use it when it is recent (<=2 fiscal years); this is much safer than
+    // dropping valuation entirely and is auditable through sharesSource.
+    const prior = orderedRawYears.slice(0, i).reverse().find(x =>
+      Number.isFinite(x.sharesOutTTM) && x.sharesOutTTM > 100000 && y.year - x.year <= 2
+    );
+    if (prior) {
+      y.sharesOutTTM = prior.sharesOutTTM;
+      y.rawSharesOutTTM = null;
+      y.sharesScaleApplied = prior.sharesScaleApplied ?? null;
+      y.sharesSource = 'prior_year_carry_forward';
+      y.sharesFallbackFromYear = prior.year;
+    }
   }
 
   const years = Object.values(byYear)

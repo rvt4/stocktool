@@ -627,7 +627,10 @@ function scoreStock(stock) {
   // computed (e.g. insufficient exit-multiple data), so stocks don't silently vanish
   // from qualifying — but this is the weaker, price-agnostic signal, so flag it.
   const usedFallbackForCAGRTarget = expectedReturn == null;
-  const meetsCAGRTarget = (expectedReturn ?? fundamentalGrowthRate) >= 0.15;
+  // Milestone 3: fundamental growth is informative but cannot justify a Buy rating
+  // because it ignores today's entry price. Missing valuation remains explicitly unrated.
+  const hasPriceAwareValuation = Number.isFinite(expectedReturn) && Number.isFinite(fairValue) && (stock.valuation.methodCount ?? 0) > 0;
+  const meetsCAGRTarget = hasPriceAwareValuation && expectedReturn >= 0.15;
   const investment = computeInvestmentScore(stock, catResult.composite, pricingPower.score, confidence.score, riskAdjustedReturn ?? fundamentalGrowthRate, marginOfSafety);
 
   return {
@@ -683,7 +686,8 @@ function scoreStock(stock) {
     marginOfSafetyDistorted,
     meetsRequiredMOS,
     meetsCAGRTarget,
-    qualifiesForBuyList: !!(meetsCAGRTarget && meetsRequiredMOS),
+    hasPriceAwareValuation,
+    qualifiesForBuyList: !!(hasPriceAwareValuation && meetsCAGRTarget && meetsRequiredMOS),
     valuationMethods: stock.valuation.valuationMethods ?? null,
     outlierFlags: stock.valuation.outlierFlags ?? [],
     methodAgreementScore: stock.valuation.methodAgreementScore ?? null,
@@ -699,6 +703,10 @@ function scoreStock(stock) {
     fairValueEstimate: stock.valuation.fairValueEstimate ?? null,
     dilutionRate: stock.valuation.dilutionRate ?? null,
     sbcIntensity: stock.valuation.sbcIntensity ?? null,
+    calibration: stock.valuation.calibration ?? null,
+    calibrationAdjustment: stock.valuation.expectedReturnProfile?.calibrationAdjustment ?? 0,
+    calibrationActive: stock.valuation.expectedReturnProfile?.calibrationActive ?? false,
+    portfolioProfile: stock.valuation.portfolioProfile ?? null,
   };
 }
 
@@ -721,6 +729,12 @@ function assignSelectiveRatings(scoredStocks) {
     const quality = stock.businessQualityScore ?? 0;
     const downsideProtection = stock.downsideProtectionScore ?? 50;
     const qualifies = stock.qualifiesForBuyList === true;
+
+    if (stock.hasPriceAwareValuation === false) {
+      stock.rating = 'Hold/Watch';
+      stock.ratingReason = 'Insufficient valuation data';
+      return;
+    }
 
     // Ratings are selective by both rank and absolute underwriting quality.
     // A stock cannot earn a top rating solely because it ranks well in a weak universe.
