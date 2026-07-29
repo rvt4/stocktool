@@ -17,7 +17,7 @@ const {
 } = require('./dcf');
 const { applyExitMultipleDiscipline } = require('./engine/exit-multiple-engine');
 const { buildValuationConsensus } = require('./engine/valuation-consensus');
-const { computeReturnEngineV2 } = require('./engine/return-engine-v2');
+const { computeReturnEngineV2 } = require('./engine/return-engine');
 const { buildMarketExpectations } = require('./engine/market-expectations');
 const { simulateReturns } = require('./engine/monte-carlo-engine');
 const { selectValuationMethods } = require('./engine/method-selection-engine');
