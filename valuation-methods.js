@@ -21,6 +21,7 @@ const { computeReturnEngineV2 } = require('./engine/return-engine');
 const { buildMarketExpectations } = require('./engine/market-expectations');
 const { simulateReturns } = require('./engine/monte-carlo-engine');
 const { selectValuationMethods } = require('./engine/method-selection-engine');
+const { generateForecast } = require('./engine/forecast-engine');
 
 function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
 function mean(arr) { return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
@@ -125,59 +126,8 @@ function growthPersistenceScore(stock, category, year1, year2) {
   );
 }
 
-function buildGrowthPath(stock, category, years = 5) {
-  const e = stock.analystEstimates || {};
-  const histMedian = historicalMedianGrowth(stock.financials.years);
-  const fallback = stock.growthYear1 ?? histMedian ?? 0.05;
-  const year1 = clamp(e.revenueGrowthCurrentYear ?? e.revenueGrowthFwd ?? fallback, -0.25, 0.65);
-  let year2 = e.revenueGrowthNextYear;
-  if (year2 == null && e.revenueCurrentYear > 0 && e.revenueNextYear > 0) year2 = e.revenueNextYear / e.revenueCurrentYear - 1;
-  if (year2 == null) year2 = year1 * (['Hyper Growth', 'Growth', 'Compounder'].includes(category) ? 0.88 : 0.75);
-  year2 = clamp(year2, -0.20, 0.55);
-
-  const cfg = GROWTH_CONFIG[category] || GROWTH_CONFIG.Value;
-  const avgRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(Number.isFinite));
-  const reinvest = clamp(stock.reinvestmentRate ?? 0.40, 0.10, 0.80);
-  const sustainable = avgRoic != null ? clamp(avgRoic, 0, 0.35) * reinvest : null;
-  const persistence = growthPersistenceScore(stock, category, year1, year2);
-
-  const analystAnchor = clamp(Math.max(0, year2), cfg.floor, cfg.cap);
-  const historyAnchor = clamp(Math.max(0, histMedian ?? year2), cfg.floor, cfg.cap);
-  const sustainableAnchor = clamp(Math.max(0, sustainable ?? cfg.floor), cfg.floor, cfg.cap);
-  const persistenceAnchor = cfg.floor + (cfg.cap - cfg.floor) * persistence;
-
-  let year5 = analystAnchor * cfg.analystWeight + historyAnchor * cfg.historyWeight +
-    sustainableAnchor * cfg.sustainableWeight + persistenceAnchor * cfg.persistenceWeight;
-  const forwardAnchor = Math.max(0, mean([year1, year2]) ?? year1);
-  const maxRetention = category === 'Hyper Growth' ? 0.58
-    : category === 'Growth' ? 0.62
-    : category === 'Compounder' ? 0.72
-    : 0.85;
-  year5 = clamp(year5, cfg.floor, Math.min(cfg.cap, Math.max(cfg.floor, forwardAnchor * maxRetention)));
-
-  const path = [year1, year2];
-  for (let t = 3; t <= years; t++) {
-    const p = (t - 2) / Math.max(1, years - 2);
-    const exponent = category === 'Hyper Growth' ? 1.55
-      : category === 'Growth' ? 1.35
-      : category === 'Compounder' ? 1.15
-      : category === 'Turnaround' ? 0.90
-      : 1.0;
-    const eased = Math.pow(p, exponent);
-    path.push(year2 + (year5 - year2) * eased);
-  }
-
-  return {
-    path: path.slice(0, years),
-    source: e.revenueGrowthCurrentYear != null || e.revenueGrowthFwd != null
-      ? 'analyst_consensus_plus_v3_7_persistence_fade'
-      : 'sec_history_plus_v3_7_persistence_fade',
-    assumptions: {
-      year1, year2, year5, sustainableGrowth: sustainable,
-      historicalMedianGrowth: histMedian, persistenceScore: persistence,
-      analystAnchor, historyAnchor, sustainableAnchor, persistenceAnchor, category,
-    },
-  };
+function buildGrowthPath(stock, category, years = 5, calibration = null) {
+  return generateForecast(stock, category, years, calibration);
 }
 
 // ---------- Margin targets ----------
@@ -207,11 +157,11 @@ function marginTarget(start, series, category, kind) {
 }
 
 // ---------- Shared five-year projection ----------
-function projectFinancials(stock, growthInput = null, years = 5) {
+function projectFinancials(stock, growthInput = null, years = 5, calibration = null) {
   const yrs = stock.financials.years;
   const last = yrs[yrs.length - 1];
   const category = inferValuationCategory(stock);
-  const growthModel = buildGrowthPath(stock, category, years);
+  const growthModel = buildGrowthPath(stock, category, years, calibration);
   if (growthInput != null && stock.analystEstimates?.revenueGrowthCurrentYear == null && stock.analystEstimates?.revenueGrowthFwd == null) {
     growthModel.path[0] = clamp(growthInput, -0.25, 0.65);
   }
@@ -769,11 +719,19 @@ function redistributeCaps(normalized, caps) {
   return normalized;
 }
 
-function combineValuations(methods, category = 'Value', stock = null, businessProfile = null) {
+function combineValuations(methods, category = 'Value', stock = null, businessProfile = null, calibration = null) {
   const methodSelection = stock
     ? selectValuationMethods(stock, category, methods)
     : { effectiveStartingWeights: businessSpecificWeights(category, businessProfile, null) };
-  const base = methodSelection.effectiveStartingWeights;
+  const base = { ...methodSelection.effectiveStartingWeights };
+  const industryKey = stock?.valuation?.industryModel?.model || 'general';
+  const learned = calibration?.methodAccuracy?.[industryKey] || {};
+  for (const key of Object.keys(base)) {
+    const multiplier = learned?.[key]?.multiplier;
+    if (Number.isFinite(multiplier)) base[key] *= multiplier;
+  }
+  const learnedTotal = Object.values(base).reduce((a, b) => a + Math.max(0, b || 0), 0);
+  if (learnedTotal > 0) for (const key of Object.keys(base)) base[key] = Math.max(0, base[key] || 0) / learnedTotal;
   const available = Object.entries(methods).filter(([, v]) => Number.isFinite(v) && v > 0);
   if (!available.length) return { blendedFairValue: null, agreementScore: null, methodCount: 0, effectiveWeights: {}, reliabilityFlags: [], methodSelection };
   const center = median(available.map(([, v]) => v));
@@ -810,7 +768,7 @@ function combineValuations(methods, category = 'Value', stock = null, businessPr
     : [];
   const disagreement = Math.max(median(robustDeviations) || 0, (median(anchorDivergence) || 0) * 0.65);
   const agreementScore = Math.round(clamp(100 - disagreement * 150, 0, 100));
-  return { blendedFairValue, agreementScore, methodCount: available.length, effectiveWeights, reliabilityFlags, cashFlowAnchor: anchor, methodSelection };
+  return { blendedFairValue, agreementScore, methodCount: available.length, effectiveWeights, reliabilityFlags, cashFlowAnchor: anchor, methodSelection: { ...methodSelection, calibrationLearnedWeights: learned } };
 }
 
 function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
@@ -856,10 +814,10 @@ function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
   };
 }
 
-function valuateStock(stock, sectorExitMultiples) {
+function valuateStock(stock, sectorExitMultiples, calibration = null) {
   const category = inferValuationCategory(stock);
   const sectorMultiples = sectorExitMultiples[stock.sector] || sectorExitMultiples.Unknown || {};
-  const model = projectFinancials(stock, stock.growthYear1, 5);
+  const model = projectFinancials(stock, stock.growthYear1, 5, calibration);
   const businessProfile = buildBusinessProfile(stock, category, model);
   const dcf = dcfFromProjection(stock, model, { sbcAdjusted: false });
   const dcfSBCAdjusted = dcfFromProjection(stock, model, { sbcAdjusted: true });
@@ -871,7 +829,7 @@ function valuateStock(stock, sectorExitMultiples) {
     dcf: dcf.fairValuePerShare, dcfSBCAdjusted: dcfSBCAdjusted.fairValuePerShare, ownerEarnings: ownerEarnings.fairValuePerShare,
     revenueExit: revenueExit.fairValuePerShare, epsExit: epsExit.fairValuePerShare, ebitdaExit: ebitdaExit.fairValuePerShare,
   };
-  const combined = combineValuations(methods, category, stock, businessProfile);
+  const combined = combineValuations(methods, category, stock, businessProfile, calibration);
   const consensus = buildValuationConsensus(methods, combined.agreementScore, combined.effectiveWeights);
   const exitResults = { revenueExit, epsExit, ebitdaExit };
   const legacyPriceTarget = fiveYearPriceTargetCAGR(stock, model, exitResults, combined.effectiveWeights);
@@ -930,7 +888,7 @@ function valuateStock(stock, sectorExitMultiples) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '7.0-milestone-4', category, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '9.0-adaptive-calibrated', category, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {

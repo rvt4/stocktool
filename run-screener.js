@@ -202,7 +202,7 @@ async function run() {
     // semiconductors while revenue multiples receive more room for software).
     const industryModel = inferIndustryModel(stock);
     stock.valuation.industryModel = industryModel;
-    const result = valuateStock(stock, sectorExitMultiples);
+    const result = valuateStock(stock, sectorExitMultiples, calibration);
     stock.valuation.fairValueEstimate = result.blendedFairValue;
     stock.valuation.valuationMethods = result.methods;
     stock.valuation.outlierFlags = result.outlierFlags;
