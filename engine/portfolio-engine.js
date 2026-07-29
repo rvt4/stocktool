@@ -5,7 +5,10 @@ function computePortfolioProfile(stock) {
   const quality = stock.valuation?.compounder?.score ?? 50;
   const confidence = stock.dataIntegrity?.score ?? 50;
   const protection = stock.valuation?.downside?.protectionScore ?? 50;
-  const expected = stock.valuation?.expectedReturnProfile?.riskAdjustedCAGR;
+  // V8: the institutional target return is the single canonical expected CAGR.
+  const expected = stock.valuation?.returnEngineV2?.expectedCAGR
+    ?? stock.valuation?.fiveYearPriceTarget?.cagr
+    ?? null;
   const permanentLoss = stock.valuation?.downside?.permanentLossProbability ?? 0.25;
   const valuationAvailable = Number.isFinite(stock.valuation?.fairValueEstimate) && Number.isFinite(expected);
 
@@ -18,12 +21,17 @@ function computePortfolioProfile(stock) {
   const maxWeight = valuationAvailable
     ? clamp((conviction / 100) * riskBudget * 0.12, 0.01, 0.10)
     : 0;
+  const minWeight = maxWeight > 0 ? Math.max(0.01, maxWeight - 0.02) : 0;
 
   return {
     convictionScore: conviction,
     valuationAvailable,
     eligibleForModelPortfolio: valuationAvailable && conviction >= 70 && expected >= 0.10 && permanentLoss <= 0.30,
+    suggestedMinWeight: minWeight,
     suggestedMaxWeight: maxWeight,
+    suggestedWeightRange: maxWeight > 0
+      ? `${Math.round(minWeight * 100)}–${Math.round(maxWeight * 100)}%`
+      : 'Unrated',
     positionTier: maxWeight >= 0.075 ? 'Core' : maxWeight >= 0.04 ? 'Standard' : maxWeight > 0 ? 'Starter' : 'Unrated',
     riskBudget,
   };
