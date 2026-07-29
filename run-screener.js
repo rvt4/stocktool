@@ -237,7 +237,31 @@ async function run() {
     const dataIntegrity = assessDataIntegrity(stock);
     const scenarioAnalysis = buildScenarios(stock, result, dataIntegrity);
     const rawExpectedReturnProfile = computeExpectedReturnProfile(stock, scenarioAnalysis, dataIntegrity);
-    const expectedReturnProfile = applyCalibration(rawExpectedReturnProfile, stock, calibration);
+    let expectedReturnProfile = applyCalibration(rawExpectedReturnProfile, stock, calibration);
+
+    // Milestone 4 is now the source of truth for expected return. Milestone 1's
+    // scenario engine remains useful for downside/uncertainty penalties, but its
+    // independently calculated expected CAGR could overwhelm the new conservative
+    // model (BKNG was still showing ~78%). Re-anchor the profile to institutional-v2.
+    const institutionalCAGR = result.returnEngineV2?.expectedCAGR;
+    if (Number.isFinite(institutionalCAGR)) {
+      const downsidePenalty = Number(expectedReturnProfile?.downsidePenalty) || 0;
+      const uncertaintyPenalty = Number(expectedReturnProfile?.uncertaintyPenalty) || 0;
+      const dataPenalty = Number(expectedReturnProfile?.dataPenalty) || 0;
+      const calibratedAdjustment = Number(expectedReturnProfile?.calibrationAdjustment) || 0;
+      const totalPenalty = Math.max(0, downsidePenalty + uncertaintyPenalty + dataPenalty);
+      const anchoredRiskAdjusted = Math.max(-0.35, Math.min(0.35,
+        institutionalCAGR - totalPenalty + calibratedAdjustment
+      ));
+      expectedReturnProfile = {
+        ...expectedReturnProfile,
+        expectedCAGR: institutionalCAGR,
+        baseCAGR: institutionalCAGR,
+        riskAdjustedCAGR: anchoredRiskAdjusted,
+        institutionalAnchored: true,
+        legacyScenarioExpectedCAGR: scenarioAnalysis?.expectedCAGR ?? null,
+      };
+    }
     stock.dataIntegrity = dataIntegrity;
     stock.valuation.scenarioAnalysis = scenarioAnalysis;
     stock.valuation.expectedReturnProfile = expectedReturnProfile;

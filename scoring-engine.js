@@ -596,8 +596,16 @@ function scoreStock(stock) {
   // Requires `stock.valuation.fiveYearPriceTarget` to be populated upstream (same place
   // that already sets `fairValueEstimate` and `valuationMethods` below) — verify
   // run-screener.js maps the fiveYearPriceTarget object from valuateStock() through.
+  // Milestone 4 is the authoritative price-aware return model. The older
+  // scenario profile can still provide uncertainty penalties, but it must not replace
+  // the institutional return with an independently generated (and sometimes extreme)
+  // CAGR such as BKNG's former 70%+ result.
+  const institutionalReturn = stock.valuation.returnEngineV2 ?? null;
   const v7Return = stock.valuation.expectedReturnProfile ?? null;
-  const expectedReturn = v7Return?.expectedCAGR ?? stock.valuation.fiveYearPriceTarget?.cagr ?? null;
+  const expectedReturn = institutionalReturn?.expectedCAGR
+    ?? stock.valuation.fiveYearPriceTarget?.cagr
+    ?? v7Return?.expectedCAGR
+    ?? null;
   const riskAdjustedReturn = v7Return?.riskAdjustedCAGR ?? expectedReturn;
   const lastRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
   const requiredMOS = dynamicMOS(category, lastRoic);
