@@ -15,6 +15,11 @@ const {
   getDynamicDiscountRate,
   getDynamicTerminalGrowth,
 } = require('./dcf');
+const { applyExitMultipleDiscipline } = require('./engine/exit-multiple-engine');
+const { buildValuationConsensus } = require('./engine/valuation-consensus');
+const { computeReturnEngineV2 } = require('./engine/return-engine-v2');
+const { buildMarketExpectations } = require('./engine/market-expectations');
+const { simulateReturns } = require('./engine/monte-carlo-engine');
 
 function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
 function mean(arr) { return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
@@ -417,8 +422,17 @@ function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, busine
     ? qualityAdjustedSector * (1 - retain) + boundedCurrent * retain
     : qualityAdjustedSector;
   const maxVsSector = category === 'Hyper Growth' ? 2.80 : category === 'Growth' ? 2.35 : category === 'Compounder' ? 2.15 : category === 'Dividend' ? 1.60 : 1.50;
+  const preDisciplineMultiple = clamp(multiple, sectorMultiple * 0.45, sectorMultiple * maxVsSector);
+  const disciplined = applyExitMultipleDiscipline({
+    type, rawMultiple: preDisciplineMultiple, exitGrowth,
+    quality, forecastReliability: profile.forecastReliability,
+    industry: stock.valuation?.industryModel?.model || null,
+  });
   return {
-    multiple: clamp(multiple, sectorMultiple * 0.45, sectorMultiple * maxVsSector),
+    multiple: disciplined.multiple,
+    rawMultipleBeforeGrowthCeiling: preDisciplineMultiple,
+    growthBasedCeiling: disciplined.ceiling,
+    multipleWasCapped: disciplined.wasCapped,
     sectorMultiple, companyCurrentMultiple: current, boundedCompanyMultiple: boundedCurrent,
     qualityAdjustedSector, qualityPremiumRetained: retain, premiumPersistence: profile.premiumPersistence,
     moatScore: profile.moatScore, forecastReliability: profile.forecastReliability,
@@ -820,11 +834,23 @@ function valuateStock(stock, sectorExitMultiples) {
     revenueExit: revenueExit.fairValuePerShare, epsExit: epsExit.fairValuePerShare, ebitdaExit: ebitdaExit.fairValuePerShare,
   };
   const combined = combineValuations(methods, category, stock, businessProfile);
+  const consensus = buildValuationConsensus(methods, combined.agreementScore, combined.effectiveWeights);
   const exitResults = { revenueExit, epsExit, ebitdaExit };
-  const fiveYearPriceTarget = fiveYearPriceTargetCAGR(stock, model, exitResults, combined.effectiveWeights);
+  const legacyPriceTarget = fiveYearPriceTargetCAGR(stock, model, exitResults, combined.effectiveWeights);
+  const returnEngineV2 = computeReturnEngineV2(stock, model, legacyPriceTarget.exitPrice, consensus);
+  const fiveYearPriceTarget = {
+    ...legacyPriceTarget,
+    cagr: returnEngineV2.expectedCAGR,
+    rawCagr: returnEngineV2.uncappedMarketCAGR,
+    cagrWasCapped: returnEngineV2.uncappedMarketCAGR != null && returnEngineV2.uncappedMarketCAGR !== returnEngineV2.expectedCAGR,
+    breakdown: returnEngineV2.breakdown,
+    returnEngineVersion: 'institutional-v2',
+    multipleDominated: returnEngineV2.multipleDominated,
+  };
   const currentPrice = stock.price.current;
-  const marginOfSafety = combined.blendedFairValue && currentPrice
-    ? (combined.blendedFairValue - currentPrice) / combined.blendedFairValue : null;
+  const finalFairValue = consensus.actionableFairValue ?? combined.blendedFairValue;
+  const marginOfSafety = finalFairValue && currentPrice
+    ? (finalFairValue - currentPrice) / finalFairValue : null;
 
   const last = stock.financials.years.at(-1) || {};
   const discountRate = getDynamicDiscountRate(stock, category);
@@ -840,8 +866,17 @@ function valuateStock(stock, sectorExitMultiples) {
     marketImpliedGrowthNote = implied.reason !== 'converged' ? implied.reason : null;
   }
 
+  const marketExpectations = buildMarketExpectations(stock, model, marketImpliedGrowth, returnEngineV2);
+  const monteCarlo = simulateReturns(stock, returnEngineV2, combined.agreementScore, Math.round((businessProfile.forecastReliability || 0.5) * 100));
+
   return {
-    category, businessProfile, methods, blendedFairValue: combined.blendedFairValue,
+    category, businessProfile, methods, blendedFairValue: finalFairValue,
+    intrinsicValue: consensus.intrinsicValue,
+    marketValue: consensus.marketValue,
+    valuationConsensus: consensus,
+    returnEngineV2,
+    marketExpectations,
+    monteCarlo,
     agreementScore: combined.agreementScore, methodCount: combined.methodCount,
     effectiveWeights: combined.effectiveWeights, reliabilityFlags: combined.reliabilityFlags,
     outlierFlags: combined.reliabilityFlags, marginOfSafety, fiveYearPriceTarget,
@@ -851,7 +886,7 @@ function valuateStock(stock, sectorExitMultiples) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '7.0-core', category, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '7.0-milestone-4', category, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {

@@ -226,6 +226,12 @@ async function run() {
     // every stock falls back to the price-agnostic fundamentalGrowthRate for the buy-list
     // gate, silently losing the "is this a buy at today's price" signal.
     stock.valuation.fiveYearPriceTarget = result.fiveYearPriceTarget;
+    stock.valuation.intrinsicValue = result.intrinsicValue;
+    stock.valuation.marketValue = result.marketValue;
+    stock.valuation.valuationConsensus = result.valuationConsensus;
+    stock.valuation.returnEngineV2 = result.returnEngineV2;
+    stock.valuation.marketExpectations = result.marketExpectations;
+    stock.valuation.monteCarlo = result.monteCarlo;
 
     // V7 Milestone 1: auditable data integrity + bear/base/bull return distribution.
     const dataIntegrity = assessDataIntegrity(stock);

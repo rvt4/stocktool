@@ -243,6 +243,18 @@ function buildDetailHtml(s) {
 <div><strong>Suggested max weight:</strong> ${pct(s.portfolioProfile?.suggestedMaxWeight)}</div>
 <div><strong>Conviction score:</strong> ${s.portfolioProfile?.convictionScore ?? '—'}/100</div>
 </div></div>
+    <div class="detail-section"><strong>V7 Milestone 4 institutional valuation</strong><div class="detail-grid">
+<div><strong>Intrinsic value:</strong> ${s.intrinsicValue == null ? '—' : '$' + num(s.intrinsicValue)}</div>
+<div><strong>Market-based value:</strong> ${s.marketValue == null ? '—' : '$' + num(s.marketValue)}</div>
+<div><strong>Actionable fair value:</strong> ${s.fairValueEstimate == null ? '—' : '$' + num(s.fairValueEstimate)}</div>
+<div><strong>Consensus regime:</strong> ${s.valuationConsensus?.agreementRegime ?? '—'}</div>
+<div><strong>Intrinsic weighting:</strong> ${pct(s.valuationConsensus?.intrinsicWeight)}</div>
+<div><strong>Multiple-dominated return:</strong> ${s.returnEngineV2?.multipleDominated ? 'Yes — lower confidence' : 'No'}</div>
+</div>
+<div style="margin-top:8px"><strong>Market expectations:</strong> ${s.marketExpectations?.summary ?? '—'}</div>
+<div style="margin-top:8px"><strong>Monte Carlo CAGR:</strong> ${s.monteCarlo ? `10th ${pct(s.monteCarlo.p10)} · 25th ${pct(s.monteCarlo.p25)} · Median ${pct(s.monteCarlo.median)} · 75th ${pct(s.monteCarlo.p75)} · 90th ${pct(s.monteCarlo.p90)}` : '—'}</div>
+<div style="margin-top:8px"><strong>Probabilities:</strong> ${s.monteCarlo ? `15%+ CAGR ${pct(s.monteCarlo.probability15Plus)} · Beat 10% ${pct(s.monteCarlo.probabilityBeatMarket)} · Negative return ${pct(s.monteCarlo.probabilityNegative)}` : '—'}</div>
+</div>
     <div class="detail-section"><strong>Five-year operating projection</strong>${projectionHtml(s)}</div>
     <div class="detail-section"><strong>V6.0 portfolio-manager model</strong><div class="detail-grid">
       <div>Category: ${s.projectionAssumptions?.category ?? s.category}</div>
