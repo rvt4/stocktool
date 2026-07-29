@@ -11,7 +11,10 @@ function applyExitMultipleDiscipline({type,rawMultiple,exitGrowth,quality=0.5,fo
  let ceiling=growthCeiling(type,exitGrowth);
  const qualityAdj=clamp(0.86+quality*0.22+forecastReliability*0.08,0.82,1.14);
  ceiling*=qualityAdj;
- if(industry==='semiconductors-hardware') ceiling*= type==='revenueExit'?0.82:0.90;
+ if(industry==='semiconductors-hardware') {
+   const durableLeader = quality >= 0.72 && forecastReliability >= 0.58 && exitGrowth >= 0.10;
+   ceiling *= type==='revenueExit' ? (durableLeader ? 0.96 : 0.86) : (durableLeader ? 1.05 : 0.94);
+ }
  if(industry==='financials'&&type==='revenueExit') ceiling*=0.55;
  const floor=type==='epsExit'?7:type==='ebitdaExit'?5:0.7;
  const multiple=clamp(rawMultiple,floor,ceiling);

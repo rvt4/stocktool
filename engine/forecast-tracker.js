@@ -1,28 +1,34 @@
 'use strict';
 
 function compactStock(stock) {
+  const growth = stock.valuation?.projectionAssumptions?.growthModel?.assumptions || {};
+  const last = stock.financials?.years?.at(-1) || {};
   return {
     ticker: stock.ticker,
     price: stock.price?.current ?? stock.currentPrice ?? null,
     category: stock.valuation?.category ?? stock.category ?? null,
-    industry: stock.valuation?.industryModel?.key ?? stock.valuation?.industryModel?.industry ?? stock.industryModel?.key ?? stock.industryModel?.industry ?? null,
-    expectedCAGR: stock.valuation?.expectedReturnProfile?.expectedCAGR ?? stock.expectedReturnProfile?.expectedCAGR ?? stock.expectedReturn ?? null,
-    riskAdjustedCAGR: stock.valuation?.expectedReturnProfile?.riskAdjustedCAGR ?? stock.expectedReturnProfile?.riskAdjustedCAGR ?? stock.riskAdjustedReturn ?? null,
-    fairValue: stock.valuation?.fairValueEstimate ?? stock.fairValueEstimate ?? null,
+    industry: stock.valuation?.industryModel?.model ?? stock.valuation?.industryModel?.key ?? null,
+    expectedCAGR: stock.valuation?.expectedReturnProfile?.expectedCAGR ?? stock.expectedReturn ?? null,
+    riskAdjustedCAGR: stock.valuation?.expectedReturnProfile?.riskAdjustedCAGR ?? null,
+    fairValue: stock.valuation?.fairValueEstimate ?? null,
     rating: stock.rating ?? null,
+    baseRevenue: last.revenue ?? null,
+    forecastGrowth: growth.year1 ?? null,
+    analystGrowth: growth.analyst1 ?? stock.analystEstimates?.revenueGrowthCurrentYear ?? null,
+    historicalGrowth: growth.historical ?? null,
+    methodFairValues: stock.valuation?.valuationMethods ?? null,
+    effectiveWeights: stock.valuation?.effectiveWeights ?? null,
+    forecastVersion: stock.valuation?.projectionAssumptions?.version ?? null,
   };
 }
-
 function updateForecastHistory(history, stocks, date = new Date()) {
-  const out = history && Array.isArray(history.snapshots) ? history : { version: 1, snapshots: [] };
-  const iso = date.toISOString();
+  const out = history && Array.isArray(history.snapshots) ? history : { version: 2, snapshots: [] };
+  out.version = 2;
   const last = out.snapshots.at(-1);
   const daysSince = last ? (date - new Date(last.date)) / 86400000 : Infinity;
   if (daysSince < 27) return out;
-  out.snapshots.push({ date: iso, stocks: stocks.map(compactStock) });
-  // Keep five years of monthly snapshots.
+  out.snapshots.push({ date: date.toISOString(), stocks: stocks.map(compactStock) });
   out.snapshots = out.snapshots.filter(s => (date - new Date(s.date)) / 86400000 <= 365 * 5);
   return out;
 }
-
 module.exports = { updateForecastHistory };
