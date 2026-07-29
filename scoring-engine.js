@@ -702,6 +702,72 @@ function scoreStock(stock) {
   };
 }
 
+// ---------- 7b. Selective Ratings ----------
+
+function assignSelectiveRatings(scoredStocks) {
+  const sorted = [...scoredStocks].sort((a, b) =>
+    ((b.investmentScore ?? -Infinity) - (a.investmentScore ?? -Infinity)) ||
+    ((b.businessQualityScore ?? -Infinity) - (a.businessQualityScore ?? -Infinity)) ||
+    ((b.confidenceScore ?? -Infinity) - (a.confidenceScore ?? -Infinity))
+  );
+
+  const total = sorted.length;
+  if (!total) return scoredStocks;
+
+  sorted.forEach((stock, index) => {
+    const percentile = (index + 1) / total;
+    const expectedReturn = stock.riskAdjustedReturn ?? stock.expectedReturn ?? stock.fundamentalGrowthRate ?? null;
+    const confidence = stock.confidenceScore ?? 0;
+    const quality = stock.businessQualityScore ?? 0;
+    const downsideProtection = stock.downsideProtectionScore ?? 50;
+    const qualifies = stock.qualifiesForBuyList === true;
+
+    // Ratings are selective by both rank and absolute underwriting quality.
+    // A stock cannot earn a top rating solely because it ranks well in a weak universe.
+    if (
+      percentile <= 0.01 &&
+      qualifies &&
+      expectedReturn != null && expectedReturn >= 0.15 &&
+      confidence >= 75 &&
+      quality >= 75 &&
+      downsideProtection >= 55
+    ) {
+      stock.rating = 'Exceptional';
+    } else if (
+      percentile <= 0.05 &&
+      qualifies &&
+      expectedReturn != null && expectedReturn >= 0.13 &&
+      confidence >= 68 &&
+      quality >= 68
+    ) {
+      stock.rating = 'Strong Buy';
+    } else if (
+      percentile <= 0.20 &&
+      qualifies &&
+      expectedReturn != null && expectedReturn >= 0.10 &&
+      confidence >= 58
+    ) {
+      stock.rating = 'Buy';
+    } else if (
+      expectedReturn != null && expectedReturn < 0 ||
+      stock.marginOfSafety != null && stock.marginOfSafety < -0.35 ||
+      stock.downsideRiskScore != null && stock.downsideRiskScore >= 80
+    ) {
+      stock.rating = 'Sell';
+    } else if (
+      percentile > 0.80 ||
+      stock.marginOfSafety != null && stock.marginOfSafety < -0.15 ||
+      confidence < 35
+    ) {
+      stock.rating = 'Avoid';
+    } else {
+      stock.rating = 'Hold';
+    }
+  });
+
+  return scoredStocks;
+}
+
 // ---------- 8. Percentile-Based Rating (apply after scoring full universe) ----------
 
 function applyPercentileRatings(scoredStocks) {
