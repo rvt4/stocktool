@@ -19,7 +19,9 @@
   .Exceptional { background:#0b5d47;color:#b7ffe2;box-shadow:inset 0 0 0 1px #2e9475; }
   .StrongBuy { background: #0f5132; color: #75d99a; }
   .Buy { background: #12401f; color: #9fe89b; }
-  .HoldWatch { background: #4d4522; color: #e3d18a; }
+  .Hold { background:#3d3a22; color:#e3d18a; }
+  .Watch { background:#4d3522; color:#efbd83; }
+  .HoldWatch { background:#4d3522; color:#efbd83; }
   .Avoid { background: #4d1f1f; color: #e89a9a; }
   .pos { color: #75d99a; }
   .neg { color: #e89a9a; }
@@ -35,10 +37,22 @@
   .mini-table { width: 100%; margin-top: 8px; font-size: 0.78rem; }
   .mini-table th, .mini-table td { padding: 5px 7px; white-space: nowrap; }
   .method-card { margin-top: 8px; padding: 9px; background:#18181a; border:1px solid #29292c; border-radius:6px; }
+  .decision-dashboard { padding:14px; background:#171719; border:1px solid #303034; border-radius:10px; }
+  .decision-title { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+  .decision-title strong { font-size:1.15rem; color:#fff; }
+  .decision-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:8px; }
+  .decision-metric { background:#111113; border:1px solid #27272a; border-radius:7px; padding:9px; }
+  .decision-metric span { display:block; color:#888; font-size:.72rem; margin-bottom:3px; }
+  .decision-metric b { font-size:.95rem; color:#eee; }
+  .decision-lists { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:12px; }
+  .decision-lists ul { margin:5px 0 0; padding-left:18px; }
+  .decision-lists li { margin:3px 0; white-space:normal; }
+
   @media (max-width: 700px) {
     body { padding: 10px; }
     .detail-grid { grid-template-columns: 1fr; gap: 6px; }
     .analyst-grid { grid-template-columns: 1fr 1fr; }
+    .decision-lists { grid-template-columns:1fr; }
     th, td { padding: 7px 8px; }
   }
   @media (max-width: 430px) { .analyst-grid { grid-template-columns: 1fr; } }
@@ -59,8 +73,8 @@
         <th data-key="ticker">Ticker</th>
         <th data-key="category">Category</th>
         <th data-key="rating">Rating</th>
-        <th data-key="riskAdjustedReturn">Risk-Adj. Return</th>
         <th data-key="expectedReturn">Expected CAGR</th>
+        <th data-key="confidenceScore">Confidence</th>
         <th data-key="marginOfSafety">MOS</th>
         <th data-key="requiredMOS">Req. MOS</th>
         <th data-key="investmentScore">Investment</th>
@@ -71,7 +85,6 @@
         <th data-key="successProbability">Success</th>
         <th data-key="qualityRank">Q Rank</th>
         <th data-key="opportunityRank">O Rank</th>
-        <th data-key="confidenceScore">Confidence</th>
       </tr>
     </thead>
     <tbody id="tbody"></tbody>
@@ -163,7 +176,7 @@ async function load() {
 
   // Build the filter from ratings that actually exist in results.json. This keeps
   // the UI synchronized with the scoring engine when rating labels change.
-  const ratingOrder = ['Exceptional', 'Strong Buy', 'Buy', 'Hold', 'Hold/Watch', 'Avoid', 'Sell'];
+  const ratingOrder = ['Exceptional', 'Strong Buy', 'Buy', 'Hold', 'Watch', 'Avoid', 'Sell'];
   const availableRatings = new Set(allStocks.map(s => s.rating).filter(Boolean));
   const ratings = [
     ...ratingOrder.filter(r => availableRatings.has(r)),
@@ -189,6 +202,32 @@ function scheduleRender(immediate = false) {
   }, delay);
 }
 
+function decisionDashboardHtml(s) {
+  const d = s.decisionDashboard || {};
+  const strengths = d.strengths || s.investmentThesis?.strengths || [];
+  const risks = d.risks || s.investmentThesis?.risks || [];
+  const target = d.fiveYearTarget ?? s.fiveYearPriceTarget?.exitPrice;
+  const buyBelow = d.buyBelow;
+  return `<div class="decision-dashboard">
+    <div class="decision-title"><strong>${s.ticker} decision dashboard</strong><span class="badge ${ratingClass(s.rating)}">${s.rating}</span></div>
+    <div class="decision-metrics">
+      <div class="decision-metric"><span>Expected CAGR</span><b class="${(s.expectedReturn ?? -1) >= .15 ? 'pos' : 'neg'}">${pct(s.expectedReturn)}</b></div>
+      <div class="decision-metric"><span>Confidence</span><b class="${confClass(s.confidenceScore)}">${s.confidenceScore ?? '—'}/100</b></div>
+      <div class="decision-metric"><span>Investment grade</span><b>${d.investmentGrade ?? s.investmentGrade ?? '—'}</b></div>
+      <div class="decision-metric"><span>Suggested weight</span><b>${d.suggestedWeightRange ?? s.portfolioProfile?.suggestedWeightRange ?? pct(s.portfolioProfile?.suggestedMaxWeight)}</b></div>
+      <div class="decision-metric"><span>Buy below</span><b>${buyBelow == null ? '—' : '$' + num(buyBelow)}</b></div>
+      <div class="decision-metric"><span>Fair value today</span><b>${s.fairValueEstimate == null ? '—' : '$' + num(s.fairValueEstimate)}</b></div>
+      <div class="decision-metric"><span>Five-year target</span><b>${target == null ? '—' : '$' + num(target)}</b></div>
+      <div class="decision-metric"><span>Position tier</span><b>${d.positionTier ?? s.portfolioProfile?.positionTier ?? '—'}</b></div>
+    </div>
+    ${d.summary || s.investmentThesis?.summary ? `<div style="margin-top:12px;color:#ccc;white-space:normal">${d.summary ?? s.investmentThesis.summary}</div>` : ''}
+    <div class="decision-lists">
+      <div><strong>Top strengths</strong><ul>${strengths.length ? strengths.map(x=>`<li class="pos">${x}</li>`).join('') : '<li class="muted">No standout strengths identified</li>'}</ul></div>
+      <div><strong>Primary risks</strong><ul>${risks.length ? risks.map(x=>`<li class="neg">${x}</li>`).join('') : '<li class="muted">No major modeled risks</li>'}</ul></div>
+    </div>
+  </div>`;
+}
+
 function buildDetailHtml(s) {
   const impliedText = s.marketImpliedGrowth != null
     ? pct(s.marketImpliedGrowth)
@@ -209,7 +248,8 @@ function buildDetailHtml(s) {
   const confDeductions = (s.confidenceDeductions || [])
     .map(d => `<span class="sig">• −${d.points}: ${d.reason}</span>`).join('') || '<span class="sig">No deductions</span>';
 
-  return `<td colspan="14">
+  return `<td colspan="15">
+    ${decisionDashboardHtml(s)}
     ${s.lowConfidence ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Multiple growth inputs hit their sanity clamp for this stock — treat the fundamental growth figure with extra caution.</div>' : ''}
     ${s.marginOfSafetyDistorted ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Raw margin of safety was an extreme value, clamped to ±100% for display.</div>' : ''}
     ${s.usedFallbackForCAGRTarget ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ No price-aware return could be computed for this stock (missing exit-multiple data) — the qualify/rating decision fell back to fundamental growth rate alone, which does not account for today\'s entry price.</div>' : ''}
@@ -234,7 +274,7 @@ function buildDetailHtml(s) {
     ${(s.pricingPowerSignals || []).map(sig => `<span class="sig">• ${sig}</span>`).join('') || 'None detected'}
     <div class="detail-section"><strong>V7 Milestone 2 decision engine</strong><div class="detail-grid">
 <div><strong>Investment grade:</strong> ${s.investmentGrade ?? '—'}</div><div><strong>Portfolio-manager score:</strong> ${s.portfolioManagerScore ?? '—'}/100</div>
-<div><strong>Risk-adjusted CAGR:</strong> ${pct(s.riskAdjustedReturn)}</div><div><strong>Probability-weighted CAGR:</strong> ${pct(s.expectedReturn)}</div>
+<div><strong>Expected CAGR:</strong> ${pct(s.expectedReturn)}</div><div><strong>Confidence:</strong> ${s.confidenceScore ?? '—'}/100</div>
 <div><strong>Compounder:</strong> ${s.compounderScore ?? '—'}/100 (${s.compounderGrade ?? '—'})</div><div><strong>Pricing Power 2.0:</strong> ${s.pricingPowerV2Score ?? '—'}/100</div>
 <div><strong>Downside protection:</strong> ${s.downsideProtectionScore ?? '—'}/100</div><div><strong>Permanent-loss probability:</strong> ${pct(s.permanentLossProbability)}</div>
 <div><strong>Industry model:</strong> ${s.industryModel?.model ?? 'general'}</div><div><strong>Data integrity:</strong> ${s.dataIntegrity?.score ?? '—'}/100</div></div>
@@ -329,8 +369,8 @@ function render() {
       <td><strong>${s.ticker}</strong></td>
       <td>${s.category}</td>
       <td><span class="badge ${ratingClass(s.rating)}">${s.rating}</span></td>
-      <td class="${(s.riskAdjustedReturn ?? -1) >= 0.15 ? 'pos' : 'neg'}">${pct(s.riskAdjustedReturn)}</td>
       <td>${returnDisplay}</td>
+      <td class="${confClass(s.confidenceScore)}">${s.confidenceScore ?? '—'}</td>
       <td class="${s.marginOfSafety >= s.requiredMOS ? 'pos' : 'neg'}">${pct(s.marginOfSafety)}${mosFlag}</td>
       <td>${pct(s.requiredMOS)}</td>
       <td class="${confClass(s.portfolioManagerScore)}">${s.portfolioManagerScore ?? s.investmentScore ?? '—'}</td>
@@ -341,7 +381,6 @@ function render() {
       <td class="${confClass(s.successProbability)}">${s.successProbability ?? '—'}%</td>
       <td>${s.qualityRank ?? '—'}</td>
       <td>${s.opportunityRank ?? '—'}</td>
-      <td class="${confClass(s.confidenceScore)}">${s.confidenceScore ?? '—'}</td>
     `;
 
     const detail = document.createElement('tr');

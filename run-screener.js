@@ -266,13 +266,15 @@ async function run() {
     stock.valuation.scenarioAnalysis = scenarioAnalysis;
     stock.valuation.expectedReturnProfile = expectedReturnProfile;
     stock.valuation.calibration = calibration;
-    stock.valuation.investmentThesis = buildInvestmentThesis(stock, expectedReturnProfile);
     const pricingPowerV2 = computePricingPowerV2(stock, industryModel);
     const compounder = computeCompounderScore(stock, pricingPowerV2, industryModel);
     const downside = computeDownsideRisk(stock, scenarioAnalysis, dataIntegrity, industryModel);
     stock.valuation.pricingPowerV2 = pricingPowerV2;
     stock.valuation.compounder = compounder;
     stock.valuation.downside = downside;
+    // V8 builds the thesis only after all quality, pricing-power and downside
+    // modules have run so the decision dashboard can surface real strengths/risks.
+    stock.valuation.investmentThesis = buildInvestmentThesis(stock, expectedReturnProfile);
     stock.valuation.portfolioProfile = computePortfolioProfile(stock);
   }
 

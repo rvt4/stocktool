@@ -606,7 +606,6 @@ function scoreStock(stock) {
     ?? stock.valuation.fiveYearPriceTarget?.cagr
     ?? v7Return?.expectedCAGR
     ?? null;
-  const riskAdjustedReturn = v7Return?.riskAdjustedCAGR ?? expectedReturn;
   const lastRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
   const requiredMOS = dynamicMOS(category, lastRoic);
 
@@ -639,7 +638,7 @@ function scoreStock(stock) {
   // because it ignores today's entry price. Missing valuation remains explicitly unrated.
   const hasPriceAwareValuation = Number.isFinite(expectedReturn) && Number.isFinite(fairValue) && (stock.valuation.methodCount ?? 0) > 0;
   const meetsCAGRTarget = hasPriceAwareValuation && expectedReturn >= 0.15;
-  const investment = computeInvestmentScore(stock, catResult.composite, pricingPower.score, confidence.score, riskAdjustedReturn ?? fundamentalGrowthRate, marginOfSafety);
+  const investment = computeInvestmentScore(stock, catResult.composite, pricingPower.score, confidence.score, expectedReturn ?? fundamentalGrowthRate, marginOfSafety);
 
   return {
     ticker: stock.ticker,
@@ -674,7 +673,6 @@ function scoreStock(stock) {
     reverseDCFGap: stock.valuation.reverseDCFGap ?? null,
     fundamentalGrowthRate,
     expectedReturn,
-    riskAdjustedReturn,
     scenarioAnalysis: stock.valuation.scenarioAnalysis ?? null,
     expectedReturnProfile: stock.valuation.expectedReturnProfile ?? null,
     dataIntegrity: stock.dataIntegrity ?? null,
@@ -721,6 +719,19 @@ function scoreStock(stock) {
     calibrationAdjustment: stock.valuation.expectedReturnProfile?.calibrationAdjustment ?? 0,
     calibrationActive: stock.valuation.expectedReturnProfile?.calibrationActive ?? false,
     portfolioProfile: stock.valuation.portfolioProfile ?? null,
+    decisionDashboard: {
+      expectedCAGR: expectedReturn,
+      confidence: confidence.score,
+      investmentGrade: investment.score >= 88 ? 'A+' : investment.score >= 80 ? 'A' : investment.score >= 73 ? 'B+' : investment.score >= 65 ? 'B' : investment.score >= 55 ? 'C' : investment.score >= 42 ? 'D' : 'F',
+      buyBelow: Number.isFinite(fairValue) ? fairValue * (1 - requiredMOS) : null,
+      fairValueToday: fairValue,
+      fiveYearTarget: stock.valuation.fiveYearPriceTarget?.exitPrice ?? stock.valuation.returnEngineV2?.actionableExitPrice ?? null,
+      suggestedWeightRange: stock.valuation.portfolioProfile?.suggestedWeightRange ?? null,
+      positionTier: stock.valuation.portfolioProfile?.positionTier ?? null,
+      strengths: stock.valuation.investmentThesis?.strengths ?? [],
+      risks: stock.valuation.investmentThesis?.risks ?? [],
+      summary: stock.valuation.investmentThesis?.summary ?? null,
+    },
   };
 }
 
@@ -738,14 +749,14 @@ function assignSelectiveRatings(scoredStocks) {
 
   sorted.forEach((stock, index) => {
     const percentile = (index + 1) / total;
-    const expectedReturn = stock.riskAdjustedReturn ?? stock.expectedReturn ?? stock.fundamentalGrowthRate ?? null;
+    const expectedReturn = stock.expectedReturn ?? stock.fundamentalGrowthRate ?? null;
     const confidence = stock.confidenceScore ?? 0;
     const quality = stock.businessQualityScore ?? 0;
     const downsideProtection = stock.downsideProtectionScore ?? 50;
     const qualifies = stock.qualifiesForBuyList === true;
 
     if (stock.hasPriceAwareValuation === false) {
-      stock.rating = 'Hold/Watch';
+      stock.rating = 'Watch';
       stock.ratingReason = 'Insufficient valuation data';
       return;
     }
