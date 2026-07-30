@@ -351,7 +351,7 @@ function companyCurrentMultiple(stock, type) {
   return null;
 }
 
-function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, businessProfile = null, lifecycle = null, moat = null) {
+function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, businessProfile = null, lifecycle = null, moat = null, projection = null) {
   const current = companyCurrentMultiple(stock, type);
   const life = lifecycle || classifyLifecycle(stock);
   const moatProfile = moat || computeMoat(stock, life);
@@ -362,12 +362,22 @@ function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, busine
     lifecycle: life,
     moat: moatProfile,
     type,
+    revenueScale: projection?.length && stock.financials?.years?.at(-1)?.revenue > 0
+      ? projection.at(-1).revenue / stock.financials.years.at(-1).revenue
+      : 1,
+    forecastYears: projection?.length || life.forecastYears || 5,
   });
   if (!(result.multiple > 0)) return result;
-  // A final broad sanity rail catches bad source data without forcing elite growth
-  // companies back to the average sector multiple.
-  const hardCap = type === 'revenueExit' ? 45 : type === 'epsExit' ? 85 : 65;
-  return { ...result, multiple: clamp(result.multiple, 1, hardCap) };
+
+  const disciplined = applyExitMultipleDiscipline({
+    type,
+    rawMultiple: result.multiple,
+    exitGrowth,
+    quality: clamp((moatProfile.score ?? 50) / 100, 0, 1),
+    forecastReliability: businessProfile?.forecastReliability ?? 0.5,
+    industry: stock.valuation?.industryModel?.model || null,
+  });
+  return { ...result, ...disciplined, multiple: disciplined.multiple };
 }
 
 // Backward-compatible helper retained for older callers/tests. V2 no longer uses
@@ -543,7 +553,7 @@ function exitMethod(stock, model, sectorMultiples, type, businessProfile = null,
   if (!(sectorMultiple > 0) || !Number.isFinite(metricValue) || (type === 'epsExit' && metricValue <= 0)) {
     return { fairValuePerShare: null, exitPricePerShare: null, audit: { reason: 'missing multiple or exit metric' } };
   }
-  const multipleModel = intelligentExitMultiple(stock, type, sectorMultiple, exit.growth, businessProfile, lifecycle, moat);
+  const multipleModel = intelligentExitMultiple(stock, type, sectorMultiple, exit.growth, businessProfile, lifecycle, moat, model.projection);
   const exitMultiple = multipleModel.multiple;
   let exitEnterpriseValue = null, exitEquityValue = null, exitPricePerShare = null;
   if (type === 'epsExit') {
