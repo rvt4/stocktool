@@ -8,13 +8,19 @@ const ABSOLUTE_CAPS = {
   ebitdaExit: { 'Hyper Growth': 30, Growth: 25, 'Elite Compounder': 24, Compounder: 21, Mature: 17 },
 };
 
-function deriveExitMultiple({ current, sector, exitGrowth, lifecycle, moat, type, revenueScale = 1, forecastYears = 5 }) {
+function deriveExitMultiple({ current, sector, exitGrowth, valuationGrowth = null, lifecycle, moat, type, revenueScale = 1, forecastYears = 5, premiumPersistence = null }) {
   if (!(sector > 0)) return { multiple: null, reason: 'missing sector anchor' };
 
   const stage = lifecycle?.stage || 'Mature';
   const m = clamp((moat?.score ?? 50) / 100, 0, 1);
   const growth = clamp(exitGrowth ?? 0.03, -0.10, 0.35);
-  const g = clamp(growth / 0.22, 0, 1.25);
+  // Terminal-year growth can understate the economics of a business that is still
+  // transitioning toward maturity. Use a smoothed valuation growth signal when
+  // available, while still keeping the final-year rate influential.
+  const valueGrowth = clamp(valuationGrowth ?? growth, -0.10, 0.35);
+  const effectiveGrowth = clamp(growth * 0.55 + valueGrowth * 0.45, -0.10, 0.35);
+  const g = clamp(effectiveGrowth / 0.22, 0, 1.25);
+  const persistence = clamp(premiumPersistence ?? ((moat?.score ?? 50) / 100), 0, 1);
 
   // Sector is an anchor, not a destination. A durable company can retain a
   // premium, but that premium must decline as the projected enterprise becomes
@@ -41,10 +47,11 @@ function deriveExitMultiple({ current, sector, exitGrowth, lifecycle, moat, type
   }[stage] ?? 0.24;
 
   const moatBoost = (m - 0.50) * 0.22;
-  const growthBoost = clamp(growth - 0.05, 0, 0.20) * 0.65;
+  const persistenceBoost = (persistence - 0.50) * 0.20;
+  const growthBoost = clamp(effectiveGrowth - 0.05, 0, 0.20) * 0.65;
   const horizonPenalty = clamp((forecastYears - 5) * 0.025, 0, 0.18);
   const scalePenalty = clamp(Math.log2(Math.max(1, revenueScale)) * 0.075, 0, 0.28);
-  const retention = clamp(retentionBase + moatBoost + growthBoost - horizonPenalty - scalePenalty, 0.08, 0.68);
+  const retention = clamp(retentionBase + moatBoost + persistenceBoost + growthBoost - horizonPenalty - scalePenalty, 0.08, 0.74);
 
   const stageCurrentCap = stage === 'Hyper Growth' ? 3.2
     : stage === 'Growth' ? 2.7
@@ -69,10 +76,10 @@ function deriveExitMultiple({ current, sector, exitGrowth, lifecycle, moat, type
   const stageCaps = ABSOLUTE_CAPS[type] || ABSOLUTE_CAPS.epsExit;
   const absoluteCap = stageCaps[stage] ?? stageCaps.Mature;
   const growthAdjustedCap = type === 'revenueExit'
-    ? clamp(2.0 + Math.max(0, growth) * 36 + m * 2.5, 2.5, absoluteCap)
+    ? clamp(2.0 + Math.max(0, effectiveGrowth) * 36 + m * 2.5 + persistence * 1.2, 2.5, absoluteCap)
     : type === 'epsExit'
-      ? clamp(16 + Math.max(0, growth) * 95 + m * 8, 18, absoluteCap)
-      : clamp(9 + Math.max(0, growth) * 58 + m * 5, 10, absoluteCap);
+      ? clamp(16 + Math.max(0, effectiveGrowth) * 95 + m * 8 + persistence * 5, 18, absoluteCap)
+      : clamp(9 + Math.max(0, effectiveGrowth) * 58 + m * 5 + persistence * 3, 10, absoluteCap);
 
   const max = Math.min(
     sector * (stage === 'Hyper Growth' ? 2.8 : stage === 'Growth' ? 2.4 : stage === 'Elite Compounder' ? 2.3 : stage === 'Compounder' ? 2.0 : 1.65),
@@ -88,6 +95,9 @@ function deriveExitMultiple({ current, sector, exitGrowth, lifecycle, moat, type
     durableAnchor,
     retention,
     structuralPremium,
+    premiumPersistence: persistence,
+    valuationGrowth: valueGrowth,
+    effectiveGrowth,
     maturityMultiplier,
     scalePenalty,
     horizonPenalty,
