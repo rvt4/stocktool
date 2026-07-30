@@ -16,6 +16,7 @@ const {
   getDynamicTerminalGrowth,
 } = require('./dcf');
 const { applyExitMultipleDiscipline } = require('./engine/exit-multiple-engine');
+const { computePremiumPersistence } = require('./engine/premium-persistence-engine');
 const { buildValuationConsensus } = require('./engine/valuation-consensus');
 const { computeReturnEngineV2 } = require('./engine/return-engine');
 const { buildMarketExpectations } = require('./engine/market-expectations');
@@ -368,8 +369,9 @@ function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, busine
       }).filter(Number.isFinite)
     : [];
   const valuationGrowth = projectedGrowthRates.length ? median(projectedGrowthRates) : exitGrowth;
+  const premiumModel = computePremiumPersistence(stock, businessProfile || {}, life, moatProfile);
   const premiumPersistence = businessProfile?.premiumPersistence
-    ?? clamp((moatProfile.score ?? 50) / 100, 0, 1);
+    ?? premiumModel.retainedPremium;
   const result = deriveExitMultiple({
     current,
     sector: sectorMultiple,
@@ -398,7 +400,7 @@ function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, busine
     sectorMultiple,
     industry: stock.valuation?.industryModel?.model || null,
   });
-  return { ...result, ...disciplined, multiple: disciplined.multiple };
+  return { ...result, ...disciplined, multiple: disciplined.multiple, premiumModel };
 }
 
 // Backward-compatible helper retained for older callers/tests. V2 no longer uses

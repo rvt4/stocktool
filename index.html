@@ -293,6 +293,8 @@ function buildDetailHtml(s) {
 <div><strong>Cycle-normalized growth:</strong> ${pct(s.cycleNormalization?.normalizedGrowth)}</div>
 <div><strong>Historical median growth:</strong> ${pct(s.cycleNormalization?.historicalMedianGrowth)}</div>
 <div><strong>Investment Committee:</strong> ${s.investmentCommittee?.score ?? '—'}/100 (${s.investmentCommittee?.grade ?? '—'})</div>
+<div><strong>Plausibility ceiling:</strong> ${pct(s.scenarioAnalysis?.plausibilityCeiling)}${s.scenarioAnalysis?.plausibilityCapped ? ' (applied)' : ''}</div>
+<div><strong>Raw PW CAGR:</strong> ${pct(s.scenarioAnalysis?.rawProbabilityWeightedCAGR)}</div>
 </div></div>
     <div class="detail-section"><strong>Business classification & moat</strong><div class="detail-grid">
 <div><strong>Lifecycle:</strong> ${s.lifecycle?.stage ?? s.projectionAssumptions?.lifecycle?.stage ?? s.category ?? '—'}</div>

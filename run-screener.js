@@ -27,6 +27,7 @@ const { buildCalibration, applyCalibration } = require('./engine/calibration-eng
 const { updateForecastHistory } = require('./engine/forecast-tracker');
 const { computePortfolioProfile } = require('./engine/portfolio-engine');
 const { computeInvestmentCommitteeScore } = require('./engine/investment-committee-engine');
+const { applyInstitutionalSanity } = require('./engine/institutional-sanity-engine');
 
 const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'), 'utf8'));
 
@@ -292,9 +293,15 @@ async function run() {
     stock.valuation.marketExpectations = result.marketExpectations;
     stock.valuation.monteCarlo = result.monteCarlo;
 
-    // Auditable data integrity + bear/base/bull return distribution.
+    // Build quality inputs before scenarios so probabilities and premium persistence
+    // use the same complete information shown in the dashboard.
     const dataIntegrity = assessDataIntegrity(stock);
-    const scenarioAnalysis = buildScenarios(stock, result, dataIntegrity);
+    const pricingPowerV2 = computePricingPowerV2(stock, industryModel);
+    const compounder = computeCompounderScore(stock, pricingPowerV2, industryModel);
+    stock.valuation.pricingPowerV2 = pricingPowerV2;
+    stock.valuation.compounder = compounder;
+    let scenarioAnalysis = buildScenarios(stock, result, dataIntegrity);
+    scenarioAnalysis = applyInstitutionalSanity(stock, scenarioAnalysis, result.agreementScore);
     const rawExpectedReturnProfile = computeExpectedReturnProfile(stock, scenarioAnalysis, dataIntegrity);
     let expectedReturnProfile = applyCalibration(rawExpectedReturnProfile, stock, calibration);
 
@@ -333,11 +340,7 @@ async function run() {
     stock.valuation.growthQuality = scenarioAnalysis?.growthQuality ?? null;
     stock.valuation.expectedReturnProfile = expectedReturnProfile;
     stock.valuation.calibration = calibration;
-    const pricingPowerV2 = computePricingPowerV2(stock, industryModel);
-    const compounder = computeCompounderScore(stock, pricingPowerV2, industryModel);
     const downside = computeDownsideRisk(stock, scenarioAnalysis, dataIntegrity, industryModel);
-    stock.valuation.pricingPowerV2 = pricingPowerV2;
-    stock.valuation.compounder = compounder;
     stock.valuation.downside = downside;
     // V8 builds the thesis only after all quality, pricing-power and downside
     // modules have run so the decision dashboard can surface real strengths/risks.

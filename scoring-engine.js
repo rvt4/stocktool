@@ -753,7 +753,7 @@ function scoreStock(stock) {
 
 function assignSelectiveRatings(scoredStocks) {
   const sorted = [...scoredStocks].sort((a, b) =>
-    ((b.investmentScore ?? -Infinity) - (a.investmentScore ?? -Infinity)) ||
+    ((b.investmentCommitteeScore ?? b.investmentScore ?? -Infinity) - (a.investmentCommitteeScore ?? a.investmentScore ?? -Infinity)) ||
     ((b.businessQualityScore ?? -Infinity) - (a.businessQualityScore ?? -Infinity)) ||
     ((b.confidenceScore ?? -Infinity) - (a.confidenceScore ?? -Infinity))
   );
@@ -815,6 +815,13 @@ function assignSelectiveRatings(scoredStocks) {
       stock.rating = 'Avoid';
     } else {
       stock.rating = 'Hold';
+    }
+    if (!stock.ratingReason) {
+      if (stock.scenarioAnalysis?.plausibilityCapped) stock.ratingReason = 'Expected return was reduced by the institutional plausibility ceiling.';
+      else if ((stock.methodAgreementScore ?? 100) < 50) stock.ratingReason = 'Valuation methods disagree materially.';
+      else if ((stock.confidenceScore ?? 100) < 60) stock.ratingReason = 'Forecast confidence is too low for a higher rating.';
+      else if (stock.marginOfSafety != null && stock.marginOfSafety < stock.requiredMOS) stock.ratingReason = 'Current price does not provide the required margin of safety.';
+      else stock.ratingReason = 'Rating reflects risk-adjusted return, quality, confidence and downside protection.';
     }
   });
 
