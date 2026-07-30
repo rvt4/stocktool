@@ -361,13 +361,24 @@ function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, busine
   const current = companyCurrentMultiple(stock, type);
   const life = lifecycle || classifyLifecycle(stock);
   const moatProfile = moat || computeMoat(stock, life);
+  const projectedGrowthRates = Array.isArray(projection)
+    ? projection.slice(-3).map((row, i, arr) => {
+        const prev = i === 0 ? projection[projection.length - arr.length - 1] : arr[i - 1];
+        return prev?.revenue > 0 && row?.revenue > 0 ? row.revenue / prev.revenue - 1 : null;
+      }).filter(Number.isFinite)
+    : [];
+  const valuationGrowth = projectedGrowthRates.length ? median(projectedGrowthRates) : exitGrowth;
+  const premiumPersistence = businessProfile?.premiumPersistence
+    ?? clamp((moatProfile.score ?? 50) / 100, 0, 1);
   const result = deriveExitMultiple({
     current,
     sector: sectorMultiple,
     exitGrowth,
+    valuationGrowth,
     lifecycle: life,
     moat: moatProfile,
     type,
+    premiumPersistence,
     revenueScale: projection?.length && stock.financials?.years?.at(-1)?.revenue > 0
       ? projection.at(-1).revenue / stock.financials.years.at(-1).revenue
       : 1,
@@ -379,8 +390,12 @@ function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, busine
     type,
     rawMultiple: result.multiple,
     exitGrowth,
+    valuationGrowth,
     quality: clamp((moatProfile.score ?? 50) / 100, 0, 1),
     forecastReliability: businessProfile?.forecastReliability ?? 0.5,
+    premiumPersistence,
+    lifecycleStage: life.stage || life.name || 'Mature',
+    sectorMultiple,
     industry: stock.valuation?.industryModel?.model || null,
   });
   return { ...result, ...disciplined, multiple: disciplined.multiple };

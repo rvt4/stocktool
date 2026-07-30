@@ -211,7 +211,9 @@ function decisionDashboardHtml(s) {
   return `<div class="decision-dashboard">
     <div class="decision-title"><strong>${s.ticker} decision dashboard</strong><span class="badge ${ratingClass(s.rating)}">${s.rating}</span></div>
     <div class="decision-metrics">
-      <div class="decision-metric"><span>Expected CAGR</span><b class="${(s.expectedReturn ?? -1) >= .15 ? 'pos' : 'neg'}">${pct(s.expectedReturn)}</b></div>
+      <div class="decision-metric"><span>Expected investor CAGR</span><b class="${(s.expectedReturn ?? -1) >= .15 ? 'pos' : 'neg'}">${pct(s.expectedReturn)}</b></div>
+      <div class="decision-metric"><span>Fundamental CAGR</span><b class="${(s.fundamentalGrowthRate ?? -1) >= .15 ? 'pos' : ''}">${pct(s.fundamentalGrowthRate)}</b></div>
+      <div class="decision-metric"><span>Valuation impact</span><b class="${((s.expectedReturn ?? 0) - (s.fundamentalGrowthRate ?? 0)) >= 0 ? 'pos' : 'neg'}">${pct((s.expectedReturn ?? 0) - (s.fundamentalGrowthRate ?? 0))}</b></div>
       <div class="decision-metric"><span>Confidence</span><b class="${confClass(s.confidenceScore)}">${s.confidenceScore ?? '—'}/100</b></div>
       <div class="decision-metric"><span>Investment grade</span><b>${d.investmentGrade ?? s.investmentGrade ?? '—'}</b></div>
       <div class="decision-metric"><span>Suggested weight</span><b>${d.suggestedWeightRange ?? s.portfolioProfile?.suggestedWeightRange ?? pct(s.portfolioProfile?.suggestedMaxWeight)}</b></div>
@@ -257,7 +259,7 @@ function buildDetailHtml(s) {
     <strong>Confidence: ${s.confidenceScore ?? '—'}/100</strong>
     <br>${confDeductions}
     <br><strong>Growth source:</strong> ${s.growthSource === 'yfinance_supabase' ? 'YFinance consensus cached in Supabase' : s.growthSource === 'finnhub_analyst_consensus' ? 'Finnhub analyst consensus' : 'Blended recent-quarter + trailing SEC data'}
-    <br><strong>Expected Return</strong> (price-aware — starts at today's price, converges to a mean-reverted 5yr exit multiple): ${s.expectedReturn != null ? pct(s.expectedReturn) : 'n/a — insufficient exit-multiple data'}
+    <br><strong>Expected Investor CAGR</strong> (price-aware — starts at today's price and includes premium-persistence-aware valuation fade): ${s.expectedReturn != null ? pct(s.expectedReturn) : 'n/a — insufficient exit-multiple data'}
     <br><strong>Fundamental Growth Rate</strong> (price-agnostic — how fast the business's own per-share value compounds): ${pct(s.fundamentalGrowthRate)}
     <br><strong>Fund. growth breakdown:</strong>
     Rev growth ${pct(s.cagrBreakdown.forwardRevGrowth)} ·
@@ -286,7 +288,9 @@ function buildDetailHtml(s) {
 <div><strong>Intrinsic value:</strong> ${s.intrinsicValue == null ? '—' : '$' + num(s.intrinsicValue)}</div>
 <div><strong>Market-based value:</strong> ${s.marketValue == null ? '—' : '$' + num(s.marketValue)}</div>
 <div><strong>Actionable fair value:</strong> ${s.fairValueEstimate == null ? '—' : '$' + num(s.fairValueEstimate)}</div>
-<div><strong>Expected CAGR:</strong> ${pct(s.expectedReturn)}</div>
+<div><strong>Expected investor CAGR:</strong> ${pct(s.expectedReturn)}</div>
+<div><strong>Fundamental CAGR:</strong> ${pct(s.fundamentalGrowthRate)}</div>
+<div><strong>Valuation impact:</strong> ${pct((s.expectedReturn ?? 0) - (s.fundamentalGrowthRate ?? 0))}</div>
 <div><strong>Agreement:</strong> ${s.methodAgreementScore ?? '—'}/100</div>
 <div><strong>Confidence:</strong> ${s.confidenceScore ?? '—'}/100</div>
 <div><strong>Calibration:</strong> ${s.calibrationActive ? 'Active' : 'Collecting history'} (${s.calibration?.observationCount ?? 0} observations)</div>
