@@ -137,7 +137,7 @@ function buildGrowthPath(stock, category, years = 5, calibration = null) {
 function marginSeries(yrs, getter) {
   return yrs.slice(-5).map(getter).filter(Number.isFinite);
 }
-function marginTarget(start, series, category, kind) {
+function marginTarget(start, series, category, kind, lifecycle = null) {
   const med = median(series) ?? start;
   const best = series.length ? Math.max(...series) : start;
   const recentTrend = series.length >= 3 ? (series[series.length - 1] - series[0]) / (series.length - 1) : 0;
@@ -154,16 +154,22 @@ function marginTarget(start, series, category, kind) {
     : kind === 'net'
       ? { low: -0.20, high: 0.45 }
       : { low: -0.05, high: 0.55 };
-  // Mature/value companies should not receive five straight years of unchecked margin expansion.
-  if (['Value', 'Dividend', 'Cyclical'].includes(category)) target = Math.min(target, start + 0.018);
+  // Mature/value companies should not receive unchecked margin expansion. For cyclical
+  // and turnaround businesses use a mid-cycle median rather than peak/current margins.
+  if (lifecycle?.normalizeMargins) {
+    target = med;
+    if (category === 'Turnaround') target = Math.min(Math.max(med, start), best * 0.92);
+  } else if (['Value', 'Dividend', 'Cyclical'].includes(category)) {
+    target = Math.min(target, start + 0.018);
+  }
   return clamp(target, caps.low, caps.high);
 }
 
 // ---------- Shared five-year projection ----------
-function projectFinancials(stock, growthInput = null, years = 5, calibration = null) {
+function projectFinancials(stock, growthInput = null, years = 5, calibration = null, categoryOverride = null, lifecycle = null) {
   const yrs = stock.financials.years;
   const last = yrs[yrs.length - 1];
-  const category = inferValuationCategory(stock);
+  const category = categoryOverride || inferValuationCategory(stock);
   const growthModel = buildGrowthPath(stock, category, years, calibration);
   if (growthInput != null && stock.analystEstimates?.revenueGrowthCurrentYear == null && stock.analystEstimates?.revenueGrowthFwd == null) {
     growthModel.path[0] = clamp(growthInput, -0.25, 0.65);
@@ -178,9 +184,9 @@ function projectFinancials(stock, growthInput = null, years = 5, calibration = n
   const startEbitdaMargin = last.ebitda != null && last.revenue ? last.ebitda / last.revenue : median(ebitdaMargins) ?? 0.10;
   const startFcfMargin = last.fcf != null && last.revenue ? last.fcf / last.revenue : median(fcfMargins) ?? 0.08;
   const startNetMargin = last.netIncome != null && last.revenue ? last.netIncome / last.revenue : median(netMargins) ?? 0.06;
-  const targetEbitdaMargin = marginTarget(startEbitdaMargin, ebitdaMargins, category, 'ebitda');
-  const targetFcfMargin = marginTarget(startFcfMargin, fcfMargins, category, 'fcf');
-  const targetNetMargin = marginTarget(startNetMargin, netMargins, category, 'net');
+  const targetEbitdaMargin = marginTarget(startEbitdaMargin, ebitdaMargins, category, 'ebitda', lifecycle);
+  const targetFcfMargin = marginTarget(startFcfMargin, fcfMargins, category, 'fcf', lifecycle);
+  const targetNetMargin = marginTarget(startNetMargin, netMargins, category, 'net', lifecycle);
 
   let revenue = last.revenue;
   let shares = last.sharesOutTTM;
@@ -807,10 +813,12 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   const lifecycle = classifyLifecycle(stock);
   const category = lifecycle.stage === 'Elite Compounder' ? 'Compounder'
     : lifecycle.stage === 'Dividend Compounder' ? 'Dividend'
+    : lifecycle.stage === 'Temporary Disruption' ? 'Growth'
     : ['Financial','Utility','Asset Heavy','Mature'].includes(lifecycle.stage) ? 'Value'
     : lifecycle.stage;
+  const forecastCategory = lifecycle.stage;
   const sectorMultiples = sectorExitMultiples[stock.sector] || sectorExitMultiples.Unknown || {};
-  const model = projectFinancials(stock, stock.growthYear1, lifecycle.forecastYears, calibration);
+  const model = projectFinancials(stock, stock.growthYear1, lifecycle.forecastYears, calibration, forecastCategory, lifecycle);
   const moat = computeMoat(stock, lifecycle);
   const businessProfile = { ...buildBusinessProfile(stock, category, model), moatScore: moat.score / 100, moatV2: moat, lifecycle };
   const dcf = dcfFromProjection(stock, model, { sbcAdjusted: false });
@@ -827,7 +835,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   const consensus = buildValuationConsensus(methods, combined.agreementScore, combined.effectiveWeights);
   const exitResults = { revenueExit, epsExit, ebitdaExit };
   const legacyPriceTarget = fiveYearPriceTargetCAGR(stock, model, exitResults, combined.effectiveWeights);
-  const returnEngineV2 = computeReturnEngineV2(stock, model, legacyPriceTarget.exitPrice, consensus);
+  const returnEngineV2 = computeReturnEngineV2(stock, model, legacyPriceTarget.exitPrice, consensus, lifecycle);
   const fiveYearPriceTarget = {
     ...legacyPriceTarget,
     // Keep the raw market-method target for audit, but display/use the actionable
@@ -882,7 +890,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '2.0-lifecycle-moat-dynamic-horizon', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '11.0-classification-return-quality-reality-check', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
