@@ -6,7 +6,8 @@ function computePortfolioProfile(stock) {
   const confidence = stock.dataIntegrity?.score ?? 50;
   const protection = stock.valuation?.downside?.protectionScore ?? 50;
   // V8: the institutional target return is the single canonical expected CAGR.
-  const expected = stock.valuation?.returnEngineV2?.expectedCAGR
+  const expected = stock.valuation?.scenarioAnalysis?.probabilityWeightedCAGR
+    ?? stock.valuation?.returnEngineV2?.expectedCAGR
     ?? stock.valuation?.fiveYearPriceTarget?.cagr
     ?? null;
   const permanentLoss = stock.valuation?.downside?.permanentLossProbability ?? 0.25;

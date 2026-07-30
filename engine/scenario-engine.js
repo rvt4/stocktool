@@ -1,99 +1,37 @@
 'use strict';
-
-function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
-
-const CATEGORY_SPREAD = {
-  'Hyper Growth': { growth: 0.10, margin: 0.035, multiple: 0.24 },
-  Growth:         { growth: 0.07, margin: 0.025, multiple: 0.18 },
-  Compounder:     { growth: 0.04, margin: 0.018, multiple: 0.12 },
-  Dividend:       { growth: 0.025, margin: 0.012, multiple: 0.10 },
-  Value:          { growth: 0.035, margin: 0.018, multiple: 0.14 },
-  Turnaround:     { growth: 0.07, margin: 0.040, multiple: 0.22 },
-  Cyclical:       { growth: 0.09, margin: 0.050, multiple: 0.25 },
+const { normalizeCycle } = require('./cycle-normalization-engine');
+const { assessCapitalIntensity } = require('./capital-intensity-engine');
+const { assessCompetitivePressure } = require('./competitive-pressure-engine');
+const { computeGrowthQuality } = require('./growth-quality-engine');
+function clamp(x,lo,hi){return Math.max(lo,Math.min(hi,x));}
+const SPREAD={
+ 'Hyper Growth':{g:.10,m:.035,x:.24},Growth:{g:.07,m:.025,x:.18},Compounder:{g:.045,m:.018,x:.13},Dividend:{g:.025,m:.012,x:.10},Value:{g:.035,m:.018,x:.14},Turnaround:{g:.07,m:.04,x:.22},Cyclical:{g:.09,m:.05,x:.25}
 };
-
-function scenarioProbabilities(stock, integrity, profile) {
-  const reliability = profile?.forecastReliability ?? 0.5;
-  const analyst = stock.valuation?.analystReliability ?? 0.5;
-  const quality = profile?.moatScore ?? 0.5;
-  const data = integrity.score / 100;
-
-  const confidence = clamp(reliability * 0.32 + analyst * 0.22 + quality * 0.20 + data * 0.26, 0, 1);
-  const base = clamp(0.48 + (confidence - 0.5) * 0.30, 0.38, 0.64);
-  const bear = clamp(0.34 - (confidence - 0.5) * 0.20, 0.18, 0.40);
-  const bull = 1 - base - bear;
-  return { bear, base, bull, confidence };
+function probs(stock,integrity,profile,cycle,gq){
+ const reliability=profile?.forecastReliability??.5, analyst=stock.valuation?.analystReliability??.5, moat=profile?.moatScore??.5, data=(integrity?.score??50)/100;
+ const conf=clamp(reliability*.24+analyst*.18+moat*.18+data*.22+(gq?.score??50)/100*.18,0,1);
+ const base=clamp(.46+(conf-.5)*.34-cycle.cyclicality*.07,.36,.66); const bear=clamp(.34-(conf-.5)*.18+cycle.cyclicality*.08,.18,.43); return {bear,base,bull:1-base-bear,confidence:conf};
 }
-
-function buildScenarios(stock, valuationResult, integrity) {
-  const category = valuationResult.category || 'Value';
-  const spread = CATEGORY_SPREAD[category] || CATEGORY_SPREAD.Value;
-  const profile = valuationResult.businessProfile || {};
-  const projection = valuationResult.projection || [];
-  const baseTarget = valuationResult.fiveYearPriceTarget || {};
-  const currentPrice = stock.price?.current;
-  const years = baseTarget.years || 5;
-  const baseExit = baseTarget.exitPrice;
-  const dividends = baseTarget.dividendsReceived || 0;
-
-  if (!(currentPrice > 0) || !(baseExit > 0)) {
-    return { probabilities: scenarioProbabilities(stock, integrity, profile), scenarios: null, expectedCAGR: null };
-  }
-
-  const p = scenarioProbabilities(stock, integrity, profile);
-  const pricing = (stock.pricingPowerScore ?? stock.pricingPower?.score ?? 50) / 100;
-  const moat = profile.moatScore ?? 0.5;
-  const fragility = 1 - clamp((pricing + moat + p.confidence) / 3, 0, 1);
-
-  const bearGrowthPenalty = spread.growth * (0.80 + fragility * 0.50);
-  const bullGrowthBoost = spread.growth * (0.75 + moat * 0.40);
-  const bearMultiple = 1 - spread.multiple * (0.90 + fragility * 0.45);
-  const bullMultiple = 1 + spread.multiple * (0.70 + pricing * 0.45);
-
-  const baseCagr = Math.pow((baseExit + dividends) / currentPrice, 1 / years) - 1;
-  const bearExit = Math.max(0.01, baseExit * bearMultiple * Math.pow(1 - bearGrowthPenalty, years));
-  const bullExit = baseExit * bullMultiple * Math.pow(1 + bullGrowthBoost, years);
-
-  const bearCagr = Math.pow((bearExit + dividends * 0.75) / currentPrice, 1 / years) - 1;
-  const bullCagr = Math.pow((bullExit + dividends * 1.10) / currentPrice, 1 / years) - 1;
-  const expectedCAGR = bearCagr * p.bear + baseCagr * p.base + bullCagr * p.bull;
-
-  return {
-    probabilities: p,
-    scenarios: {
-      bear: {
-        probability: p.bear,
-        cagr: clamp(bearCagr, -0.60, 1.00),
-        exitPrice: bearExit,
-        description: 'Lower growth, weaker margins, and multiple compression',
-      },
-      base: {
-        probability: p.base,
-        cagr: clamp(baseCagr, -0.60, 1.00),
-        exitPrice: baseExit,
-        description: 'Unified five-year operating forecast and mean-reverted exit multiple',
-      },
-      bull: {
-        probability: p.bull,
-        cagr: clamp(bullCagr, -0.60, 1.20),
-        exitPrice: bullExit,
-        description: 'Stronger growth persistence, operating leverage, and premium retention',
-      },
-    },
-    expectedCAGR: clamp(expectedCAGR, -0.60, 1.00),
-    expectedFutureValue:
-      currentPrice * Math.pow(1 + clamp(expectedCAGR, -0.60, 1.00), years),
-    downsideCAGR: clamp(bearCagr, -0.60, 1.00),
-    upsideCAGR: clamp(bullCagr, -0.60, 1.20),
-    years,
-    drivers: {
-      category,
-      forecastConfidence: p.confidence,
-      moat,
-      pricingPower: pricing,
-      baseProjectionYears: projection.length,
-    },
-  };
+function scenarioProjection(base,kind,spread,cycle,capital,competition){
+ let previousRevenue=null; return base.map((r,i)=>{
+  const t=i+1, fade=Math.exp(-t*(kind==='bull'?.18:.26)*competition.growthFadeMultiplier);
+  const delta=kind==='bear'?-spread.g*(.65+.35*cycle.cyclicality)*fade:kind==='bull'?spread.g*(.60+.30*(1-cycle.cyclicality))*fade:0;
+  const growth=clamp(r.growth+delta,-.25,.65); const revenue=i===0?r.revenue:previousRevenue*(1+growth); previousRevenue=revenue;
+  const marginDelta=kind==='bear'?-spread.m*(.6+.4*competition.pressure):kind==='bull'?spread.m*(.55+.25*capital.fcfConversion):0;
+  return {...r,growth,revenue,fcfMargin:clamp((r.fcfMargin??0)+marginDelta-competition.annualMarginFade*t,-.2,.5),netMargin:clamp((r.netMargin??0)+marginDelta*.75,-.25,.5),ebitdaMargin:clamp((r.ebitdaMargin??0)+marginDelta*.9,-.1,.6)};
+ });
 }
-
-module.exports = { buildScenarios };
+function buildScenarios(stock,v,integrity){
+ const category=v.category||'Value', spread=SPREAD[category]||SPREAD.Value, profile=v.businessProfile||{}, base=v.projection||[];
+ const current=stock.price?.current, years=v.fiveYearPriceTarget?.years||Math.min(5,base.length)||5, baseExit=v.fiveYearPriceTarget?.exitPrice, dividends=v.fiveYearPriceTarget?.dividendsReceived||0;
+ const cycle=normalizeCycle(stock), capital=assessCapitalIntensity(stock,base), competition=assessCompetitivePressure(stock,profile,stock.valuation?.pricingPowerV2), growthQuality=computeGrowthQuality(stock,cycle,capital,competition), p=probs(stock,integrity,profile,cycle,growthQuality);
+ if(!(current>0)||!(baseExit>0))return{probabilities:p,scenarios:null,expectedCAGR:null,cycleNormalization:cycle,capitalIntensity:capital,competitivePressure:competition,growthQuality};
+ const bearProj=scenarioProjection(base,'bear',spread,cycle,capital,competition), bullProj=scenarioProjection(base,'bull',spread,cycle,capital,competition);
+ const bearFund=base.length&&bearProj.length?bearProj.at(-1).revenue/base.at(-1).revenue:1, bullFund=base.length&&bullProj.length?bullProj.at(-1).revenue/base.at(-1).revenue:1;
+ const bearExit=Math.max(.01,baseExit*bearFund*(1-spread.x*(.75+competition.pressure*.35)));
+ const bullExit=baseExit*bullFund*(1+spread.x*(.60+competition.premiumRetentionMultiplier*.35));
+ const baseC=Math.pow((baseExit+dividends)/current,1/years)-1, bearC=Math.pow((bearExit+dividends*.75)/current,1/years)-1, bullC=Math.pow((bullExit+dividends*1.1)/current,1/years)-1;
+ const expected=clamp(bearC*p.bear+baseC*p.base+bullC*p.bull,-.6,1);
+ return {probabilities:p,scenarios:{bear:{probability:p.bear,cagr:clamp(bearC,-.6,1),exitPrice:bearExit,projection:bearProj,description:'Cycle-normalized downside with faster competitive fade'},base:{probability:p.base,cagr:clamp(baseC,-.6,1),exitPrice:baseExit,projection:base,description:'Central operating forecast'},bull:{probability:p.bull,cagr:clamp(bullC,-.6,1.2),exitPrice:bullExit,projection:bullProj,description:'Stronger execution, margins and premium retention'}},expectedCAGR:expected,probabilityWeightedCAGR:expected,downsideCAGR:clamp(bearC,-.6,1),baseCAGR:clamp(baseC,-.6,1),upsideCAGR:clamp(bullC,-.6,1.2),years,cycleNormalization:cycle,capitalIntensity:capital,competitivePressure:competition,growthQuality};
+}
+module.exports={buildScenarios};

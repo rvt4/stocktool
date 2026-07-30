@@ -1,5 +1,7 @@
 'use strict';
 
+const { normalizeCycle } = require('./cycle-normalization-engine');
+
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null;
 const median = a => {
@@ -152,6 +154,7 @@ function generateForecast(stock, category, years = 5, calibration = null) {
   const financials = stock.financials?.years || [];
   const lastRevenue = financials.at(-1)?.revenue || 1;
   const marketCap = stock.valuation?.marketCap || 0;
+  const cycle = normalizeCycle(stock);
   const hist = historicalGrowth(financials);
   const trend = trendGrowth(financials);
   const fallback = stock.growthYear1 ?? hist ?? 0.05;
@@ -176,7 +179,8 @@ function generateForecast(stock, category, years = 5, calibration = null) {
 
   let weights = {
     analyst: analyst1 != null ? 0.46 : 0,
-    history: hist != null ? 0.22 : 0,
+    history: hist != null ? 0.14 : 0,
+    cycle: Number.isFinite(cycle.normalizedGrowth) ? 0.08 : 0,
     trend: trend != null ? 0.12 : 0,
     sustainable: sustainable != null ? 0.20 : 0,
   };
@@ -196,6 +200,7 @@ function generateForecast(stock, category, years = 5, calibration = null) {
   const corrected = {
     analyst: analyst1 == null ? null : analyst1 + analystBias,
     history: hist == null ? null : hist + historyBias,
+    cycle: Number.isFinite(cycle.normalizedGrowth) ? cycle.normalizedGrowth : null,
     trend: trend == null ? null : trend + historyBias,
     sustainable: sustainable == null ? null : sustainable + ownBias,
   };
@@ -244,8 +249,15 @@ function generateForecast(stock, category, years = 5, calibration = null) {
   for (let t = 3; t <= years; t++) {
     // Multi-stage fade: near-term analyst acceleration is allowed, but the excess
     // above a sustainable anchor decays quickly as the revenue base expands.
-    const acceleratedRetention = previous > longRunAnchor + 0.20 ? cfg.excessRetention * 0.68 : cfg.excessRetention;
-    let growth = longRunAnchor + (previous - longRunAnchor) * acceleratedRetention;
+    // Exponential growth-decay curve. Extreme near-term analyst estimates are
+    // allowed to influence years one and two, but their excess over the normalized
+    // long-run anchor decays continuously rather than stepping down mechanically.
+    const decayK = 0.34 + cycle.cyclicality * 0.28 + (marketCap >= 200e9 ? 0.08 : 0);
+    const excessAtYear2 = y2 - longRunAnchor;
+    let growth = longRunAnchor + excessAtYear2 * Math.exp(-decayK * (t - 2));
+    // Preserve a small amount of path dependence without allowing a cyclical spike
+    // to dominate the entire forecast.
+    growth = growth * 0.82 + (longRunAnchor + (previous - longRunAnchor) * cfg.excessRetention) * 0.18;
 
     const currentMultiple = projectedRevenue / lastRevenue;
     growth = Math.min(growth, scaleGrowthCap(cfg, currentMultiple));
@@ -281,11 +293,14 @@ function generateForecast(stock, category, years = 5, calibration = null) {
 
   return {
     path: path.slice(0, years),
-    source: 'v15_normalized_scale_constrained_forecast',
+    source: 'v16_cycle_normalized_exponential_decay_forecast',
     assumptions: {
       analyst1,
       analyst2,
       historical: hist,
+      cycleNormalizedGrowth: cycle.normalizedGrowth,
+      cyclicality: cycle.cyclicality,
+      cycleQuality: cycle.quality,
       trend,
       sustainable,
       weights,
