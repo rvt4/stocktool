@@ -23,7 +23,7 @@ function scenarioProjection(base,kind,spread,cycle,capital,competition){
 }
 function buildScenarios(stock,v,integrity){
  const category=typeof v.category==='string'?v.category:(v.category?.name||v.category?.stage||stock.valuation?.category||'Value'), spread=SPREAD[category]||SPREAD.Value, profile=v.businessProfile||{}, base=v.projection||[];
- const current=Number(stock.price?.current), years=Number(v.fiveYearPriceTarget?.years)||Math.min(5,base.length)||5, baseExit=Number(v.fiveYearPriceTarget?.exitPrice), dividends=v.fiveYearPriceTarget?.dividendsReceived||0;
+ const current=Number(stock.price?.current), years=Number(v.ownerEarningsReturn?.years)||Number(v.fiveYearPriceTarget?.years)||Math.min(5,base.length)||5, baseExit=Number(v.ownerEarningsReturn?.exitPrice)||Number(v.fiveYearPriceTarget?.exitPrice), dividends=Number(v.ownerEarningsReturn?.dividendsReceived)||v.fiveYearPriceTarget?.dividendsReceived||0;
  const cycle=normalizeCycle(stock), capital=assessCapitalIntensity(stock,base), competition=assessCompetitivePressure(stock,profile,stock.valuation?.pricingPowerV2), growthQuality=computeGrowthQuality(stock,cycle,capital,competition), p=probs(stock,integrity,profile,cycle,growthQuality);
  if(!(current>0)||!(baseExit>0)||!base.length)return{probabilities:p,scenarios:null,expectedCAGR:null,cycleNormalization:cycle,capitalIntensity:capital,competitivePressure:competition,growthQuality};
  const bearProj=scenarioProjection(base,'bear',spread,cycle,capital,competition), bullProj=scenarioProjection(base,'bull',spread,cycle,capital,competition);
@@ -31,8 +31,8 @@ function buildScenarios(stock,v,integrity){
  const uncertainty=1-p.confidence;
  const bearExit=Math.max(.01,baseExit*bearFund*(1-spread.x*(.75+competition.pressure*.35+uncertainty*.35)));
  const bullExit=baseExit*bullFund*(1+spread.x*(.60+competition.premiumRetentionMultiplier*.35-uncertainty*.18));
- const baseC=Math.pow((baseExit+dividends)/current,1/years)-1, bearC=Math.pow((bearExit+dividends*.75)/current,1/years)-1, bullC=Math.pow((bullExit+dividends*1.1)/current,1/years)-1;
+ const baseC=Number.isFinite(v.ownerEarningsReturn?.expectedCAGR)?v.ownerEarningsReturn.expectedCAGR:Math.pow((baseExit+dividends)/current,1/years)-1, bearC=Math.pow((bearExit+dividends*.75)/current,1/years)-1, bullC=Math.pow((bullExit+dividends*1.1)/current,1/years)-1;
  const expected=clamp(bearC*p.bear+baseC*p.base+bullC*p.bull,-.6,1);
- return {probabilities:p,scenarios:{bear:{probability:p.bear,cagr:clamp(bearC,-.6,1),exitPrice:bearExit,projection:bearProj,description:'Cycle-normalized downside with faster competitive fade'},base:{probability:p.base,cagr:clamp(baseC,-.6,1),exitPrice:baseExit,projection:base,description:'Central operating forecast'},bull:{probability:p.bull,cagr:clamp(bullC,-.6,1.2),exitPrice:bullExit,projection:bullProj,description:'Stronger execution, margins and premium retention'}},expectedCAGR:expected,probabilityWeightedCAGR:expected,downsideCAGR:clamp(bearC,-.6,1),baseCAGR:clamp(baseC,-.6,1),upsideCAGR:clamp(bullC,-.6,1.2),years,cycleNormalization:cycle,capitalIntensity:capital,competitivePressure:competition,growthQuality};
+ return {probabilities:p,scenarios:{bear:{probability:p.bear,cagr:clamp(bearC,-.6,1),exitPrice:bearExit,projection:bearProj,description:'Cycle-normalized downside with faster competitive fade'},base:{probability:p.base,cagr:clamp(baseC,-.6,1),exitPrice:baseExit,projection:base,description:'Primary owner-earnings forecast'},bull:{probability:p.bull,cagr:clamp(bullC,-.6,1.2),exitPrice:bullExit,projection:bullProj,description:'Stronger execution, margins and premium retention'}},expectedCAGR:expected,probabilityWeightedCAGR:expected,downsideCAGR:clamp(bearC,-.6,1),baseCAGR:clamp(baseC,-.6,1),upsideCAGR:clamp(bullC,-.6,1.2),years,cycleNormalization:cycle,capitalIntensity:capital,competitivePressure:competition,growthQuality};
 }
 module.exports={buildScenarios};
