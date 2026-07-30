@@ -42,9 +42,17 @@ function assessReturnQuality({ stock, lifecycle, rawCAGR, fundamentalCAGR, multi
   // The amount of a valuation gap assumed to close is confidence-weighted. Cheap can
   // remain cheap, so weak method agreement must not manufacture a high return.
   const closureFactor = clamp(0.30 + confidence * 0.45 + plausibility * 0.20, 0.30, 0.92);
-  const adjustedRerating = rerating >= 0
+  let adjustedRerating = rerating >= 0
     ? Math.min(rerating * closureFactor, positiveReratingLimit)
     : Math.max(rerating, negativeReratingLimit);
+
+  // Forecast-consistency guard: an extremely strong operating forecast and an
+  // extremely negative valuation fade should not simply cancel each other. That
+  // combination usually signals two incompatible central assumptions.
+  const highGrowthStage = ['Growth', 'Hyper Growth', 'Elite Compounder'].includes(stage);
+  if (highGrowthStage && operating >= 0.18 && adjustedRerating < -0.08) {
+    adjustedRerating = -0.08;
+  }
 
   let adjusted = operating + adjustedRerating;
   adjusted = clamp(adjusted, floor, adjustedCeiling);
@@ -63,6 +71,7 @@ function assessReturnQuality({ stock, lifecycle, rawCAGR, fundamentalCAGR, multi
   if (rawCAGR > adjustedCeiling + 0.03) flags.push('Raw CAGR exceeds lifecycle plausibility range');
   if (confidence < 0.55) flags.push('Low valuation-method agreement reduces rerating credit');
   if (plausibility < 0.60) flags.push('Forecast plausibility is below average');
+  if (highGrowthStage && operating >= 0.18 && rerating < -0.10) flags.push('Growth and valuation assumptions were normalized for internal consistency');
 
   return {
     adjustedCAGR: adjusted,

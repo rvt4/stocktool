@@ -18,6 +18,19 @@ function assessDataIntegrity(stock) {
   if (years.length < 3) deduct(35, 'thin_history', `Only ${years.length} annual records`);
   else if (years.length < 5) deduct(15, 'limited_history', `Only ${years.length} annual records`);
 
+
+  const quality = stock.financials?.dataQuality || {};
+  checks.revenueProxyYears = quality.revenueProxyYears || 0;
+  checks.fcfProxyYears = quality.fcfProxyYears || 0;
+  if (checks.revenueProxyYears > 0) {
+    deduct(Math.min(20, 6 + checks.revenueProxyYears * 2), 'revenue_proxy',
+      `${checks.revenueProxyYears} year(s) use an operating-scale proxy instead of reported revenue`);
+  }
+  if (checks.fcfProxyYears > 0) {
+    deduct(Math.min(12, 3 + checks.fcfProxyYears), 'fcf_proxy',
+      `${checks.fcfProxyYears} year(s) use operating cash flow because capex was unavailable`);
+  }
+
   const required = ['revenue', 'netIncome', 'cfo', 'sharesOutTTM'];
   const missing = required.filter(k => !Number.isFinite(last[k]));
   checks.missingLatestFields = missing;
@@ -56,7 +69,7 @@ function assessDataIntegrity(stock) {
   return {
     score,
     grade: score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 65 ? 'C' : score >= 45 ? 'D' : 'F',
-    isUsable: score >= 65 && price > 0 && shares > 0 && last.revenue > 0,
+    isUsable: score >= 55 && price > 0 && shares > 0 && last.revenue > 0,
     issues,
     checks,
   };

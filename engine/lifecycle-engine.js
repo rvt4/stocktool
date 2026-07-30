@@ -65,7 +65,11 @@ function classifyLifecycle(stock) {
   if (industry === 'financials') stage = 'Financial';
   else if (industry === 'reit') stage = 'Asset Heavy';
   else if (industry === 'utilities') stage = 'Utility';
-  else if (temporaryDisruption && forward2 >= 0.10) stage = 'Temporary Disruption';
+  // Semiconductor leaders often experience cyclical base effects while still being
+  // structurally high-growth. Do not mislabel a strong consensus acceleration as a
+  // temporary disruption merely because the trailing comparison is noisy.
+  else if (industry === 'semiconductors-hardware' && forward >= 0.14 && positiveFcf >= 0.50) stage = forward >= 0.25 ? 'Hyper Growth' : 'Growth';
+  else if (temporaryDisruption && forward2 >= 0.10 && industry !== 'semiconductors-hardware') stage = 'Temporary Disruption';
   else if (revenueDrawdown && marginRecovery && forward >= 0 && !cyclicalIndustry) stage = 'Turnaround';
   else if (cyclicalIndustry && (growthVolatility >= 0.12 || marginVolatility >= 0.055 || revenueDrawdown)) stage = 'Cyclical';
   else if (forward >= 0.25 && positiveFcf >= 0.40 && !matureStaple && !structuralFinancial) stage = 'Hyper Growth';

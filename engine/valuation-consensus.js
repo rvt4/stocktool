@@ -12,7 +12,14 @@ function buildValuationConsensus(methods,agreementScore,effectiveWeights={}){
  if(agreementScore<20) intrinsicWeight=.92; else if(agreementScore<40) intrinsicWeight=.82; else if(agreementScore<60) intrinsicWeight=.70; else if(agreementScore>80) intrinsicWeight=.50;
  if(!(intrinsicValue>0))intrinsicWeight=0;
  if(!(marketValue>0))intrinsicWeight=1;
- const actionableFairValue=intrinsicValue>0&&marketValue>0?intrinsicValue*intrinsicWeight+marketValue*(1-intrinsicWeight):(intrinsicValue||marketValue||null);
- return {intrinsicValue,marketValue,actionableFairValue,intrinsicWeight,marketWeight:1-intrinsicWeight,agreementRegime:agreementScore<20?'extreme-disagreement':agreementScore<40?'large-disagreement':agreementScore<60?'moderate-disagreement':agreementScore<80?'normal':'high-agreement'};
+ let actionableFairValue=intrinsicValue>0&&marketValue>0?intrinsicValue*intrinsicWeight+marketValue*(1-intrinsicWeight):(intrinsicValue||marketValue||null);
+ // Prevent one family of methods from producing implausibly large margins of safety.
+ // When intrinsic and market methods disagree, keep the actionable value within a
+ // conservative band around their median rather than allowing the high tail to dominate.
+ const allValues=[...intrinsicValues,...marketValues].filter(v=>v>0);
+ const center=median(allValues);
+ let consensusWasClamped=false;
+ if(center>0&&actionableFairValue>center*1.65){actionableFairValue=center*1.65;consensusWasClamped=true;}
+ return {intrinsicValue,marketValue,actionableFairValue,intrinsicWeight,marketWeight:1-intrinsicWeight,consensusWasClamped,agreementRegime:agreementScore<20?'extreme-disagreement':agreementScore<40?'large-disagreement':agreementScore<60?'moderate-disagreement':agreementScore<80?'normal':'high-agreement'};
 }
 module.exports={buildValuationConsensus};

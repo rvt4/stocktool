@@ -33,10 +33,35 @@ function computeReturnEngineV2(stock, model, rawMarketExitPrice, consensus, life
       breakdown: { revenueGrowth, marginExpansion, shareCountEffect, dividendContribution, multipleRerating: null } };
   }
 
-  const fundamentalCAGR = clamp(revenueGrowth, -0.15, 0.32)
-    + clamp(marginExpansion, -0.06, 0.07)
-    + clamp(shareCountEffect, -0.06, 0.06)
-    + dividendContribution;
+  // Use geometric per-share earnings compounding as the primary fundamental signal.
+  // Adding revenue, margin and buyback CAGRs can materially overstate business-value
+  // growth when several high-growth assumptions overlap.
+  const startPerShare = last.sharesOutTTM > 0
+    ? ((last.netIncome > 0 ? last.netIncome : last.fcf > 0 ? last.fcf : null) / last.sharesOutTTM)
+    : null;
+  const exitPerShare = exit.shares > 0
+    ? ((exit.netIncome > 0 ? exit.netIncome : exit.fcf > 0 ? exit.fcf : null) / exit.shares)
+    : null;
+  const geometricPerShareCAGR = startPerShare > 0 && exitPerShare > 0
+    ? Math.pow(exitPerShare / startPerShare, 1 / years) - 1
+    : null;
+  const additiveFallback = clamp(revenueGrowth, -0.15, 0.28)
+    + clamp(marginExpansion, -0.05, 0.055)
+    + clamp(shareCountEffect, -0.05, 0.05);
+  const stage = lifecycle?.stage || 'Mature';
+  const operatingCaps = {
+    Mature: 0.14, 'Dividend Compounder': 0.15, Financial: 0.16, Utility: 0.13,
+    'Asset Heavy': 0.16, Cyclical: 0.18, Turnaround: 0.20, Compounder: 0.19,
+    'Elite Compounder': 0.21, Growth: 0.23, 'Temporary Disruption': 0.21,
+    'Hyper Growth': 0.27,
+  };
+  let operatingFundamental = Number.isFinite(geometricPerShareCAGR) ? geometricPerShareCAGR : additiveFallback;
+  const marketCap = stock.valuation?.marketCap || 0;
+  let operatingCap = operatingCaps[stage] ?? 0.16;
+  if (marketCap >= 300e9) operatingCap -= 0.015;
+  if (marketCap >= 800e9) operatingCap -= 0.015;
+  operatingFundamental = clamp(operatingFundamental, -0.20, operatingCap);
+  const fundamentalCAGR = operatingFundamental + dividendContribution;
   const rawMultipleRerating = rawMarketCAGR - fundamentalCAGR;
   const reality = assessReturnQuality({
     stock,
@@ -64,6 +89,7 @@ function computeReturnEngineV2(stock, model, rawMarketExitPrice, consensus, life
     wasCapped: Math.abs(actionableCAGR - rawMarketCAGR) > 1e-12,
     capApplied: reality.lifecycleBand?.ceiling ?? null,
     fundamentalCAGR,
+    geometricPerShareCAGR,
     operatingCAGR: reality.operatingCAGR,
     returnQualityScore: reality.returnQualityScore,
     returnQualityFlags: reality.flags,
