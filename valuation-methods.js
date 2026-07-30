@@ -888,21 +888,22 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   const ownerEarningsReturn = buildOwnerEarningsReturn(stock, model, ownerEarnings, dcf, consensus, lifecycle, moat, businessProfile);
   const fiveYearPriceTarget = {
     ...legacyPriceTarget,
-    // Keep the raw market-method target for audit, but display/use the actionable
-    // target produced by return-engine-v2. This guarantees that current price,
-    // five-year target and CAGR reconcile exactly.
+    // Keep the raw market-method target for audit, but display/use the unified
+    // actionable target. Owner earnings remains a validation signal rather than
+    // overriding every other valuation method by itself.
     rawExitPrice: legacyPriceTarget.exitPrice,
-    exitPrice: ownerEarningsReturn.exitPrice ?? returnEngineV2.actionableExitPrice ?? legacyPriceTarget.exitPrice,
-    cagr: ownerEarningsReturn.expectedCAGR ?? returnEngineV2.expectedCAGR,
+    exitPrice: returnEngineV2.actionableExitPrice ?? legacyPriceTarget.exitPrice ?? ownerEarningsReturn.exitPrice,
+    cagr: returnEngineV2.expectedCAGR ?? ownerEarningsReturn.expectedCAGR,
     rawCagr: returnEngineV2.rawMarketCAGR,
     cagrWasCapped: !!returnEngineV2.wasCapped,
     cagrCapApplied: returnEngineV2.capApplied,
     breakdown: returnEngineV2.breakdown,
-    returnEngineVersion: 'owner-earnings-v20',
+    returnEngineVersion: 'unified-valuation-v21',
+    ownerEarningsValidationCAGR: ownerEarningsReturn.expectedCAGR,
     multipleDominated: returnEngineV2.multipleDominated,
   };
   const currentPrice = stock.price.current;
-  const finalFairValue = ownerEarningsReturn.fairValueToday ?? ownerEarnings.fairValuePerShare ?? dcf.fairValuePerShare ?? consensus.actionableFairValue ?? combined.blendedFairValue;
+  const finalFairValue = consensus.actionableFairValue ?? combined.blendedFairValue ?? dcf.fairValuePerShare ?? ownerEarnings.fairValuePerShare;
   const marginOfSafety = finalFairValue && currentPrice
     ? (finalFairValue - currentPrice) / finalFairValue : null;
 
@@ -941,7 +942,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '20.0-owner-earnings-primary-engine', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '21.0-unified-valuation-scenario-ordering', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
