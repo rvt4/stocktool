@@ -151,6 +151,7 @@ function generateForecast(stock, category, years = 5, calibration = null) {
   const e = stock.analystEstimates || {};
   const financials = stock.financials?.years || [];
   const lastRevenue = financials.at(-1)?.revenue || 1;
+  const marketCap = stock.valuation?.marketCap || 0;
   const hist = historicalGrowth(financials);
   const trend = trendGrowth(financials);
   const fallback = stock.growthYear1 ?? hist ?? 0.05;
@@ -208,11 +209,21 @@ function generateForecast(stock, category, years = 5, calibration = null) {
     ? analyst2 + analystBias
     : y1 * (['Hyper Growth', 'Growth', 'Temporary Disruption', 'Elite Compounder', 'Compounder'].includes(category) ? 0.82 : 0.70);
   let y2 = clamp(raw2, -0.25, 0.60);
+
+  // Analyst acceleration is useful for the first forecast year, but a very large
+  // company should not carry an extreme one-year estimate deep into the base case.
+  const scalePenalty = marketCap >= 500e9 ? 0.16 : marketCap >= 200e9 ? 0.11 : marketCap >= 75e9 ? 0.06 : 0;
+  const y2ScaleCap = Math.max(0.18, 0.48 - scalePenalty);
+  if (y2 > y2ScaleCap) y2 = y2ScaleCap + (y2 - y2ScaleCap) * 0.30;
   if (category === 'Temporary Disruption' && analyst2 != null) {
     y2 = clamp(analyst2 + analystBias, -0.15, 0.45);
   }
 
-  const cfg = STAGE[category] || STAGE.Value;
+  const cfgBase = STAGE[category] || STAGE.Value;
+  // Dynamic cumulative expansion limit: the larger the existing enterprise, the
+  // less plausible a 7x-9x central-case revenue expansion becomes.
+  const sizeMultiplier = marketCap >= 500e9 ? 0.48 : marketCap >= 200e9 ? 0.58 : marketCap >= 75e9 ? 0.72 : marketCap >= 25e9 ? 0.86 : 1;
+  const cfg = { ...cfgBase, maxRevenueMultiple: Math.max(2.2, cfgBase.maxRevenueMultiple * sizeMultiplier) };
   const normalizedInputs = [hist, sustainable, trend, y2]
     .filter(Number.isFinite)
     .map(x => clamp(x, -0.10, cfg.longRunCap));
@@ -233,7 +244,8 @@ function generateForecast(stock, category, years = 5, calibration = null) {
   for (let t = 3; t <= years; t++) {
     // Multi-stage fade: near-term analyst acceleration is allowed, but the excess
     // above a sustainable anchor decays quickly as the revenue base expands.
-    let growth = longRunAnchor + (previous - longRunAnchor) * cfg.excessRetention;
+    const acceleratedRetention = previous > longRunAnchor + 0.20 ? cfg.excessRetention * 0.68 : cfg.excessRetention;
+    let growth = longRunAnchor + (previous - longRunAnchor) * acceleratedRetention;
 
     const currentMultiple = projectedRevenue / lastRevenue;
     growth = Math.min(growth, scaleGrowthCap(cfg, currentMultiple));
@@ -269,7 +281,7 @@ function generateForecast(stock, category, years = 5, calibration = null) {
 
   return {
     path: path.slice(0, years),
-    source: 'v10_multistage_scale_aware_forecast',
+    source: 'v15_normalized_scale_constrained_forecast',
     assumptions: {
       analyst1,
       analyst2,
@@ -286,6 +298,8 @@ function generateForecast(stock, category, years = 5, calibration = null) {
       longRunAnchor,
       projectedRevenueMultiple: expansionRatio,
       maximumPreferredRevenueMultiple: cfg.maxRevenueMultiple,
+      sizeAdjustedRevenueMultiple: cfg.maxRevenueMultiple,
+      marketCap,
       scaleAdjustments,
       plausibilityScore,
     },

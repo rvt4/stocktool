@@ -36,9 +36,16 @@ function computeReturnEngineV2(stock, model, rawMarketExitPrice, consensus, life
   // Use geometric per-share earnings compounding as the primary fundamental signal.
   // Adding revenue, margin and buyback CAGRs can materially overstate business-value
   // growth when several high-growth assumptions overlap.
-  const startPerShare = last.sharesOutTTM > 0
-    ? ((last.netIncome > 0 ? last.netIncome : last.fcf > 0 ? last.fcf : null) / last.sharesOutTTM)
-    : null;
+  // Normalize the starting base over three years. A trough year can otherwise make
+  // the calculated business CAGR look extraordinary even when the ending forecast is sane.
+  const history = (stock.financials?.years || []).slice(-3);
+  const perShareHistory = history.map(y => {
+    const economic = y.netIncome > 0 ? y.netIncome : y.fcf > 0 ? y.fcf : null;
+    return economic != null && y.sharesOutTTM > 0 ? economic / y.sharesOutTTM : null;
+  }).filter(Number.isFinite).sort((a,b)=>a-b);
+  const startPerShare = perShareHistory.length
+    ? perShareHistory[Math.floor(perShareHistory.length / 2)]
+    : (last.sharesOutTTM > 0 ? ((last.netIncome > 0 ? last.netIncome : last.fcf > 0 ? last.fcf : null) / last.sharesOutTTM) : null);
   const exitPerShare = exit.shares > 0
     ? ((exit.netIncome > 0 ? exit.netIncome : exit.fcf > 0 ? exit.fcf : null) / exit.shares)
     : null;
@@ -56,6 +63,10 @@ function computeReturnEngineV2(stock, model, rawMarketExitPrice, consensus, life
     'Hyper Growth': 0.27,
   };
   let operatingFundamental = Number.isFinite(geometricPerShareCAGR) ? geometricPerShareCAGR : additiveFallback;
+  // Fundamental growth cannot sustainably outrun revenue by an unlimited amount.
+  // Allow sensible margin and buyback leverage, but reject trough-base explosions.
+  const economicGrowthCeiling = Math.max(0.04, revenueGrowth + 0.075 + Math.max(0, shareCountEffect));
+  operatingFundamental = Math.min(operatingFundamental, economicGrowthCeiling);
   const marketCap = stock.valuation?.marketCap || 0;
   let operatingCap = operatingCaps[stage] ?? 0.16;
   if (marketCap >= 300e9) operatingCap -= 0.015;
@@ -90,6 +101,7 @@ function computeReturnEngineV2(stock, model, rawMarketExitPrice, consensus, life
     capApplied: reality.lifecycleBand?.ceiling ?? null,
     fundamentalCAGR,
     geometricPerShareCAGR,
+    normalizedStartingPerShare: startPerShare,
     operatingCAGR: reality.operatingCAGR,
     returnQualityScore: reality.returnQualityScore,
     returnQualityFlags: reality.flags,
