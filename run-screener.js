@@ -12,7 +12,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { buildStockRecord } = require('./data-fetchers');
+const { buildStockRecord, normalizeSecTicker } = require('./data-fetchers');
 const { computeSectorExitMultiples, valuateStock } = require('./valuation-methods');
 const { scoreUniverse } = require('./scoring-engine');
 const { assessDataIntegrity } = require('./engine/data-integrity');
@@ -33,6 +33,31 @@ const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.jso
 // 1100ms keeps us at ~54 calls/min, comfortably under the cap even with jitter.
 const RATE_LIMIT_DELAY_MS = 1100;
 const CHECKPOINT_EVERY = 100; // write partial progress periodically so a mid-run failure isn't a total loss
+
+const diagnostics = {
+  startedAt: new Date().toISOString(),
+  total: watchlist.length,
+  scored: 0,
+  limitedHistoryIncluded: 0,
+  skipped: [],
+  failed: [],
+};
+
+function classifyFailure(message = '') {
+  const text = String(message);
+  if (/No CIK found/i.test(text)) return 'ticker_mapping';
+  if (/timed out/i.test(text)) return 'timeout';
+  if (/HTTP 429|rate/i.test(text)) return 'rate_limit';
+  if (/SEC EDGAR/i.test(text)) return 'sec_fetch';
+  return 'other_error';
+}
+
+function writeDiagnostics() {
+  diagnostics.finishedAt = new Date().toISOString();
+  diagnostics.scored = diagnostics.scored || 0;
+  const outPath = path.join(__dirname, 'data', 'screener-diagnostics.json');
+  fs.writeFileSync(outPath, JSON.stringify(diagnostics, null, 2));
+}
 
 function normalizeTicker(ticker) {
   return String(ticker || '')
@@ -164,14 +189,40 @@ async function run() {
   for (let i = 0; i < watchlist.length; i++) {
     const { ticker, sector } = watchlist[i];
     try {
-      const record = await buildStockRecord(ticker, sector, analystEstimates.get(normalizeTicker(ticker)) || null);
-      if (record.financials.years.length >= 3) {
+      const record = await buildStockRecord(ticker, sector, analystEstimates.get(normalizeTicker(ticker)) || analystEstimates.get(normalizeTicker(normalizeSecTicker(ticker))) || null);
+      const years = record.financials?.years || [];
+      const latest = years[years.length - 1] || {};
+      const hasCoreFinancial = [latest.revenue, latest.netIncome, latest.cfo, latest.operatingIncome]
+        .some(v => Number.isFinite(Number(v)) && Number(v) !== 0);
+      const hasPrice = Number(record.price?.current) > 0;
+
+      if (years.length >= 3 && hasCoreFinancial && hasPrice) {
         records.push(record);
+      } else if (years.length === 2 && hasCoreFinancial && hasPrice) {
+        // Graceful degradation for recent IPOs/spinoffs and imperfect SEC histories.
+        // Keep the company, but flag it so confidence/rating logic can be conservative.
+        record.financials.limitedHistory = true;
+        record.financials.historyYears = 2;
+        record.financials.dataQuality = {
+          ...(record.financials.dataQuality || {}),
+          limitedHistoryPenalty: 20,
+        };
+        records.push(record);
+        diagnostics.limitedHistoryIncluded += 1;
+        console.warn(`[${i + 1}/${watchlist.length}] Including ${ticker} with limited 2-year history (confidence penalty applied)`);
       } else {
-        console.warn(`[${i + 1}/${watchlist.length}] Skipping ${ticker}: insufficient financial history`);
+        const missing = [];
+        if (years.length < 2) missing.push(`only ${years.length} usable annual years`);
+        if (!hasCoreFinancial) missing.push('no core financial facts');
+        if (!hasPrice) missing.push('no current price');
+        const reason = missing.join(', ') || 'insufficient financial history';
+        diagnostics.skipped.push({ ticker, sector, reason, usableYears: years.length });
+        console.warn(`[${i + 1}/${watchlist.length}] Skipping ${ticker}: ${reason}`);
       }
     } catch (err) {
-      console.error(`[${i + 1}/${watchlist.length}] Failed ${ticker}: ${err.message}`);
+      const message = err?.message || String(err);
+      diagnostics.failed.push({ ticker, sector, category: classifyFailure(message), message });
+      console.error(`[${i + 1}/${watchlist.length}] Failed ${ticker}: ${message}`);
     }
 
     if ((i + 1) % 25 === 0) {
@@ -180,6 +231,8 @@ async function run() {
     }
     if ((i + 1) % CHECKPOINT_EVERY === 0) {
       writeResults(records, true); // checkpoint save in case the job gets interrupted
+      diagnostics.scored = records.length;
+      writeDiagnostics();
     }
 
     if (i < watchlist.length - 1) {
@@ -191,6 +244,9 @@ async function run() {
   // Exit-multiple methods need sector median multiples across ALL fetched stocks, which
   // only exists once the fetch loop above is done. This is why valuation can't happen
   // per-ticker during the fetch loop anymore.
+  diagnostics.scored = records.length;
+  writeDiagnostics();
+  console.log(`Coverage: ${records.length}/${watchlist.length} (${(records.length / watchlist.length * 100).toFixed(1)}%), including ${diagnostics.limitedHistoryIncluded} limited-history companies.`);
   console.log(`Valuating ${records.length} stocks (DCF + revenue/EPS/EBITDA exit multiples)...`);
   const sectorExitMultiples = computeSectorExitMultiples(records);
   const currentByTicker = new Map(records.map(stock => [stock.ticker, stock]));

@@ -19,11 +19,61 @@ const SEC_HEADERS = {
   'User-Agent': process.env.SEC_USER_AGENT || 'FreeScreener contact@example.com'
 };
 
+
+const REQUEST_TIMEOUT_MS = Number(process.env.REQUEST_TIMEOUT_MS || 20000);
+const REQUEST_MAX_RETRIES = Number(process.env.REQUEST_MAX_RETRIES || 2);
+
+const SEC_TICKER_ALIASES = {
+  BRKB: 'BRK-B',
+  BRKA: 'BRK-A',
+  BFB: 'BF-B',
+  HEIA: 'HEI-A',
+  UHALB: 'UHAL-B',
+  CWENA: 'CWEN-A',
+  LENB: 'LEN-B',
+  LLYVK: 'LLYVK',
+};
+
+function normalizeSecTicker(ticker) {
+  const raw = String(ticker || '').trim().toUpperCase().replace(/\./g, '-');
+  return SEC_TICKER_ALIASES[raw] || raw;
+}
+
+function normalizeFinnhubTicker(ticker) {
+  const secTicker = normalizeSecTicker(ticker);
+  return /^(BRK|BF|HEI|UHAL|CWEN|LEN)-[AB]$/.test(secTicker)
+    ? secTicker.replace('-', '.')
+    : secTicker;
+}
+
+async function fetchWithTimeout(url, options = {}, label = 'request') {
+  let lastError = null;
+  for (let attempt = 0; attempt <= REQUEST_MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timer);
+      if (res.ok || (res.status < 500 && res.status !== 429)) return res;
+      lastError = new Error(`${label} HTTP ${res.status}`);
+    } catch (err) {
+      clearTimeout(timer);
+      lastError = err?.name === 'AbortError'
+        ? new Error(`${label} timed out after ${REQUEST_TIMEOUT_MS}ms`)
+        : err;
+    }
+    if (attempt < REQUEST_MAX_RETRIES) {
+      await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+    }
+  }
+  throw lastError || new Error(`${label} failed`);
+}
+
 // --- SEC EDGAR: ticker -> CIK map (cached) ---
 let tickerCikMap = null;
 async function getTickerCikMap() {
   if (tickerCikMap) return tickerCikMap;
-  const res = await fetch('https://www.sec.gov/files/company_tickers.json', { headers: SEC_HEADERS });
+  const res = await fetchWithTimeout('https://www.sec.gov/files/company_tickers.json', { headers: SEC_HEADERS }, 'SEC ticker map');
   const json = await res.json();
   tickerCikMap = {};
   Object.values(json).forEach(row => {
@@ -34,12 +84,17 @@ async function getTickerCikMap() {
 
 async function fetchSecFacts(ticker) {
   const map = await getTickerCikMap();
-  const cik = map[ticker.toUpperCase()];
-  if (!cik) throw new Error(`No CIK found for ${ticker}`);
-  const res = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, { headers: SEC_HEADERS });
+  const normalized = normalizeSecTicker(ticker);
+  const candidates = [normalized, normalized.replace(/-/g, ''), String(ticker || '').toUpperCase()];
+  const mappedTicker = candidates.find(t => map[t]);
+  const cik = mappedTicker ? map[mappedTicker] : null;
+  if (!cik) throw new Error(`No CIK found for ${ticker} (normalized ${normalized})`);
+  const url = `https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`;
+  const res = await fetchWithTimeout(url, { headers: SEC_HEADERS }, `SEC EDGAR ${ticker}`);
   if (!res.ok) throw new Error(`SEC EDGAR fetch failed for ${ticker}: ${res.status}`);
   return res.json();
 }
+
 
 // Extract recent quarterly revenue points from 10-Q filings (same JSON we already
 // fetched for annual data — no extra API call). Used to capture *current* growth
@@ -99,16 +154,35 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   const dei = facts.facts?.dei || {};
   const byYear = {}; // year -> partial record
 
-  function pullAnnual(tag, field) {
+  function pullAnnual(tag, field, { additive = false } = {}) {
     const units = usGaap[tag]?.units;
     if (!units) return;
     const arr = units.USD || units.shares || units['USD/shares'] || Object.values(units)[0];
     if (!arr) return;
-    arr.filter(x => x.form === '10-K' && x.fp === 'FY').forEach(x => {
-      const year = x.fy;
+
+    // SEC facts are inconsistent: many valid 10-K annual facts omit fp='FY', and
+    // some use an amendment form. Accept annual-duration 10-K/10-K/A facts and keep
+    // the most recently filed fact for each fiscal year.
+    const candidates = arr
+      .filter(x => (x.form === '10-K' || x.form === '10-K/A') && x.val != null)
+      .filter(x => {
+        if (!x.start || !x.end) return x.fp === 'FY';
+        const days = (new Date(x.end) - new Date(x.start)) / 86400000;
+        return x.fp === 'FY' || (days >= 300 && days <= 430);
+      })
+      .sort((a, b) => String(a.filed || '').localeCompare(String(b.filed || '')));
+
+    for (const x of candidates) {
+      const year = Number(x.fy) || (x.end ? new Date(x.end).getUTCFullYear() : null);
+      if (!year || !Number.isFinite(Number(x.val))) continue;
       byYear[year] = byYear[year] || { year };
-      byYear[year][field] = x.val;
-    });
+      if (additive) {
+        byYear[year][field] = (Number(byYear[year][field]) || 0) + Number(x.val);
+      } else {
+        byYear[year][field] = Number(x.val);
+      }
+      byYear[year][`${field}Source`] = tag;
+    }
   }
 
   // Point-in-time DEI facts (especially EntityCommonStockSharesOutstanding) do not
@@ -131,8 +205,18 @@ function parseAnnualFinancials(facts, maxYears = 10) {
     });
   }
 
+  // Revenue is the least standardized SEC field. Pull broad fallbacks first and
+  // preferred general-company tags last so the strongest fact wins per fiscal year.
+  pullAnnual('PremiumsEarnedNet', 'revenue');
+  pullAnnual('InvestmentIncomeInterestAndDividend', 'revenue');
+  pullAnnual('InterestAndDividendIncomeOperating', 'revenue');
+  pullAnnual('InterestIncomeExpenseNonoperatingNet', 'revenue');
+  pullAnnual('RevenuesNetOfInterestExpense', 'revenue'); // banks / brokers
+  pullAnnual('OperatingRevenues', 'revenue');
+  pullAnnual('SalesRevenueNet', 'revenue');
+  pullAnnual('RevenueFromContractWithCustomerIncludingAssessedTax', 'revenue');
   pullAnnual('Revenues', 'revenue');
-  pullAnnual('RevenueFromContractWithCustomerExcludingAssessedTax', 'revenue'); // newer tag
+  pullAnnual('RevenueFromContractWithCustomerExcludingAssessedTax', 'revenue'); // preferred modern tag
   pullAnnual('NetIncomeLoss', 'netIncome');
   pullAnnual('GrossProfit', 'grossProfit');
   pullAnnual('OperatingIncomeLoss', 'operatingIncome');
@@ -315,11 +399,31 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   }
 
   const years = Object.values(byYear)
-    .filter(y => y.revenue) // require at least revenue
+    .filter(y => {
+      // Keep a year when it has a usable operating scale or profitability fact.
+      // Financials and special filers sometimes lack a conventional revenue tag.
+      return [y.revenue, y.netIncome, y.operatingIncome, y.cfo, y.grossProfit]
+        .some(v => Number.isFinite(Number(v)) && Number(v) !== 0);
+    })
     .sort((a, b) => a.year - b.year)
     .slice(-maxYears)
     .map(y => {
-      const fcf = (y.cfo != null && y.capex != null) ? y.cfo - y.capex : null;
+      // Graceful fallback for financial/special filers: preserve the record and use
+      // the best available operating-scale proxy. It is explicitly marked so later
+      // engines can lower confidence and avoid revenue-multiple methods.
+      if (!(Number(y.revenue) > 0)) {
+        const proxy = [y.grossProfit, y.operatingIncome, y.netIncome, y.cfo]
+          .map(Number)
+          .find(v => Number.isFinite(v) && Math.abs(v) > 0);
+        if (proxy != null) {
+          y.revenue = Math.abs(proxy);
+          y.revenueIsProxy = true;
+          y.revenueSource = y.revenueSource || 'operating_scale_proxy';
+        }
+      }
+      const fcf = (y.cfo != null && y.capex != null) ? y.cfo - y.capex
+        : (y.cfo != null ? y.cfo : null);
+      const fcfIsProxy = y.cfo != null && y.capex == null;
       const grossMargin = (y.grossProfit != null && y.revenue) ? y.grossProfit / y.revenue
         : (y.cogs != null && y.revenue) ? (y.revenue - y.cogs) / y.revenue : null;
       const opMargin = (y.operatingIncome != null && y.revenue) ? y.operatingIncome / y.revenue : null;
@@ -334,7 +438,7 @@ function parseAnnualFinancials(facts, maxYears = 10) {
       // healthier than the economic reality once dilution is accounted for.
       const fcfSBCAdjusted = fcf != null ? fcf - (y.sbc || 0) : null;
       const sbcIntensity = (y.sbc != null && y.revenue) ? y.sbc / y.revenue : null;
-      return { ...y, fcf, fcfSBCAdjusted, sbcIntensity, grossMargin, opMargin, roic, inventoryTurnover, ebitda };
+      return { ...y, fcf, fcfIsProxy, fcfSBCAdjusted, sbcIntensity, grossMargin, opMargin, roic, inventoryTurnover, ebitda };
     });
 
   return years;
@@ -343,7 +447,7 @@ function parseAnnualFinancials(facts, maxYears = 10) {
 // --- Stooq: free daily price history, no key needed ---
 async function fetchStooqPrice(ticker) {
   const symbol = `${ticker.toLowerCase()}.us`;
-  const res = await fetch(`https://stooq.com/q/l/?s=${symbol}&f=sd2t2ohlcv&h&e=csv`);
+  const res = await fetchWithTimeout(`https://stooq.com/q/l/?s=${symbol}&f=sd2t2ohlcv&h&e=csv`, {}, `Stooq quote ${ticker}`);
   const csv = await res.text();
   const [, row] = csv.trim().split('\n');
   if (!row) return null;
@@ -353,7 +457,7 @@ async function fetchStooqPrice(ticker) {
 
 async function fetchStooqHistory(ticker, years = 5) {
   const symbol = `${ticker.toLowerCase()}.us`;
-  const res = await fetch(`https://stooq.com/q/d/l/?s=${symbol}&i=d`);
+  const res = await fetchWithTimeout(`https://stooq.com/q/d/l/?s=${symbol}&i=d`, {}, `Stooq history ${ticker}`);
   const csv = await res.text();
   const rows = csv.trim().split('\n').slice(1).map(r => r.split(','));
   const cutoff = new Date();
@@ -366,12 +470,12 @@ async function fetchStooqHistory(ticker, years = 5) {
 // --- Finnhub free tier: profile + quote only (no paid estimates endpoints) ---
 async function fetchFinnhubProfile(ticker) {
   if (!FINNHUB_KEY) return null;
-  const res = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${ticker}&token=${FINNHUB_KEY}`);
+  const res = await fetchWithTimeout(`https://finnhub.io/api/v1/stock/profile2?symbol=${ticker}&token=${FINNHUB_KEY}`, {}, `Finnhub profile ${ticker}`);
   return res.json();
 }
 async function fetchFinnhubQuote(ticker) {
   if (!FINNHUB_KEY) return null;
-  const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${FINNHUB_KEY}`);
+  const res = await fetchWithTimeout(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${FINNHUB_KEY}`, {}, `Finnhub quote ${ticker}`);
   return res.json();
 }
 
@@ -382,7 +486,7 @@ async function fetchFinnhubQuote(ticker) {
 async function fetchFinnhubRevenueEstimate(ticker) {
   if (!FINNHUB_KEY) return null;
   try {
-    const res = await fetch(`https://finnhub.io/api/v1/stock/revenue-estimate?symbol=${ticker}&freq=annual&token=${FINNHUB_KEY}`);
+    const res = await fetchWithTimeout(`https://finnhub.io/api/v1/stock/revenue-estimate?symbol=${ticker}&freq=annual&token=${FINNHUB_KEY}`, {}, `Finnhub revenue estimate ${ticker}`);
     if (!res.ok) return null;
     const json = await res.json();
     const est = json?.data?.[0]; // most recent forward annual estimate
@@ -400,11 +504,13 @@ async function fetchFinnhubRevenueEstimate(ticker) {
 // (quote only) and keeps us comfortably under the 60 calls/min free-tier limit
 // even across a 1000+ ticker watchlist.
 async function buildStockRecord(ticker, sector, analystEstimate = null) {
+  const secTicker = normalizeSecTicker(ticker);
+  const finnhubTicker = normalizeFinnhubTicker(ticker);
   const [facts, quote, priceHistory, finnhubRevGrowth] = await Promise.all([
-    fetchSecFacts(ticker),
-    fetchFinnhubQuote(ticker).catch(() => null),
-    fetchStooqHistory(ticker, 5).catch(() => []),
-    fetchFinnhubRevenueEstimate(ticker).catch(() => null),
+    fetchSecFacts(secTicker),
+    fetchFinnhubQuote(finnhubTicker).catch(() => null),
+    fetchStooqHistory(secTicker, 5).catch(() => []),
+    fetchFinnhubRevenueEstimate(finnhubTicker).catch(() => null),
   ]);
 
   const years = parseAnnualFinancials(facts);
@@ -418,7 +524,7 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   // records, so normal runs remain at one Finnhub request per ticker.
   if (!(last.sharesOutTTM > 100000) && currentPrice > 0) {
     try {
-      const profile = await fetchFinnhubProfile(ticker);
+      const profile = await fetchFinnhubProfile(finnhubTicker);
       const profileMarketCap = Number(profile?.marketCapitalization) * 1e6;
       const impliedShares = profileMarketCap > 0 ? profileMarketCap / currentPrice : null;
       if (Number.isFinite(impliedShares) && impliedShares > 100000 && impliedShares < 1e11) {
@@ -470,7 +576,7 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   const stockShell = {
     ticker,
     sector: sector || 'Unknown',
-    financials: { years },
+    financials: { years, dataQuality: { revenueProxyYears: years.filter(y => y.revenueIsProxy).length, fcfProxyYears: years.filter(y => y.fcfIsProxy).length } },
     valuation: {
       pe, forwardPe: pe, evEbitda, fcfYield, marketCap,
       ev: marketCap ? marketCap + (last.longTermDebt || 0) - (last.cash || 0) : null,
@@ -498,7 +604,7 @@ const api = {
   fetchSecFacts, parseAnnualFinancials, parseQuarterlyRevenue, recentQuarterYoYGrowth, blendedForwardGrowth,
   fetchStooqPrice, fetchStooqHistory,
   fetchFinnhubProfile, fetchFinnhubQuote, fetchFinnhubRevenueEstimate,
-  buildStockRecord, getTickerCikMap,
+  buildStockRecord, getTickerCikMap, normalizeSecTicker, normalizeFinnhubTicker, fetchWithTimeout,
 };
 
 if (typeof module !== 'undefined' && module.exports) module.exports = api;

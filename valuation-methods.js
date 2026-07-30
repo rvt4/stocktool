@@ -477,16 +477,28 @@ function capitalAllocationScore(stock) {
 }
 
 function ownerEarningsFromProjection(stock, model) {
-  const last = stock.financials.years.at(-1) || {};
+  const years = stock.financials.years || [];
+  const last = years.at(-1) || {};
   const discountRate = getDynamicDiscountRate(stock, model.category);
   const terminalGrowth = getDynamicTerminalGrowth(stock, model.category);
   const netDebt = (last.longTermDebt || 0) - (last.cash || 0);
-  const daMargin = last.da != null && last.revenue > 0 ? clamp(last.da / last.revenue, 0, 0.25)
-    : last.ebitda != null && last.operatingIncome != null && last.revenue > 0
-      ? clamp((last.ebitda - last.operatingIncome) / last.revenue, 0, 0.25) : 0.04;
-  const capexMargin = last.capex != null && last.revenue > 0 ? clamp(last.capex / last.revenue, 0, 0.30) : daMargin;
-  const maintenanceCapexMargin = Math.min(capexMargin, daMargin * 1.10);
+  const positiveMedian = values => median(values.filter(v => Number.isFinite(v) && v > 0));
+  const historicalDaMargins = years.slice(-5).map(y => y.revenue > 0 && y.da > 0 ? y.da / y.revenue
+    : y.revenue > 0 && y.ebitda > 0 && Number.isFinite(y.operatingIncome) ? (y.ebitda - y.operatingIncome) / y.revenue : null);
+  const historicalCapexMargins = years.slice(-5).map(y => y.revenue > 0 && y.capex > 0 ? y.capex / y.revenue : null);
+  const industry = stock.valuation?.industryModel?.model || 'general';
+  const industryFloor = industry === 'semiconductors-hardware' ? 0.035
+    : ['industrials','energy','utilities','reit'].includes(industry) ? 0.025 : 0.012;
+  const directDa = last.revenue > 0 && last.da > 0 ? last.da / last.revenue
+    : last.revenue > 0 && last.ebitda > 0 && Number.isFinite(last.operatingIncome) && last.ebitda > last.operatingIncome
+      ? (last.ebitda - last.operatingIncome) / last.revenue : null;
+  const directCapex = last.revenue > 0 && last.capex > 0 ? last.capex / last.revenue : null;
+  const daMargin = clamp(directDa ?? positiveMedian(historicalDaMargins) ?? industryFloor, 0.005, 0.25);
+  const capexMargin = clamp(directCapex ?? positiveMedian(historicalCapexMargins) ?? Math.max(industryFloor, daMargin), 0.005, 0.30);
+  const maintenanceCapexMargin = clamp(Math.min(capexMargin, Math.max(industryFloor, daMargin * 1.10)), 0.005, 0.25);
   const sbcMargin = last.sbc != null && last.revenue > 0 ? clamp(last.sbc / last.revenue, 0, 0.25) : 0;
+  const inputQuality = directDa != null && directCapex != null ? 'reported'
+    : (positiveMedian(historicalDaMargins) != null || positiveMedian(historicalCapexMargins) != null) ? 'historical-estimate' : 'industry-estimate';
   let pvExplicit = 0;
   const yearly = model.projection.map(row => {
     const ownerEarnings = row.netIncome + row.revenue * daMargin - row.revenue * maintenanceCapexMargin - row.revenue * sbcMargin;
@@ -496,14 +508,14 @@ function ownerEarningsFromProjection(stock, model) {
   });
   const finalOE = yearly.at(-1)?.ownerEarnings;
   if (!(finalOE > 0) || !(last.sharesOutTTM > 0) || discountRate <= terminalGrowth) {
-    return { fairValuePerShare: null, audit: { reason: 'non-positive owner earnings', yearly, discountRate, terminalGrowth } };
+    return { fairValuePerShare: null, audit: { reason: 'non-positive owner earnings', yearly, discountRate, terminalGrowth, inputQuality } };
   }
   const terminalValue = finalOE * (1 + terminalGrowth) / (discountRate - terminalGrowth);
   const pvTerminalValue = terminalValue / Math.pow(1 + discountRate, model.projection.length);
   const enterpriseValue = pvExplicit + pvTerminalValue;
   const equityValue = enterpriseValue - netDebt;
   return { fairValuePerShare: equityValue > 0 ? equityValue / last.sharesOutTTM : null, audit: {
-    method: 'Owner Earnings DCF', discountRate, terminalGrowth, daMargin, maintenanceCapexMargin, sbcMargin,
+    method: 'Owner Earnings DCF', discountRate, terminalGrowth, daMargin, maintenanceCapexMargin, sbcMargin, inputQuality,
     pvExplicitOwnerEarnings: pvExplicit, terminalValue, pvTerminalValue,
     terminalValueShareOfEnterpriseValue: enterpriseValue ? pvTerminalValue / enterpriseValue : null,
     enterpriseValue, netDebt, equityValue, currentDilutedShares: last.sharesOutTTM, yearly,
@@ -593,6 +605,11 @@ function exitMethod(stock, model, sectorMultiples, type, businessProfile = null,
     exitPricePerShare: exitPricePerShare > 0 ? exitPricePerShare : null,
     audit: {
       type, years, exitMetric: metricValue, exitMultiple, ...multipleModel,
+      companyCurrentMultiple: multipleModel.currentMultiple ?? companyCurrentMultiple(stock, type),
+      qualityAdjustedSector: multipleModel.durableAnchor ?? sectorMultiple,
+      qualityPremiumRetained: multipleModel.retention ?? null,
+      durablePremiumPct: multipleModel.structuralPremium ?? null,
+      qualityScore: (multipleModel.moatScore ?? moat?.score ?? null) != null ? (multipleModel.moatScore ?? moat?.score) / 100 : null,
       exitEnterpriseValue, netDebt, exitEquityValue, sharesAtExit: exit.shares,
       exitPricePerShare, discountRate, pvExitPrice, pvDividends, fairValuePerShare,
     },
@@ -863,7 +880,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     cagrWasCapped: !!returnEngineV2.wasCapped,
     cagrCapApplied: returnEngineV2.capApplied,
     breakdown: returnEngineV2.breakdown,
-    returnEngineVersion: 'institutional-v2.1',
+    returnEngineVersion: 'institutional-v2.2-integrity',
     multipleDominated: returnEngineV2.multipleDominated,
   };
   const currentPrice = stock.price.current;
@@ -905,7 +922,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '11.0-classification-return-quality-reality-check', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '14.0-coverage-plus-valuation-integrity', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
