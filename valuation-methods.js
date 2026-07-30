@@ -854,7 +854,21 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   const sectorMultiples = sectorExitMultiples[stock.sector] || sectorExitMultiples.Unknown || {};
   const model = projectFinancials(stock, stock.growthYear1, lifecycle.forecastYears, calibration, forecastCategory, lifecycle);
   const moat = computeMoat(stock, lifecycle);
-  const businessProfile = { ...buildBusinessProfile(stock, category, model), moatScore: moat.score / 100, moatV2: moat, lifecycle };
+  const baseBusinessProfile = { ...buildBusinessProfile(stock, category, model), moatScore: moat.score / 100, moatV2: moat, lifecycle };
+  const premiumPersistenceModel = computePremiumPersistence(stock, baseBusinessProfile, lifecycle, moat);
+  const businessProfile = {
+    ...baseBusinessProfile,
+    premiumPersistence: premiumPersistenceModel.retainedPremium,
+    premiumPersistenceModel,
+    compoundingPotential: lifecycle.compoundingPotential,
+    growthPersistenceScore: lifecycle.growthPersistenceScore,
+  };
+  // Method selection runs inside combineValuations and needs the same lifecycle/moat
+  // context as the projection. Attach it before the blend rather than waiting until
+  // run-screener serializes the finished valuation.
+  stock.valuation.lifecycle = lifecycle;
+  stock.valuation.moat = moat;
+  stock.valuation.businessProfile = businessProfile;
   const dcf = dcfFromProjection(stock, model, { sbcAdjusted: false });
   const dcfSBCAdjusted = dcfFromProjection(stock, model, { sbcAdjusted: true });
   const ownerEarnings = ownerEarningsFromProjection(stock, model);
@@ -924,7 +938,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '16.0-probabilistic-cycle-normalized-learning-engine', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '18.0-institutional-business-aware-engine', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
