@@ -145,14 +145,16 @@ function buildScenarios(stock, v, integrity) {
   const baseC = ordered.baseCAGR;
   const bearC = Math.min(ordered.bearCAGR, baseC - .005);
   const bullC = Math.max(ordered.bullCAGR, baseC + .005);
+  const bearDividends = dividends * .75;
+  const bullDividends = dividends * 1.10;
   const expected = clamp(bearC * p.bear + baseC * p.base + bullC * p.bull, -.6, 1);
 
   return {
     probabilities: p,
     scenarios: {
-      bear: { probability: p.bear, cagr: clamp(bearC, -.6, 1), exitPrice: ordered.bearExit, projection: bearProj, description: 'Lower growth, weaker margins and faster multiple fade' },
-      base: { probability: p.base, cagr: clamp(baseC, -.6, 1), exitPrice: baseExit, projection: base, description: 'Unified base valuation and operating forecast' },
-      bull: { probability: p.bull, cagr: clamp(bullC, -.6, 1.2), exitPrice: ordered.bullExit, projection: bullProj, description: 'Stronger execution, margins and premium retention' },
+      bear: { probability: p.bear, cagr: clamp(bearC, -.6, 1), exitPrice: ordered.bearExit, dividendsReceived: bearDividends, totalFutureValue: ordered.bearExit + bearDividends, projection: bearProj, description: 'Lower growth, weaker margins and faster multiple fade' },
+      base: { probability: p.base, cagr: clamp(baseC, -.6, 1), exitPrice: baseExit, dividendsReceived: dividends, totalFutureValue: baseExit + dividends, projection: base, description: 'Unified base valuation and operating forecast' },
+      bull: { probability: p.bull, cagr: clamp(bullC, -.6, 1.2), exitPrice: ordered.bullExit, dividendsReceived: bullDividends, totalFutureValue: ordered.bullExit + bullDividends, projection: bullProj, description: 'Stronger execution, margins and premium retention' },
     },
     expectedCAGR: expected,
     probabilityWeightedCAGR: expected,

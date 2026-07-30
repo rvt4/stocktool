@@ -2,114 +2,121 @@
 
 const { assessReturnQuality } = require('./reality-check-engine');
 
-function clamp(x, lo, hi) {
-  return Math.max(lo, Math.min(hi, x));
-}
+function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
+function finite(x) { return Number.isFinite(Number(x)); }
 
-function computeReturnEngineV2(stock, model, rawMarketExitPrice, consensus, lifecycle = null) {
-  const current = stock.price?.current;
-  const years = model.projection?.length || 5;
-  if (!(current > 0) || !(years > 0)) {
-    return { expectedCAGR: null, actionableCAGR: null, actionableExitPrice: null };
+/**
+ * Canonical investor-return engine.
+ *
+ * Investor CAGR is ALWAYS calculated from today's price, a modeled exit price,
+ * and cash dividends. Business growth is retained as an explanatory diagnostic;
+ * it is never substituted for investor return and never used to manufacture a
+ * positive CAGR when the modeled price target implies a loss.
+ */
+function computeReturnEngineV2(stock, model, marketExitPrice, consensus, lifecycle = null) {
+  const current = Number(stock.price?.current);
+  const years = Number(model.projection?.length) || 5;
+  if (!(current > 0) || !(years > 0) || !(Number(marketExitPrice) > 0)) {
+    return { expectedCAGR: null, actionableCAGR: null, rawMarketCAGR: null, actionableExitPrice: null };
   }
 
+  const exitPrice = Number(marketExitPrice);
   const last = stock.financials?.years?.at(-1) || {};
   const exit = model.projection?.at(-1) || {};
-  const revenueGrowth = last.revenue > 0 && exit.revenue > 0
-    ? Math.pow(exit.revenue / last.revenue, 1 / years) - 1 : 0;
-  const startMargin = last.revenue > 0 ? last.netIncome / last.revenue : null;
-  const marginExpansion = startMargin > 0 && exit.netMargin > 0
-    ? Math.pow(exit.netMargin / startMargin, 1 / years) - 1 : 0;
-  const shareCountEffect = last.sharesOutTTM > 0 && exit.shares > 0
-    ? Math.pow(last.sharesOutTTM / exit.shares, 1 / years) - 1 : 0;
-  const dividendContribution = clamp(stock.valuation?.dividendYield || 0, 0, 0.08);
-  const dividendsReceived = current * dividendContribution * years;
-  const rawMarketCAGR = rawMarketExitPrice > 0
-    ? Math.pow((rawMarketExitPrice + dividendsReceived) / current, 1 / years) - 1 : null;
+  const dividendYield = clamp(Number(stock.valuation?.dividendYield) || 0, 0, 0.12);
+  // Simple cash-dividend convention. This is transparent and consistent with the
+  // scenario engine. It can later be replaced with a projected dividend schedule.
+  const dividendsReceived = current * dividendYield * years;
+  const totalFutureValue = exitPrice + dividendsReceived;
+  const investorCAGR = totalFutureValue > 0
+    ? Math.pow(totalFutureValue / current, 1 / years) - 1
+    : null;
 
-  if (!Number.isFinite(rawMarketCAGR)) {
-    return { expectedCAGR: null, actionableCAGR: null, rawMarketCAGR: null, actionableExitPrice: null,
-      rawMarketExitPrice: rawMarketExitPrice ?? null, dividendsReceived,
-      breakdown: { revenueGrowth, marginExpansion, shareCountEffect, dividendContribution, multipleRerating: null } };
+  if (!finite(investorCAGR)) {
+    return { expectedCAGR: null, actionableCAGR: null, rawMarketCAGR: null,
+      actionableExitPrice: exitPrice, rawMarketExitPrice: exitPrice, dividendsReceived };
   }
 
-  // Use geometric per-share earnings compounding as the primary fundamental signal.
-  // Adding revenue, margin and buyback CAGRs can materially overstate business-value
-  // growth when several high-growth assumptions overlap.
-  // Normalize the starting base over three years. A trough year can otherwise make
-  // the calculated business CAGR look extraordinary even when the ending forecast is sane.
+  const revenueGrowth = last.revenue > 0 && exit.revenue > 0
+    ? Math.pow(exit.revenue / last.revenue, 1 / years) - 1 : null;
+  const startMargin = last.revenue > 0 ? last.netIncome / last.revenue : null;
+  const marginExpansion = startMargin > 0 && exit.netMargin > 0
+    ? Math.pow(exit.netMargin / startMargin, 1 / years) - 1 : null;
+  const shareCountEffect = last.sharesOutTTM > 0 && exit.shares > 0
+    ? Math.pow(last.sharesOutTTM / exit.shares, 1 / years) - 1 : null;
+
   const history = (stock.financials?.years || []).slice(-3);
   const perShareHistory = history.map(y => {
     const economic = y.netIncome > 0 ? y.netIncome : y.fcf > 0 ? y.fcf : null;
     return economic != null && y.sharesOutTTM > 0 ? economic / y.sharesOutTTM : null;
-  }).filter(Number.isFinite).sort((a,b)=>a-b);
+  }).filter(finite).sort((a, b) => a - b);
   const startPerShare = perShareHistory.length
     ? perShareHistory[Math.floor(perShareHistory.length / 2)]
-    : (last.sharesOutTTM > 0 ? ((last.netIncome > 0 ? last.netIncome : last.fcf > 0 ? last.fcf : null) / last.sharesOutTTM) : null);
-  const exitPerShare = exit.shares > 0
-    ? ((exit.netIncome > 0 ? exit.netIncome : exit.fcf > 0 ? exit.fcf : null) / exit.shares)
     : null;
+  const exitEconomic = exit.netIncome > 0 ? exit.netIncome : exit.fcf > 0 ? exit.fcf : null;
+  const exitPerShare = exitEconomic != null && exit.shares > 0 ? exitEconomic / exit.shares : null;
   const geometricPerShareCAGR = startPerShare > 0 && exitPerShare > 0
     ? Math.pow(exitPerShare / startPerShare, 1 / years) - 1
     : null;
-  const additiveFallback = clamp(revenueGrowth, -0.15, 0.28)
-    + clamp(marginExpansion, -0.05, 0.055)
-    + clamp(shareCountEffect, -0.05, 0.05);
-  const stage = lifecycle?.stage || 'Mature';
-  const operatingCaps = {
-    Mature: 0.14, 'Dividend Compounder': 0.15, Financial: 0.16, Utility: 0.13,
-    'Asset Heavy': 0.16, Cyclical: 0.18, Turnaround: 0.20, Compounder: 0.19,
-    'Elite Compounder': 0.21, Growth: 0.23, 'Temporary Disruption': 0.21,
-    'Hyper Growth': 0.27,
-  };
-  let operatingFundamental = Number.isFinite(geometricPerShareCAGR) ? geometricPerShareCAGR : additiveFallback;
-  // Fundamental growth cannot sustainably outrun revenue by an unlimited amount.
-  // Allow sensible margin and buyback leverage, but reject trough-base explosions.
-  const economicGrowthCeiling = Math.max(0.04, revenueGrowth + 0.075 + Math.max(0, shareCountEffect));
-  operatingFundamental = Math.min(operatingFundamental, economicGrowthCeiling);
-  const marketCap = stock.valuation?.marketCap || 0;
-  let operatingCap = operatingCaps[stage] ?? 0.16;
-  if (marketCap >= 300e9) operatingCap -= 0.015;
-  if (marketCap >= 800e9) operatingCap -= 0.015;
-  operatingFundamental = clamp(operatingFundamental, -0.20, operatingCap);
-  const fundamentalCAGR = operatingFundamental + dividendContribution;
-  const rawMultipleRerating = rawMarketCAGR - fundamentalCAGR;
+  const fundamentalCAGR = finite(geometricPerShareCAGR)
+    ? Number(geometricPerShareCAGR) + dividendYield
+    : [revenueGrowth, marginExpansion, shareCountEffect, dividendYield]
+        .filter(finite).reduce((a, b) => a + Number(b), 0);
+  const multipleRerating = investorCAGR - fundamentalCAGR;
+
+  // Reality checks now score/flag the return; they do not rewrite it. Rewriting a
+  // price-derived CAGR was the source of contradictions such as a $485 stock with a
+  // $517 five-year target being displayed as a 13.5% CAGR.
   const reality = assessReturnQuality({
     stock,
     lifecycle,
-    rawCAGR: rawMarketCAGR,
+    rawCAGR: investorCAGR,
     fundamentalCAGR,
-    multipleRerating: rawMultipleRerating,
+    multipleRerating,
     agreementScore: consensus?.agreementScore ?? consensus?.methodAgreementScore ?? 50,
     forecastPlausibility: model.growthModel?.assumptions?.plausibilityScore ?? 70,
   });
 
-  const actionableCAGR = reality.adjustedCAGR;
-  const actionableTotalFutureValue = current * Math.pow(1 + actionableCAGR, years);
-  const actionableExitPrice = Math.max(0, actionableTotalFutureValue - dividendsReceived);
-  const multipleRerating = reality.adjustedRerating;
+  // Extreme values normally indicate split/unit corruption. Do not silently cap them
+  // into plausible-looking recommendations; mark them invalid for rating purposes.
+  const integrityInvalid = investorCAGR < -0.95 || investorCAGR > 2.00;
 
   return {
-    expectedCAGR: actionableCAGR,
-    actionableCAGR,
-    rawMarketCAGR,
-    uncappedMarketCAGR: rawMarketCAGR,
-    rawMarketExitPrice,
-    actionableExitPrice,
+    expectedCAGR: integrityInvalid ? null : investorCAGR,
+    actionableCAGR: integrityInvalid ? null : investorCAGR,
+    rawMarketCAGR: investorCAGR,
+    uncappedMarketCAGR: investorCAGR,
+    rawMarketExitPrice: exitPrice,
+    actionableExitPrice: exitPrice,
     dividendsReceived,
-    wasCapped: Math.abs(actionableCAGR - rawMarketCAGR) > 1e-12,
-    capApplied: reality.lifecycleBand?.ceiling ?? null,
+    totalFutureValue,
+    wasCapped: false,
+    capApplied: null,
+    integrityInvalid,
     fundamentalCAGR,
     geometricPerShareCAGR,
     normalizedStartingPerShare: startPerShare,
     operatingCAGR: reality.operatingCAGR,
-    returnQualityScore: reality.returnQualityScore,
-    returnQualityFlags: reality.flags,
+    returnQualityScore: integrityInvalid ? 0 : reality.returnQualityScore,
+    returnQualityFlags: [
+      ...(reality.flags || []),
+      ...(integrityInvalid ? ['Investor CAGR failed the split/unit integrity range'] : []),
+    ],
     reratingClosureFactor: reality.closureFactor,
     lifecycleReturnBand: reality.lifecycleBand,
-    breakdown: { revenueGrowth, marginExpansion, shareCountEffect, dividendContribution, multipleRerating },
-    multipleDominated: reality.reratingShare > 0.50,
-    multipleShare: reality.reratingShare,
+    breakdown: {
+      revenueGrowth,
+      marginExpansion,
+      shareCountEffect,
+      dividendContribution: dividendYield,
+      multipleRerating,
+    },
+    multipleDominated: Math.abs(investorCAGR) > 1e-6
+      ? Math.abs(multipleRerating / investorCAGR) > 0.50
+      : false,
+    multipleShare: Math.abs(investorCAGR) > 1e-6
+      ? Math.abs(multipleRerating / investorCAGR)
+      : 0,
     realityCheck: reality,
   };
 }

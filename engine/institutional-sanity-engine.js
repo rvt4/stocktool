@@ -1,5 +1,12 @@
 'use strict';
 function clamp(x,lo,hi){return Math.max(lo,Math.min(hi,x));}
+
+/**
+ * Diagnostic-only plausibility review.
+ * V22 deliberately does not cap or replace a price-derived return. A ceiling is
+ * retained as a warning threshold so implausible outputs lose confidence rather
+ * than becoming deceptively tidy numbers.
+ */
 function applyInstitutionalSanity(stock, scenario, agreementScore=50){
   if(!scenario||!Number.isFinite(scenario.probabilityWeightedCAGR)) return scenario;
   const marketCap=stock.valuation?.marketCap ?? stock.marketCap ?? 0;
@@ -11,7 +18,14 @@ function applyInstitutionalSanity(stock, scenario, agreementScore=50){
   if(methodAgreement>.75&&confidence>.72) ceiling+=.02;
   if(methodAgreement<.50) ceiling-=.025;
   const raw=scenario.probabilityWeightedCAGR;
-  const adjusted=Math.min(raw,ceiling);
-  return {...scenario,rawProbabilityWeightedCAGR:raw,probabilityWeightedCAGR:adjusted,expectedCAGR:adjusted,plausibilityCeiling:ceiling,plausibilityCapped:adjusted<raw-1e-9};
+  return {
+    ...scenario,
+    rawProbabilityWeightedCAGR:raw,
+    probabilityWeightedCAGR:raw,
+    expectedCAGR:raw,
+    plausibilityCeiling:ceiling,
+    plausibilityCapped:false,
+    plausibilityWarning:raw>ceiling+1e-9,
+  };
 }
 module.exports={applyInstitutionalSanity};
