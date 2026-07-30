@@ -1,5 +1,7 @@
 'use strict';
 
+const { classifyBusinessArchetype } = require('./business-archetype-engine');
+
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null;
 const median = a => {
@@ -73,7 +75,8 @@ function classifyLifecycle(stock) {
   const latestGrowth = rates.at(-1) ?? historicalMedian;
   const revenueDrawdown = rates.some(g => g < -.08);
   const marginRecovery = op.length >= 3 && op.at(-1) > median(op.slice(0, -1)) + .02;
-  const cyclicalIndustry = ['energy', 'materials', 'industrials', 'semiconductors-hardware'].includes(industry);
+  const archetype = classifyBusinessArchetype(stock, { analystForward, growth5 });
+  const cyclicalIndustry = ['energy', 'materials'].includes(industry) || (['industrials', 'semiconductors-hardware'].includes(industry) && archetype.cyclicalBias >= .60);
   const structuralFinancial = ['financials', 'reit', 'utilities'].includes(industry);
   const temporaryDisruption = (latestGrowth < historicalMedian - .10 || forward1 < historicalMedian - .10)
     && forward2 > forward1 + .04
@@ -81,7 +84,13 @@ function classifyLifecycle(stock) {
     && positiveFcf >= .50;
 
   let stage;
-  if (industry === 'financials') stage = 'Financial';
+  if (archetype.archetype === 'Scaling Consumer Brand') stage = analystForward >= .24 && persistenceScore >= .60 ? 'Hyper Growth' : 'Growth';
+  else if (archetype.archetype === 'Secular Compute Platform') stage = analystForward >= .24 && persistenceScore >= .62 ? 'Hyper Growth' : 'Growth';
+  else if (archetype.archetype === 'Software Platform Growth') stage = analystForward >= .22 && persistenceScore >= .60 ? 'Hyper Growth' : 'Growth';
+  else if (archetype.archetype === 'Stable Dividend Compounder') stage = 'Dividend Compounder';
+  else if (archetype.archetype === 'Stable Consumer Compounder') stage = 'Compounder';
+  else if (archetype.archetype === 'Consumer Brand Compounder' || archetype.archetype === 'Industrial Compounder' || archetype.archetype === 'Software Compounder' || archetype.archetype === 'Healthcare Compounder' || archetype.archetype === 'Network Compounder') stage = persistenceScore >= .68 ? 'Elite Compounder' : 'Compounder';
+  else if (industry === 'financials') stage = 'Financial';
   else if (industry === 'reit') stage = 'Asset Heavy';
   else if (industry === 'utilities') stage = 'Utility';
   else if (temporaryDisruption && forward2 >= .10 && industry !== 'semiconductors-hardware') stage = 'Temporary Disruption';
@@ -98,8 +107,8 @@ function classifyLifecycle(stock) {
   // Stable staples and large established businesses require persistent, not merely
   // current, growth before receiving a high-growth label. This prevents acquisition/
   // pricing spikes from turning companies such as beverage staples into Hyper Growth.
-  if (industry === 'consumer-staples' && ['Hyper Growth', 'Growth'].includes(stage)) {
-    if (persistenceGrowth < .12 || growth5 == null || growth5 < .09) stage = dividendYield >= .02 ? 'Dividend Compounder' : 'Compounder';
+  if (industry === 'consumer-staples' && ['Hyper Growth', 'Growth'].includes(stage) && archetype.archetype !== 'Scaling Consumer Brand') {
+    stage = dividendYield >= .018 ? 'Dividend Compounder' : 'Compounder';
   }
   if (marketCap >= 150e9 && stage === 'Hyper Growth' && persistenceGrowth < .20) stage = 'Growth';
   if (marketCap >= 500e9 && stage === 'Growth' && persistenceGrowth < .13 && roicScore >= .55) stage = 'Elite Compounder';
@@ -137,7 +146,8 @@ function classifyLifecycle(stock) {
     temporaryDisruption,
     normalizeMargins: stage === 'Cyclical' || stage === 'Turnaround' || stage === 'Financial',
     confidence,
-    diagnostics: { industry, marketCap, revenueDrawdown, marginRecovery, fcfStability, grossStability, pricing, moat, scalePenalty },
+    archetype: archetype.archetype, economicModel: archetype,
+    diagnostics: { industry, marketCap, revenueDrawdown, marginRecovery, fcfStability, grossStability, pricing, moat, scalePenalty, archetype },
   };
 }
 module.exports = { classifyLifecycle };

@@ -112,17 +112,18 @@ function selectValuationMethods(stock, category, methods) {
   const pricingScore = (stock.valuation?.pricingPowerV2?.score ?? 50) / 100;
   const persistence = (lifecycle.growthPersistenceScore ?? lifecycle.compoundingPotential ?? 50) / 100;
   const highQualityGrowth = clamp((moatScore + pricingScore + persistence) / 3, 0, 1);
-  const consumerBrand = ['consumer-staples','consumer-discretionary'].includes(industry)
-    && (lifecycle.forwardGrowth ?? 0) >= .10 && highQualityGrowth >= .48;
+  const archetype=lifecycle.archetype||lifecycle.economicModel?.archetype||'';
+  const consumerBrand = archetype==='Scaling Consumer Brand' || (['consumer-staples','consumer-discretionary'].includes(industry)
+    && (lifecycle.forwardGrowth ?? 0) >= .10 && highQualityGrowth >= .48);
   const innovation = ['software','healthcare-innovation'].includes(industry);
   const matureCash = ['utilities','financials','reit','energy','materials'].includes(industry)
     || ['Mature','Dividend Compounder','Cyclical'].includes(lifecycle.stage);
 
   if (consumerBrand) {
-    rawWeights.revenueExit *= 1.75;
-    rawWeights.epsExit *= 1.25;
+    rawWeights.revenueExit *= archetype==='Scaling Consumer Brand'?2.25:1.75;
+    rawWeights.epsExit *= archetype==='Scaling Consumer Brand'?1.55:1.25;
     rawWeights.dcf *= 1.12;
-    rawWeights.ownerEarnings *= .72;
+    rawWeights.ownerEarnings *= archetype==='Scaling Consumer Brand'?.55:.72;
   }
   if (innovation && highQualityGrowth >= .55) {
     rawWeights.revenueExit *= 1.45;
@@ -142,7 +143,7 @@ function selectValuationMethods(stock, category, methods) {
     .sort((a, b) => weights[b] - weights[a]);
 
   return {
-    version: 'institutional-business-aware-v18',
+    version: 'business-model-first-v19',
     industry,
     category,
     primaryMethod: ranked[0] || null,
@@ -151,7 +152,7 @@ function selectValuationMethods(stock, category, methods) {
     baseWeights: normalize(base),
     suitability,
     effectiveStartingWeights: weights,
-    diagnostics: { ...diagnostics, highQualityGrowth, consumerBrand, innovation, matureCash },
+    diagnostics: { ...diagnostics, highQualityGrowth, consumerBrand, innovation, matureCash, archetype },
     excludedMethods,
   };
 }

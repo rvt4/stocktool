@@ -24,16 +24,19 @@ function computePremiumPersistence(stock,profile={},lifecycle={},moat={}){
  const growthPersistence=clamp((lifecycle.growthPersistenceScore??50)/100,0,1);
  const stage=lifecycle.stage||'';
  const stageAdj=/Elite Compounder|Compounder/.test(stage)?.06:/Hyper Growth|Growth/.test(stage)?.03:/Cyclical|Turnaround/.test(stage)?-.06:0;
- const industryAnchor=INDUSTRY_ANCHORS[industry]??INDUSTRY_ANCHORS.general;
+ const economicModel=lifecycle.economicModel||{};
+ const industryAnchor=Number.isFinite(economicModel.premiumAnchor)?economicModel.premiumAnchor:(INDUSTRY_ANCHORS[industry]??INDUSTRY_ANCHORS.general);
  // Emerging high-margin consumer brands deserve a longer premium runway than mature
  // packaged-goods averages, without any ticker-specific exception.
+ const scalingBrand=economicModel.archetype==='Scaling Consumer Brand';
  const consumerBrandBonus=['consumer-staples','consumer-discretionary'].includes(industry)
-   ? clamp((grossMed-.35)*.35,0,.08)+clamp(((lifecycle.forwardGrowth ?? 0) - .10) * .20,0,.06)+pricing*.04
+   ? clamp((grossMed-.35)*.35,0,.08)+clamp(((lifecycle.forwardGrowth ?? 0) - .10) * .20,0,.06)+pricing*.04+(scalingBrand?.08:0)
    : 0;
- const score=clamp(industryAnchor*.22+moat01*.18+pricing*.14+roicScore*.14+marginStability*.10+recurring*.08+reliability*.06+capitalLight*.04+growthPersistence*.04+stageAdj+consumerBrandBonus,0,1);
+ const secularBonus=economicModel.secular?clamp(.03+economicModel.quality*.05,0,.08):0;
+ const score=clamp(industryAnchor*.22+moat01*.18+pricing*.14+roicScore*.14+marginStability*.10+recurring*.08+reliability*.06+capitalLight*.04+growthPersistence*.04+stageAdj+consumerBrandBonus+secularBonus,0,1);
  const floor=industry==='energy'||industry==='materials'?.08:.16;
- const ceiling=['software','healthcare-innovation'].includes(industry)?.78:['consumer-staples','consumer-discretionary'].includes(industry)?.68:.72;
+ const ceiling=['software','healthcare-innovation'].includes(industry)?.80:scalingBrand?.76:['consumer-staples','consumer-discretionary'].includes(industry)?.68:economicModel.secular?.76:.72;
  const retainedPremium=clamp(industryAnchor*.45+score*.55,floor,ceiling);
- return {score,retainedPremium,expectedFade:1-retainedPremium,industryAnchor,consumerBrandBonus,components:{moat:moat01,pricingPower:pricing,roicPersistence:roicScore,marginStability,recurringRevenue:recurring,forecastReliability:reliability,capitalLight,growthPersistence}};
+ return {score,retainedPremium,expectedFade:1-retainedPremium,industryAnchor,consumerBrandBonus,secularBonus,archetype:economicModel.archetype||null,components:{moat:moat01,pricingPower:pricing,roicPersistence:roicScore,marginStability,recurringRevenue:recurring,forecastReliability:reliability,capitalLight,growthPersistence}};
 }
 module.exports={computePremiumPersistence,INDUSTRY_ANCHORS};
