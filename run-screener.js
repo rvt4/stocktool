@@ -26,6 +26,7 @@ const { computeDownsideRisk } = require('./engine/downside-engine');
 const { buildCalibration, applyCalibration } = require('./engine/calibration-engine');
 const { updateForecastHistory } = require('./engine/forecast-tracker');
 const { computePortfolioProfile } = require('./engine/portfolio-engine');
+const { computeInvestmentCommitteeScore } = require('./engine/investment-committee-engine');
 
 const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'), 'utf8'));
 
@@ -297,31 +298,39 @@ async function run() {
     const rawExpectedReturnProfile = computeExpectedReturnProfile(stock, scenarioAnalysis, dataIntegrity);
     let expectedReturnProfile = applyCalibration(rawExpectedReturnProfile, stock, calibration);
 
-    // The lifecycle/moat valuation is the source of truth for expected return. The
-    // scenario engine remains useful for downside/uncertainty penalties, but its
-    // independently calculated expected CAGR could overwhelm the new conservative
-    // model (BKNG was still showing ~78%). Re-anchor the profile to institutional-v2.
+    // V16: the central valuation remains the base scenario, while the canonical
+    // expected return is probability-weighted across bear/base/bull outcomes.
     const institutionalCAGR = result.returnEngineV2?.expectedCAGR;
+    const probabilityWeightedCAGR = scenarioAnalysis?.probabilityWeightedCAGR;
     if (Number.isFinite(institutionalCAGR)) {
+      const canonicalCAGR = Number.isFinite(probabilityWeightedCAGR)
+        ? probabilityWeightedCAGR
+        : institutionalCAGR;
       const downsidePenalty = Number(expectedReturnProfile?.downsidePenalty) || 0;
       const uncertaintyPenalty = Number(expectedReturnProfile?.uncertaintyPenalty) || 0;
       const dataPenalty = Number(expectedReturnProfile?.dataPenalty) || 0;
       const calibratedAdjustment = Number(expectedReturnProfile?.calibrationAdjustment) || 0;
       const totalPenalty = Math.max(0, downsidePenalty + uncertaintyPenalty + dataPenalty);
       const anchoredRiskAdjusted = Math.max(-0.35, Math.min(0.35,
-        institutionalCAGR - totalPenalty + calibratedAdjustment
+        canonicalCAGR - totalPenalty + calibratedAdjustment
       ));
       expectedReturnProfile = {
         ...expectedReturnProfile,
-        expectedCAGR: institutionalCAGR,
-        baseCAGR: institutionalCAGR,
+        expectedCAGR: canonicalCAGR,
+        baseCAGR: scenarioAnalysis?.baseCAGR ?? institutionalCAGR,
+        bearCAGR: scenarioAnalysis?.downsideCAGR ?? null,
+        bullCAGR: scenarioAnalysis?.upsideCAGR ?? null,
         riskAdjustedCAGR: anchoredRiskAdjusted,
-        institutionalAnchored: true,
-        legacyScenarioExpectedCAGR: scenarioAnalysis?.expectedCAGR ?? null,
+        institutionalBaseCAGR: institutionalCAGR,
+        probabilityWeighted: Number.isFinite(probabilityWeightedCAGR),
       };
     }
     stock.dataIntegrity = dataIntegrity;
     stock.valuation.scenarioAnalysis = scenarioAnalysis;
+    stock.valuation.cycleNormalization = scenarioAnalysis?.cycleNormalization ?? null;
+    stock.valuation.capitalIntensity = scenarioAnalysis?.capitalIntensity ?? null;
+    stock.valuation.competitivePressure = scenarioAnalysis?.competitivePressure ?? null;
+    stock.valuation.growthQuality = scenarioAnalysis?.growthQuality ?? null;
     stock.valuation.expectedReturnProfile = expectedReturnProfile;
     stock.valuation.calibration = calibration;
     const pricingPowerV2 = computePricingPowerV2(stock, industryModel);
@@ -332,6 +341,7 @@ async function run() {
     stock.valuation.downside = downside;
     // V8 builds the thesis only after all quality, pricing-power and downside
     // modules have run so the decision dashboard can surface real strengths/risks.
+    stock.valuation.investmentCommittee = computeInvestmentCommitteeScore(stock, scenarioAnalysis, scenarioAnalysis?.growthQuality, scenarioAnalysis?.capitalIntensity, scenarioAnalysis?.competitivePressure);
     stock.valuation.investmentThesis = buildInvestmentThesis(stock, expectedReturnProfile);
     stock.valuation.portfolioProfile = computePortfolioProfile(stock);
   }

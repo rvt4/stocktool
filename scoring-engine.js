@@ -602,7 +602,8 @@ function scoreStock(stock) {
   // CAGR such as BKNG's former 70%+ result.
   const institutionalReturn = stock.valuation.returnEngineV2 ?? null;
   const v7Return = stock.valuation.expectedReturnProfile ?? null;
-  const expectedReturn = institutionalReturn?.expectedCAGR
+  const expectedReturn = stock.valuation.scenarioAnalysis?.probabilityWeightedCAGR
+    ?? institutionalReturn?.expectedCAGR
     ?? stock.valuation.fiveYearPriceTarget?.cagr
     ?? v7Return?.expectedCAGR
     ?? null;
@@ -646,7 +647,7 @@ function scoreStock(stock) {
     category,
     categoryComposite: catResult.composite,
     investmentScore: investment.score,
-    portfolioManagerScore: investment.portfolioManagerScore,
+    portfolioManagerScore: stock.valuation.investmentCommittee?.score ?? investment.portfolioManagerScore,
     compounderScore: stock.valuation.compounder?.score ?? investment.compounderScore,
     compounderGrade: stock.valuation.compounder?.grade ?? null,
     compounderBreakdown: stock.valuation.compounder ?? null,
@@ -676,6 +677,17 @@ function scoreStock(stock) {
     fundamentalGrowthRate,
     expectedReturn,
     scenarioAnalysis: stock.valuation.scenarioAnalysis ?? null,
+    bearCAGR: stock.valuation.scenarioAnalysis?.downsideCAGR ?? null,
+    baseCAGR: stock.valuation.scenarioAnalysis?.baseCAGR ?? null,
+    bullCAGR: stock.valuation.scenarioAnalysis?.upsideCAGR ?? null,
+    probabilityWeightedCAGR: stock.valuation.scenarioAnalysis?.probabilityWeightedCAGR ?? null,
+    scenarioProbabilities: stock.valuation.scenarioAnalysis?.probabilities ?? null,
+    cycleNormalization: stock.valuation.cycleNormalization ?? null,
+    capitalIntensity: stock.valuation.capitalIntensity ?? null,
+    competitivePressure: stock.valuation.competitivePressure ?? null,
+    growthQuality: stock.valuation.growthQuality ?? null,
+    investmentCommittee: stock.valuation.investmentCommittee ?? null,
+    investmentCommitteeScore: stock.valuation.investmentCommittee?.score ?? null,
     expectedReturnProfile: stock.valuation.expectedReturnProfile ?? null,
     dataIntegrity: stock.dataIntegrity ?? null,
     investmentThesis: stock.valuation.investmentThesis ?? null,
