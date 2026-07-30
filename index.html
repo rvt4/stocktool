@@ -298,6 +298,7 @@ function buildDetailHtml(s) {
 </div></div>
     <div class="detail-section"><strong>Business classification & moat</strong><div class="detail-grid">
 <div><strong>Lifecycle:</strong> ${s.lifecycle?.stage ?? s.projectionAssumptions?.lifecycle?.stage ?? s.category ?? '—'}</div>
+<div><strong>Economic archetype:</strong> ${s.lifecycle?.archetype ?? s.lifecycle?.economicModel?.archetype ?? '—'}</div>
 <div><strong>Forecast horizon:</strong> ${s.lifecycle?.forecastYears ?? s.projectionAssumptions?.forecastHorizon ?? '—'} years</div>
 <div><strong>Moat:</strong> ${s.moat?.score ?? Math.round((s.businessProfile?.moatScore ?? 0) * 100)}/100 (${s.moat?.grade ?? '—'})</div>
 <div><strong>Excess-return duration:</strong> ${s.moat?.excessReturnYears ?? '—'} years</div>
