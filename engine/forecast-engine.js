@@ -47,6 +47,20 @@ const STAGE = {
     maxRevenueMultiple: 6.5,
     scaleCaps: [[1.7, 0.38], [2.5, 0.29], [3.8, 0.22], [5.0, 0.17], [6.5, 0.13], [Infinity, 0.10]],
   },
+  'Elite Compounder': {
+    longRunFloor: 0.055,
+    longRunCap: 0.14,
+    excessRetention: 0.60,
+    maxRevenueMultiple: 4.8,
+    scaleCaps: [[1.7, 0.27], [2.5, 0.20], [3.5, 0.15], [4.8, 0.115], [Infinity, 0.085]],
+  },
+  'Temporary Disruption': {
+    longRunFloor: 0.055,
+    longRunCap: 0.16,
+    excessRetention: 0.52,
+    maxRevenueMultiple: 5.0,
+    scaleCaps: [[1.7, 0.34], [2.5, 0.27], [3.6, 0.20], [5.0, 0.14], [Infinity, 0.10]],
+  },
   Compounder: {
     longRunFloor: 0.045,
     longRunCap: 0.13,
@@ -67,6 +81,41 @@ const STAGE = {
     excessRetention: 0.34,
     maxRevenueMultiple: 2.4,
     scaleCaps: [[1.4, 0.16], [1.9, 0.10], [2.4, 0.07], [Infinity, 0.05]],
+  },
+  'Dividend Compounder': {
+    longRunFloor: 0.018,
+    longRunCap: 0.065,
+    excessRetention: 0.48,
+    maxRevenueMultiple: 2.5,
+    scaleCaps: [[1.5, 0.13], [2.0, 0.09], [2.5, 0.065], [Infinity, 0.045]],
+  },
+  Mature: {
+    longRunFloor: 0.015,
+    longRunCap: 0.07,
+    excessRetention: 0.38,
+    maxRevenueMultiple: 2.4,
+    scaleCaps: [[1.4, 0.13], [1.9, 0.09], [2.4, 0.065], [Infinity, 0.04]],
+  },
+  Financial: {
+    longRunFloor: 0.02,
+    longRunCap: 0.09,
+    excessRetention: 0.40,
+    maxRevenueMultiple: 2.6,
+    scaleCaps: [[1.5, 0.15], [2.0, 0.10], [2.6, 0.075], [Infinity, 0.05]],
+  },
+  Utility: {
+    longRunFloor: 0.018,
+    longRunCap: 0.065,
+    excessRetention: 0.45,
+    maxRevenueMultiple: 2.2,
+    scaleCaps: [[1.4, 0.11], [1.8, 0.075], [2.2, 0.055], [Infinity, 0.04]],
+  },
+  'Asset Heavy': {
+    longRunFloor: 0.012,
+    longRunCap: 0.07,
+    excessRetention: 0.34,
+    maxRevenueMultiple: 2.3,
+    scaleCaps: [[1.4, 0.14], [1.8, 0.09], [2.3, 0.06], [Infinity, 0.04]],
   },
   Dividend: {
     longRunFloor: 0.018,
@@ -157,8 +206,11 @@ function generateForecast(stock, category, years = 5, calibration = null) {
   );
   const raw2 = analyst2 != null
     ? analyst2 + analystBias
-    : y1 * (['Hyper Growth', 'Growth', 'Compounder'].includes(category) ? 0.82 : 0.70);
-  const y2 = clamp(raw2, -0.25, 0.60);
+    : y1 * (['Hyper Growth', 'Growth', 'Temporary Disruption', 'Elite Compounder', 'Compounder'].includes(category) ? 0.82 : 0.70);
+  let y2 = clamp(raw2, -0.25, 0.60);
+  if (category === 'Temporary Disruption' && analyst2 != null) {
+    y2 = clamp(analyst2 + analystBias, -0.15, 0.45);
+  }
 
   const cfg = STAGE[category] || STAGE.Value;
   const normalizedInputs = [hist, sustainable, trend, y2]
