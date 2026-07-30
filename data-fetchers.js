@@ -23,6 +23,8 @@ const SEC_HEADERS = {
 const REQUEST_TIMEOUT_MS = Number(process.env.REQUEST_TIMEOUT_MS || 20000);
 const REQUEST_MAX_RETRIES = Number(process.env.REQUEST_MAX_RETRIES || 2);
 
+const SEC_CIK_FALLBACKS = { HOLX: '0000859737', OZK: '0001569650' };
+
 const SEC_TICKER_ALIASES = {
   BRKB: 'BRK-B',
   BRKA: 'BRK-A',
@@ -87,7 +89,7 @@ async function fetchSecFacts(ticker) {
   const normalized = normalizeSecTicker(ticker);
   const candidates = [normalized, normalized.replace(/-/g, ''), String(ticker || '').toUpperCase()];
   const mappedTicker = candidates.find(t => map[t]);
-  const cik = mappedTicker ? map[mappedTicker] : null;
+  const cik = mappedTicker ? map[mappedTicker] : SEC_CIK_FALLBACKS[normalized];
   if (!cik) throw new Error(`No CIK found for ${ticker} (normalized ${normalized})`);
   const url = `https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`;
   const res = await fetchWithTimeout(url, { headers: SEC_HEADERS }, `SEC EDGAR ${ticker}`);
