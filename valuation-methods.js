@@ -370,6 +370,42 @@ function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, busine
   return { ...result, multiple: clamp(result.multiple, 1, hardCap) };
 }
 
+// Backward-compatible helper retained for older callers/tests. V2 no longer uses
+// simple mean reversion internally; it routes legacy calls through the new
+// lifecycle + moat fade engine instead.
+function meanRevertedMultiple(currentMultiple, ownHistoricalMultiples, stockOrRoic, exitGrowth) {
+  const stock = stockOrRoic?.financials ? stockOrRoic : null;
+  if (!stock) {
+    const historical = Array.isArray(ownHistoricalMultiples)
+      ? median(ownHistoricalMultiples.filter(x => Number.isFinite(x) && x > 0))
+      : null;
+    const target = historical > 0 ? historical : currentMultiple;
+    return { multiple: target, target, weight: 0.5, legacyFallback: true };
+  }
+
+  const lifecycle = classifyLifecycle(stock);
+  const moat = computeMoat(stock, lifecycle);
+  const sectorAnchor = Array.isArray(ownHistoricalMultiples)
+    ? median(ownHistoricalMultiples.filter(x => Number.isFinite(x) && x > 0))
+    : null;
+  const result = deriveExitMultiple({
+    current: currentMultiple,
+    sector: sectorAnchor > 0 ? sectorAnchor : currentMultiple,
+    exitGrowth,
+    lifecycle,
+    moat,
+    type: 'epsExit',
+  });
+
+  return {
+    multiple: result.multiple,
+    target: result.sectorAnchor ?? result.matureAnchor ?? sectorAnchor ?? currentMultiple,
+    weight: result.currentWeight ?? result.premiumRetention ?? 0.5,
+    lifecycle: lifecycle.name || lifecycle.stage || lifecycle.type,
+    moatScore: moat.score,
+  };
+}
+
 // ---------- V3.5 reliability + capital allocation ----------
 function analystReliability(stock) {
   const e = stock.analystEstimates || {};
