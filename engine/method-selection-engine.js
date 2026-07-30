@@ -102,13 +102,47 @@ function selectValuationMethods(stock, category, methods) {
     else if ((suitability[key] || 0) < .25) excludedMethods.push({ method: key, reason: 'Low method suitability', suitability: suitability[key] });
   }
 
+  // V18 business-aware method weighting. High-quality scaling brands and innovation
+  // businesses receive more weight on forward revenue/earnings methods; mature and
+  // capital-intensive companies lean toward cash flow and EBITDA. This is systematic
+  // by economics and industry, not by ticker.
+  const lifecycle = stock.valuation?.lifecycle || {};
+  const embeddedMoat = Number.isFinite(stock.valuation?.businessProfile?.moatScore) ? stock.valuation.businessProfile.moatScore * 100 : null;
+  const moatScore = (stock.valuation?.moat?.score ?? embeddedMoat ?? 50) / 100;
+  const pricingScore = (stock.valuation?.pricingPowerV2?.score ?? 50) / 100;
+  const persistence = (lifecycle.growthPersistenceScore ?? lifecycle.compoundingPotential ?? 50) / 100;
+  const highQualityGrowth = clamp((moatScore + pricingScore + persistence) / 3, 0, 1);
+  const consumerBrand = ['consumer-staples','consumer-discretionary'].includes(industry)
+    && (lifecycle.forwardGrowth ?? 0) >= .10 && highQualityGrowth >= .48;
+  const innovation = ['software','healthcare-innovation'].includes(industry);
+  const matureCash = ['utilities','financials','reit','energy','materials'].includes(industry)
+    || ['Mature','Dividend Compounder','Cyclical'].includes(lifecycle.stage);
+
+  if (consumerBrand) {
+    rawWeights.revenueExit *= 1.75;
+    rawWeights.epsExit *= 1.25;
+    rawWeights.dcf *= 1.12;
+    rawWeights.ownerEarnings *= .72;
+  }
+  if (innovation && highQualityGrowth >= .55) {
+    rawWeights.revenueExit *= 1.45;
+    rawWeights.dcfSBCAdjusted *= 1.15;
+    rawWeights.ownerEarnings *= .70;
+  }
+  if (matureCash) {
+    rawWeights.dcf *= 1.15;
+    rawWeights.ownerEarnings *= 1.18;
+    rawWeights.ebitdaExit *= 1.12;
+    rawWeights.revenueExit *= .55;
+  }
+
   const weights = normalize(rawWeights);
   const ranked = METHOD_KEYS
     .filter(k => weights[k] > 0)
     .sort((a, b) => weights[b] - weights[a]);
 
   return {
-    version: 'adaptive-method-selection-v2',
+    version: 'institutional-business-aware-v18',
     industry,
     category,
     primaryMethod: ranked[0] || null,
@@ -117,7 +151,7 @@ function selectValuationMethods(stock, category, methods) {
     baseWeights: normalize(base),
     suitability,
     effectiveStartingWeights: weights,
-    diagnostics,
+    diagnostics: { ...diagnostics, highQualityGrowth, consumerBrand, innovation, matureCash },
     excludedMethods,
   };
 }
