@@ -888,18 +888,22 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   const ownerEarningsReturn = buildOwnerEarningsReturn(stock, model, ownerEarnings, dcf, consensus, lifecycle, moat, businessProfile);
   const fiveYearPriceTarget = {
     ...legacyPriceTarget,
-    // Keep the raw market-method target for audit, but display/use the unified
-    // actionable target. Owner earnings remains a validation signal rather than
-    // overriding every other valuation method by itself.
+    // V22 canonical rule: exit price and investor CAGR must describe the same
+    // economic outcome. No operating-growth or plausibility cap may overwrite the
+    // price-derived return.
     rawExitPrice: legacyPriceTarget.exitPrice,
-    exitPrice: returnEngineV2.actionableExitPrice ?? legacyPriceTarget.exitPrice ?? ownerEarningsReturn.exitPrice,
-    cagr: returnEngineV2.expectedCAGR ?? ownerEarningsReturn.expectedCAGR,
+    exitPrice: returnEngineV2.actionableExitPrice ?? legacyPriceTarget.exitPrice ?? null,
+    cagr: returnEngineV2.expectedCAGR,
     rawCagr: returnEngineV2.rawMarketCAGR,
-    cagrWasCapped: !!returnEngineV2.wasCapped,
-    cagrCapApplied: returnEngineV2.capApplied,
+    cagrWasCapped: false,
+    cagrCapApplied: null,
+    integrityInvalid: !!returnEngineV2.integrityInvalid,
+    dividendsReceived: returnEngineV2.dividendsReceived ?? legacyPriceTarget.dividendsReceived ?? 0,
+    totalFutureValue: returnEngineV2.totalFutureValue ?? null,
     breakdown: returnEngineV2.breakdown,
-    returnEngineVersion: 'unified-valuation-v21',
+    returnEngineVersion: 'canonical-price-derived-v22',
     ownerEarningsValidationCAGR: ownerEarningsReturn.expectedCAGR,
+    fundamentalBusinessCAGR: returnEngineV2.fundamentalCAGR,
     multipleDominated: returnEngineV2.multipleDominated,
   };
   const currentPrice = stock.price.current;

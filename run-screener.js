@@ -308,7 +308,7 @@ async function run() {
 
     // V16: the central valuation remains the base scenario, while the canonical
     // expected return is probability-weighted across bear/base/bull outcomes.
-    const institutionalCAGR = result.ownerEarningsReturn?.expectedCAGR ?? result.returnEngineV2?.expectedCAGR;
+    const institutionalCAGR = result.returnEngineV2?.expectedCAGR ?? result.ownerEarningsReturn?.expectedCAGR;
     const probabilityWeightedCAGR = scenarioAnalysis?.probabilityWeightedCAGR;
     if (Number.isFinite(institutionalCAGR)) {
       const canonicalCAGR = Number.isFinite(probabilityWeightedCAGR)
