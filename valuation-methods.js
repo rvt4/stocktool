@@ -19,6 +19,7 @@ const { applyExitMultipleDiscipline } = require('./engine/exit-multiple-engine')
 const { computePremiumPersistence } = require('./engine/premium-persistence-engine');
 const { buildValuationConsensus } = require('./engine/valuation-consensus');
 const { computeReturnEngineV2 } = require('./engine/return-engine');
+const { buildOwnerEarningsReturn } = require('./engine/owner-earnings-return-engine');
 const { buildMarketExpectations } = require('./engine/market-expectations');
 const { simulateReturns } = require('./engine/monte-carlo-engine');
 const { selectValuationMethods } = require('./engine/method-selection-engine');
@@ -884,23 +885,24 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   const exitResults = { revenueExit, epsExit, ebitdaExit };
   const legacyPriceTarget = fiveYearPriceTargetCAGR(stock, model, exitResults, combined.effectiveWeights);
   const returnEngineV2 = computeReturnEngineV2(stock, model, legacyPriceTarget.exitPrice, consensus, lifecycle);
+  const ownerEarningsReturn = buildOwnerEarningsReturn(stock, model, ownerEarnings, dcf, consensus, lifecycle, moat, businessProfile);
   const fiveYearPriceTarget = {
     ...legacyPriceTarget,
     // Keep the raw market-method target for audit, but display/use the actionable
     // target produced by return-engine-v2. This guarantees that current price,
     // five-year target and CAGR reconcile exactly.
     rawExitPrice: legacyPriceTarget.exitPrice,
-    exitPrice: returnEngineV2.actionableExitPrice ?? legacyPriceTarget.exitPrice,
-    cagr: returnEngineV2.expectedCAGR,
+    exitPrice: ownerEarningsReturn.exitPrice ?? returnEngineV2.actionableExitPrice ?? legacyPriceTarget.exitPrice,
+    cagr: ownerEarningsReturn.expectedCAGR ?? returnEngineV2.expectedCAGR,
     rawCagr: returnEngineV2.rawMarketCAGR,
     cagrWasCapped: !!returnEngineV2.wasCapped,
     cagrCapApplied: returnEngineV2.capApplied,
     breakdown: returnEngineV2.breakdown,
-    returnEngineVersion: 'institutional-v2.2-integrity',
+    returnEngineVersion: 'owner-earnings-v20',
     multipleDominated: returnEngineV2.multipleDominated,
   };
   const currentPrice = stock.price.current;
-  const finalFairValue = consensus.actionableFairValue ?? combined.blendedFairValue;
+  const finalFairValue = ownerEarningsReturn.fairValueToday ?? ownerEarnings.fairValuePerShare ?? dcf.fairValuePerShare ?? consensus.actionableFairValue ?? combined.blendedFairValue;
   const marginOfSafety = finalFairValue && currentPrice
     ? (finalFairValue - currentPrice) / finalFairValue : null;
 
@@ -926,6 +928,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     intrinsicValue: consensus.intrinsicValue,
     marketValue: consensus.marketValue,
     valuationConsensus: consensus,
+    ownerEarningsReturn,
     returnEngineV2,
     marketExpectations,
     monteCarlo,
@@ -938,7 +941,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '18.0-institutional-business-aware-engine', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '20.0-owner-earnings-primary-engine', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {

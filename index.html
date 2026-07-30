@@ -269,7 +269,7 @@ function buildDetailHtml(s) {
     <strong>Confidence: ${s.confidenceScore ?? '—'}/100</strong>
     <br>${confDeductions}
     <br><strong>Growth source:</strong> ${s.growthSource === 'yfinance_supabase' ? 'YFinance consensus cached in Supabase' : s.growthSource === 'finnhub_analyst_consensus' ? 'Finnhub analyst consensus' : 'Blended recent-quarter + trailing SEC data'}
-    <br><strong>Expected Investor CAGR</strong> (price-aware — starts at today's price and includes premium-persistence-aware valuation fade): ${s.expectedReturn != null ? pct(s.expectedReturn) : 'n/a — insufficient exit-multiple data'}
+    <br><strong>Expected Investor CAGR</strong> (owner-earnings primary — starts at today's price and includes dividends and justified terminal valuation): ${s.expectedReturn != null ? pct(s.expectedReturn) : 'n/a — insufficient exit-multiple data'}
     <br><strong>Fundamental Growth Rate</strong> (price-agnostic — how fast the business's own per-share value compounds): ${pct(s.fundamentalGrowthRate)}
     <br><strong>Fund. growth breakdown:</strong>
     Rev growth ${pct(s.cagrBreakdown.forwardRevGrowth)} ·
@@ -312,6 +312,7 @@ function buildDetailHtml(s) {
 <div><strong>Market-based value:</strong> ${s.marketValue == null ? '—' : '$' + num(s.marketValue)}</div>
 <div><strong>Actionable fair value:</strong> ${s.fairValueEstimate == null ? '—' : '$' + num(s.fairValueEstimate)}</div>
 <div><strong>Expected investor CAGR:</strong> ${pct(s.expectedReturn)}</div>
+${s.ownerEarningsReturn ? `<div><strong>V20 primary model:</strong> ${s.ownerEarningsReturn.primaryMethod || 'Owner Earnings'}</div><div><strong>Normalized owner earnings/share:</strong> ${money(s.ownerEarningsReturn.normalizedStartOwnerEarningsPerShare)}</div><div><strong>Exit owner earnings/share:</strong> ${money(s.ownerEarningsReturn.exitOwnerEarningsPerShare)}</div><div><strong>Owner-earnings growth:</strong> ${pct(s.ownerEarningsReturn.ownerEarningsGrowth)}</div><div><strong>Justified terminal P/OE:</strong> ${s.ownerEarningsReturn.terminalMultiple == null ? '—' : s.ownerEarningsReturn.terminalMultiple.toFixed(1) + 'x'}</div><div><strong>Validation gap:</strong> ${pct(s.ownerEarningsReturn.validationGap)}</div>` : ''}
 <div><strong>Fundamental CAGR:</strong> ${pct(s.fundamentalGrowthRate)}</div>
 <div><strong>Valuation impact:</strong> ${pct((s.expectedReturn ?? 0) - (s.fundamentalGrowthRate ?? 0))}</div>
 <div><strong>Agreement:</strong> ${s.methodAgreementScore ?? '—'}/100</div>

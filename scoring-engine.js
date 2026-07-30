@@ -600,9 +600,11 @@ function scoreStock(stock) {
   // scenario profile can still provide uncertainty penalties, but it must not replace
   // the institutional return with an independently generated (and sometimes extreme)
   // CAGR such as BKNG's former 70%+ result.
+  const ownerEarningsReturn = stock.valuation.ownerEarningsReturn ?? null;
   const institutionalReturn = stock.valuation.returnEngineV2 ?? null;
   const v7Return = stock.valuation.expectedReturnProfile ?? null;
   const expectedReturn = stock.valuation.scenarioAnalysis?.probabilityWeightedCAGR
+    ?? ownerEarningsReturn?.expectedCAGR
     ?? institutionalReturn?.expectedCAGR
     ?? stock.valuation.fiveYearPriceTarget?.cagr
     ?? v7Return?.expectedCAGR
@@ -721,6 +723,7 @@ function scoreStock(stock) {
     intrinsicValue: stock.valuation.intrinsicValue ?? null,
     marketValue: stock.valuation.marketValue ?? null,
     valuationConsensus: stock.valuation.valuationConsensus ?? null,
+    ownerEarningsReturn: stock.valuation.ownerEarningsReturn ?? null,
     returnEngineV2: stock.valuation.returnEngineV2 ?? null,
     marketExpectations: stock.valuation.marketExpectations ?? null,
     monteCarlo: stock.valuation.monteCarlo ?? null,

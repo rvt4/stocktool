@@ -289,6 +289,7 @@ async function run() {
     stock.valuation.intrinsicValue = result.intrinsicValue;
     stock.valuation.marketValue = result.marketValue;
     stock.valuation.valuationConsensus = result.valuationConsensus;
+    stock.valuation.ownerEarningsReturn = result.ownerEarningsReturn;
     stock.valuation.returnEngineV2 = result.returnEngineV2;
     stock.valuation.marketExpectations = result.marketExpectations;
     stock.valuation.monteCarlo = result.monteCarlo;
@@ -307,7 +308,7 @@ async function run() {
 
     // V16: the central valuation remains the base scenario, while the canonical
     // expected return is probability-weighted across bear/base/bull outcomes.
-    const institutionalCAGR = result.returnEngineV2?.expectedCAGR;
+    const institutionalCAGR = result.ownerEarningsReturn?.expectedCAGR ?? result.returnEngineV2?.expectedCAGR;
     const probabilityWeightedCAGR = scenarioAnalysis?.probabilityWeightedCAGR;
     if (Number.isFinite(institutionalCAGR)) {
       const canonicalCAGR = Number.isFinite(probabilityWeightedCAGR)
