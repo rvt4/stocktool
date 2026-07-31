@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Business Forecast Engine V30
+ * Business Forecast Engine V34
  *
  * Forecasts the operating business first and leaves category/lifecycle as a
  * diagnostic rather than the primary forecast driver. The engine distinguishes:
@@ -426,8 +426,9 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
 }
 
 function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
-  const ys = (stock.financials?.years || []).slice(-8);
+  const ys = (stock.financials?.years || []).slice(-9);
   const state = growthModel?.assumptions?.state || deriveBusinessState(stock, lifecycle);
+  const estimates = stock.analystEstimates || {};
   const fields = ['ebitda', 'fcf', 'net'];
   const bounds = {
     ebitda: [-0.10, 0.58],
@@ -437,50 +438,222 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
   const paths = {};
   const targets = {};
   const starts = {};
+  const diagnostics = {};
+
+  const growthPath = (growthModel?.path || []).slice(0, years);
+  const avgGrowth3 = mean(growthPath.slice(0, Math.min(3, years))) ?? 0;
+  const avgGrowth5 = mean(growthPath) ?? avgGrowth3;
+  const durableGrowth = clamp((avgGrowth3 - 0.05) / 0.25, 0, 1);
+  const pricing = clamp(state.pricing ?? 0.5, 0, 1);
+  const roicQuality = clamp(state.roicQuality ?? 0.5, 0, 1);
+  const persistence = clamp(state.persistenceScore ?? 0.5, 0, 1);
+  const broadLeverageSignal = clamp(
+    durableGrowth * 0.38 + pricing * 0.20 + roicQuality * 0.18 +
+    persistence * 0.18 + clamp((state.grossTrend ?? 0) / 0.02, -1, 1) * 0.06,
+    0, 1
+  );
+  const deterioration = state.regime === 'deteriorating' ||
+    ((state.grossTrend ?? 0) < -0.012 && (state.marginTrend ?? 0) < -0.012);
+  const positiveOperatingSetup = !deterioration && avgGrowth3 >= 0.15 &&
+    pricing >= 0.50 && roicQuality >= 0.45 && (state.grossTrend ?? 0) >= -0.008;
+
+  // Estimate future diluted shares only to translate analyst EPS into an implied
+  // net-margin anchor. This is deliberately conservative and capped.
+  const latest = ys.at(-1) || {};
+  const historicalShareRates = [];
+  for (let i = 1; i < ys.length; i++) {
+    const a = Number(ys[i - 1]?.sharesOutTTM);
+    const b = Number(ys[i]?.sharesOutTTM);
+    if (a > 0 && b > 0) historicalShareRates.push(b / a - 1);
+  }
+  const shareGrowth = clamp(robustRate(historicalShareRates.slice(-5)) ?? 0, -0.08, 0.10);
+  const startShares = Number(latest.sharesOutTTM) || Number(latest.shares) || null;
+  const rev1 = Number(estimates.revenueCurrentYear) > 0
+    ? Number(estimates.revenueCurrentYear)
+    : Number(latest.revenue) * (1 + (growthPath[0] ?? 0));
+  const rev2 = Number(estimates.revenueNextYear) > 0
+    ? Number(estimates.revenueNextYear)
+    : rev1 * (1 + (growthPath[1] ?? growthPath[0] ?? 0));
+  const shares1 = startShares ? startShares * (1 + shareGrowth) : null;
+  const shares2 = shares1 ? shares1 * (1 + shareGrowth) : null;
+  const analystNet1 = finite(estimates.epsCurrentYear) && rev1 > 0 && shares1 > 0
+    ? Number(estimates.epsCurrentYear) * shares1 / rev1 : null;
+  const analystNet2 = finite(estimates.epsNextYear) && rev2 > 0 && shares2 > 0
+    ? Number(estimates.epsNextYear) * shares2 / rev2 : null;
+
+  function historicalIncrementalMargin(field) {
+    const points = [];
+    for (let i = 1; i < ys.length; i++) {
+      const r0 = Number(ys[i - 1]?.revenue);
+      const r1 = Number(ys[i]?.revenue);
+      if (!(r0 > 0 && r1 > r0 * 1.01)) continue;
+      const getProfit = y => {
+        if (field === 'ebitda') return Number(y?.ebitda);
+        if (field === 'fcf') return Number(y?.fcf);
+        return Number(y?.netIncome);
+      };
+      const p0 = getProfit(ys[i - 1]);
+      const p1 = getProfit(ys[i]);
+      if (finite(p0) && finite(p1)) points.push((p1 - p0) / (r1 - r0));
+    }
+    const center = robustRate(points.slice(-6));
+    return center == null ? null : clamp(center, -0.20, 0.80);
+  }
 
   for (const field of fields) {
     const series = marginSeries(ys, field);
-    const start = series.at(-1) ?? median(series) ?? (field === 'ebitda' ? 0.10 : field === 'fcf' ? 0.07 : 0.05);
-    const med = median(series.slice(-5)) ?? start;
+    const latestMargin = series.at(-1);
+    const recentMedian = median(series.slice(-3));
+    const longMedian = median(series.slice(-6));
+    const start = latestMargin ?? recentMedian ?? longMedian ??
+      (field === 'ebitda' ? 0.10 : field === 'fcf' ? 0.07 : 0.05);
     const recentTrend = linearSlope(series.slice(-5));
+    const incremental = historicalIncrementalMargin(field);
     const best = series.length ? Math.max(...series.slice(-6)) : start;
     const worst = series.length ? Math.min(...series.slice(-6)) : start;
-    const improving = recentTrend > 0.004 || state.regime === 'recovery' || state.regime === 'inflecting';
-    const operatingLeverage = clamp(mean(growthModel.path.slice(0, Math.min(4, years))) ?? 0, -0.10, 0.35);
 
-    let target = med;
-    if (improving) {
-      const trendCredit = clamp(recentTrend * Math.min(years, 5) * 0.70, 0, 0.075);
-      const leverageCredit = clamp((operatingLeverage - 0.06) * 0.12 * state.persistenceScore, 0, 0.035);
-      target = Math.max(start, med) + trendCredit + leverageCredit;
-      target = Math.min(target, Math.max(best + 0.025, start + 0.015));
-    } else if (state.regime === 'normalizing' || state.regime === 'decelerating') {
-      target = Math.max(worst, med * 0.75 + start * 0.25);
-    } else {
-      target = med * 0.55 + start * 0.45;
+    // Economic target: use incremental economics and operating leverage rather
+    // than automatically reverting a fast-growing business to its old median.
+    const fieldSensitivity = field === 'ebitda' ? 0.105 : field === 'fcf' ? 0.075 : 0.085;
+    const leverageExpansion = fieldSensitivity * broadLeverageSignal *
+      clamp((avgGrowth5 - 0.04) / 0.24, 0, 1);
+    const trendContribution = clamp(recentTrend * Math.min(4, years) * 0.55, -0.035, 0.055);
+    const incrementalContribution = incremental == null ? 0 : clamp(
+      (incremental - start) * 0.18 * persistence,
+      -0.025, 0.055
+    );
+
+    let target = start + leverageExpansion + trendContribution + incrementalContribution;
+
+    // Analyst EPS anchors are the best available near-term net-margin evidence.
+    // Blend them into the sustainable target, but do not extrapolate a one-year
+    // spike forever.
+    if (field === 'net') {
+      const analystAnchor = weightedMean([
+        { value: analystNet1, weight: analystNet1 == null ? 0 : 0.35 },
+        { value: analystNet2, weight: analystNet2 == null ? 0 : 0.65 },
+      ]);
+      if (analystAnchor != null) {
+        const normalizedAnalyst = clamp(analystAnchor, Math.max(-0.20, start - 0.08), Math.min(0.48, start + 0.20));
+        target = weightedMean([
+          { value: target, weight: 0.48 },
+          { value: normalizedAnalyst, weight: 0.52 },
+        ]);
+      }
     }
 
-    if (lifecycle?.normalizeMargins) target = med;
+    if (deterioration) {
+      target = Math.min(target, Math.max(worst, (longMedian ?? start) * 0.75 + start * 0.25));
+    } else if (state.regime === 'normalizing') {
+      target = Math.min(target, Math.max(start - 0.035, longMedian ?? start));
+    } else if (positiveOperatingSetup) {
+      // Directional consistency invariant: broad-based compression is not a
+      // valid central case when growth, pricing power, ROIC and gross-margin
+      // evidence all point to operating leverage.
+      const minimumExpansion = field === 'ebitda'
+        ? 0.012 + 0.035 * broadLeverageSignal
+        : field === 'fcf'
+          ? 0.004 + 0.022 * broadLeverageSignal
+          : 0.002 + 0.025 * broadLeverageSignal;
+      target = Math.max(target, start + minimumExpansion);
+    } else if (!lifecycle?.normalizeMargins) {
+      // Stable businesses may mean-revert gently, but never snap back to an old
+      // median merely because older low-margin years exist in the history.
+      const floor = Math.min(start, recentMedian ?? start) - 0.015;
+      target = Math.max(target, floor);
+    }
+
+    if (lifecycle?.normalizeMargins && !positiveOperatingSetup) {
+      target = longMedian ?? start;
+    }
+
+    // Keep targets economically plausible relative to observed history, while
+    // permitting genuine mix improvement above the old peak.
+    const expansionAbovePeak = field === 'ebitda' ? 0.10 : field === 'fcf' ? 0.07 : 0.08;
+    target = Math.min(target, Math.max(start + expansionAbovePeak, best + expansionAbovePeak * 0.55));
     const [lo, hi] = bounds[field];
     target = clamp(target, lo, hi);
+
     starts[field] = start;
     targets[field] = target;
     paths[field] = [];
-    for (let t = 1; t <= years; t++) {
-      const p = t / years;
-      const smooth = p * p * (3 - 2 * p);
-      // Limit central-case annual margin change so one noisy year cannot create
-      // implausible five-year earnings growth.
-      const raw = start + (target - start) * smooth;
-      const annualLimit = field === 'ebitda' ? 0.035 : 0.030;
-      const prior = t === 1 ? start : paths[field][t - 2];
-      paths[field].push(clamp(raw, prior - annualLimit, prior + annualLimit));
+
+    // Net margin gets explicit analyst-led years 1-2, then a smooth bridge to
+    // the sustainable target. EBITDA and FCF use a gradual S-curve from today.
+    if (field === 'net' && analystNet1 != null) {
+      paths[field].push(clamp(analystNet1, lo, hi));
+      if (years >= 2) paths[field].push(clamp(analystNet2 ?? analystNet1, lo, hi));
+      for (let t = 3; t <= years; t++) {
+        const p = (t - 2) / Math.max(1, years - 2);
+        const smooth = p * p * (3 - 2 * p);
+        const raw = paths[field][1] + (target - paths[field][1]) * smooth;
+        const prior = paths[field][t - 2];
+        const annualLimit = 0.040;
+        paths[field].push(clamp(raw, prior - annualLimit, prior + annualLimit));
+      }
+    } else {
+      for (let t = 1; t <= years; t++) {
+        const p = t / years;
+        const smooth = p * p * (3 - 2 * p);
+        const raw = start + (target - start) * smooth;
+        const annualLimit = field === 'ebitda' ? 0.030 : 0.025;
+        const prior = t === 1 ? start : paths[field][t - 2];
+        paths[field].push(clamp(raw, prior - annualLimit, prior + annualLimit));
+      }
+    }
+
+    diagnostics[field] = {
+      latestMargin,
+      recentMedian,
+      longMedian,
+      recentTrend,
+      incrementalMargin: incremental,
+      leverageExpansion,
+      trendContribution,
+      incrementalContribution,
+      positiveOperatingSetup,
+      broadLeverageSignal,
+      analystNet1: field === 'net' ? analystNet1 : null,
+      analystNet2: field === 'net' ? analystNet2 : null,
+    };
+  }
+
+  // Cross-margin integrity check. When all operating evidence is positive, do
+  // not permit EBITDA, FCF and net margins to all finish below their starting
+  // levels. This catches exactly the AMD/PLTR failure mode seen in V33.
+  const broadCompression = fields.every(field => targets[field] < starts[field] - 0.002);
+  if (positiveOperatingSetup && broadCompression) {
+    for (const field of fields) {
+      targets[field] = Math.max(targets[field], starts[field]);
+      const first = paths[field][0];
+      for (let t = 0; t < years; t++) {
+        const p = (t + 1) / years;
+        const smooth = p * p * (3 - 2 * p);
+        paths[field][t] = first + (targets[field] - first) * smooth;
+      }
     }
   }
 
-  return { paths, starts, targets, source: 'v30_trend_and_operating_leverage_margin_forecast' };
+  return {
+    paths,
+    starts,
+    targets,
+    diagnostics,
+    assumptions: {
+      version: '34.0',
+      avgGrowth3,
+      avgGrowth5,
+      durableGrowth,
+      broadLeverageSignal,
+      positiveOperatingSetup,
+      deterioration,
+      analystNet1,
+      analystNet2,
+      shareGrowth,
+    },
+    source: 'v34_incremental_margin_and_operating_leverage_forecast',
+  };
 }
-
 module.exports = {
   generateBusinessForecast,
   forecastMarginPaths,
