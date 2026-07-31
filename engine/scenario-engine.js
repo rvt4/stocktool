@@ -122,8 +122,18 @@ function buildScenarios(stock, v, integrity) {
   const years = Number(v.fiveYearPriceTarget?.years) || Number(v.ownerEarningsReturn?.years) || Math.min(5, base.length) || 5;
   // Use the unified/actionable target first. Owner earnings remains an input and a
   // validation method, but no longer overrides the complete valuation ensemble.
-  const baseExit = Number(v.fiveYearPriceTarget?.exitPrice) || Number(v.ownerEarningsReturn?.exitPrice);
+  const institutionalBaseCAGR = Number(v.returnEngineV2?.expectedCAGR);
   const dividends = Number(v.fiveYearPriceTarget?.dividendsReceived) || Number(v.ownerEarningsReturn?.dividendsReceived) || 0;
+  // Rebuild the scenario base exit from the canonical lifecycle/reality-checked CAGR.
+  // This prevents a raw valuation target or owner-earnings fallback from bypassing
+  // the central return safeguards.
+  const canonicalTotalFutureValue = Number.isFinite(institutionalBaseCAGR) && current > 0
+    ? current * Math.pow(1 + institutionalBaseCAGR, years)
+    : null;
+  const canonicalExit = canonicalTotalFutureValue != null
+    ? Math.max(.01, canonicalTotalFutureValue - dividends)
+    : null;
+  const baseExit = canonicalExit || Number(v.fiveYearPriceTarget?.exitPrice) || Number(v.ownerEarningsReturn?.exitPrice);
   const cycle = normalizeCycle(stock);
   const capital = assessCapitalIntensity(stock, base);
   const competition = assessCompetitivePressure(stock, profile, stock.valuation?.pricingPowerV2);
@@ -147,7 +157,10 @@ function buildScenarios(stock, v, integrity) {
   const bullC = Math.max(ordered.bullCAGR, baseC + .005);
   const bearDividends = dividends * .75;
   const bullDividends = dividends * 1.10;
-  const expected = clamp(bearC * p.bear + baseC * p.base + bullC * p.bull, -.6, 1);
+  const rawExpected = clamp(bearC * p.bear + baseC * p.base + bullC * p.bull, -.6, 1);
+  // Probability weighting should refine, not overthrow, the central underwriting.
+  // Limit the weighted result to ±250 bps around the canonical base CAGR.
+  const expected = clamp(rawExpected, baseC - .025, baseC + .025);
 
   return {
     probabilities: p,
@@ -158,6 +171,7 @@ function buildScenarios(stock, v, integrity) {
     },
     expectedCAGR: expected,
     probabilityWeightedCAGR: expected,
+    rawProbabilityWeightedCAGR: rawExpected,
     downsideCAGR: clamp(bearC, -.6, 1),
     baseCAGR: clamp(baseC, -.6, 1),
     upsideCAGR: clamp(bullC, -.6, 1.2),
