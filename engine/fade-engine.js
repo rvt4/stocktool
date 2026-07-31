@@ -3,9 +3,9 @@
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
 const ABSOLUTE_CAPS = {
-  revenueExit: { 'Hyper Growth': 12, Growth: 9, 'Elite Compounder': 8, Compounder: 7, Mature: 5.5 },
-  epsExit: { 'Hyper Growth': 48, Growth: 40, 'Elite Compounder': 38, Compounder: 34, Mature: 28 },
-  ebitdaExit: { 'Hyper Growth': 30, Growth: 25, 'Elite Compounder': 24, Compounder: 21, Mature: 17 },
+  revenueExit: { 'Hyper Growth': 13, Growth: 10, 'Elite Compounder': 9, Compounder: 7.5, Mature: 5.5 },
+  epsExit: { 'Hyper Growth': 54, Growth: 45, 'Elite Compounder': 42, Compounder: 36, Mature: 28 },
+  ebitdaExit: { 'Hyper Growth': 34, Growth: 28, 'Elite Compounder': 26, Compounder: 22, Mature: 17 },
 };
 
 function deriveExitMultiple({ current, sector, exitGrowth, valuationGrowth = null, lifecycle, moat, type, revenueScale = 1, forecastYears = 5, premiumPersistence = null }) {
@@ -25,18 +25,19 @@ function deriveExitMultiple({ current, sector, exitGrowth, valuationGrowth = nul
   // Sector is an anchor, not a destination. A durable company can retain a
   // premium, but that premium must decline as the projected enterprise becomes
   // enormous and the forecast horizon advances toward maturity.
-  const structuralPremium = clamp(
-    (m - 0.48) * 1.10 + (g - 0.20) * (type === 'revenueExit' ? 0.72 : 0.52),
-    -0.30,
-    1.20
-  );
+  // Dynamic justified premium: growth matters, but durable quality determines
+  // how much of that premium survives. A high current multiple is never used as
+  // the sole justification for a high exit multiple.
+  const qualityPremium = (m - 0.48) * 1.20 + (persistence - 0.45) * 0.95;
+  const growthPremium = (g - 0.20) * (type === 'revenueExit' ? 0.78 : 0.58);
+  const structuralPremium = clamp(qualityPremium + growthPremium, -0.32, 1.45);
   const durableAnchor = sector * (1 + structuralPremium);
 
   const retentionBase = {
-    'Hyper Growth': 0.54,
-    Growth: 0.46,
-    'Elite Compounder': 0.52,
-    Compounder: 0.42,
+    'Hyper Growth': 0.60,
+    Growth: 0.54,
+    'Elite Compounder': 0.60,
+    Compounder: 0.48,
     'Dividend Compounder': 0.28,
     Turnaround: 0.20,
     Cyclical: 0.14,
@@ -46,11 +47,16 @@ function deriveExitMultiple({ current, sector, exitGrowth, valuationGrowth = nul
     'Asset Heavy': 0.16,
   }[stage] ?? 0.24;
 
-  const moatBoost = (m - 0.50) * 0.22;
-  const persistenceBoost = (persistence - 0.50) * 0.20;
-  const growthBoost = clamp(effectiveGrowth - 0.05, 0, 0.20) * 0.65;
-  const horizonPenalty = clamp((forecastYears - 5) * 0.025, 0, 0.18);
-  const scalePenalty = clamp(Math.log2(Math.max(1, revenueScale)) * 0.075, 0, 0.28);
+  const moatBoost = (m - 0.50) * 0.28;
+  const persistenceBoost = (persistence - 0.50) * 0.30;
+  const growthBoost = clamp(effectiveGrowth - 0.05, 0, 0.22) * 0.72;
+  const horizonPenalty = clamp((forecastYears - 5) * 0.018, 0, 0.12);
+  // Scale matters, but V34 penalized fast-growing businesses twice: once through
+  // revenue scale and again through horizon maturity. The new penalty is gentler
+  // when moat and persistence are strong.
+  const rawScalePenalty = clamp(Math.log2(Math.max(1, revenueScale)) * 0.055, 0, 0.22);
+  const scaleRelief = clamp((m - .55) * .22 + (persistence - .50) * .20, 0, .10);
+  const scalePenalty = Math.max(0, rawScalePenalty - scaleRelief);
   const retention = clamp(retentionBase + moatBoost + persistenceBoost + growthBoost - horizonPenalty - scalePenalty, 0.08, 0.74);
 
   const stageCurrentCap = stage === 'Hyper Growth' ? 3.2
@@ -66,9 +72,10 @@ function deriveExitMultiple({ current, sector, exitGrowth, valuationGrowth = nul
   // A company projected to become many times larger cannot simultaneously retain
   // an early-stage multiple. This is the missing maturity/scale penalty that
   // caused AMD's prior output to explode.
+  const maturityRelief = clamp((m - .55) * .18 + (persistence - .50) * .18, 0, .12);
   const maturityMultiplier = clamp(
-    1 - Math.max(0, revenueScale - 3) * 0.035 - Math.max(0, forecastYears - 7) * 0.018,
-    0.55,
+    1 - Math.max(0, revenueScale - 3) * 0.022 - Math.max(0, forecastYears - 7) * 0.012 + maturityRelief,
+    0.64,
     1
   );
   multiple *= maturityMultiplier;
@@ -106,7 +113,11 @@ function deriveExitMultiple({ current, sector, exitGrowth, valuationGrowth = nul
     growthAdjustedCap,
     lifecycleStage: stage,
     moatScore: moat?.score ?? null,
-    reason: 'lifecycle-moat-scale fade',
+    qualityPremium,
+    growthPremium,
+    scaleRelief,
+    maturityRelief,
+    reason: 'quality-persistence-growth fade',
   };
 }
 

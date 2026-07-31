@@ -110,13 +110,34 @@ function normalizeRows(rows) {
   return rows.map(x => ({ ...x, weight: total > 0 ? x.rawWeight / total : 0 }));
 }
 
+function qualityContext(stock, lifecycle = {}) {
+  const moat = clamp(Number(stock?.valuation?.moat?.score ?? 50) / 100, 0, 1);
+  const pricing = clamp(Number(stock?.valuation?.pricingPowerV2?.score ?? stock?.pricingPowerScore ?? 50) / 100, 0, 1);
+  const lifecyclePersistence = Number.isFinite(Number(lifecycle?.growthPersistenceScore)) ? Number(lifecycle.growthPersistenceScore) / 100 : .50;
+  const persistence = clamp(Number(stock?.valuation?.businessProfile?.premiumPersistence ?? lifecyclePersistence), 0, 1);
+  const reliability = clamp(Number(stock?.valuation?.businessProfile?.forecastReliability ?? .50), 0, 1);
+  const economic = clamp(Number(stock?.valuation?.economicQuality?.overall ?? 50) / 100, 0, 1);
+  const compounder = clamp(Number(stock?.valuation?.compounder?.score ?? 50) / 100, 0, 1);
+  const quality = clamp(moat * .24 + pricing * .16 + persistence * .22 + reliability * .14 + economic * .14 + compounder * .10, 0, 1);
+  return { quality, moat, pricing, persistence, reliability, economic, compounder };
+}
+
 function selectedValuation({ stock, category, lifecycle, methodResults, model }) {
   const profile = profileFor(stock, category, lifecycle);
-  const all = Object.entries(methodResults).map(([key, result]) => ({
-    key,
-    presentValue: Number(result?.fairValuePerShare),
-    futureValue: Number(result?.exitPricePerShare),
-  })).filter(x => x.presentValue > 0 && x.futureValue > 0 && (profile.weights[x.key] || 0) > 0);
+  const fullForecastYears = Math.max(1, Number(model?.projection?.length) || 5);
+  const investmentYears = Math.min(5, fullForecastYears);
+  const all = Object.entries(methodResults).map(([key, result]) => {
+    const presentValue = Number(result?.fairValuePerShare);
+    const terminalExitValue = Number(result?.exitPricePerShare);
+    // Valuation methods are often projected to the lifecycle horizon (7-10 years),
+    // while the screener promises a five-year expected return. Convert every method
+    // to a consistent five-year exit value instead of annualizing a nine-year target
+    // and labeling it five-year.
+    const horizonExitValue = presentValue > 0 && terminalExitValue > 0
+      ? presentValue * Math.pow(terminalExitValue / presentValue, investmentYears / fullForecastYears)
+      : terminalExitValue;
+    return { key, presentValue, futureValue: horizonExitValue, terminalExitValue };
+  }).filter(x => x.presentValue > 0 && x.futureValue > 0 && (profile.weights[x.key] || 0) > 0);
 
   if (all.length < 2) return null;
   const centerPresent = median(all.map(x => x.presentValue));
@@ -131,28 +152,32 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
   const fairValueToday = rows.reduce((s, x) => s + x.presentValue * x.weight, 0);
   const rawExitValue = rows.reduce((s, x) => s + x.futureValue * x.weight, 0);
   const currentPrice = Number(stock?.price?.current);
-  const years = Math.max(1, Number(model?.projection?.length) || 5);
+  const years = investmentYears;
   const dividendYield = clamp(Number(stock?.valuation?.dividendYield || 0), 0, .12);
   const dividends = currentPrice * dividendYield * years;
   const rawCAGR = currentPrice > 0 && rawExitValue > 0
     ? Math.pow((rawExitValue + dividends) / currentPrice, 1 / years) - 1
     : null;
 
-  const exit = model?.projection?.at(-1) || {};
+  const exit = model?.projection?.[Math.max(0, investmentYears - 1)] || model?.projection?.at(-1) || {};
   const start = stock?.financials?.years?.at(-1) || {};
   const startPerShare = start.sharesOutTTM > 0 ? Math.max(start.fcf || start.netIncome || 0, 0) / start.sharesOutTTM : null;
   const exitPerShare = exit.shares > 0 ? Math.max(exit.fcf || exit.netIncome || 0, 0) / exit.shares : null;
   const operatingCAGR = startPerShare > 0 && exitPerShare > 0 ? Math.pow(exitPerShare / startPerShare, 1 / years) - 1 : null;
+  const quality = qualityContext(stock, lifecycle);
 
   // Mature businesses cannot earn 30%+ central returns from rerating. Growth
   // businesses can earn more, but only when operating value creation supports it.
   let adjustedCAGR = rawCAGR;
+  const qualityPremium = clamp((quality.quality - .55) * .08 + (quality.persistence - .50) * .05, -.025, .055);
+  const dynamicReratingAllowance = clamp(profile.maxRerating + qualityPremium, .005, .085);
+  const dynamicBaseCeiling = clamp(profile.maxBase + Math.max(0, qualityPremium * .65), profile.maxBase, .30);
   if (finite(adjustedCAGR)) {
     if (finite(operatingCAGR)) {
-      const maxFromOperations = operatingCAGR + profile.maxRerating + dividendYield;
+      const maxFromOperations = operatingCAGR + dynamicReratingAllowance + dividendYield;
       adjustedCAGR = Math.min(adjustedCAGR, maxFromOperations);
     }
-    adjustedCAGR = clamp(adjustedCAGR, -.35, profile.maxBase);
+    adjustedCAGR = clamp(adjustedCAGR, -.35, dynamicBaseCeiling);
   }
   const actionableExitValue = finite(adjustedCAGR)
     ? Math.max(0, currentPrice * Math.pow(1 + adjustedCAGR, years) - dividends)
@@ -162,14 +187,14 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
   const agreementScore = Math.round(clamp(100 - disagreement * 180, 0, 100));
 
   return {
-    version: 'v33-primary-method-selection',
+    version: 'v35-quality-aware-primary-valuation',
     profile: profile.name,
     primaryMethods: profile.primary,
     supportingMethods: profile.support,
     selectedMethods: rows.map(x => ({
       method: x.key, label: METHOD_LABELS[x.key] || x.key,
       weight: x.weight, reliability: x.reliability,
-      fairValueToday: x.presentValue, exitValue: x.futureValue,
+      fairValueToday: x.presentValue, exitValue: x.futureValue, terminalExitValue: x.terminalExitValue,
     })),
     fairValueToday,
     rawExitValue,
@@ -180,8 +205,12 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
     dividends,
     years,
     agreementScore,
-    maxBaseCAGR: profile.maxBase,
-    maxReratingContribution: profile.maxRerating,
+    fullForecastYears,
+    investmentYears,
+    qualityContext: quality,
+    qualityPremium,
+    maxBaseCAGR: dynamicBaseCeiling,
+    maxReratingContribution: dynamicReratingAllowance,
   };
 }
 

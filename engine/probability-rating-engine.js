@@ -25,11 +25,15 @@ function assignProbabilityRating(stock, components, probability) {
   const er=probability.inputs.er, mos=probability.inputs.mos, q=components.quality, c=components.confidence, r=components.risk;
   const bear=n(stock.scenarioAnalysis?.downsideCAGR,n(stock.valuation?.scenarioAnalysis?.downsideCAGR,-.20));
   let rating='Hold'; let reason='Expected return and evidence do not clear a higher-conviction threshold.';
-  if(probability.pPermanentLoss>.48 || er<-.04 || mos<-.30){rating='Sell';reason='Downside or overvaluation risk dominates the modeled return.';}
-  else if(probability.pPermanentLoss>.34 || er<.075){rating='Avoid';reason='The risk-adjusted return is insufficient for new capital.';}
+  if(probability.pPermanentLoss>.52 || er<-.06 || mos<-.40){rating='Sell';reason='Downside or overvaluation risk dominates the modeled return.';}
   else if(q>=g.exceptionalQuality&&er>=g.exceptionalCagr&&mos>=.20&&c>=78&&r<=g.maxRisk&&probability.pBeat15Cagr>=.72&&bear>=-.10){rating='Exceptional Buy';reason='Exceptional quality, a wide margin of safety and high probability of exceeding the return hurdle all agree.';}
   else if(q>=g.strongQuality&&er>=g.strongCagr&&mos>=.10&&c>=68&&r<=g.maxRisk+8&&probability.pBeat15Cagr>=.60){rating='Strong Buy';reason='Quality, valuation and probability-weighted return clear the sector-specific high-conviction gates.';}
   else if(er>=.115&&q>=62&&c>=55&&probability.pPositiveReturn>=.58){rating='Buy';reason='Expected return is attractive, but one or more conviction gates remain below Strong Buy levels.';}
+  // Distinguish a poor business from an excellent business at an unattractive
+  // price. High-quality companies with a non-negative modeled return remain Hold
+  // unless permanent-loss risk is genuinely elevated.
+  else if(q>=80 && er>=0 && probability.pPermanentLoss<.30){rating='Hold';reason='High-quality business, but the current valuation does not offer enough expected return for new capital.';}
+  else if(probability.pPermanentLoss>.36 || er<.04){rating='Avoid';reason='The risk-adjusted return is insufficient for new capital.';}
   else if(er>=.075&&probability.pPositiveReturn>=.50){rating='Hold';reason='The company may be investable, but the current price does not offer enough return or certainty.';}
   return {rating,ratingReason:reason,sectorGates:g};
 }
