@@ -344,6 +344,15 @@ function companyCurrentMultiple(stock, type) {
   return null;
 }
 
+function modelSafeDilution(stock, projection) {
+  const years = stock?.financials?.years || [];
+  const currentShares = Number(years.at(-1)?.sharesOutTTM);
+  const exitShares = Number(projection?.at(-1)?.shares);
+  const n = Number(projection?.length || 0);
+  if (currentShares > 0 && exitShares > 0 && n > 0) return Math.pow(exitShares / currentShares, 1 / n) - 1;
+  return 0;
+}
+
 function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, businessProfile = null, lifecycle = null, moat = null, projection = null) {
   const current = companyCurrentMultiple(stock, type);
   const life = lifecycle || classifyLifecycle(stock);
@@ -358,6 +367,19 @@ function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, busine
   const premiumModel = computePremiumPersistence(stock, businessProfile || {}, life, moatProfile);
   const premiumPersistence = businessProfile?.premiumPersistence
     ?? premiumModel.retainedPremium;
+  const components = businessProfile?.components || {};
+  const dilutionRate = Number(modelSafeDilution(stock, projection));
+  const cyclicalStage = ['Cyclical', 'Turnaround', 'Asset Heavy'].includes(life.stage);
+  const futureEconomics = {
+    pricing: components.pricing ?? clamp((stock.pricingPowerScore ?? 50) / 100, 0, 1),
+    roicQuality: components.roicQuality ?? .50,
+    marginDurability: components.marginDurability ?? .50,
+    recurringRevenue: businessProfile?.engine === 'growth-quality' || businessProfile?.engine === 'durable-compounder' ? .72 : .48,
+    capitalAllocation: components.capitalAllocation ?? .50,
+    balanceSheet: components.balanceSheet ?? .50,
+    dilutionPenalty: clamp(Math.max(0, dilutionRate) / .10, 0, 1),
+    cyclicalityPenalty: cyclicalStage ? .75 : .10,
+  };
   const result = deriveExitMultiple({
     current,
     sector: sectorMultiple,
@@ -367,6 +389,7 @@ function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, busine
     moat: moatProfile,
     type,
     premiumPersistence,
+    futureEconomics,
     revenueScale: projection?.length && stock.financials?.years?.at(-1)?.revenue > 0
       ? projection.at(-1).revenue / stock.financials.years.at(-1).revenue
       : 1,
@@ -385,6 +408,7 @@ function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, busine
     lifecycleStage: life.stage || life.name || 'Mature',
     sectorMultiple,
     industry: stock.valuation?.industryModel?.model || null,
+    futureQuality: result.futureQuality,
   });
   return { ...result, ...disciplined, multiple: disciplined.multiple, premiumModel };
 }
@@ -945,7 +969,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     dividendsReceived: returnEngineV2.dividendsReceived ?? legacyPriceTarget.dividendsReceived ?? 0,
     totalFutureValue: returnEngineV2.totalFutureValue ?? null,
     breakdown: returnEngineV2.breakdown,
-    returnEngineVersion: 'quality-aware-primary-valuation-v35',
+    returnEngineVersion: 'business-first-justified-valuation-v36',
     primaryValuation,
     ownerEarningsValidationCAGR: ownerEarningsReturn.expectedCAGR,
     fundamentalBusinessCAGR: returnEngineV2.fundamentalCAGR,
