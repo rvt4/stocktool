@@ -501,11 +501,18 @@ function ownerEarningsFromProjection(stock, model) {
   const pvTerminalValue = terminalValue / Math.pow(1 + discountRate, model.projection.length);
   const enterpriseValue = pvExplicit + pvTerminalValue;
   const equityValue = enterpriseValue - netDebt;
-  return { fairValuePerShare: equityValue > 0 ? equityValue / last.sharesOutTTM : null, audit: {
+  const exitShares = model.projection.at(-1)?.shares || last.sharesOutTTM;
+  const terminalEquityValue = terminalValue - netDebt;
+  const exitPricePerShare = terminalEquityValue > 0 && exitShares > 0
+    ? terminalEquityValue / exitShares : null;
+  return { fairValuePerShare: equityValue > 0 ? equityValue / last.sharesOutTTM : null,
+    exitPricePerShare,
+    audit: {
     method: 'Owner Earnings DCF', discountRate, terminalGrowth, daMargin, maintenanceCapexMargin, sbcMargin, inputQuality,
     pvExplicitOwnerEarnings: pvExplicit, terminalValue, pvTerminalValue,
     terminalValueShareOfEnterpriseValue: enterpriseValue ? pvTerminalValue / enterpriseValue : null,
-    enterpriseValue, netDebt, equityValue, currentDilutedShares: last.sharesOutTTM, yearly,
+    enterpriseValue, netDebt, equityValue, terminalEquityValue, exitPricePerShare,
+    currentDilutedShares: last.sharesOutTTM, sharesAtExit: exitShares, yearly,
   }};
 }
 
@@ -531,17 +538,25 @@ function dcfFromProjection(stock, model, { sbcAdjusted = false } = {}) {
   const pvTerminalValue = terminalValue / Math.pow(1 + discountRate, model.projection.length);
   const enterpriseValue = pvExplicitFCF + pvTerminalValue;
   const equityValue = enterpriseValue - netDebt;
-  // Present equity value is divided by current diluted shares. Exit share count is already reflected in projected per-share exit methods.
+  // Present value and future exit value are separate concepts. Fair value today uses
+  // current diluted shares; the Year-N price uses terminal enterprise value and the
+  // projected exit share count. This keeps MOS and expected CAGR on distinct,
+  // mathematically reconcilable tracks.
   const fairValuePerShare = equityValue / last.sharesOutTTM;
+  const exitShares = model.projection.at(-1)?.shares || last.sharesOutTTM;
+  const terminalEquityValue = terminalValue - netDebt;
+  const exitPricePerShare = terminalEquityValue > 0 && exitShares > 0
+    ? terminalEquityValue / exitShares : null;
   return {
     fairValuePerShare: fairValuePerShare > 0 ? fairValuePerShare : null,
+    exitPricePerShare,
     audit: {
       method: sbcAdjusted ? 'DCF (SBC-adjusted)' : 'DCF (FCF)', discountRate, terminalGrowth,
       pvExplicitFCF, terminalValue, pvTerminalValue,
       terminalValueShareOfEnterpriseValue: enterpriseValue ? pvTerminalValue / enterpriseValue : null,
-      enterpriseValue, netDebt, equityValue,
+      enterpriseValue, netDebt, equityValue, terminalEquityValue, exitPricePerShare,
       currentDilutedShares: last.sharesOutTTM,
-      sharesAtExit: model.projection.at(-1).shares,
+      sharesAtExit: exitShares,
       yearly,
     },
   };
@@ -893,7 +908,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   };
   const combined = combineValuations(methods, category, stock, businessProfile, calibration);
   const consensus = buildValuationConsensus(methods, combined.agreementScore, combined.effectiveWeights);
-  const exitResults = { revenueExit, epsExit, ebitdaExit };
+  const exitResults = { dcf, dcfSBCAdjusted, ownerEarnings, revenueExit, epsExit, ebitdaExit };
   const legacyPriceTarget = fiveYearPriceTargetCAGR(stock, model, exitResults, combined.effectiveWeights);
   const returnEngineV2 = computeReturnEngineV2(stock, model, legacyPriceTarget.exitPrice, consensus, lifecycle);
   const ownerEarningsReturn = buildOwnerEarningsReturn(stock, model, ownerEarnings, dcf, consensus, lifecycle, moat, businessProfile);
@@ -912,7 +927,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     dividendsReceived: returnEngineV2.dividendsReceived ?? legacyPriceTarget.dividendsReceived ?? 0,
     totalFutureValue: returnEngineV2.totalFutureValue ?? null,
     breakdown: returnEngineV2.breakdown,
-    returnEngineVersion: 'canonical-price-derived-v22',
+    returnEngineVersion: 'unified-six-method-future-value-v32',
     ownerEarningsValidationCAGR: ownerEarningsReturn.expectedCAGR,
     fundamentalBusinessCAGR: returnEngineV2.fundamentalCAGR,
     multipleDominated: returnEngineV2.multipleDominated,
@@ -957,7 +972,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '31.0-persistence-and-lifecycle-consistent-valuation', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '32.0-unified-present-and-future-valuation', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {

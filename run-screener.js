@@ -322,9 +322,10 @@ async function run() {
     const institutionalCAGR = result.returnEngineV2?.expectedCAGR ?? result.ownerEarningsReturn?.expectedCAGR;
     const probabilityWeightedCAGR = scenarioAnalysis?.probabilityWeightedCAGR;
     if (Number.isFinite(institutionalCAGR)) {
-      const canonicalCAGR = Number.isFinite(probabilityWeightedCAGR)
-        ? probabilityWeightedCAGR
-        : institutionalCAGR;
+      // V32: the lifecycle/reality-checked institutional return is authoritative.
+      // Scenario analysis expresses uncertainty around that anchor; it must never
+      // replace the anchor and reintroduce 30%+ mature-company CAGRs.
+      const canonicalCAGR = institutionalCAGR;
       const downsidePenalty = Number(expectedReturnProfile?.downsidePenalty) || 0;
       const uncertaintyPenalty = Number(expectedReturnProfile?.uncertaintyPenalty) || 0;
       const dataPenalty = Number(expectedReturnProfile?.dataPenalty) || 0;
@@ -336,12 +337,13 @@ async function run() {
       expectedReturnProfile = {
         ...expectedReturnProfile,
         expectedCAGR: canonicalCAGR,
-        baseCAGR: scenarioAnalysis?.baseCAGR ?? institutionalCAGR,
+        baseCAGR: institutionalCAGR,
         bearCAGR: scenarioAnalysis?.downsideCAGR ?? null,
         bullCAGR: scenarioAnalysis?.upsideCAGR ?? null,
         riskAdjustedCAGR: anchoredRiskAdjusted,
         institutionalBaseCAGR: institutionalCAGR,
         probabilityWeighted: Number.isFinite(probabilityWeightedCAGR),
+        rawScenarioWeightedCAGR: Number.isFinite(probabilityWeightedCAGR) ? probabilityWeightedCAGR : null,
       };
     }
     stock.dataIntegrity = dataIntegrity;
