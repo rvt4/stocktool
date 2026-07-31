@@ -23,11 +23,14 @@ const { inferIndustryModel } = require('./engine/industry-engine');
 const { computePricingPowerV2 } = require('./engine/pricing-power-engine');
 const { computeCompounderScore } = require('./engine/compounder-engine');
 const { computeDownsideRisk } = require('./engine/downside-engine');
-const { buildCalibration, applyCalibration } = require('./engine/calibration-engine');
+const { buildLearningModel, applyLearnedReturnCalibration } = require('./engine/learning-engine');
 const { updateForecastHistory } = require('./engine/forecast-tracker');
 const { computePortfolioProfile } = require('./engine/portfolio-engine');
 const { computeInvestmentCommitteeScore } = require('./engine/investment-committee-engine');
 const { applyInstitutionalSanity } = require('./engine/institutional-sanity-engine');
+const { computeEconomicQuality } = require('./engine/economic-quality-engine');
+const { applyDecisionSystemV26 } = require('./engine/decision-system-v26');
+const { validate } = require('./engine/validation-suite');
 
 const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'), 'utf8'));
 
@@ -165,7 +168,8 @@ async function loadAnalystEstimates() {
 }
 
 function writeResults(records, partial) {
-  const scored = scoreUniverse(records);
+  const baseScored = scoreUniverse(records);
+  const scored = applyDecisionSystemV26(baseScored);
   const output = {
     generatedAt: new Date().toISOString(),
     count: scored.length,
@@ -173,6 +177,11 @@ function writeResults(records, partial) {
     stocks: scored,
   };
   fs.writeFileSync(path.join(__dirname, 'data', 'results.json'), JSON.stringify(output, null, 2));
+  if (!partial) {
+    const validation = validate(scored);
+    fs.writeFileSync(path.join(__dirname, 'data', 'validation-report.json'), JSON.stringify(validation, null, 2));
+    console.log(`Decision validation: ${validation.passed ? 'passed' : 'review required'} (${validation.issues.length} issue(s)).`);
+  }
   return scored;
 }
 
@@ -252,8 +261,9 @@ async function run() {
   console.log(`Valuating ${records.length} stocks (DCF + revenue/EPS/EBITDA exit multiples)...`);
   const sectorExitMultiples = computeSectorExitMultiples(records);
   const currentByTicker = new Map(records.map(stock => [stock.ticker, stock]));
-  const calibration = buildCalibration(forecastHistory, currentByTicker);
-  console.log(`Calibration: ${calibration.observationCount} mature observations${calibration.isCalibrated ? ' (active)' : ' (collecting history)'}.`);
+  const calibration = buildLearningModel(forecastHistory, currentByTicker);
+  console.log(`Learning model: ${calibration.matureReturnObservations} mature observations${calibration.learningActive ? ' (active)' : ' (collecting history; formulas remain frozen)'}.`);
+  fs.writeFileSync(path.join(__dirname, 'data', 'calibration-report.json'), JSON.stringify(calibration, null, 2));
   for (const stock of records) {
     // Industry must be known before valuation so method suitability can influence
     // the reliability-weighted blend (for example, cash-flow methods dominate for
@@ -301,10 +311,11 @@ async function run() {
     const compounder = computeCompounderScore(stock, pricingPowerV2, industryModel);
     stock.valuation.pricingPowerV2 = pricingPowerV2;
     stock.valuation.compounder = compounder;
+    stock.valuation.economicQuality = computeEconomicQuality(stock, pricingPowerV2, compounder, industryModel);
     let scenarioAnalysis = buildScenarios(stock, result, dataIntegrity);
     scenarioAnalysis = applyInstitutionalSanity(stock, scenarioAnalysis, result.agreementScore);
     const rawExpectedReturnProfile = computeExpectedReturnProfile(stock, scenarioAnalysis, dataIntegrity);
-    let expectedReturnProfile = applyCalibration(rawExpectedReturnProfile, stock, calibration);
+    let expectedReturnProfile = applyLearnedReturnCalibration(rawExpectedReturnProfile, stock, calibration);
 
     // V16: the central valuation remains the base scenario, while the canonical
     // expected return is probability-weighted across bear/base/bull outcomes.

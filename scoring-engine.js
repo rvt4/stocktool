@@ -667,6 +667,7 @@ function scoreStock(stock) {
     qualityBreakdown: investment.qualityBreakdown,
     investmentBreakdown: investment,
     businessProfile: stock.valuation.businessProfile ?? null,
+    economicQuality: stock.valuation.economicQuality ?? null,
     lifecycle: stock.valuation.lifecycle ?? null,
     moat: stock.valuation.moat ?? null,
     categoryBreakdown: catResult,
@@ -735,6 +736,7 @@ function scoreStock(stock) {
     calibration: stock.valuation.calibration ?? null,
     calibrationAdjustment: stock.valuation.expectedReturnProfile?.calibrationAdjustment ?? 0,
     calibrationActive: stock.valuation.expectedReturnProfile?.calibrationActive ?? false,
+    adaptiveWeightAudit: stock.valuation.methodSelection?.adaptiveWeights ?? null,
     portfolioProfile: stock.valuation.portfolioProfile ?? null,
     decisionDashboard: {
       expectedCAGR: expectedReturn,

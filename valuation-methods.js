@@ -27,6 +27,7 @@ const { generateForecast } = require('./engine/forecast-engine');
 const { classifyLifecycle } = require('./engine/lifecycle-engine');
 const { computeMoat } = require('./engine/moat-engine');
 const { deriveExitMultiple } = require('./engine/fade-engine');
+const { adaptiveMethodWeights } = require('./engine/adaptive-weight-engine');
 
 function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
 function mean(arr) { return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
@@ -753,17 +754,18 @@ function combineValuations(methods, category = 'Value', stock = null, businessPr
   const methodSelection = stock
     ? selectValuationMethods(stock, category, methods)
     : { effectiveStartingWeights: businessSpecificWeights(category, businessProfile, null) };
-  const base = { ...methodSelection.effectiveStartingWeights };
+  const startingWeights = { ...methodSelection.effectiveStartingWeights };
   const industryKey = stock?.valuation?.industryModel?.model || 'general';
-  const learned = calibration?.methodAccuracy?.[industryKey] || {};
-  for (const key of Object.keys(base)) {
-    const multiplier = learned?.[key]?.multiplier;
-    if (Number.isFinite(multiplier)) base[key] *= multiplier;
-  }
-  const learnedTotal = Object.values(base).reduce((a, b) => a + Math.max(0, b || 0), 0);
-  if (learnedTotal > 0) for (const key of Object.keys(base)) base[key] = Math.max(0, base[key] || 0) / learnedTotal;
   const available = Object.entries(methods).filter(([, v]) => Number.isFinite(v) && v > 0);
   if (!available.length) return { blendedFairValue: null, agreementScore: null, methodCount: 0, effectiveWeights: {}, reliabilityFlags: [], methodSelection };
+  const adaptive = adaptiveMethodWeights({
+    industry: industryKey,
+    category,
+    startingWeights,
+    availableKeys: available.map(([key]) => key),
+    calibration,
+  });
+  const base = adaptive.weights;
   const center = median(available.map(([, v]) => v));
   const anchor = cashFlowAnchor(methods);
   const reliabilityFlags = [];
@@ -798,7 +800,7 @@ function combineValuations(methods, category = 'Value', stock = null, businessPr
     : [];
   const disagreement = Math.max(median(robustDeviations) || 0, (median(anchorDivergence) || 0) * 0.65);
   const agreementScore = Math.round(clamp(100 - disagreement * 150, 0, 100));
-  return { blendedFairValue, agreementScore, methodCount: available.length, effectiveWeights, reliabilityFlags, cashFlowAnchor: anchor, methodSelection: { ...methodSelection, calibrationLearnedWeights: learned } };
+  return { blendedFairValue, agreementScore, methodCount: available.length, effectiveWeights, reliabilityFlags, cashFlowAnchor: anchor, methodSelection: { ...methodSelection, adaptiveWeights: adaptive } };
 }
 
 function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
@@ -946,7 +948,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '21.0-unified-valuation-scenario-ordering', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '23.0-self-calibrating-foundation', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
