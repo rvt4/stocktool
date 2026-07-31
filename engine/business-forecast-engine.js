@@ -251,11 +251,11 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
   const cal = calibration?.forecastByIndustry?.[calibrationGroup] || calibration?.forecastOverall || {};
   const analystBias = Number(cal.analystBias) || 0;
   const historyBias = Number(cal.historyBias) || 0;
-  const anchor = terminalAnchor(stock, state, scale);
+  const terminal = terminalAnchor(stock, state, scale);
 
   const analystWeight1 = state.analyst1 == null ? 0 : clamp(0.58 + state.analystBreadth * 0.20, 0.58, 0.78);
   const momentumWeight = state.qMomentum ? 0.12 : 0;
-  const historicalWeight = state.regime === 'inflecting' || state.regime === 'recovery' ? 0.06 : 0.14;
+  const historicalWeight = ['inflecting', 'recovery', 'accelerating'].includes(state.regime) ? 0.05 : 0.14;
   const stateWeight = Math.max(0, 1 - analystWeight1 - momentumWeight - historicalWeight);
 
   let y1 = weightedMean([
@@ -267,58 +267,111 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
 
   let y2 = state.analyst2 == null
     ? weightedMean([
-        { value: y1, weight: 0.45 },
-        { value: state.forwardAverage, weight: 0.25 },
-        { value: anchor, weight: 0.30 },
+        { value: y1, weight: 0.56 },
+        { value: state.forwardAverage, weight: 0.29 },
+        { value: terminal, weight: 0.15 },
       ])
     : weightedMean([
-        { value: state.analyst2 + analystBias, weight: clamp(0.64 + state.analystBreadth * 0.16, 0.64, 0.80) },
-        { value: y1, weight: 0.10 },
-        { value: anchor, weight: 0.16 },
+        { value: state.analyst2 + analystBias, weight: clamp(0.66 + state.analystBreadth * 0.16, 0.66, 0.82) },
+        { value: y1, weight: 0.16 },
+        { value: terminal, weight: 0.10 },
       ]);
 
-  if (state.regime === 'inflecting' || state.regime === 'accelerating') {
+  if (['inflecting', 'accelerating'].includes(state.regime)) {
     y1 += clamp(state.inflection * 0.10, 0, 0.025);
     y2 += clamp(state.inflection * 0.07, 0, 0.018);
   } else if (state.regime === 'normalizing') {
-    y1 = Math.min(y1, Math.max(state.forwardAverage, anchor + 0.06));
+    y1 = Math.min(y1, Math.max(state.forwardAverage, terminal + 0.06));
     y2 = Math.min(y2, y1 - 0.01);
   } else if (state.regime === 'deteriorating') {
     y1 = Math.min(y1, state.forwardAverage);
     y2 = Math.min(y2, y1 + 0.02);
   }
 
-  const nearTermCap = 0.32 + 0.28 * state.persistenceScore * scale.combined;
+  const nearTermCap = 0.34 + 0.30 * state.persistenceScore * scale.combined;
   y1 = clamp(y1, -0.35, nearTermCap);
-  y2 = clamp(y2, -0.28, Math.max(0.22, nearTermCap - 0.025));
+  y2 = clamp(y2, -0.28, Math.max(0.22, nearTermCap - 0.015));
+
+  // Convert persistence into an explicit abnormal-growth runway. The old V30
+  // formula applied the terminal anchor immediately in year three, which caused
+  // 40%+ growers to collapse to roughly 12-15% in one step. Runway determines how
+  // long the competitive-growth phase lasts before terminal convergence begins.
+  let persistenceYears = Math.round(clamp(
+    1.5 + state.persistenceScore * 4.5 + scale.runway * 1.5 +
+    (['inflecting', 'accelerating'].includes(state.regime) ? 1.0 : 0) -
+    (state.regime === 'normalizing' ? 1.0 : 0),
+    2, Math.min(7, Math.max(2, years - 1))
+  ));
+  if (state.analyst2 != null && state.analyst2 >= 0.25) persistenceYears = Math.max(persistenceYears, 4);
+
+  // The bridge anchor is an intermediate operating rate, not the terminal rate.
+  // It incorporates current evidence and persistence, then converges to terminal
+  // only in the final phase of the forecast.
+  const bridgeAnchor = clamp(weightedMean([
+    { value: state.forwardAverage, weight: 0.34 },
+    { value: state.recentRate, weight: state.recentRate == null ? 0 : 0.18 },
+    { value: state.growth3, weight: state.growth3 == null ? 0 : 0.16 },
+    { value: terminal + (y2 - terminal) * (0.28 + 0.38 * state.persistenceScore), weight: 0.32 },
+  ]) ?? terminal, terminal + 0.01, Math.max(terminal + 0.01, y2));
+
+  const maxAnnualDrop = clamp(
+    0.045 + (1 - state.persistenceScore) * 0.055 +
+    (state.regime === 'normalizing' ? 0.035 : 0) +
+    (state.regime === 'deteriorating' ? 0.045 : 0),
+    0.045, 0.15
+  );
+  const maxAnnualIncrease = clamp(0.045 + state.persistenceScore * 0.035, 0.045, 0.08);
 
   const path = [y1];
   if (years >= 2) path.push(y2);
   let previous = y2;
   let revenueMultiple = (1 + Math.max(-0.95, y1)) * (years >= 2 ? 1 + Math.max(-0.95, y2) : 1);
-  const fadeRate = clamp(
-    0.20 + (1 - state.persistenceScore) * 0.28 + (1 - scale.combined) * 0.12 +
-    (state.regime === 'normalizing' ? 0.08 : 0) -
-    (state.regime === 'inflecting' ? 0.05 : 0),
-    0.16, 0.60
-  );
 
   for (let t = 3; t <= years; t++) {
-    const excess = previous - anchor;
-    let next = anchor + excess * (1 - fadeRate);
-    // A confirmed inflection gets time to persist; it is not averaged away by older years.
-    if (state.regime === 'inflecting' && t <= 4) next += clamp(state.inflection * 0.06, 0, 0.012);
-    if (state.regime === 'recovery' && t <= 4) next += clamp(state.marginTrend * 0.25, 0, 0.010);
+    const inPersistencePhase = t <= persistenceYears;
+    const target = inPersistencePhase ? bridgeAnchor : terminal;
+    const phaseLength = inPersistencePhase
+      ? Math.max(1, persistenceYears - 1)
+      : Math.max(1, years - persistenceYears);
+    const phaseProgress = inPersistencePhase
+      ? clamp((t - 2) / phaseLength, 0, 1)
+      : clamp((t - persistenceYears) / phaseLength, 0, 1);
+    const easing = phaseProgress * phaseProgress * (3 - 2 * phaseProgress);
 
-    // Revenue-base discipline is continuous rather than a hard category cap.
-    const maxGrowthAtScale = clamp(0.30 * scale.combined * scale.runway / Math.pow(Math.max(1, revenueMultiple), 0.22), 0.055, 0.34);
-    next = Math.min(next, maxGrowthAtScale);
-    next = clamp(next, -0.18, 0.45);
+    // During persistence, decay only partway toward the bridge anchor. During
+    // convergence, move gradually from the bridge anchor to terminal.
+    let desired = inPersistencePhase
+      ? y2 + (bridgeAnchor - y2) * easing
+      : bridgeAnchor + (terminal - bridgeAnchor) * easing;
+
+    if (state.regime === 'inflecting' && t <= Math.min(4, persistenceYears)) {
+      desired += clamp(state.inflection * 0.05, 0, 0.010);
+    }
+    if (state.regime === 'recovery' && t <= Math.min(4, persistenceYears)) {
+      desired += clamp(state.marginTrend * 0.20, 0, 0.008);
+    }
+
+    // Continuity invariant: absent a deterioration/normalization regime, no
+    // central forecast may drop dozens of percentage points in a single year.
+    let next = clamp(desired, previous - maxAnnualDrop, previous + maxAnnualIncrease);
+
+    // Revenue-base discipline remains gradual and scale-aware.
+    const maxGrowthAtScale = clamp(
+      0.34 * scale.combined * scale.runway / Math.pow(Math.max(1, revenueMultiple), 0.18),
+      0.055, 0.40
+    );
+    // The scale cap may slow the path, but it may not violate the continuity
+    // invariant by forcing an artificial one-year cliff.
+    const continuityFloor = previous - maxAnnualDrop;
+    next = Math.min(next, Math.max(terminal, maxGrowthAtScale, continuityFloor));
+    next = clamp(next, -0.18, 0.55);
     path.push(next);
     revenueMultiple *= 1 + Math.max(-0.95, next);
     previous = next;
   }
 
+  const annualChanges = path.slice(1).map((x, i) => x - path[i]);
+  const continuityBreaches = annualChanges.filter(x => x < -maxAnnualDrop - 1e-9 || x > maxAnnualIncrease + 1e-9).length;
   const evidenceCompleteness = clamp(
     Math.min(state.years.length, 8) / 8 * 0.34 +
     (state.analyst1 != null ? 0.18 : 0) +
@@ -328,17 +381,17 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
     state.positiveFcfRate * 0.10,
     0, 1
   );
-  const pathSmoothness = 1 - clamp(stdev(path) / 0.20, 0, 1);
+  const pathSmoothness = 1 - clamp(stdev(annualChanges) / 0.10, 0, 1);
   const plausibilityScore = Math.round(clamp(
-    100 * (0.38 * evidenceCompleteness + 0.30 * state.persistenceScore + 0.18 * pathSmoothness + 0.14 * scale.runway),
+    100 * (0.36 * evidenceCompleteness + 0.31 * state.persistenceScore + 0.20 * pathSmoothness + 0.13 * scale.runway) - continuityBreaches * 20,
     25, 98
   ));
 
   return {
     path,
-    source: 'v30_business_state_and_growth_persistence_forecast',
+    source: 'v31_three_phase_persistence_runway_forecast',
     assumptions: {
-      version: '30.0',
+      version: '31.0',
       regime: state.regime,
       analyst1: state.analyst1,
       analyst2: state.analyst2,
@@ -352,15 +405,20 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
       priorOperatingRate: state.priorAverage,
       inflection: state.inflection,
       persistenceScore: state.persistenceScore,
-      terminalOperatingAnchor: anchor,
-      fadeRate,
+      persistenceYears,
+      bridgeOperatingAnchor: bridgeAnchor,
+      terminalOperatingAnchor: terminal,
+      maxAnnualGrowthDrop: maxAnnualDrop,
+      maxAnnualGrowthIncrease: maxAnnualIncrease,
+      annualGrowthChanges: annualChanges,
+      continuityBreaches,
       scale,
       projectedRevenueMultiple: revenueMultiple,
       analystReliability: state.analystBreadth,
       calibrationApplied: !!calibration?.isCalibrated,
       year1: path[0],
       year2: path[1] ?? null,
-      longRunAnchor: anchor,
+      longRunAnchor: terminal,
       plausibilityScore,
       state,
     },
