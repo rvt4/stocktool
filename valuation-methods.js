@@ -21,6 +21,7 @@ const { applyExitMultipleDiscipline } = require('./engine/exit-multiple-engine')
 const { computePremiumPersistence } = require('./engine/premium-persistence-engine');
 const { buildValuationConsensus } = require('./engine/valuation-consensus');
 const { computeReturnEngineV2 } = require('./engine/return-engine');
+const { selectedValuation } = require('./engine/primary-valuation-engine');
 const { buildOwnerEarningsReturn } = require('./engine/owner-earnings-return-engine');
 const { buildMarketExpectations } = require('./engine/market-expectations');
 const { simulateReturns } = require('./engine/monte-carlo-engine');
@@ -909,8 +910,25 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   const combined = combineValuations(methods, category, stock, businessProfile, calibration);
   const consensus = buildValuationConsensus(methods, combined.agreementScore, combined.effectiveWeights);
   const exitResults = { dcf, dcfSBCAdjusted, ownerEarnings, revenueExit, epsExit, ebitdaExit };
+
+  // V33 replaces the all-method average as the decision valuation. The legacy
+  // consensus remains available for audit, but only business-appropriate methods
+  // drive fair value, future target, and expected return.
+  const primaryValuation = selectedValuation({
+    stock, category, lifecycle, methodResults: exitResults, model,
+  });
   const legacyPriceTarget = fiveYearPriceTargetCAGR(stock, model, exitResults, combined.effectiveWeights);
-  const returnEngineV2 = computeReturnEngineV2(stock, model, legacyPriceTarget.exitPrice, consensus, lifecycle);
+  const selectedExitPrice = primaryValuation?.actionableExitValue ?? legacyPriceTarget.exitPrice;
+  const returnEngineV2 = computeReturnEngineV2(stock, model, selectedExitPrice, consensus, lifecycle);
+  if (primaryValuation && Number.isFinite(primaryValuation.expectedCAGR)) {
+    returnEngineV2.expectedCAGR = primaryValuation.expectedCAGR;
+    returnEngineV2.actionableCAGR = primaryValuation.expectedCAGR;
+    returnEngineV2.rawMarketCAGR = primaryValuation.rawCAGR;
+    returnEngineV2.actionableExitPrice = primaryValuation.actionableExitValue;
+    returnEngineV2.rawMarketExitPrice = primaryValuation.rawExitValue;
+    returnEngineV2.totalFutureValue = primaryValuation.actionableExitValue + primaryValuation.dividends;
+    returnEngineV2.primaryValuation = primaryValuation;
+  }
   const ownerEarningsReturn = buildOwnerEarningsReturn(stock, model, ownerEarnings, dcf, consensus, lifecycle, moat, businessProfile);
   const fiveYearPriceTarget = {
     ...legacyPriceTarget,
@@ -927,13 +945,14 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     dividendsReceived: returnEngineV2.dividendsReceived ?? legacyPriceTarget.dividendsReceived ?? 0,
     totalFutureValue: returnEngineV2.totalFutureValue ?? null,
     breakdown: returnEngineV2.breakdown,
-    returnEngineVersion: 'unified-six-method-future-value-v32',
+    returnEngineVersion: 'primary-method-selection-v33',
+    primaryValuation,
     ownerEarningsValidationCAGR: ownerEarningsReturn.expectedCAGR,
     fundamentalBusinessCAGR: returnEngineV2.fundamentalCAGR,
     multipleDominated: returnEngineV2.multipleDominated,
   };
   const currentPrice = stock.price.current;
-  const finalFairValue = consensus.actionableFairValue ?? combined.blendedFairValue ?? dcf.fairValuePerShare ?? ownerEarnings.fairValuePerShare;
+  const finalFairValue = primaryValuation?.fairValueToday ?? consensus.actionableFairValue ?? combined.blendedFairValue ?? dcf.fairValuePerShare ?? ownerEarnings.fairValuePerShare;
   const marginOfSafety = finalFairValue && currentPrice
     ? (finalFairValue - currentPrice) / finalFairValue : null;
 
@@ -959,6 +978,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     intrinsicValue: consensus.intrinsicValue,
     marketValue: consensus.marketValue,
     valuationConsensus: consensus,
+    primaryValuation,
     ownerEarningsReturn,
     returnEngineV2,
     marketExpectations,
@@ -972,7 +992,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '32.0-unified-present-and-future-valuation', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '33.0-primary-method-selection', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
