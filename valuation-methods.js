@@ -26,6 +26,7 @@ const { buildMarketExpectations } = require('./engine/market-expectations');
 const { simulateReturns } = require('./engine/monte-carlo-engine');
 const { selectValuationMethods } = require('./engine/method-selection-engine');
 const { generateForecast } = require('./engine/forecast-engine');
+const { forecastMarginPaths } = require('./engine/business-forecast-engine');
 const { classifyLifecycle } = require('./engine/lifecycle-engine');
 const { computeMoat } = require('./engine/moat-engine');
 const { deriveExitMultiple } = require('./engine/fade-engine');
@@ -108,9 +109,10 @@ function growthPersistenceScore(stock, category, year1, year2) {
   );
 }
 
-function buildGrowthPath(stock, category, years = 5, calibration = null) {
-  return generateForecast(stock, category, years, calibration);
+function buildGrowthPath(stock, category, years = 5, calibration = null, lifecycle = null) {
+  return generateForecast(stock, lifecycle || category, years, calibration);
 }
+
 
 // ---------- Margin targets ----------
 function marginSeries(yrs, getter) {
@@ -149,7 +151,7 @@ function projectFinancials(stock, growthInput = null, years = 5, calibration = n
   const yrs = stock.financials.years;
   const last = yrs[yrs.length - 1];
   const category = categoryOverride || inferValuationCategory(stock);
-  const growthModel = buildGrowthPath(stock, category, years, calibration);
+  const growthModel = buildGrowthPath(stock, category, years, calibration, lifecycle);
   if (growthInput != null && stock.analystEstimates?.revenueGrowthCurrentYear == null && stock.analystEstimates?.revenueGrowthFwd == null) {
     growthModel.path[0] = clamp(growthInput, -0.25, 0.65);
   }
@@ -163,9 +165,12 @@ function projectFinancials(stock, growthInput = null, years = 5, calibration = n
   const startEbitdaMargin = last.ebitda != null && last.revenue ? last.ebitda / last.revenue : median(ebitdaMargins) ?? 0.10;
   const startFcfMargin = last.fcf != null && last.revenue ? last.fcf / last.revenue : median(fcfMargins) ?? 0.08;
   const startNetMargin = last.netIncome != null && last.revenue ? last.netIncome / last.revenue : median(netMargins) ?? 0.06;
-  const targetEbitdaMargin = marginTarget(startEbitdaMargin, ebitdaMargins, category, 'ebitda', lifecycle);
-  const targetFcfMargin = marginTarget(startFcfMargin, fcfMargins, category, 'fcf', lifecycle);
-  const targetNetMargin = marginTarget(startNetMargin, netMargins, category, 'net', lifecycle);
+  // V30 forecasts margins from the business trajectory and observed operating
+  // leverage. Category is no longer allowed to manufacture or erase margin expansion.
+  const marginForecast = forecastMarginPaths(stock, growthModel, years, lifecycle);
+  const targetEbitdaMargin = marginForecast.targets.ebitda ?? marginTarget(startEbitdaMargin, ebitdaMargins, category, 'ebitda', lifecycle);
+  const targetFcfMargin = marginForecast.targets.fcf ?? marginTarget(startFcfMargin, fcfMargins, category, 'fcf', lifecycle);
+  const targetNetMargin = marginForecast.targets.net ?? marginTarget(startNetMargin, netMargins, category, 'net', lifecycle);
 
   let revenue = last.revenue;
   let shares = last.sharesOutTTM;
@@ -177,11 +182,12 @@ function projectFinancials(stock, growthInput = null, years = 5, calibration = n
     else revenue *= 1 + growth;
     shares *= 1 + dilutionRate;
 
-    const p = t / years;
-    const smooth = p * p * (3 - 2 * p);
-    const ebitdaMargin = startEbitdaMargin + (targetEbitdaMargin - startEbitdaMargin) * smooth;
-    const fcfMargin = startFcfMargin + (targetFcfMargin - startFcfMargin) * smooth;
-    let netMargin = startNetMargin + (targetNetMargin - startNetMargin) * smooth;
+    const ebitdaMargin = marginForecast.paths.ebitda?.[t - 1]
+      ?? startEbitdaMargin + (targetEbitdaMargin - startEbitdaMargin) * (t / years);
+    const fcfMargin = marginForecast.paths.fcf?.[t - 1]
+      ?? startFcfMargin + (targetFcfMargin - startFcfMargin) * (t / years);
+    let netMargin = marginForecast.paths.net?.[t - 1]
+      ?? startNetMargin + (targetNetMargin - startNetMargin) * (t / years);
     let eps = shares ? revenue * netMargin / shares : null;
 
     if (t === 1 && estimates.epsCurrentYear != null) {
@@ -221,6 +227,7 @@ function projectFinancials(stock, growthInput = null, years = 5, calibration = n
       startEbitdaMargin, targetEbitdaMargin,
       startFcfMargin, targetFcfMargin,
       startNetMargin, targetNetMargin,
+      forecast: marginForecast,
     },
   };
 }
@@ -924,7 +931,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '23.0-self-calibrating-foundation', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '30.0-business-first-forecast-engine', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
