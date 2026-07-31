@@ -64,16 +64,79 @@ function inferValuationCategory(stock) {
 }
 
 // ---------- Dilution ----------
+function robustMedian(values) {
+  const clean = values.filter(Number.isFinite).filter(x => Math.abs(x) <= 0.25);
+  if (!clean.length) return null;
+  const m = median(clean);
+  const abs = clean.map(x => Math.abs(x - m));
+  const mad = median(abs) || 0.015;
+  const filtered = clean.filter(x => Math.abs(x - m) <= Math.max(0.06, mad * 3.5));
+  return median(filtered.length ? filtered : clean);
+}
+
+function estimateDilutionModel(stock, years = 5) {
+  const yrs = stock.financials?.years || [];
+  const last = yrs.at(-1) || {};
+  const rates = [];
+  for (let i = 1; i < yrs.length; i++) {
+    const a = Number(yrs[i - 1]?.sharesOutTTM);
+    const b = Number(yrs[i]?.sharesOutTTM);
+    if (a > 0 && b > 0) {
+      const r = b / a - 1;
+      // Splits, merger accounting and source-unit changes are not recurring dilution.
+      if (Math.abs(r) <= 0.25) rates.push(r);
+    }
+  }
+  const recent = robustMedian(rates.slice(-5));
+  const long = robustMedian(rates.slice(-8));
+  const marketCap = Number(stock.valuation?.marketCap) || 0;
+  const revenue = Number(last.revenue) || 0;
+  const sbcToMarketCap = Number(last.sbc) > 0 && marketCap > 0 ? Number(last.sbc) / marketCap : null;
+  const sbcToRevenue = Number(last.sbc) > 0 && revenue > 0 ? Number(last.sbc) / revenue : null;
+  const buybackSignal = recent != null && recent < -0.005;
+
+  let initial = weightedAverage([
+    { value: recent, weight: recent == null ? 0 : 0.52 },
+    { value: long, weight: long == null ? 0 : 0.23 },
+    { value: sbcToMarketCap, weight: sbcToMarketCap == null ? 0 : 0.15 },
+    { value: sbcToRevenue == null ? null : sbcToRevenue * 0.35, weight: sbcToRevenue == null ? 0 : 0.10 },
+  ]);
+  if (!Number.isFinite(initial)) initial = buybackSignal ? -0.005 : 0.008;
+
+  const highSbc = (sbcToRevenue ?? 0) >= 0.08 || (sbcToMarketCap ?? 0) >= 0.025;
+  const moderateSbc = (sbcToRevenue ?? 0) >= 0.035 || (sbcToMarketCap ?? 0) >= 0.012;
+  const mature = revenue >= 20e9 && (stock.analystEstimates?.revenueGrowthNextYear ?? 0) < 0.15;
+  const initialCap = highSbc ? 0.045 : moderateSbc ? 0.030 : mature ? 0.015 : 0.025;
+  initial = clamp(initial, buybackSignal ? -0.05 : -0.015, initialCap);
+
+  // SBC normally fades as a percentage of revenue and mature issuers offset more
+  // awards with repurchases. Never extrapolate one noisy historical rate forever.
+  let terminal = highSbc ? 0.015 : moderateSbc ? 0.008 : buybackSignal ? Math.max(-0.02, initial * 0.65) : 0.003;
+  if (mature && !highSbc) terminal = Math.min(terminal, 0.004);
+  terminal = clamp(terminal, -0.025, 0.018);
+
+  const path = [];
+  for (let t = 1; t <= years; t++) {
+    const p = years <= 1 ? 1 : (t - 1) / (years - 1);
+    const smooth = p * p * (3 - 2 * p);
+    path.push(initial + (terminal - initial) * smooth);
+  }
+  return {
+    initialRate: initial,
+    terminalRate: terminal,
+    path,
+    historicalRecent: recent,
+    historicalLong: long,
+    sbcToMarketCap,
+    sbcToRevenue,
+    highSbc,
+    moderateSbc,
+    source: 'v37_fading_dilution_model',
+  };
+}
+
 function estimateDilutionRate(stock) {
-  const yrs = stock.financials.years;
-  const last = yrs[yrs.length - 1] || {};
-  const shares = yrs.slice(-4).map(y => y.sharesOutTTM).filter(x => x > 0);
-  const historical = shares.length >= 2 ? cagr(shares[0], shares[shares.length - 1], shares.length - 1) : null;
-  const sbcImplied = last.sbc != null && stock.valuation.marketCap > 0 ? last.sbc / stock.valuation.marketCap : null;
-  if (historical != null && sbcImplied != null) return clamp(historical * 0.75 + sbcImplied * 0.25, -0.08, 0.10);
-  if (historical != null) return clamp(historical, -0.08, 0.10);
-  if (sbcImplied != null) return clamp(sbcImplied, 0, 0.10);
-  return 0.01;
+  return estimateDilutionModel(stock, 5).initialRate;
 }
 
 // ---------- Growth path (V4 business-model persistence) ----------
@@ -158,7 +221,8 @@ function projectFinancials(stock, growthInput = null, years = 5, calibration = n
   }
 
   const estimates = stock.analystEstimates || {};
-  const dilutionRate = estimateDilutionRate(stock);
+  const dilutionModel = estimateDilutionModel(stock, years);
+  const dilutionRate = dilutionModel.initialRate;
   const ebitdaMargins = marginSeries(yrs, y => y.ebitda != null && y.revenue ? y.ebitda / y.revenue : null);
   const fcfMargins = marginSeries(yrs, y => y.fcf != null && y.revenue ? y.fcf / y.revenue : null);
   const netMargins = marginSeries(yrs, y => y.netIncome != null && y.revenue ? y.netIncome / y.revenue : null);
@@ -178,10 +242,11 @@ function projectFinancials(stock, growthInput = null, years = 5, calibration = n
   const projection = [];
   for (let t = 1; t <= years; t++) {
     const growth = growthModel.path[t - 1];
-    if (t === 1 && estimates.revenueCurrentYear > 0) revenue = estimates.revenueCurrentYear;
-    else if (t === 2 && estimates.revenueNextYear > 0) revenue = estimates.revenueNextYear;
+    const absoluteEstimateReliable = growthModel?.assumptions?.analystConsensusChecks?.absoluteEstimateReliable !== false;
+    if (t === 1 && estimates.revenueCurrentYear > 0 && absoluteEstimateReliable) revenue = estimates.revenueCurrentYear;
+    else if (t === 2 && estimates.revenueNextYear > 0 && absoluteEstimateReliable) revenue = estimates.revenueNextYear;
     else revenue *= 1 + growth;
-    shares *= 1 + dilutionRate;
+    shares *= 1 + (dilutionModel.path[t - 1] ?? dilutionRate);
 
     const ebitdaMargin = marginForecast.paths.ebitda?.[t - 1]
       ?? startEbitdaMargin + (targetEbitdaMargin - startEbitdaMargin) * (t / years);
@@ -219,6 +284,7 @@ function projectFinancials(stock, growthInput = null, years = 5, calibration = n
     projection,
     category,
     dilutionRate,
+    dilutionModel,
     growthModel,
     startingValues: {
       revenue: last.revenue, ebitda: last.ebitda, fcf: last.fcf, netIncome: last.netIncome,
@@ -229,6 +295,7 @@ function projectFinancials(stock, growthInput = null, years = 5, calibration = n
       startFcfMargin, targetFcfMargin,
       startNetMargin, targetNetMargin,
       forecast: marginForecast,
+      dilutionModel,
     },
   };
 }
@@ -1016,7 +1083,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '33.0-primary-method-selection', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '37.0-consensus-dilution-margin-guards', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
