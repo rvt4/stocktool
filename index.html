@@ -180,7 +180,7 @@ async function load() {
 
   // Build the filter from ratings that actually exist in results.json. This keeps
   // the UI synchronized with the scoring engine when rating labels change.
-  const ratingOrder = ['Exceptional', 'Strong Buy', 'Buy', 'Hold', 'Watch', 'Avoid', 'Sell'];
+  const ratingOrder = ['Exceptional Buy', 'Strong Buy', 'Buy', 'Hold', 'Watch', 'Avoid', 'Sell'];
   const availableRatings = new Set(allStocks.map(s => s.rating).filter(Boolean));
   const ratings = [
     ...ratingOrder.filter(r => availableRatings.has(r)),

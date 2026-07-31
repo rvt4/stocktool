@@ -29,7 +29,7 @@ const { computePortfolioProfile } = require('./engine/portfolio-engine');
 const { computeInvestmentCommitteeScore } = require('./engine/investment-committee-engine');
 const { applyInstitutionalSanity } = require('./engine/institutional-sanity-engine');
 const { computeEconomicQuality } = require('./engine/economic-quality-engine');
-const { applyDecisionSystemV26 } = require('./engine/decision-system-v26');
+const { applyDecisionSystemV27 } = require('./engine/decision-system-v27');
 const { validate } = require('./engine/validation-suite');
 
 const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'), 'utf8'));
@@ -169,7 +169,7 @@ async function loadAnalystEstimates() {
 
 function writeResults(records, partial) {
   const baseScored = scoreUniverse(records);
-  const scored = applyDecisionSystemV26(baseScored);
+  const scored = applyDecisionSystemV27(baseScored);
   const output = {
     generatedAt: new Date().toISOString(),
     count: scored.length,
