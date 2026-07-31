@@ -176,7 +176,28 @@ function writeResults(records, partial) {
     partial: !!partial,
     stocks: scored,
   };
-  fs.writeFileSync(path.join(__dirname, 'data', 'results.json'), JSON.stringify(output, null, 2));
+  // Keep the nightly artifact compact. GitHub rejects any individual file over
+  // 100 MiB, and pretty-printing this large payload previously pushed
+  // data/results.json above that hard limit. Write atomically so the frontend
+  // never sees a half-written file, and fail early with a useful message if the
+  // compact payload ever approaches the limit again.
+  const resultsPath = path.join(__dirname, 'data', 'results.json');
+  const tempResultsPath = `${resultsPath}.tmp`;
+  const compactJson = JSON.stringify(output);
+  const resultBytes = Buffer.byteLength(compactJson, 'utf8');
+  const githubHardLimit = 100 * 1024 * 1024;
+  const safetyLimit = 95 * 1024 * 1024;
+
+  if (resultBytes >= safetyLimit) {
+    throw new Error(
+      `Compact data/results.json would be ${(resultBytes / 1024 / 1024).toFixed(2)} MiB. ` +
+      `This is too close to GitHub's 100 MiB per-file limit; split the result payload before publishing.`
+    );
+  }
+
+  fs.writeFileSync(tempResultsPath, compactJson);
+  fs.renameSync(tempResultsPath, resultsPath);
+  console.log(`Compact results size: ${(resultBytes / 1024 / 1024).toFixed(2)} MiB`);
   if (!partial) {
     const validation = validate(scored);
     fs.writeFileSync(path.join(__dirname, 'data', 'validation-report.json'), JSON.stringify(validation, null, 2));
