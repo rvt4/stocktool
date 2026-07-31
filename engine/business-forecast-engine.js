@@ -1,0 +1,432 @@
+'use strict';
+
+/**
+ * Business Forecast Engine V30
+ *
+ * Forecasts the operating business first and leaves category/lifecycle as a
+ * diagnostic rather than the primary forecast driver. The engine distinguishes:
+ *   - durable secular growth
+ *   - acceleration / inflection
+ *   - normalization after a temporary spike
+ *   - cyclical recovery
+ *   - mature steady-state growth
+ *
+ * It uses up to ten annual observations, available quarterly momentum, two years
+ * of analyst estimates, returns on capital, margin behavior, cash conversion,
+ * dilution, scale, and forecast breadth. All important inputs and adjustments are
+ * returned for audit in results.json.
+ */
+
+const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+const finite = x => Number.isFinite(Number(x));
+const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null;
+const median = a => {
+  if (!a.length) return null;
+  const s = [...a].sort((x, y) => x - y);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+const stdev = a => {
+  if (a.length < 2) return 0;
+  const m = mean(a);
+  return Math.sqrt(mean(a.map(x => (x - m) ** 2)) || 0);
+};
+const weightedMean = items => {
+  const valid = items.filter(x => finite(x.value) && finite(x.weight) && x.weight > 0);
+  const total = valid.reduce((s, x) => s + x.weight, 0);
+  return total ? valid.reduce((s, x) => s + Number(x.value) * x.weight, 0) / total : null;
+};
+const cagr = (a, b, n) => a > 0 && b > 0 && n > 0 ? Math.pow(b / a, 1 / n) - 1 : null;
+
+function annualGrowthRates(years) {
+  const out = [];
+  for (let i = 1; i < years.length; i++) {
+    const a = Number(years[i - 1]?.revenue);
+    const b = Number(years[i]?.revenue);
+    if (a > 0 && b > 0) out.push({ year: years[i].year, value: b / a - 1 });
+  }
+  return out;
+}
+
+function robustRate(values) {
+  const v = values.filter(finite).map(Number);
+  if (!v.length) return null;
+  const center = median(v);
+  const deviations = v.map(x => Math.abs(x - center));
+  const mad = median(deviations) || 0.04;
+  const lo = center - Math.max(0.10, mad * 3.5);
+  const hi = center + Math.max(0.10, mad * 3.5);
+  return weightedMean(v.map((x, i) => ({ value: clamp(x, lo, hi), weight: i + 1 })));
+}
+
+function linearSlope(values) {
+  const y = values.filter(finite).map(Number);
+  if (y.length < 3) return 0;
+  const xMean = (y.length - 1) / 2;
+  const yMean = mean(y);
+  let numerator = 0, denominator = 0;
+  for (let i = 0; i < y.length; i++) {
+    numerator += (i - xMean) * (y[i] - yMean);
+    denominator += (i - xMean) ** 2;
+  }
+  return denominator ? numerator / denominator : 0;
+}
+
+function quarterlyMomentum(stock) {
+  const q = stock.financials?.quarterly || stock.financials?.quarters || [];
+  if (!Array.isArray(q) || q.length < 5) return null;
+  const rows = [...q]
+    .filter(x => finite(x.revenue ?? x.val) && Number(x.revenue ?? x.val) > 0)
+    .sort((a, b) => String(a.end || a.date || '').localeCompare(String(b.end || b.date || '')));
+  if (rows.length < 5) return null;
+  const yoy = [];
+  for (let i = 4; i < rows.length; i++) {
+    const a = Number(rows[i - 4].revenue ?? rows[i - 4].val);
+    const b = Number(rows[i].revenue ?? rows[i].val);
+    if (a > 0 && b > 0) yoy.push(b / a - 1);
+  }
+  if (!yoy.length) return null;
+  return {
+    latest: yoy.at(-1),
+    recentAverage: mean(yoy.slice(-2)),
+    acceleration: yoy.length >= 2 ? yoy.at(-1) - yoy.at(-2) : 0,
+    observations: yoy.length,
+  };
+}
+
+function marginSeries(years, field) {
+  return years.map(y => {
+    if (field === 'operating') {
+      if (finite(y.opMargin)) return Number(y.opMargin);
+      if (finite(y.operatingMargin)) return Number(y.operatingMargin);
+      if (Number(y.revenue) > 0 && finite(y.operatingIncome)) return Number(y.operatingIncome) / Number(y.revenue);
+      return null;
+    }
+    if (field === 'gross') return finite(y.grossMargin) ? Number(y.grossMargin) : null;
+    if (field === 'fcf') return Number(y.revenue) > 0 && finite(y.fcf) ? Number(y.fcf) / Number(y.revenue) : null;
+    if (field === 'net') return Number(y.revenue) > 0 && finite(y.netIncome) ? Number(y.netIncome) / Number(y.revenue) : null;
+    if (field === 'ebitda') return Number(y.revenue) > 0 && finite(y.ebitda) ? Number(y.ebitda) / Number(y.revenue) : null;
+    return null;
+  }).filter(finite);
+}
+
+function deriveBusinessState(stock, lifecycle = null) {
+  const years = (stock.financials?.years || []).slice(-11);
+  const rates = annualGrowthRates(years).map(x => x.value);
+  const estimates = stock.analystEstimates || {};
+  const qMomentum = quarterlyMomentum(stock);
+  const recent3 = rates.slice(-3);
+  const prior3 = rates.slice(-6, -3);
+  const recentRate = robustRate(recent3);
+  const longRate = robustRate(rates.slice(-8));
+  const growth3 = years.length >= 4 ? cagr(years.at(-4).revenue, years.at(-1).revenue, 3) : null;
+  const growth5 = years.length >= 6 ? cagr(years.at(-6).revenue, years.at(-1).revenue, 5) : null;
+  const trendSlope = linearSlope(rates.slice(-5));
+
+  let analyst1 = estimates.revenueGrowthCurrentYear ?? estimates.revenueGrowthFwd ?? null;
+  let analyst2 = estimates.revenueGrowthNextYear ?? null;
+  if (!finite(analyst2) && Number(estimates.revenueCurrentYear) > 0 && Number(estimates.revenueNextYear) > 0) {
+    analyst2 = Number(estimates.revenueNextYear) / Number(estimates.revenueCurrentYear) - 1;
+  }
+  analyst1 = finite(analyst1) ? Number(analyst1) : null;
+  analyst2 = finite(analyst2) ? Number(analyst2) : null;
+
+  const op = marginSeries(years, 'operating');
+  const gross = marginSeries(years, 'gross');
+  const fcf = marginSeries(years, 'fcf');
+  const net = marginSeries(years, 'net');
+  const roics = years.slice(-6).map(y => y.roic).filter(finite).map(Number);
+  const avgRoic = median(roics);
+  const positiveFcfRate = years.length ? years.filter(y => Number(y.fcf) > 0).length / years.length : 0.5;
+  const positiveIncomeRate = years.length ? years.filter(y => Number(y.netIncome) > 0).length / years.length : 0.5;
+  const growthVolatility = stdev(rates.slice(-7));
+  const marginVolatility = stdev(op.slice(-6));
+  const grossStability = 1 - clamp(stdev(gross.slice(-6)) / 0.10, 0, 1);
+  const fcfStability = 1 - clamp(stdev(fcf.slice(-6)) / 0.16, 0, 1);
+  const analystBreadth = clamp((Number(estimates.numAnalysts) || 0) / 24, 0.15, 1);
+  const forecastAgreement = analyst1 != null && analyst2 != null
+    ? 1 - clamp(Math.abs(analyst2 - analyst1) / 0.24, 0, 1)
+    : 0.5;
+  const roicQuality = avgRoic == null ? 0.48 : clamp((avgRoic - 0.04) / 0.28, 0, 1);
+  const pricing = clamp((stock.valuation?.pricingPowerV2?.score ?? stock.pricingPowerScore ?? 50) / 100, 0, 1);
+
+  const priorAverage = mean(prior3) ?? longRate ?? 0;
+  const currentOperatingRate = weightedMean([
+    { value: analyst1, weight: analyst1 == null ? 0 : 0.42 },
+    { value: qMomentum?.recentAverage, weight: qMomentum ? 0.23 : 0 },
+    { value: recentRate, weight: recentRate == null ? 0 : 0.23 },
+    { value: growth3, weight: growth3 == null ? 0 : 0.12 },
+  ]) ?? longRate ?? 0.04;
+  const forwardAverage = mean([analyst1, analyst2].filter(finite)) ?? currentOperatingRate;
+  const inflection = currentOperatingRate - priorAverage;
+  const deceleration = (recentRate ?? currentOperatingRate) - (longRate ?? currentOperatingRate);
+  const marginTrend = linearSlope(op.slice(-5));
+  const fcfTrend = linearSlope(fcf.slice(-5));
+  const grossTrend = linearSlope(gross.slice(-5));
+
+  const consistency = rates.length
+    ? rates.slice(-6).filter(g => g > -0.02).length / Math.min(6, rates.length)
+    : 0.5;
+  const persistenceScore = clamp(
+    0.20 * clamp((forwardAverage + 0.01) / 0.28, 0, 1) +
+    0.15 * consistency +
+    0.14 * roicQuality +
+    0.10 * positiveFcfRate +
+    0.07 * positiveIncomeRate +
+    0.09 * grossStability +
+    0.08 * fcfStability +
+    0.07 * pricing +
+    0.06 * analystBreadth +
+    0.04 * forecastAgreement -
+    0.10 * clamp(growthVolatility / 0.28, 0, 1),
+    0, 1
+  );
+
+  const structuralInflection = inflection >= 0.07 &&
+    (marginTrend >= -0.005 || grossTrend >= -0.005) &&
+    (analyst2 == null || analyst2 >= currentOperatingRate - 0.06);
+  const recovery = priorAverage < 0.04 && currentOperatingRate >= priorAverage + 0.06 &&
+    (marginTrend > 0.005 || fcfTrend > 0.007 || positiveIncomeRate >= 0.5);
+  const normalization = (longRate ?? 0) >= 0.18 && forwardAverage < (longRate ?? 0) - 0.08 &&
+    forwardAverage > 0.03;
+  const deterioration = forwardAverage < Math.min(0.03, (longRate ?? 0.03) - 0.07) &&
+    marginTrend < -0.005;
+
+  let regime = 'steady';
+  if (deterioration) regime = 'deteriorating';
+  else if (recovery) regime = 'recovery';
+  else if (structuralInflection) regime = 'inflecting';
+  else if (normalization) regime = 'normalizing';
+  else if (trendSlope > 0.018 && forwardAverage > (longRate ?? 0) + 0.03) regime = 'accelerating';
+  else if (trendSlope < -0.018 && forwardAverage < (longRate ?? 0) - 0.03) regime = 'decelerating';
+
+  return {
+    years, rates, analyst1, analyst2, qMomentum, recentRate, longRate, growth3, growth5,
+    trendSlope, currentOperatingRate, forwardAverage, priorAverage, inflection, deceleration,
+    avgRoic, positiveFcfRate, positiveIncomeRate, growthVolatility, marginVolatility,
+    grossStability, fcfStability, analystBreadth, forecastAgreement, roicQuality, pricing,
+    opMargins: op, grossMargins: gross, fcfMargins: fcf, netMargins: net,
+    marginTrend, fcfTrend, grossTrend, persistenceScore, regime,
+    lifecycleStage: lifecycle?.stage || null,
+  };
+}
+
+function scaleAndRunway(stock, state) {
+  const marketCap = Number(stock.valuation?.marketCap) || 0;
+  const revenue = Number(state.years.at(-1)?.revenue) || 1;
+  const scale = marketCap >= 1e12 ? 0.72 : marketCap >= 400e9 ? 0.78 : marketCap >= 150e9 ? 0.84
+    : marketCap >= 50e9 ? 0.90 : marketCap >= 15e9 ? 0.95 : 1;
+  const revenueScale = revenue >= 300e9 ? 0.78 : revenue >= 100e9 ? 0.84 : revenue >= 30e9 ? 0.90
+    : revenue >= 10e9 ? 0.95 : 1;
+  const runway = clamp(
+    state.persistenceScore * 0.62 +
+    clamp((state.forwardAverage + 0.01) / 0.30, 0, 1) * 0.25 +
+    state.roicQuality * 0.13,
+    0.20, 1
+  );
+  return { marketCap, revenue, scale, revenueScale, runway, combined: scale * revenueScale };
+}
+
+function terminalAnchor(stock, state, scale) {
+  const industry = stock.valuation?.industryModel?.model || 'general';
+  const structuralFloor = ['software', 'semiconductors-hardware'].includes(industry) ? 0.045
+    : ['financials', 'utilities', 'reit'].includes(industry) ? 0.022 : 0.030;
+  const sustainable = state.avgRoic == null
+    ? null
+    : clamp(state.avgRoic, 0, 0.35) * clamp(Number(stock.reinvestmentRate) || 0.35, 0.08, 0.75);
+  const anchor = weightedMean([
+    { value: state.growth5, weight: state.growth5 == null ? 0 : 0.24 },
+    { value: state.longRate, weight: state.longRate == null ? 0 : 0.18 },
+    { value: sustainable, weight: sustainable == null ? 0 : 0.24 },
+    { value: state.forwardAverage * (0.42 + state.persistenceScore * 0.25), weight: 0.34 },
+  ]) ?? structuralFloor;
+  const maxAnchor = 0.045 + 0.105 * state.persistenceScore * scale.combined;
+  return clamp(anchor, structuralFloor, maxAnchor);
+}
+
+function generateBusinessForecast(stock, lifecycle = null, years = 5, calibration = null) {
+  const state = deriveBusinessState(stock, lifecycle);
+  const scale = scaleAndRunway(stock, state);
+  const calibrationGroup = stock.valuation?.industryModel?.model || 'general';
+  const cal = calibration?.forecastByIndustry?.[calibrationGroup] || calibration?.forecastOverall || {};
+  const analystBias = Number(cal.analystBias) || 0;
+  const historyBias = Number(cal.historyBias) || 0;
+  const anchor = terminalAnchor(stock, state, scale);
+
+  const analystWeight1 = state.analyst1 == null ? 0 : clamp(0.58 + state.analystBreadth * 0.20, 0.58, 0.78);
+  const momentumWeight = state.qMomentum ? 0.12 : 0;
+  const historicalWeight = state.regime === 'inflecting' || state.regime === 'recovery' ? 0.06 : 0.14;
+  const stateWeight = Math.max(0, 1 - analystWeight1 - momentumWeight - historicalWeight);
+
+  let y1 = weightedMean([
+    { value: state.analyst1 == null ? null : state.analyst1 + analystBias, weight: analystWeight1 },
+    { value: state.qMomentum?.recentAverage, weight: momentumWeight },
+    { value: state.recentRate == null ? null : state.recentRate + historyBias, weight: historicalWeight },
+    { value: state.currentOperatingRate, weight: stateWeight },
+  ]) ?? state.currentOperatingRate;
+
+  let y2 = state.analyst2 == null
+    ? weightedMean([
+        { value: y1, weight: 0.45 },
+        { value: state.forwardAverage, weight: 0.25 },
+        { value: anchor, weight: 0.30 },
+      ])
+    : weightedMean([
+        { value: state.analyst2 + analystBias, weight: clamp(0.64 + state.analystBreadth * 0.16, 0.64, 0.80) },
+        { value: y1, weight: 0.10 },
+        { value: anchor, weight: 0.16 },
+      ]);
+
+  if (state.regime === 'inflecting' || state.regime === 'accelerating') {
+    y1 += clamp(state.inflection * 0.10, 0, 0.025);
+    y2 += clamp(state.inflection * 0.07, 0, 0.018);
+  } else if (state.regime === 'normalizing') {
+    y1 = Math.min(y1, Math.max(state.forwardAverage, anchor + 0.06));
+    y2 = Math.min(y2, y1 - 0.01);
+  } else if (state.regime === 'deteriorating') {
+    y1 = Math.min(y1, state.forwardAverage);
+    y2 = Math.min(y2, y1 + 0.02);
+  }
+
+  const nearTermCap = 0.32 + 0.28 * state.persistenceScore * scale.combined;
+  y1 = clamp(y1, -0.35, nearTermCap);
+  y2 = clamp(y2, -0.28, Math.max(0.22, nearTermCap - 0.025));
+
+  const path = [y1];
+  if (years >= 2) path.push(y2);
+  let previous = y2;
+  let revenueMultiple = (1 + Math.max(-0.95, y1)) * (years >= 2 ? 1 + Math.max(-0.95, y2) : 1);
+  const fadeRate = clamp(
+    0.20 + (1 - state.persistenceScore) * 0.28 + (1 - scale.combined) * 0.12 +
+    (state.regime === 'normalizing' ? 0.08 : 0) -
+    (state.regime === 'inflecting' ? 0.05 : 0),
+    0.16, 0.60
+  );
+
+  for (let t = 3; t <= years; t++) {
+    const excess = previous - anchor;
+    let next = anchor + excess * (1 - fadeRate);
+    // A confirmed inflection gets time to persist; it is not averaged away by older years.
+    if (state.regime === 'inflecting' && t <= 4) next += clamp(state.inflection * 0.06, 0, 0.012);
+    if (state.regime === 'recovery' && t <= 4) next += clamp(state.marginTrend * 0.25, 0, 0.010);
+
+    // Revenue-base discipline is continuous rather than a hard category cap.
+    const maxGrowthAtScale = clamp(0.30 * scale.combined * scale.runway / Math.pow(Math.max(1, revenueMultiple), 0.22), 0.055, 0.34);
+    next = Math.min(next, maxGrowthAtScale);
+    next = clamp(next, -0.18, 0.45);
+    path.push(next);
+    revenueMultiple *= 1 + Math.max(-0.95, next);
+    previous = next;
+  }
+
+  const evidenceCompleteness = clamp(
+    Math.min(state.years.length, 8) / 8 * 0.34 +
+    (state.analyst1 != null ? 0.18 : 0) +
+    (state.analyst2 != null ? 0.14 : 0) +
+    state.analystBreadth * 0.14 +
+    (state.qMomentum ? 0.10 : 0) +
+    state.positiveFcfRate * 0.10,
+    0, 1
+  );
+  const pathSmoothness = 1 - clamp(stdev(path) / 0.20, 0, 1);
+  const plausibilityScore = Math.round(clamp(
+    100 * (0.38 * evidenceCompleteness + 0.30 * state.persistenceScore + 0.18 * pathSmoothness + 0.14 * scale.runway),
+    25, 98
+  ));
+
+  return {
+    path,
+    source: 'v30_business_state_and_growth_persistence_forecast',
+    assumptions: {
+      version: '30.0',
+      regime: state.regime,
+      analyst1: state.analyst1,
+      analyst2: state.analyst2,
+      quarterlyMomentum: state.qMomentum,
+      recentHistoricalGrowth: state.recentRate,
+      longHistoricalGrowth: state.longRate,
+      growth3: state.growth3,
+      growth5: state.growth5,
+      trendSlope: state.trendSlope,
+      currentOperatingRate: state.currentOperatingRate,
+      priorOperatingRate: state.priorAverage,
+      inflection: state.inflection,
+      persistenceScore: state.persistenceScore,
+      terminalOperatingAnchor: anchor,
+      fadeRate,
+      scale,
+      projectedRevenueMultiple: revenueMultiple,
+      analystReliability: state.analystBreadth,
+      calibrationApplied: !!calibration?.isCalibrated,
+      year1: path[0],
+      year2: path[1] ?? null,
+      longRunAnchor: anchor,
+      plausibilityScore,
+      state,
+    },
+  };
+}
+
+function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
+  const ys = (stock.financials?.years || []).slice(-8);
+  const state = growthModel?.assumptions?.state || deriveBusinessState(stock, lifecycle);
+  const fields = ['ebitda', 'fcf', 'net'];
+  const bounds = {
+    ebitda: [-0.10, 0.58],
+    fcf: [-0.15, 0.46],
+    net: [-0.25, 0.48],
+  };
+  const paths = {};
+  const targets = {};
+  const starts = {};
+
+  for (const field of fields) {
+    const series = marginSeries(ys, field);
+    const start = series.at(-1) ?? median(series) ?? (field === 'ebitda' ? 0.10 : field === 'fcf' ? 0.07 : 0.05);
+    const med = median(series.slice(-5)) ?? start;
+    const recentTrend = linearSlope(series.slice(-5));
+    const best = series.length ? Math.max(...series.slice(-6)) : start;
+    const worst = series.length ? Math.min(...series.slice(-6)) : start;
+    const improving = recentTrend > 0.004 || state.regime === 'recovery' || state.regime === 'inflecting';
+    const operatingLeverage = clamp(mean(growthModel.path.slice(0, Math.min(4, years))) ?? 0, -0.10, 0.35);
+
+    let target = med;
+    if (improving) {
+      const trendCredit = clamp(recentTrend * Math.min(years, 5) * 0.70, 0, 0.075);
+      const leverageCredit = clamp((operatingLeverage - 0.06) * 0.12 * state.persistenceScore, 0, 0.035);
+      target = Math.max(start, med) + trendCredit + leverageCredit;
+      target = Math.min(target, Math.max(best + 0.025, start + 0.015));
+    } else if (state.regime === 'normalizing' || state.regime === 'decelerating') {
+      target = Math.max(worst, med * 0.75 + start * 0.25);
+    } else {
+      target = med * 0.55 + start * 0.45;
+    }
+
+    if (lifecycle?.normalizeMargins) target = med;
+    const [lo, hi] = bounds[field];
+    target = clamp(target, lo, hi);
+    starts[field] = start;
+    targets[field] = target;
+    paths[field] = [];
+    for (let t = 1; t <= years; t++) {
+      const p = t / years;
+      const smooth = p * p * (3 - 2 * p);
+      // Limit central-case annual margin change so one noisy year cannot create
+      // implausible five-year earnings growth.
+      const raw = start + (target - start) * smooth;
+      const annualLimit = field === 'ebitda' ? 0.035 : 0.030;
+      const prior = t === 1 ? start : paths[field][t - 2];
+      paths[field].push(clamp(raw, prior - annualLimit, prior + annualLimit));
+    }
+  }
+
+  return { paths, starts, targets, source: 'v30_trend_and_operating_leverage_margin_forecast' };
+}
+
+module.exports = {
+  generateBusinessForecast,
+  forecastMarginPaths,
+  deriveBusinessState,
+  annualGrowthRates,
+  quarterlyMomentum,
+};
