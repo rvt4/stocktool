@@ -165,6 +165,9 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
   const exitPerShare = exit.shares > 0 ? Math.max(exit.fcf || exit.netIncome || 0, 0) / exit.shares : null;
   const operatingCAGR = startPerShare > 0 && exitPerShare > 0 ? Math.pow(exitPerShare / startPerShare, 1 / years) - 1 : null;
   const quality = qualityContext(stock, lifecycle);
+  const disagreement = median(rows.map(x => Math.abs(x.presentValue - fairValueToday) / fairValueToday)) || 0;
+  const agreementScore = Math.round(clamp(100 - disagreement * 180, 0, 100));
+  const valuationTrust = clamp(.18 + (agreementScore / 100) * .48 + quality.reliability * .34, .18, 1);
 
   // Mature businesses cannot earn 30%+ central returns from rerating. Growth
   // businesses can earn more, but only when operating value creation supports it.
@@ -172,10 +175,42 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
   const qualityPremium = clamp((quality.quality - .55) * .08 + (quality.persistence - .50) * .05, -.025, .055);
   const dynamicReratingAllowance = clamp(profile.maxRerating + qualityPremium, .005, .085);
   const dynamicBaseCeiling = clamp(profile.maxBase + Math.max(0, qualityPremium * .65), profile.maxBase, .30);
+  let valuationDragFloor = null;
+  let rawValuationDrag = null;
+  let maxTrustedNegativeDrag = null;
+  const forwardGrowth = Number(lifecycle?.forwardGrowth ?? stock?.valuation?.businessForecast?.currentOperatingRate ?? 0);
+  const eliteOperatingSetup = quality.quality >= .65 && quality.reliability >= .52 &&
+    quality.persistence >= .52 && forwardGrowth >= .20;
+
   if (finite(adjustedCAGR)) {
     if (finite(operatingCAGR)) {
       const maxFromOperations = operatingCAGR + dynamicReratingAllowance + dividendYield;
       adjustedCAGR = Math.min(adjustedCAGR, maxFromOperations);
+
+      // V36: valuation is evidence, not certainty. When a high-quality, high-growth
+      // business has a credible operating forecast, an internally disputed set of
+      // valuation methods cannot impose unlimited negative multiple drag. Extreme
+      // valuations may still produce low or negative returns, but the burden of
+      // proof rises with disagreement and forecast quality.
+      if (eliteOperatingSetup) {
+        const businessAnchor = Math.min(operatingCAGR, dynamicBaseCeiling);
+        rawValuationDrag = rawCAGR - businessAnchor;
+        const forwardPe = Number(stock?.valuation?.forwardPe ?? stock?.valuation?.pe ?? 0);
+        const evRevenue = Number(stock?.valuation?.evRevenue ?? 0);
+        const extremeValuation = clamp(Math.max(
+          forwardPe > 0 ? (forwardPe - 55) / 95 : 0,
+          evRevenue > 0 ? (evRevenue - 12) / 28 : 0
+        ), 0, 1);
+        const profileDragBase = profile.name.includes('software') ? .19
+          : profile.name.includes('innovation') ? .17
+            : profile.name.includes('growth') ? .16 : .12;
+        maxTrustedNegativeDrag = clamp(
+          profileDragBase * (.42 + .58 * valuationTrust) + extremeValuation * .10,
+          .07, .28
+        );
+        valuationDragFloor = businessAnchor - maxTrustedNegativeDrag;
+        adjustedCAGR = Math.max(adjustedCAGR, valuationDragFloor);
+      }
     }
     adjustedCAGR = clamp(adjustedCAGR, -.35, dynamicBaseCeiling);
   }
@@ -183,11 +218,9 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
     ? Math.max(0, currentPrice * Math.pow(1 + adjustedCAGR, years) - dividends)
     : null;
 
-  const disagreement = median(rows.map(x => Math.abs(x.presentValue - fairValueToday) / fairValueToday)) || 0;
-  const agreementScore = Math.round(clamp(100 - disagreement * 180, 0, 100));
 
   return {
-    version: 'v35-quality-aware-primary-valuation',
+    version: 'v36-business-first-primary-valuation',
     profile: profile.name,
     primaryMethods: profile.primary,
     supportingMethods: profile.support,
@@ -211,6 +244,11 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
     qualityPremium,
     maxBaseCAGR: dynamicBaseCeiling,
     maxReratingContribution: dynamicReratingAllowance,
+    valuationTrust,
+    eliteOperatingSetup,
+    rawValuationDrag,
+    valuationDragFloor,
+    maxTrustedNegativeDrag,
   };
 }
 

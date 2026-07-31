@@ -30,6 +30,7 @@ function applyExitMultipleDiscipline({
   lifecycleStage = 'Mature',
   sectorMultiple = null,
   industry = null,
+  futureQuality = null,
 }) {
   if (!(rawMultiple > 0)) return { multiple: null, rawMultiple, ceiling: null, wasCapped: false };
 
@@ -37,12 +38,13 @@ function applyExitMultipleDiscipline({
   const persistence = clamp(Number(premiumPersistence || 0), 0, 1);
   const q = clamp(Number(quality || 0), 0, 1);
   const reliability = clamp(Number(forecastReliability || 0), 0, 1);
+  const fq = clamp(Number(futureQuality ?? q), 0, 1);
 
   let ceiling = growthCeiling(type, effectiveGrowth);
   // Quality can expand the cap, but only when persistence and forecast evidence
   // jointly support it. This is intentionally less punitive than V34 for elite
   // businesses and more punitive for low-quality high-multiple stocks.
-  const qualitySupport = clamp((q - .50) * 1.25 + (persistence - .45) * 1.10 + (reliability - .50) * .55, -.25, .55);
+  const qualitySupport = clamp((q - .50) * .70 + (fq - .50) * 1.20 + (persistence - .45) * .75 + (reliability - .50) * .45, -.25, .70);
   ceiling *= clamp(1 + qualitySupport, .78, 1.42);
 
   if (industry === 'semiconductors-hardware') {
@@ -53,7 +55,7 @@ function applyExitMultipleDiscipline({
 
   const genericFloor = type === 'epsExit' ? 7 : type === 'ebitdaExit' ? 5 : .7;
   const durableStage = ['Growth', 'Hyper Growth', 'Elite Compounder', 'Compounder', 'Temporary Disruption'].includes(lifecycleStage);
-  const support = clamp((q - .55) * 1.45 + (persistence - .50) * 1.35 + (reliability - .50) * .75, 0, 1);
+  const support = clamp((q - .55) * .65 + (fq - .52) * 1.35 + (persistence - .50) * .85 + (reliability - .50) * .55, 0, 1);
   let premiumFloor = genericFloor;
   if (durableStage && sectorMultiple > 0 && support > 0) {
     const retention = type === 'epsExit' ? .62 + .28 * support
@@ -65,7 +67,7 @@ function applyExitMultipleDiscipline({
   const boundedCeiling = Math.max(ceiling, premiumFloor);
   const multiple = clamp(rawMultiple, premiumFloor, boundedCeiling);
   return {
-    version: 'v35-exit-discipline',
+    version: 'v36-justified-exit-discipline',
     multiple,
     rawMultiple,
     ceiling: boundedCeiling,
@@ -74,6 +76,7 @@ function applyExitMultipleDiscipline({
     wasFloored: multiple > rawMultiple,
     effectiveGrowth,
     qualitySupport,
+    futureQuality: fq,
     premiumPersistence: persistence,
   };
 }

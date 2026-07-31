@@ -71,7 +71,9 @@
     const fcfMarginTrend = fcfMargins.length >= 3 ? (fcfMargins.at(-1) - fcfMargins[0]) / (fcfMargins.length - 1) : 0;
     const shareTrend = shares.length >= 2 ? cagr(shares[0], shares.at(-1), shares.length - 1) : 0;
     const revenueDeclineYears = revRates.slice(-5).filter(x => x < -0.025).length;
+    const recentRevenueDeclineYears = revRates.slice(-3).filter(x => x < -0.025).length;
     const severeDecline = revRates.slice(-4).some(x => x < -0.10);
+    const recentSevereDecline = revRates.slice(-2).some(x => x < -0.10);
     const priorDeterioration = revenueDeclineYears >= 1 || (opMargins.length >= 4 && Math.min(...opMargins.slice(0, -1)) < opMargins[0] - 0.025);
     const recoveryEvidence = priorDeterioration && ((opMarginTrend > 0.008) || (fcfMarginTrend > 0.008) || growthAcceleration > 0.05) && forwardGrowth > -0.02;
 
@@ -92,8 +94,8 @@
     return {
       years: yrs.length, forwardGrowth, y1, y2, rev3, rev5, revMedian, revVol,
       growthAcceleration, avgRoic, marginStability, opMarginTrend, fcfMarginTrend,
-      positiveFcfRate, positiveIncomeRate, shareTrend, revenueDeclineYears,
-      severeDecline, priorDeterioration, recoveryEvidence, fcfYield, earningsYield,
+      positiveFcfRate, positiveIncomeRate, shareTrend, revenueDeclineYears, recentRevenueDeclineYears,
+      severeDecline, recentSevereDecline, priorDeterioration, recoveryEvidence, fcfYield, earningsYield,
       dividendYield, payout, cyclicalIndustry, defensiveIndustry,
     };
   }
@@ -130,8 +132,9 @@
     );
 
     const turnaround = 100 * (
-      0.34 * (p.priorDeterioration ? 1 : 0) +
-      0.34 * (p.recoveryEvidence ? 1 : 0) +
+      0.22 * (p.priorDeterioration ? 1 : 0) +
+      0.28 * (p.recoveryEvidence ? 1 : 0) +
+      0.28 * ((p.recentRevenueDeclineYears > 0 || p.recentSevereDecline || p.positiveIncomeRate < .60) ? 1 : 0) +
       0.14 * pct(p.growthAcceleration, 0, 0.12) +
       0.10 * pct(p.opMarginTrend, 0, 0.025) +
       0.08 * pct(p.fcfMarginTrend, 0, 0.025)
@@ -174,7 +177,8 @@
 
     // Hard gates prevent one noisy metric from creating the wrong business label.
     if (!(p.forwardGrowth >= 0.18 && (p.rev3 ?? p.forwardGrowth) >= 0.12)) scores['Hyper Growth'] *= 0.45;
-    if (!(p.priorDeterioration && p.recoveryEvidence)) scores.Turnaround *= 0.35;
+    const activeImpairment = p.recentRevenueDeclineYears > 0 || p.recentSevereDecline || p.positiveIncomeRate < .60;
+    if (!(p.priorDeterioration && p.recoveryEvidence && activeImpairment)) scores.Turnaround *= 0.22;
     if (!(p.cyclicalIndustry || (p.revVol ?? 0) >= 0.18)) scores.Cyclical *= 0.45;
     if (!(p.dividendYield >= 0.022 && (p.payout == null || p.payout <= 1.10))) scores.Dividend *= 0.45;
     if (!((p.fcfYield ?? 0) >= 0.045 || (p.earningsYield ?? 0) >= 0.05)) scores.Value *= 0.55;
@@ -192,6 +196,15 @@
     // A mature high-quality grower is a compounder, not generic Growth.
     if (category === 'Growth' && scores.Compounder >= scores.Growth - 5 && p.avgRoic >= 0.16 && p.positiveFcfRate >= 0.8) {
       category = 'Compounder'; top = scores.Compounder;
+    }
+    // Turnaround is a current operating condition, not a memory of an old weak
+    // period. Durable businesses with healthy forward growth, consistently
+    // positive cash flow, and no recent impairment remain Compounders/Growth.
+    if (category === 'Turnaround' && !activeImpairment && p.forwardGrowth >= .07 &&
+        p.positiveFcfRate >= .80 && (p.avgRoic ?? 0) >= .12) {
+      const durable = scores.Compounder >= scores.Growth ? 'Compounder' : 'Growth';
+      category = durable;
+      top = scores[durable];
     }
 
     const dataCoverage = clamp((p.years - 2) / 6, 0, 1);
