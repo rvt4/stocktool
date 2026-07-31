@@ -1,0 +1,188 @@
+'use strict';
+
+/**
+ * V33 primary valuation engine.
+ *
+ * Core rule: do not average every valuation model. Select the methods that fit
+ * the business economics, require corroboration, and calculate present value
+ * and future exit value from the same selected method set.
+ */
+
+const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+const finite = x => Number.isFinite(Number(x));
+const median = values => {
+  const a = values.filter(finite).map(Number).sort((x, y) => x - y);
+  if (!a.length) return null;
+  const m = Math.floor(a.length / 2);
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+};
+
+const METHOD_LABELS = {
+  dcf: 'DCF', dcfSBCAdjusted: 'SBC-adjusted DCF', ownerEarnings: 'Owner Earnings',
+  revenueExit: 'Revenue Exit', epsExit: 'EPS Exit', ebitdaExit: 'EV/EBITDA Exit',
+};
+
+function profileFor(stock, category, lifecycle = {}) {
+  const industry = stock?.valuation?.industryModel?.model || 'general';
+  const stage = lifecycle.stage || category || 'Value';
+  const archetype = lifecycle.archetype || lifecycle.economicModel?.archetype || '';
+  const growth = Number(lifecycle.forwardGrowth ?? stock?.valuation?.businessForecast?.currentOperatingRate ?? stock?.growthYear1 ?? 0);
+  const persistence = Number(lifecycle.growthPersistenceScore ?? lifecycle.compoundingPotential ?? 50) / 100;
+  const sbc = Number(stock?.valuation?.sbcIntensity ?? stock?.financials?.years?.at(-1)?.sbcIntensity ?? 0);
+
+  if (industry === 'financials') return {
+    name: 'financial-earnings', primary: ['epsExit', 'dcf'], support: ['ownerEarnings'],
+    weights: { epsExit: .55, dcf: .30, ownerEarnings: .15 }, maxBase: .18, maxRerating: .035,
+  };
+  if (industry === 'reit') return {
+    name: 'asset-income', primary: ['ebitdaExit', 'dcf'], support: ['ownerEarnings'],
+    weights: { ebitdaExit: .50, dcf: .30, ownerEarnings: .20 }, maxBase: .16, maxRerating: .025,
+  };
+  if (industry === 'utilities' || stage === 'Utility') return {
+    name: 'regulated-cash-flow', primary: ['dcf', 'ownerEarnings'], support: ['ebitdaExit'],
+    weights: { dcf: .50, ownerEarnings: .30, ebitdaExit: .20 }, maxBase: .14, maxRerating: .020,
+  };
+  if (['energy', 'materials'].includes(industry) || ['Cyclical', 'Asset Heavy'].includes(stage)) return {
+    name: 'cycle-normalized', primary: ['dcf', 'ebitdaExit'], support: ['ownerEarnings'],
+    weights: { dcf: .45, ebitdaExit: .40, ownerEarnings: .15 }, maxBase: .17, maxRerating: .025,
+  };
+  if (industry === 'semiconductors-hardware') return {
+    name: 'innovation-cash-flow', primary: ['dcf', 'dcfSBCAdjusted'], support: ['epsExit', 'revenueExit'],
+    weights: growth >= .18 && persistence >= .55
+      ? { dcf: .45, dcfSBCAdjusted: .25, epsExit: .20, revenueExit: .10 }
+      : { dcf: .50, dcfSBCAdjusted: .25, epsExit: .20, ebitdaExit: .05 },
+    maxBase: growth >= .18 ? .24 : .19, maxRerating: .045,
+  };
+  if (industry === 'software') return {
+    name: 'software-growth-quality', primary: ['dcfSBCAdjusted', 'dcf'], support: ['revenueExit', 'epsExit'],
+    weights: growth >= .18
+      ? { dcfSBCAdjusted: .35, dcf: .25, revenueExit: .22, epsExit: .18 }
+      : { dcfSBCAdjusted: .35, dcf: .30, epsExit: .25, ownerEarnings: .10 },
+    maxBase: growth >= .18 ? .25 : .20, maxRerating: .045,
+  };
+  if (['Dividend Compounder', 'Mature'].includes(stage) || category === 'Dividend') return {
+    name: 'mature-owner-cash-flow', primary: ['dcf', 'ownerEarnings'], support: ['epsExit'],
+    weights: { dcf: .45, ownerEarnings: .35, epsExit: .20 }, maxBase: .15, maxRerating: .020,
+  };
+  if (['Growth', 'Hyper Growth', 'Temporary Disruption'].includes(stage) || growth >= .15) return {
+    name: 'growth-quality', primary: ['dcf', 'epsExit'], support: ['dcfSBCAdjusted', 'revenueExit'],
+    weights: sbc > .03
+      ? { dcf: .30, dcfSBCAdjusted: .30, epsExit: .25, revenueExit: .15 }
+      : { dcf: .40, epsExit: .30, ebitdaExit: .20, revenueExit: .10 },
+    maxBase: growth >= .25 ? .26 : .22, maxRerating: .045,
+  };
+  if (['Elite Compounder', 'Compounder'].includes(stage) || category === 'Compounder') return {
+    name: 'quality-compounder', primary: ['dcf', 'ownerEarnings'], support: ['epsExit'],
+    weights: { dcf: .45, ownerEarnings: .25, epsExit: .25, ebitdaExit: .05 }, maxBase: .19, maxRerating: .030,
+  };
+  return {
+    name: 'value-cash-flow', primary: ['dcf', 'ownerEarnings'], support: ['epsExit', 'ebitdaExit'],
+    weights: { dcf: .40, ownerEarnings: .25, epsExit: .20, ebitdaExit: .15 }, maxBase: .18, maxRerating: .030,
+  };
+}
+
+function reliability(method, presentValue, futureValue, centerPresent, centerFuture, profile, stock) {
+  if (!(presentValue > 0) || !(futureValue > 0)) return 0;
+  let r = 1;
+  const pRatio = Math.max(presentValue / centerPresent, centerPresent / presentValue);
+  const fRatio = Math.max(futureValue / centerFuture, centerFuture / futureValue);
+  if (pRatio > 3 || fRatio > 3) r *= .20;
+  else if (pRatio > 2 || fRatio > 2) r *= .45;
+  else if (pRatio > 1.6 || fRatio > 1.6) r *= .72;
+
+  const years = stock?.financials?.years || [];
+  const recent = years.slice(-5);
+  const positiveFcf = recent.length ? recent.filter(y => Number(y.fcf) > 0).length / recent.length : .5;
+  const positiveIncome = recent.length ? recent.filter(y => Number(y.netIncome) > 0).length / recent.length : .5;
+  const last = recent.at(-1) || {};
+  const sbcIntensity = last.revenue > 0 ? Number(last.sbc || 0) / last.revenue : 0;
+
+  if (method === 'ownerEarnings' && positiveFcf < .8) r *= .50;
+  if (method === 'epsExit' && positiveIncome < .8) r *= .55;
+  if (method === 'dcf' && positiveFcf < .6) r *= .60;
+  if (method === 'dcfSBCAdjusted' && sbcIntensity < .01) r *= .70;
+  if (method === 'revenueExit' && !profile.name.includes('growth') && !profile.name.includes('innovation')) r *= .35;
+  return clamp(r, .05, 1);
+}
+
+function normalizeRows(rows) {
+  const total = rows.reduce((s, x) => s + x.rawWeight, 0);
+  return rows.map(x => ({ ...x, weight: total > 0 ? x.rawWeight / total : 0 }));
+}
+
+function selectedValuation({ stock, category, lifecycle, methodResults, model }) {
+  const profile = profileFor(stock, category, lifecycle);
+  const all = Object.entries(methodResults).map(([key, result]) => ({
+    key,
+    presentValue: Number(result?.fairValuePerShare),
+    futureValue: Number(result?.exitPricePerShare),
+  })).filter(x => x.presentValue > 0 && x.futureValue > 0 && (profile.weights[x.key] || 0) > 0);
+
+  if (all.length < 2) return null;
+  const centerPresent = median(all.map(x => x.presentValue));
+  const centerFuture = median(all.map(x => x.futureValue));
+  let rows = all.map(x => ({
+    ...x,
+    reliability: reliability(x.key, x.presentValue, x.futureValue, centerPresent, centerFuture, profile, stock),
+  })).map(x => ({ ...x, rawWeight: (profile.weights[x.key] || 0) * x.reliability }));
+  rows = normalizeRows(rows).filter(x => x.weight >= .035);
+  rows = normalizeRows(rows);
+
+  const fairValueToday = rows.reduce((s, x) => s + x.presentValue * x.weight, 0);
+  const rawExitValue = rows.reduce((s, x) => s + x.futureValue * x.weight, 0);
+  const currentPrice = Number(stock?.price?.current);
+  const years = Math.max(1, Number(model?.projection?.length) || 5);
+  const dividendYield = clamp(Number(stock?.valuation?.dividendYield || 0), 0, .12);
+  const dividends = currentPrice * dividendYield * years;
+  const rawCAGR = currentPrice > 0 && rawExitValue > 0
+    ? Math.pow((rawExitValue + dividends) / currentPrice, 1 / years) - 1
+    : null;
+
+  const exit = model?.projection?.at(-1) || {};
+  const start = stock?.financials?.years?.at(-1) || {};
+  const startPerShare = start.sharesOutTTM > 0 ? Math.max(start.fcf || start.netIncome || 0, 0) / start.sharesOutTTM : null;
+  const exitPerShare = exit.shares > 0 ? Math.max(exit.fcf || exit.netIncome || 0, 0) / exit.shares : null;
+  const operatingCAGR = startPerShare > 0 && exitPerShare > 0 ? Math.pow(exitPerShare / startPerShare, 1 / years) - 1 : null;
+
+  // Mature businesses cannot earn 30%+ central returns from rerating. Growth
+  // businesses can earn more, but only when operating value creation supports it.
+  let adjustedCAGR = rawCAGR;
+  if (finite(adjustedCAGR)) {
+    if (finite(operatingCAGR)) {
+      const maxFromOperations = operatingCAGR + profile.maxRerating + dividendYield;
+      adjustedCAGR = Math.min(adjustedCAGR, maxFromOperations);
+    }
+    adjustedCAGR = clamp(adjustedCAGR, -.35, profile.maxBase);
+  }
+  const actionableExitValue = finite(adjustedCAGR)
+    ? Math.max(0, currentPrice * Math.pow(1 + adjustedCAGR, years) - dividends)
+    : null;
+
+  const disagreement = median(rows.map(x => Math.abs(x.presentValue - fairValueToday) / fairValueToday)) || 0;
+  const agreementScore = Math.round(clamp(100 - disagreement * 180, 0, 100));
+
+  return {
+    version: 'v33-primary-method-selection',
+    profile: profile.name,
+    primaryMethods: profile.primary,
+    supportingMethods: profile.support,
+    selectedMethods: rows.map(x => ({
+      method: x.key, label: METHOD_LABELS[x.key] || x.key,
+      weight: x.weight, reliability: x.reliability,
+      fairValueToday: x.presentValue, exitValue: x.futureValue,
+    })),
+    fairValueToday,
+    rawExitValue,
+    actionableExitValue,
+    rawCAGR,
+    expectedCAGR: adjustedCAGR,
+    operatingCAGR,
+    dividends,
+    years,
+    agreementScore,
+    maxBaseCAGR: profile.maxBase,
+    maxReratingContribution: profile.maxRerating,
+  };
+}
+
+module.exports = { selectedValuation, profileFor };
