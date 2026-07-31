@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Business Forecast Engine V34
+ * Business Forecast Engine V37
  *
  * Forecasts the operating business first and leaves category/lifecycle as a
  * diagnostic rather than the primary forecast driver. The engine distinguishes:
@@ -110,6 +110,31 @@ function marginSeries(years, field) {
   }).filter(finite);
 }
 
+
+function sanitizeAnalystGrowth(raw, stateLike = {}, stock = {}) {
+  if (!finite(raw)) return { value: null, reliability: 0, reasons: ['missing'] };
+  const value = Number(raw);
+  const refs = [stateLike.recentRate, stateLike.longRate, stateLike.growth3, stateLike.qMomentum?.recentAverage]
+    .filter(finite).map(Number);
+  const center = refs.length ? median(refs) : null;
+  const spread = refs.length >= 2 ? Math.max(0.04, stdev(refs) * 1.75) : 0.08;
+  const latestRevenue = Number(stateLike.latestRevenue) || 0;
+  const marketCap = Number(stock.valuation?.marketCap) || 0;
+  const largeScale = latestRevenue >= 20e9 || marketCap >= 75e9;
+  const matureEvidence = center != null && center < 0.12 && (stateLike.persistenceHint ?? 0.5) < 0.78;
+  let lo = center == null ? -0.30 : center - Math.max(0.16, spread * 2.5);
+  let hi = center == null ? 0.65 : center + Math.max(0.18, spread * 2.75);
+  if (largeScale && matureEvidence) hi = Math.min(hi, Math.max(0.12, center + 0.08));
+  if (latestRevenue >= 100e9 && center != null && center < 0.15) hi = Math.min(hi, Math.max(0.14, center + 0.11));
+  const sanitized = clamp(value, lo, hi);
+  const distance = Math.abs(value - sanitized);
+  const reliability = clamp(1 - distance / 0.35, 0.15, 1);
+  const reasons = [];
+  if (distance > 0.001) reasons.push(`growth_clamped_${(value*100).toFixed(1)}_to_${(sanitized*100).toFixed(1)}`);
+  if (largeScale) reasons.push('large_scale_guard');
+  return { value: sanitized, raw: value, reliability, reasons, center, lo, hi };
+}
+
 function deriveBusinessState(stock, lifecycle = null) {
   const years = (stock.financials?.years || []).slice(-11);
   const rates = annualGrowthRates(years).map(x => x.value);
@@ -122,6 +147,7 @@ function deriveBusinessState(stock, lifecycle = null) {
   const growth3 = years.length >= 4 ? cagr(years.at(-4).revenue, years.at(-1).revenue, 3) : null;
   const growth5 = years.length >= 6 ? cagr(years.at(-6).revenue, years.at(-1).revenue, 5) : null;
   const trendSlope = linearSlope(rates.slice(-5));
+  const latestRevenue = Number(years.at(-1)?.revenue) || 0;
 
   let analyst1 = estimates.revenueGrowthCurrentYear ?? estimates.revenueGrowthFwd ?? null;
   let analyst2 = estimates.revenueGrowthNextYear ?? null;
@@ -130,6 +156,18 @@ function deriveBusinessState(stock, lifecycle = null) {
   }
   analyst1 = finite(analyst1) ? Number(analyst1) : null;
   analyst2 = finite(analyst2) ? Number(analyst2) : null;
+
+  const preliminary = { recentRate, longRate, growth3, qMomentum, latestRevenue, persistenceHint: 0.5 };
+  const analyst1Check = sanitizeAnalystGrowth(analyst1, preliminary, stock);
+  analyst1 = analyst1Check.value;
+  const impliedAbs1 = latestRevenue > 0 && Number(estimates.revenueCurrentYear) > 0
+    ? Number(estimates.revenueCurrentYear) / latestRevenue - 1 : null;
+  const absoluteEstimateReliable = impliedAbs1 == null || analyst1 == null || Math.abs(impliedAbs1 - analyst1) <= 0.14;
+  if (!absoluteEstimateReliable) {
+    analyst1Check.reasons.push('absolute_revenue_estimate_rejected');
+  }
+  const analyst2Check = sanitizeAnalystGrowth(analyst2, { ...preliminary, recentRate: analyst1 ?? recentRate }, stock);
+  analyst2 = analyst2Check.value;
 
   const op = marginSeries(years, 'operating');
   const gross = marginSeries(years, 'gross');
@@ -208,6 +246,7 @@ function deriveBusinessState(stock, lifecycle = null) {
     opMargins: op, grossMargins: gross, fcfMargins: fcf, netMargins: net,
     marginTrend, fcfTrend, grossTrend, persistenceScore, regime,
     lifecycleStage: lifecycle?.stage || null,
+    analyst1Check, analyst2Check, absoluteEstimateReliable, latestRevenue,
   };
 }
 
@@ -253,7 +292,7 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
   const historyBias = Number(cal.historyBias) || 0;
   const terminal = terminalAnchor(stock, state, scale);
 
-  const analystWeight1 = state.analyst1 == null ? 0 : clamp(0.58 + state.analystBreadth * 0.20, 0.58, 0.78);
+  const analystWeight1 = state.analyst1 == null ? 0 : clamp((0.48 + state.analystBreadth * 0.22) * (state.analyst1Check?.reliability ?? 1), 0.22, 0.76);
   const momentumWeight = state.qMomentum ? 0.12 : 0;
   const historicalWeight = ['inflecting', 'recovery', 'accelerating'].includes(state.regime) ? 0.05 : 0.14;
   const stateWeight = Math.max(0, 1 - analystWeight1 - momentumWeight - historicalWeight);
@@ -272,7 +311,7 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
         { value: terminal, weight: 0.15 },
       ])
     : weightedMean([
-        { value: state.analyst2 + analystBias, weight: clamp(0.66 + state.analystBreadth * 0.16, 0.66, 0.82) },
+        { value: state.analyst2 + analystBias, weight: clamp((0.56 + state.analystBreadth * 0.18) * (state.analyst2Check?.reliability ?? 1), 0.25, 0.78) },
         { value: y1, weight: 0.16 },
         { value: terminal, weight: 0.10 },
       ]);
@@ -389,9 +428,9 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
 
   return {
     path,
-    source: 'v31_three_phase_persistence_runway_forecast',
+    source: 'v37_reliability_guarded_persistence_forecast',
     assumptions: {
-      version: '31.0',
+      version: '37.0',
       regime: state.regime,
       analyst1: state.analyst1,
       analyst2: state.analyst2,
@@ -415,6 +454,7 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
       scale,
       projectedRevenueMultiple: revenueMultiple,
       analystReliability: state.analystBreadth,
+      analystConsensusChecks: { year1: state.analyst1Check, year2: state.analyst2Check, absoluteEstimateReliable: state.absoluteEstimateReliable },
       calibrationApplied: !!calibration?.isCalibrated,
       year1: path[0],
       year2: path[1] ?? null,
@@ -466,7 +506,7 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
     const b = Number(ys[i]?.sharesOutTTM);
     if (a > 0 && b > 0) historicalShareRates.push(b / a - 1);
   }
-  const shareGrowth = clamp(robustRate(historicalShareRates.slice(-5)) ?? 0, -0.08, 0.10);
+  const shareGrowth = clamp(robustRate(historicalShareRates.filter(x => Math.abs(x) <= 0.25).slice(-5)) ?? 0, -0.05, 0.05);
   const startShares = Number(latest.sharesOutTTM) || Number(latest.shares) || null;
   const rev1 = Number(estimates.revenueCurrentYear) > 0
     ? Number(estimates.revenueCurrentYear)
@@ -567,6 +607,28 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
       target = longMedian ?? start;
     }
 
+    // Analyst-anchored profitability floor. A profitable growth/compounder should
+    // not be forced back to an obsolete low-margin history after analysts already
+    // anchor the next two years at materially higher profitability (CELH case).
+    if (field === 'net' && !deterioration) {
+      const analystFloorAnchor = weightedMean([
+        { value: analystNet1, weight: analystNet1 == null ? 0 : 0.35 },
+        { value: analystNet2, weight: analystNet2 == null ? 0 : 0.65 },
+      ]);
+      const isDurableGrowth = avgGrowth3 >= 0.10 && persistence >= 0.48;
+      if (analystFloorAnchor != null && isDurableGrowth) {
+        const floor = Math.min(analystFloorAnchor * 0.72, analystFloorAnchor - 0.015);
+        target = Math.max(target, floor);
+      }
+    }
+
+    // Mature, low-growth businesses cannot manufacture huge returns through a
+    // heroic margin ramp. Limit expansion unless there is clear operating evidence.
+    if (avgGrowth3 < 0.12 && persistence < 0.72 && broadLeverageSignal < 0.62) {
+      const matureCap = field === 'ebitda' ? 0.035 : field === 'fcf' ? 0.025 : 0.030;
+      target = Math.min(target, start + matureCap);
+    }
+
     // Keep targets economically plausible relative to observed history, while
     // permitting genuine mix improvement above the old peak.
     const expansionAbovePeak = field === 'ebitda' ? 0.10 : field === 'fcf' ? 0.07 : 0.08;
@@ -640,7 +702,7 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
     targets,
     diagnostics,
     assumptions: {
-      version: '34.0',
+      version: '37.0',
       avgGrowth3,
       avgGrowth5,
       durableGrowth,
@@ -651,7 +713,7 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
       analystNet2,
       shareGrowth,
     },
-    source: 'v34_incremental_margin_and_operating_leverage_forecast',
+    source: 'v37_margin_floor_and_mature_cap_forecast',
   };
 }
 module.exports = {
