@@ -660,6 +660,12 @@ function cashFlowAnchor(methods) {
 function methodSpecificReliability(stock, key, value, center, anchor = null) {
   const last = stock.financials.years.at(-1) || {};
   const analyst = analystReliability(stock);
+  const forecast = stock.valuation?.businessForecast || {};
+  const regime = forecast.regime || 'steady';
+  const persistence = Number(forecast.persistenceScore) || 0;
+  const forwardRate = Number(forecast.currentOperatingRate ?? forecast.year1) || 0;
+  const highGrowthTransition = forwardRate >= 0.18 && persistence >= 0.55 &&
+    ['inflecting', 'accelerating', 'recovery'].includes(regime);
   const ratio = Math.max(value / center, center / value);
   let r = ratio <= 1.35 ? 1 : ratio <= 1.75 ? 0.82 : ratio <= 2.4 ? 0.55 : 0.25;
 
@@ -679,6 +685,19 @@ function methodSpecificReliability(stock, key, value, center, anchor = null) {
   if (key === 'dcf' && sbcIntensity > 0.10) r *= 0.70;
   if (key === 'dcfSBCAdjusted' && sbcIntensity < 0.02) r *= 0.75;
 
+  // Lifecycle consistency: owner earnings is a mature-state method. During a
+  // well-supported inflection it remains a downside cross-check, not the primary
+  // central valuation. Forward EPS/EBITDA and SBC-adjusted cash flow better match
+  // the projected economic state.
+  if (highGrowthTransition) {
+    if (key === 'ownerEarnings') r *= 0.30;
+    if (key === 'dcf') r *= 0.82;
+    if (key === 'dcfSBCAdjusted') r *= 1.05;
+    if (key === 'epsExit') r *= 1.12;
+    if (key === 'ebitdaExit') r *= 1.08;
+    if (key === 'revenueExit') r *= 1.06;
+  }
+
   // When all three exit methods cluster together at a much higher value than the
   // independently calculated cash-flow methods, the ordinary cross-method median is
   // misleading. Penalize the exit method against the cash-flow anchor as well. This
@@ -686,11 +705,9 @@ function methodSpecificReliability(stock, key, value, center, anchor = null) {
   // roughly $350-$400 DCF merely because there are more exit methods than DCF methods.
   if (anchor > 0 && ['revenueExit', 'epsExit', 'ebitdaExit'].includes(key)) {
     const anchorRatio = value / anchor;
-    const anchorPenalty = anchorRatio <= 1.35 ? 1
-      : anchorRatio <= 1.75 ? 0.78
-      : anchorRatio <= 2.25 ? 0.48
-      : anchorRatio <= 3.0 ? 0.25
-      : 0.12;
+    const anchorPenalty = highGrowthTransition
+      ? (anchorRatio <= 1.75 ? 1 : anchorRatio <= 2.5 ? 0.82 : anchorRatio <= 3.5 ? 0.58 : 0.35)
+      : (anchorRatio <= 1.35 ? 1 : anchorRatio <= 1.75 ? 0.78 : anchorRatio <= 2.25 ? 0.48 : anchorRatio <= 3.0 ? 0.25 : 0.12);
     r *= anchorPenalty;
   }
 
@@ -766,11 +783,16 @@ function combineValuations(methods, category = 'Value', stock = null, businessPr
   let normalized = weighted.map(x => ({ ...x, normalizedWeight: total ? x.weight / total : 0 }));
 
   const industry = stock?.valuation?.industryModel?.model;
+  const forecast = stock?.valuation?.businessForecast || {};
+  const transition = Number(forecast.currentOperatingRate ?? forecast.year1) >= 0.18 &&
+    Number(forecast.persistenceScore) >= 0.55 &&
+    ['inflecting', 'accelerating', 'recovery'].includes(forecast.regime);
   const caps = {
-    ownerEarnings: 0.15,
-    revenueExit: industry === 'software' ? 0.28 : industry === 'semiconductors-hardware' ? 0.08 : 0.18,
-    epsExit: industry === 'semiconductors-hardware' ? 0.18 : 0.30,
-    ebitdaExit: industry === 'semiconductors-hardware' ? 0.22 : 0.42,
+    ownerEarnings: transition ? 0.06 : 0.15,
+    revenueExit: transition ? (industry === 'software' ? 0.30 : industry === 'semiconductors-hardware' ? 0.16 : 0.22)
+      : industry === 'software' ? 0.28 : industry === 'semiconductors-hardware' ? 0.08 : 0.18,
+    epsExit: transition ? 0.34 : industry === 'semiconductors-hardware' ? 0.18 : 0.30,
+    ebitdaExit: transition ? 0.32 : industry === 'semiconductors-hardware' ? 0.22 : 0.42,
   };
   normalized = redistributeCaps(normalized, caps);
 
@@ -855,6 +877,10 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   stock.valuation.lifecycle = lifecycle;
   stock.valuation.moat = moat;
   stock.valuation.businessProfile = businessProfile;
+  // V31 exposes the operating regime to valuation-method reliability. Methods
+  // based on today's normalized owner earnings must not dominate an inflecting
+  // business whose forecast explicitly models a multi-year margin transition.
+  stock.valuation.businessForecast = model.growthModel?.assumptions || null;
   const dcf = dcfFromProjection(stock, model, { sbcAdjusted: false });
   const dcfSBCAdjusted = dcfFromProjection(stock, model, { sbcAdjusted: true });
   const ownerEarnings = ownerEarningsFromProjection(stock, model);
@@ -931,7 +957,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '30.0-business-first-forecast-engine', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '31.0-persistence-and-lifecycle-consistent-valuation', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {

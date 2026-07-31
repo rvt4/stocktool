@@ -574,10 +574,15 @@ function scoreStock(stock) {
   const ownerEarningsReturn = stock.valuation.ownerEarningsReturn ?? null;
   const institutionalReturn = stock.valuation.returnEngineV2 ?? null;
   const v7Return = stock.valuation.expectedReturnProfile ?? null;
-  const expectedReturn = stock.valuation.scenarioAnalysis?.probabilityWeightedCAGR
-    ?? ownerEarningsReturn?.expectedCAGR
-    ?? institutionalReturn?.expectedCAGR
+  // V31 canonical ordering: the unified lifecycle-consistent return engine is the
+  // authoritative expected return. Scenario analysis describes uncertainty around
+  // that base, and owner earnings is a validation method only. The previous order
+  // let owner earnings/scenarios override the unified model, producing negative
+  // headline CAGRs even when the business-first engine showed strong compounding.
+  const expectedReturn = institutionalReturn?.expectedCAGR
     ?? stock.valuation.fiveYearPriceTarget?.cagr
+    ?? stock.valuation.scenarioAnalysis?.probabilityWeightedCAGR
+    ?? ownerEarningsReturn?.expectedCAGR
     ?? v7Return?.expectedCAGR
     ?? null;
   const lastRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
