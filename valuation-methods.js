@@ -10,6 +10,8 @@
  *  - no valuation method is deleted solely for disagreeing with DCF
  */
 
+const CategoryEngine = require('./engine/category-engine');
+
 const {
   solveImpliedGrowth,
   getDynamicDiscountRate,
@@ -54,35 +56,9 @@ function historicalMedianGrowth(yrs) {
   return median(rates.slice(-5));
 }
 
-// ---------- V3 category inference ----------
+// ---------- Shared category inference ----------
 function inferValuationCategory(stock) {
-  const yrs = stock.financials?.years || [];
-  if (yrs.length < 3) return 'Value';
-  const last = yrs[yrs.length - 1];
-  const avgRoic = mean(yrs.slice(-3).map(y => y.roic).filter(Number.isFinite));
-  const histGrowth = historicalMedianGrowth(yrs);
-  const analystGrowth = stock.analystEstimates?.revenueGrowthCurrentYear
-    ?? stock.analystEstimates?.revenueGrowthFwd
-    ?? stock.growthYear1
-    ?? histGrowth
-    ?? 0;
-  const nextGrowth = stock.analystEstimates?.revenueGrowthNextYear ?? analystGrowth;
-  const forwardGrowth = mean([analystGrowth, nextGrowth].filter(Number.isFinite)) ?? 0;
-  const divYield = stock.valuation?.dividendYield || 0;
-
-  const opMargins = yrs.slice(-4).map(y => y.opMargin).filter(Number.isFinite);
-  const marginRecovery = opMargins.length >= 2 && opMargins[opMargins.length - 1] > opMargins[0] + 0.015;
-  const recentRevenueDecline = yrs.slice(-4).some((y, i, a) => i > 0 && y.revenue < a[i - 1].revenue * 0.97);
-  const earningsVolatile = yrs.slice(-4).filter(y => y.netIncome > 0).length <= 2;
-
-  // A genuinely fast-growing business is not a turnaround merely because an old base year was weak.
-  if (forwardGrowth >= 0.25) return 'Hyper Growth';
-  if (forwardGrowth >= 0.15) return 'Growth';
-  if (avgRoic != null && avgRoic >= 0.15 && forwardGrowth >= 0.08) return 'Compounder';
-  if (recentRevenueDecline && marginRecovery && forwardGrowth < 0.12) return 'Turnaround';
-  if (earningsVolatile && forwardGrowth < 0.08 && recentRevenueDecline) return 'Cyclical';
-  if (divYield >= 0.025) return 'Dividend';
-  return 'Value';
+  return CategoryEngine.classifyCategory(stock);
 }
 
 // ---------- Dilution ----------

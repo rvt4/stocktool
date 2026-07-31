@@ -16,6 +16,8 @@
  * }
  */
 
+const CategoryEngine = require('./engine/category-engine');
+
 // ---------- Utilities ----------
 
 function mean(arr) { return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
@@ -39,39 +41,7 @@ function scoreBand(value, poor, excellent) {
 // ---------- 1. Category Classification (do this FIRST) ----------
 
 function classifyCategory(stock) {
-  const yrs = stock.financials?.years || [];
-  if (yrs.length < 3) return 'Unknown';
-  const last = yrs[yrs.length - 1];
-  const avgRoic = mean(yrs.slice(-3).map(y => y.roic).filter(x => x != null));
-  const divYield = stock.valuation?.dividendYield || 0;
-
-  const histRates = [];
-  for (let i = 1; i < yrs.length; i++) {
-    if (yrs[i - 1].revenue > 0 && yrs[i].revenue > 0) histRates.push(yrs[i].revenue / yrs[i - 1].revenue - 1);
-  }
-  const historicalGrowth = histRates.length ? median(histRates.slice(-5)) : null;
-  const currentForward = stock.analystEstimates?.revenueGrowthCurrentYear
-    ?? stock.analystEstimates?.revenueGrowthFwd
-    ?? stock.growthYear1
-    ?? historicalGrowth
-    ?? 0;
-  const nextForward = stock.analystEstimates?.revenueGrowthNextYear ?? currentForward;
-  const forwardGrowth = mean([currentForward, nextForward].filter(x => x != null)) ?? 0;
-
-  const opMargins = yrs.slice(-4).map(y => y.opMargin).filter(x => x != null);
-  const marginRecovery = opMargins.length >= 2 && opMargins[opMargins.length - 1] > opMargins[0] + 0.015;
-  const recentRevenueDecline = yrs.slice(-4).some((y, i, arr) => i > 0 && y.revenue < arr[i - 1].revenue * 0.97);
-  const positiveIncomeYears = yrs.slice(-4).filter(y => y.netIncome > 0).length;
-
-  // Forward growth takes priority so a current high-growth company is not mislabeled
-  // a turnaround because one older comparison year was weak.
-  if (forwardGrowth >= 0.25) return 'Hyper Growth';
-  if (forwardGrowth >= 0.15) return 'Growth';
-  if (avgRoic != null && avgRoic >= 0.15 && forwardGrowth >= 0.08) return 'Compounder';
-  if (recentRevenueDecline && marginRecovery && forwardGrowth < 0.12) return 'Turnaround';
-  if (recentRevenueDecline && positiveIncomeYears <= 2 && forwardGrowth < 0.08) return 'Cyclical';
-  if (divYield >= 0.025) return 'Dividend';
-  return 'Value';
+  return CategoryEngine.classifyCategory(stock);
 }
 
 // ---------- 2. Category-Specific Sub-Scores ----------
@@ -584,7 +554,8 @@ function computeInvestmentScore(stock, categoryComposite, pricingPowerScore, con
 // ---------- 7. Master Scoring Function ----------
 
 function scoreStock(stock) {
-  const category = classifyCategory(stock);
+  const categoryClassification = CategoryEngine.classifyStock(stock);
+  const category = categoryClassification.category;
   const catFn = CATEGORY_METRICS[category] || (category === 'Hyper Growth' ? CATEGORY_METRICS.Growth : category === 'Cyclical' ? CATEGORY_METRICS.Value : CATEGORY_METRICS.Value);
   const catResult = catFn(stock);
   const pricingPower = scorePricingPower(stock);
@@ -647,6 +618,9 @@ function scoreStock(stock) {
     ticker: stock.ticker,
     sector: stock.sector,
     category,
+    categoryConfidence: categoryClassification.confidence,
+    categoryScores: categoryClassification.scores,
+    categoryProfile: categoryClassification.profile,
     categoryComposite: catResult.composite,
     investmentScore: investment.score,
     portfolioManagerScore: stock.valuation.investmentCommittee?.score ?? investment.portfolioManagerScore,
@@ -893,7 +867,7 @@ function scoreUniverse(stocks) {
 }
 
 const api = {
-  classifyCategory, scoreStock, scoreUniverse,
+  classifyCategory, classifyStock: CategoryEngine.classifyStock, scoreStock, scoreUniverse,
   applySectorZScores, applyPercentileRatings,
   scorePricingPower, dynamicMOS, expectedCAGR, computeInvestmentScore, computeV6QualityScore,
   blendedRevenueGrowth, computeConfidenceScore,
