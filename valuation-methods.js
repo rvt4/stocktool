@@ -777,13 +777,7 @@ function methodSpecificReliability(stock, key, value, center, anchor = null) {
   let r = ratio <= 1.35 ? 1 : ratio <= 1.75 ? 0.82 : ratio <= 2.4 ? 0.55 : 0.25;
 
   if (key === 'epsExit') r *= analyst;
-  if (key === 'revenueExit') {
-    const lifecycle = stock.valuation?.lifecycle || {};
-    const moat = clamp((stock.valuation?.moat?.score ?? 50) / 100, 0, 1);
-    const persistence = clamp((lifecycle.growthPersistenceScore ?? lifecycle.compoundingPotential ?? 50) / 100, 0, 1);
-    const qualitySupport = clamp((moat + persistence) / 2, 0, 1);
-    r *= clamp(0.54 + analyst * 0.26 + qualitySupport * 0.18, 0.48, 0.96);
-  }
+  if (key === 'revenueExit') r *= clamp(0.58 + analyst * 0.32, 0.50, 0.90);
   if ((key === 'dcf' || key === 'dcfSBCAdjusted') && !(last.fcf > 0)) r *= 0.25;
   if (key === 'ownerEarnings' && !(last.netIncome > 0)) r *= 0.25;
   if (key === 'ownerEarnings') {
@@ -900,25 +894,12 @@ function combineValuations(methods, category = 'Value', stock = null, businessPr
   const transition = Number(forecast.currentOperatingRate ?? forecast.year1) >= 0.18 &&
     Number(forecast.persistenceScore) >= 0.55 &&
     ['inflecting', 'accelerating', 'recovery'].includes(forecast.regime);
-  // V39 dynamic caps. Method concentration is allowed only when business quality,
-  // persistence and forecast reliability support it. This gives premium compounders
-  // a fair chance without allowing one optimistic multiple to dictate fair value.
-  const lifecycle = stock?.valuation?.lifecycle || {};
-  const moat01 = clamp((stock?.valuation?.moat?.score ?? (businessProfile?.moatScore != null ? businessProfile.moatScore * 100 : 50)) / 100, 0, 1);
-  const pricing01 = clamp((stock?.valuation?.pricingPowerV2?.score ?? 50) / 100, 0, 1);
-  const persistence01 = clamp((lifecycle.growthPersistenceScore ?? lifecycle.compoundingPotential ?? 50) / 100, 0, 1);
-  const forecast01 = clamp(businessProfile?.forecastReliability ?? .55, .15, 1);
-  const premiumSupport = clamp(.32 * moat01 + .22 * pricing01 + .26 * persistence01 + .20 * forecast01, 0, 1);
-  const durableGrowth = premiumSupport >= .62 && Number(lifecycle.forwardGrowth ?? forecast.currentOperatingRate ?? forecast.year1) >= .08;
   const caps = {
-    ownerEarnings: transition ? 0.06 : durableGrowth ? 0.11 : 0.15,
-    revenueExit: transition
-      ? (industry === 'software' ? 0.34 : industry === 'semiconductors-hardware' ? 0.18 : 0.24)
-      : industry === 'software' ? (durableGrowth ? 0.32 : 0.27)
-      : industry === 'semiconductors-hardware' ? (durableGrowth ? 0.12 : 0.08)
-      : durableGrowth ? 0.22 : 0.18,
-    epsExit: transition ? 0.36 : durableGrowth ? 0.34 : industry === 'semiconductors-hardware' ? 0.20 : 0.30,
-    ebitdaExit: transition ? 0.30 : durableGrowth ? 0.30 : industry === 'semiconductors-hardware' ? 0.22 : 0.42,
+    ownerEarnings: transition ? 0.06 : 0.15,
+    revenueExit: transition ? (industry === 'software' ? 0.30 : industry === 'semiconductors-hardware' ? 0.16 : 0.22)
+      : industry === 'software' ? 0.28 : industry === 'semiconductors-hardware' ? 0.08 : 0.18,
+    epsExit: transition ? 0.34 : industry === 'semiconductors-hardware' ? 0.18 : 0.30,
+    ebitdaExit: transition ? 0.32 : industry === 'semiconductors-hardware' ? 0.22 : 0.42,
   };
   normalized = redistributeCaps(normalized, caps);
 
