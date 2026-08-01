@@ -263,7 +263,7 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
 
 
   return {
-    version: 'v40-projection-anchored-primary-valuation',
+    version: 'v40.1-projection-anchored-primary-valuation',
     profile: profile.name,
     primaryMethods: profile.primary,
     supportingMethods: profile.support,
@@ -285,6 +285,22 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
       marginContribution,
       shareCAGR,
       shareContribution,
+    },
+    // Exact audit trail for the displayed CAGR. The expected return is always
+    // derived from the actionable value at the end of the investment period,
+    // plus modeled dividends, relative to today's price.
+    cagrAudit: {
+      currentPrice,
+      projectionYears: years,
+      projectionEndYear: exit.year ?? null,
+      projectedRevenue: exitRevenue > 0 ? exitRevenue : null,
+      projectedShares: exitShares > 0 ? exitShares : null,
+      rawBlendedExitValue: rawExitValue,
+      actionableExitValue,
+      modeledDividends: dividends,
+      totalEndingValue: actionableExitValue != null ? actionableExitValue + dividends : null,
+      formula: '((actionableExitValue + modeledDividends) / currentPrice)^(1 / projectionYears) - 1',
+      expectedCAGR: adjustedCAGR,
     },
     dividends,
     years,

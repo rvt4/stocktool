@@ -58,11 +58,6 @@
     const shares = series(yrs, 'sharesOutTTM', 5);
     const positiveFcfRate = recent.length ? recent.filter(y => y.fcf > 0).length / recent.length : 0.5;
     const positiveIncomeRate = recent.length ? recent.filter(y => y.netIncome > 0).length / recent.length : 0.5;
-    const latestYear = recent.at(-1) || {};
-    const latestIncomePositive = Number(latestYear.netIncome) > 0;
-    const latestOpMargin = finite(latestYear.opMargin) ? Number(latestYear.opMargin) : null;
-    const priorOpMedian = opMargins.length >= 3 ? median(opMargins.slice(-4, -1)) : null;
-    const currentMarginImpairment = latestOpMargin != null && priorOpMedian != null && latestOpMargin < priorOpMedian - 0.035;
 
     const e = stock?.analystEstimates || {};
     const y1 = e.revenueGrowthCurrentYear ?? e.revenueGrowthFwd ?? stock?.growthYear1 ?? revMedian ?? 0;
@@ -101,7 +96,7 @@
       growthAcceleration, avgRoic, marginStability, opMarginTrend, fcfMarginTrend,
       positiveFcfRate, positiveIncomeRate, shareTrend, revenueDeclineYears, recentRevenueDeclineYears,
       severeDecline, recentSevereDecline, priorDeterioration, recoveryEvidence, fcfYield, earningsYield,
-      dividendYield, payout, cyclicalIndustry, defensiveIndustry, latestIncomePositive, currentMarginImpairment,
+      dividendYield, payout, cyclicalIndustry, defensiveIndustry,
     };
   }
 
@@ -182,12 +177,15 @@
 
     // Hard gates prevent one noisy metric from creating the wrong business label.
     if (!(p.forwardGrowth >= 0.18 && (p.rev3 ?? p.forwardGrowth) >= 0.12)) scores['Hyper Growth'] *= 0.45;
-    // A turnaround must be impaired NOW. Old loss years alone are not enough;
-    // otherwise durable secular growers such as AMD can be mislabeled because
-    // their five-year history still contains a trough year.
-    const activeImpairment = p.recentRevenueDeclineYears > 0 || p.recentSevereDecline ||
-      !p.latestIncomePositive || p.currentMarginImpairment;
-    if (!(p.priorDeterioration && p.recoveryEvidence && activeImpairment)) scores.Turnaround *= 0.22;
+    // A turnaround requires a CURRENT operating impairment, not merely one weak
+    // comparison year. This prevents healthy secular growers coming out of a cycle
+    // (for example a semiconductor company with positive FCF and strong forward
+    // growth) from being mislabeled as Turnaround.
+    const marginStillImpaired = p.opMarginTrend < -0.006 || p.fcfMarginTrend < -0.006;
+    const unresolvedRevenueWeakness = p.recentRevenueDeclineYears > 0 &&
+      (p.forwardGrowth < .04 || marginStillImpaired || p.positiveIncomeRate < .80);
+    const activeImpairment = p.recentSevereDecline || p.positiveIncomeRate < .60 || unresolvedRevenueWeakness;
+    if (!(p.priorDeterioration && p.recoveryEvidence && activeImpairment)) scores.Turnaround *= 0.16;
     if (!(p.cyclicalIndustry || (p.revVol ?? 0) >= 0.18)) scores.Cyclical *= 0.45;
     if (!(p.dividendYield >= 0.022 && (p.payout == null || p.payout <= 1.10))) scores.Dividend *= 0.45;
     if (!((p.fcfYield ?? 0) >= 0.045 || (p.earningsYield ?? 0) >= 0.05)) scores.Value *= 0.55;
@@ -209,20 +207,22 @@
     // Turnaround is a current operating condition, not a memory of an old weak
     // period. Durable businesses with healthy forward growth, consistently
     // positive cash flow, and no recent impairment remain Compounders/Growth.
-    if (category === 'Turnaround' && !activeImpairment && p.forwardGrowth >= .06 &&
-        p.positiveFcfRate >= .60 && (p.avgRoic ?? 0) >= .10) {
+    if (category === 'Turnaround' && !activeImpairment && p.forwardGrowth >= .07 &&
+        p.positiveFcfRate >= .80 && p.positiveIncomeRate >= .80 && (p.avgRoic ?? 0) >= .12) {
       const durable = scores.Compounder >= scores.Growth ? 'Compounder' : 'Growth';
       category = durable;
       top = scores[durable];
     }
 
-    // Final business-identity guard: a profitable, cash-generative company with
-    // healthy forward growth is not a turnaround merely because a historical
-    // base year was weak. This remains data-driven rather than ticker-specific.
-    if (!activeImpairment && p.forwardGrowth >= .08 && p.positiveFcfRate >= .60 &&
-        (p.avgRoic ?? 0) >= .10 && scores.Compounder >= scores.Turnaround * .72) {
-      const durable = p.forwardGrowth >= .18 && scores.Growth > scores.Compounder + 4
-        ? 'Growth' : 'Compounder';
+    // Final secular-grower safeguard. A business with strong forward growth,
+    // consistently positive cash generation and acceptable ROIC should not carry
+    // Turnaround's 30% required MOS simply because its history contains a cyclical
+    // down year. This is fundamentals-based rather than ticker-specific.
+    const healthySecularGrower = p.forwardGrowth >= .10 &&
+      p.positiveFcfRate >= .80 && p.positiveIncomeRate >= .80 &&
+      (p.avgRoic ?? 0) >= .12 && !p.recentSevereDecline && !marginStillImpaired;
+    if (category === 'Turnaround' && healthySecularGrower) {
+      const durable = scores.Compounder >= scores.Growth ? 'Compounder' : 'Growth';
       category = durable;
       top = scores[durable];
     }
