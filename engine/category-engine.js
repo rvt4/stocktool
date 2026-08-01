@@ -184,7 +184,8 @@
     const marginStillImpaired = p.opMarginTrend < -0.006 || p.fcfMarginTrend < -0.006;
     const unresolvedRevenueWeakness = p.recentRevenueDeclineYears > 0 &&
       (p.forwardGrowth < .04 || marginStillImpaired || p.positiveIncomeRate < .80);
-    const activeImpairment = p.recentSevereDecline || p.positiveIncomeRate < .60 || unresolvedRevenueWeakness;
+    const activeImpairment = p.recentSevereDecline ||
+      (p.positiveIncomeRate < .60 && p.forwardGrowth < .08) || unresolvedRevenueWeakness;
     if (!(p.priorDeterioration && p.recoveryEvidence && activeImpairment)) scores.Turnaround *= 0.16;
     if (!(p.cyclicalIndustry || (p.revVol ?? 0) >= 0.18)) scores.Cyclical *= 0.45;
     if (!(p.dividendYield >= 0.022 && (p.payout == null || p.payout <= 1.10))) scores.Dividend *= 0.45;

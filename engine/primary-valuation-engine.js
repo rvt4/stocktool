@@ -263,7 +263,7 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
 
 
   return {
-    version: 'v40.1-projection-anchored-primary-valuation',
+    version: 'v41-future-quality-primary-valuation',
     profile: profile.name,
     primaryMethods: profile.primary,
     supportingMethods: profile.support,
