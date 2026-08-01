@@ -16,8 +16,6 @@
  * }
  */
 
-const CategoryEngine = require('./engine/category-engine');
-
 // ---------- Utilities ----------
 
 function mean(arr) { return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
@@ -41,7 +39,39 @@ function scoreBand(value, poor, excellent) {
 // ---------- 1. Category Classification (do this FIRST) ----------
 
 function classifyCategory(stock) {
-  return CategoryEngine.classifyCategory(stock);
+  const yrs = stock.financials?.years || [];
+  if (yrs.length < 3) return 'Unknown';
+  const last = yrs[yrs.length - 1];
+  const avgRoic = mean(yrs.slice(-3).map(y => y.roic).filter(x => x != null));
+  const divYield = stock.valuation?.dividendYield || 0;
+
+  const histRates = [];
+  for (let i = 1; i < yrs.length; i++) {
+    if (yrs[i - 1].revenue > 0 && yrs[i].revenue > 0) histRates.push(yrs[i].revenue / yrs[i - 1].revenue - 1);
+  }
+  const historicalGrowth = histRates.length ? median(histRates.slice(-5)) : null;
+  const currentForward = stock.analystEstimates?.revenueGrowthCurrentYear
+    ?? stock.analystEstimates?.revenueGrowthFwd
+    ?? stock.growthYear1
+    ?? historicalGrowth
+    ?? 0;
+  const nextForward = stock.analystEstimates?.revenueGrowthNextYear ?? currentForward;
+  const forwardGrowth = mean([currentForward, nextForward].filter(x => x != null)) ?? 0;
+
+  const opMargins = yrs.slice(-4).map(y => y.opMargin).filter(x => x != null);
+  const marginRecovery = opMargins.length >= 2 && opMargins[opMargins.length - 1] > opMargins[0] + 0.015;
+  const recentRevenueDecline = yrs.slice(-4).some((y, i, arr) => i > 0 && y.revenue < arr[i - 1].revenue * 0.97);
+  const positiveIncomeYears = yrs.slice(-4).filter(y => y.netIncome > 0).length;
+
+  // Forward growth takes priority so a current high-growth company is not mislabeled
+  // a turnaround because one older comparison year was weak.
+  if (forwardGrowth >= 0.25) return 'Hyper Growth';
+  if (forwardGrowth >= 0.15) return 'Growth';
+  if (avgRoic != null && avgRoic >= 0.15 && forwardGrowth >= 0.08) return 'Compounder';
+  if (recentRevenueDecline && marginRecovery && forwardGrowth < 0.12) return 'Turnaround';
+  if (recentRevenueDecline && positiveIncomeYears <= 2 && forwardGrowth < 0.08) return 'Cyclical';
+  if (divYield >= 0.025) return 'Dividend';
+  return 'Value';
 }
 
 // ---------- 2. Category-Specific Sub-Scores ----------
@@ -299,11 +329,16 @@ function blendedRevenueGrowth(s, yrs, last) {
 
   const marketImpliedG = s.valuation.marketImpliedGrowth ?? null;
 
+  // V41: forward-first blend. Historical growth remains a reality check, but no
+  // longer gets enough weight to bury high-quality businesses at an inflection.
+  // Market-implied growth is deliberately capped and treated as a constraint—not a
+  // forecast—so expensive stocks cannot justify themselves through their own price.
+  const cappedMarketImplied = marketImpliedG == null ? null : clamp(marketImpliedG, -0.10, 0.35);
   const components = [
-    { key: 'analyst', value: analystG, weight: 0.40 },
-    { key: 'historical', value: historicalG, weight: 0.30 },
-    { key: 'reinvestment', value: reinvestG, weight: 0.20 },
-    { key: 'marketImplied', value: marketImpliedG, weight: 0.10 },
+    { key: 'analyst', value: analystG, weight: 0.35 },
+    { key: 'historical', value: historicalG, weight: 0.20 },
+    { key: 'reinvestment', value: reinvestG, weight: 0.25 },
+    { key: 'marketImplied', value: cappedMarketImplied, weight: 0.20 },
   ].filter(c => c.value != null);
 
   if (!components.length) return { blended: 0.05, sourcesUsed: 0, sourcesAvailable: [] };
@@ -464,6 +499,108 @@ function scoreConsistency(values, tolerance) {
   return clamp(Math.round(100 - (sd / Math.max(Math.abs(avg), tolerance)) * 75), 0, 100);
 }
 
+
+// ---------- V41 Future Quality Score ----------
+// Measures where the business is heading, independent of its current stock price.
+// Every input is already available in the free-data pipeline; missing inputs revert
+// toward neutral rather than becoming accidental zeroes.
+function computeFutureQualityScore(stock, pricingPowerScore, confidenceScore) {
+  const yrs = stock.financials?.years || [];
+  const recent = yrs.slice(-5);
+  const last = recent.at(-1) || {};
+  const profile = stock.valuation?.businessProfile || {};
+  const estimates = stock.analystEstimates || {};
+
+  const revRates = [];
+  const epsRates = [];
+  for (let i = 1; i < recent.length; i++) {
+    if (recent[i - 1].revenue > 0 && recent[i].revenue > 0)
+      revRates.push(recent[i].revenue / recent[i - 1].revenue - 1);
+    if (recent[i - 1].eps > 0 && recent[i].eps > 0)
+      epsRates.push(recent[i].eps / recent[i - 1].eps - 1);
+  }
+
+  const histRev = robustHistoricalGrowth(recent);
+  const analystRev = mean([
+    estimates.revenueGrowthCurrentYear,
+    estimates.revenueGrowthNextYear,
+    estimates.revenueGrowthFwd,
+  ].filter(x => x != null));
+  const analystEps = mean([
+    estimates.epsGrowthCurrentYear,
+    estimates.epsGrowthNextYear,
+    estimates.epsGrowthFwd,
+  ].filter(x => x != null));
+  const forwardGrowth = analystRev ?? histRev ?? 0.05;
+  const growthAcceleration = forwardGrowth - (histRev ?? forwardGrowth);
+
+  const opMargins = recent.map(y => y.opMargin).filter(x => x != null);
+  const fcfMargins = recent.map(y => y.revenue > 0 && y.fcf != null ? y.fcf / y.revenue : null).filter(x => x != null);
+  const marginTrend = mean([
+    opMargins.length >= 3 ? (opMargins.at(-1) - opMargins[0]) / (opMargins.length - 1) : null,
+    fcfMargins.length >= 3 ? (fcfMargins.at(-1) - fcfMargins[0]) / (fcfMargins.length - 1) : null,
+  ].filter(x => x != null)) ?? 0;
+
+  const shares = recent.map(y => y.sharesOutTTM).filter(x => x > 0);
+  const shareCagr = shares.length >= 2 ? cagr(shares[0], shares.at(-1), shares.length - 1) : 0;
+  const positiveFcfRate = recent.length ? recent.filter(y => y.fcf > 0).length / recent.length : 0.5;
+  const roic = mean(recent.map(y => y.roic).filter(x => x != null));
+
+  const moat = clamp((profile.moatScore ?? stock.valuation?.moat?.score / 100 ?? .50) * 100, 0, 100);
+  const persistence = clamp((profile.premiumPersistence ?? .50) * 100, 0, 100);
+  const forecastReliability = clamp((profile.forecastReliability ?? confidenceScore / 100) * 100, 0, 100);
+  const capitalAllocation = clamp(stock.valuation?.capitalAllocation?.score ?? 50, 0, 100);
+  const compounder = clamp(stock.valuation?.compounder?.score ?? 50, 0, 100);
+  const analystReliability = clamp(stock.valuation?.analystReliability?.score ?? stock.valuation?.analystReliability ?? 55, 0, 100);
+
+  const momentumScore = clamp(
+    scoreBand(forwardGrowth, 0.02, 0.24) * 0.58 +
+    scoreBand(growthAcceleration, -0.08, 0.10) * 0.20 +
+    scoreConsistency(revRates, 0.10) * 0.22, 0, 100);
+  const earningsScore = analystEps == null
+    ? clamp(scoreBand(median(epsRates) ?? forwardGrowth, -0.03, 0.25), 0, 100)
+    : clamp(scoreBand(analystEps, -0.03, 0.28), 0, 100);
+  const operatingLeverageScore = clamp(scoreBand(marginTrend, -0.02, 0.025), 0, 100);
+  const buybackQualityScore = clamp(
+    scoreBand(-shareCagr, -0.05, 0.05) * 0.65 + positiveFcfRate * 35, 0, 100);
+  const runwayScore = clamp(
+    scoreBand(roic ?? .08, .06, .28) * 0.42 + persistence * 0.34 + compounder * 0.24, 0, 100);
+
+  // Cyclicality is a confidence modifier, not an automatic quality failure.
+  const cyclicalityPenalty = clamp((stock.valuation?.businessProfile?.cyclicality ?? 0) * 12, 0, 12);
+  const raw =
+    momentumScore * 0.20 +
+    earningsScore * 0.10 +
+    operatingLeverageScore * 0.10 +
+    pricingPowerScore * 0.10 +
+    moat * 0.12 +
+    runwayScore * 0.16 +
+    buybackQualityScore * 0.07 +
+    capitalAllocation * 0.07 +
+    analystReliability * 0.04 +
+    forecastReliability * 0.04 - cyclicalityPenalty;
+
+  return {
+    score: Math.round(clamp(50 + (raw - 50) * 1.22, 0, 100)),
+    rawScore: Math.round(clamp(raw, 0, 100)),
+    momentumScore: Math.round(momentumScore),
+    earningsScore: Math.round(earningsScore),
+    operatingLeverageScore: Math.round(operatingLeverageScore),
+    pricingPowerScore: Math.round(pricingPowerScore),
+    moatScore: Math.round(moat),
+    runwayScore: Math.round(runwayScore),
+    buybackQualityScore: Math.round(buybackQualityScore),
+    capitalAllocationScore: Math.round(capitalAllocation),
+    analystReliabilityScore: Math.round(analystReliability),
+    forecastReliabilityScore: Math.round(forecastReliability),
+    forwardGrowth,
+    growthAcceleration,
+    marginTrend,
+    shareCagr,
+    cyclicalityPenalty,
+  };
+}
+
 function computeV6QualityScore(stock, categoryComposite, pricingPowerScore, confidenceScore) {
   const yrs = stock.financials?.years || [];
   const recent = yrs.slice(-5);
@@ -540,22 +677,65 @@ function computeV6QualityScore(stock, categoryComposite, pricingPowerScore, conf
 }
 
 function computeInvestmentScore(stock, categoryComposite, pricingPowerScore, confidenceScore, expectedReturn, marginOfSafety) {
-  const profile=stock.valuation?.businessProfile||{}, ca=stock.valuation?.capitalAllocation?.score??50;
-  const moat=clamp((profile.moatScore??.5)*100,0,100), forecast=clamp((profile.forecastReliability??confidenceScore/100)*100,0,100);
-  const quality=computeV6QualityScore(stock,categoryComposite,pricingPowerScore,confidenceScore);
-  const comp=stock.valuation?.compounder?.score??50, protect=stock.valuation?.downside?.protectionScore??50, integrity=stock.dataIntegrity?.score??60;
-  const ret=expectedReturn==null?35:clamp((expectedReturn-.04)/.22*100,0,100), val=marginOfSafety==null?40:clamp((marginOfSafety+.05)/.45*100,0,100);
-  const opportunity=Math.round(clamp(ret*.48+val*.24+confidenceScore*.12+protect*.10+integrity*.06,0,100));
-  const success=Math.round(clamp(quality.score*.30+comp*.18+confidenceScore*.18+forecast*.11+moat*.09+protect*.09+integrity*.05,5,95));
-  const score=Math.round(clamp(quality.score*.35+opportunity*.20+comp*.15+pricingPowerScore*.10+protect*.10+ca*.05+confidenceScore*.05,0,100));
-  return {score,portfolioManagerScore:score,businessQualityScore:quality.score,valuationAttractivenessScore:opportunity,qualityBreakdown:quality,moatScore:Math.round(moat),forecastScore:Math.round(forecast),returnScore:Math.round(ret),valuationScore:Math.round(val),capitalAllocationScore:Math.round(ca),compounderScore:Math.round(comp),downsideProtectionScore:Math.round(protect),dataIntegrityScore:Math.round(integrity),successProbability:success,probabilityAdjustedReturn:expectedReturn==null?null:expectedReturn*success/100,downsideRisk:100-Math.round(protect)};
+  const profile = stock.valuation?.businessProfile || {};
+  const ca = stock.valuation?.capitalAllocation?.score ?? 50;
+  const moat = clamp((profile.moatScore ?? .5) * 100, 0, 100);
+  const forecast = clamp((profile.forecastReliability ?? confidenceScore / 100) * 100, 0, 100);
+  const quality = computeV6QualityScore(stock, categoryComposite, pricingPowerScore, confidenceScore);
+  const future = computeFutureQualityScore(stock, pricingPowerScore, confidenceScore);
+  const comp = stock.valuation?.compounder?.score ?? 50;
+  const protect = stock.valuation?.downside?.protectionScore ?? 50;
+  const integrity = stock.dataIntegrity?.score ?? 60;
+  const ret = expectedReturn == null ? 35 : clamp((expectedReturn - .04) / .22 * 100, 0, 100);
+  const val = marginOfSafety == null ? 40 : clamp((marginOfSafety + .05) / .45 * 100, 0, 100);
+
+  // Opportunity remains price-aware. Future Quality prevents a cheap but eroding
+  // business from outranking a durable compounder solely because its modeled MOS is large.
+  const opportunity = Math.round(clamp(
+    ret * .42 + val * .22 + future.score * .14 + confidenceScore * .10 +
+    protect * .07 + integrity * .05, 0, 100));
+  const success = Math.round(clamp(
+    future.score * .25 + quality.score * .22 + comp * .14 + confidenceScore * .16 +
+    forecast * .08 + moat * .06 + protect * .06 + integrity * .03, 5, 95));
+
+  // V41 Future Return Score: expected return is multiplied by evidence quality rather
+  // than merely added to it. This keeps fragile 20% forecasts below credible 15% ones.
+  const expectedReturnPct = expectedReturn == null ? 4 : expectedReturn * 100;
+  const evidenceMultiplier = clamp(
+    (future.score / 100) * .35 + (confidenceScore / 100) * .25 +
+    (quality.score / 100) * .25 + (protect / 100) * .15, .20, 1.00);
+  const futureReturnScore = clamp(expectedReturnPct * evidenceMultiplier, -35, 35);
+  const returnRankScore = clamp((futureReturnScore + 5) / 30 * 100, 0, 100);
+
+  const score = Math.round(clamp(
+    future.score * .27 + quality.score * .23 + opportunity * .20 +
+    returnRankScore * .12 + comp * .08 + pricingPowerScore * .04 +
+    protect * .03 + ca * .02 + confidenceScore * .01, 0, 100));
+
+  return {
+    score, portfolioManagerScore: score,
+    futureReturnScore,
+    returnEvidenceMultiplier: evidenceMultiplier,
+    returnRankScore: Math.round(returnRankScore),
+    futureQualityScore: future.score,
+    futureQualityBreakdown: future,
+    businessQualityScore: quality.score,
+    valuationAttractivenessScore: opportunity,
+    qualityBreakdown: quality,
+    moatScore: Math.round(moat), forecastScore: Math.round(forecast),
+    returnScore: Math.round(ret), valuationScore: Math.round(val),
+    capitalAllocationScore: Math.round(ca), compounderScore: Math.round(comp),
+    downsideProtectionScore: Math.round(protect), dataIntegrityScore: Math.round(integrity),
+    successProbability: success,
+    probabilityAdjustedReturn: expectedReturn == null ? null : expectedReturn * success / 100,
+    downsideRisk: 100 - Math.round(protect),
+  };
 }
 
 // ---------- 7. Master Scoring Function ----------
 
 function scoreStock(stock) {
-  const categoryClassification = CategoryEngine.classifyStock(stock);
-  const category = categoryClassification.category;
+  const category = classifyCategory(stock);
   const catFn = CATEGORY_METRICS[category] || (category === 'Hyper Growth' ? CATEGORY_METRICS.Growth : category === 'Cyclical' ? CATEGORY_METRICS.Value : CATEGORY_METRICS.Value);
   const catResult = catFn(stock);
   const pricingPower = scorePricingPower(stock);
@@ -567,24 +747,9 @@ function scoreStock(stock) {
   // Requires `stock.valuation.fiveYearPriceTarget` to be populated upstream (same place
   // that already sets `fairValueEstimate` and `valuationMethods` below) — verify
   // run-screener.js maps the fiveYearPriceTarget object from valuateStock() through.
-  // The lifecycle/moat model is the authoritative price-aware return model. The older
-  // scenario profile can still provide uncertainty penalties, but it must not replace
-  // the institutional return with an independently generated (and sometimes extreme)
-  // CAGR such as BKNG's former 70%+ result.
-  const ownerEarningsReturn = stock.valuation.ownerEarningsReturn ?? null;
-  const institutionalReturn = stock.valuation.returnEngineV2 ?? null;
   const v7Return = stock.valuation.expectedReturnProfile ?? null;
-  // V31 canonical ordering: the unified lifecycle-consistent return engine is the
-  // authoritative expected return. Scenario analysis describes uncertainty around
-  // that base, and owner earnings is a validation method only. The previous order
-  // let owner earnings/scenarios override the unified model, producing negative
-  // headline CAGRs even when the business-first engine showed strong compounding.
-  const expectedReturn = institutionalReturn?.expectedCAGR
-    ?? stock.valuation.fiveYearPriceTarget?.cagr
-    ?? stock.valuation.scenarioAnalysis?.probabilityWeightedCAGR
-    ?? ownerEarningsReturn?.expectedCAGR
-    ?? v7Return?.expectedCAGR
-    ?? null;
+  const expectedReturn = v7Return?.expectedCAGR ?? stock.valuation.fiveYearPriceTarget?.cagr ?? null;
+  const riskAdjustedReturn = v7Return?.riskAdjustedCAGR ?? expectedReturn;
   const lastRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
   const requiredMOS = dynamicMOS(category, lastRoic);
 
@@ -613,22 +778,20 @@ function scoreStock(stock) {
   // computed (e.g. insufficient exit-multiple data), so stocks don't silently vanish
   // from qualifying — but this is the weaker, price-agnostic signal, so flag it.
   const usedFallbackForCAGRTarget = expectedReturn == null;
-  // Fundamental growth is informative but cannot justify a Buy rating
-  // because it ignores today's entry price. Missing valuation remains explicitly unrated.
-  const hasPriceAwareValuation = Number.isFinite(expectedReturn) && Number.isFinite(fairValue) && (stock.valuation.methodCount ?? 0) > 0;
-  const meetsCAGRTarget = hasPriceAwareValuation && expectedReturn >= 0.15;
-  const investment = computeInvestmentScore(stock, catResult.composite, pricingPower.score, confidence.score, expectedReturn ?? fundamentalGrowthRate, marginOfSafety);
+  const meetsCAGRTarget = (expectedReturn ?? fundamentalGrowthRate) >= 0.15;
+  const investment = computeInvestmentScore(stock, catResult.composite, pricingPower.score, confidence.score, riskAdjustedReturn ?? fundamentalGrowthRate, marginOfSafety);
 
   return {
     ticker: stock.ticker,
     sector: stock.sector,
     category,
-    categoryConfidence: categoryClassification.confidence,
-    categoryScores: categoryClassification.scores,
-    categoryProfile: categoryClassification.profile,
     categoryComposite: catResult.composite,
     investmentScore: investment.score,
-    portfolioManagerScore: stock.valuation.investmentCommittee?.score ?? investment.portfolioManagerScore,
+    portfolioManagerScore: investment.portfolioManagerScore,
+    futureQualityScore: investment.futureQualityScore,
+    futureQualityBreakdown: investment.futureQualityBreakdown,
+    futureReturnScore: investment.futureReturnScore,
+    returnEvidenceMultiplier: investment.returnEvidenceMultiplier,
     compounderScore: stock.valuation.compounder?.score ?? investment.compounderScore,
     compounderGrade: stock.valuation.compounder?.grade ?? null,
     compounderBreakdown: stock.valuation.compounder ?? null,
@@ -646,9 +809,6 @@ function scoreStock(stock) {
     qualityBreakdown: investment.qualityBreakdown,
     investmentBreakdown: investment,
     businessProfile: stock.valuation.businessProfile ?? null,
-    economicQuality: stock.valuation.economicQuality ?? null,
-    lifecycle: stock.valuation.lifecycle ?? null,
-    moat: stock.valuation.moat ?? null,
     categoryBreakdown: catResult,
     pricingPowerScore: pricingPower.score,
     pricingPowerSignals: pricingPower.signals,
@@ -658,18 +818,8 @@ function scoreStock(stock) {
     reverseDCFGap: stock.valuation.reverseDCFGap ?? null,
     fundamentalGrowthRate,
     expectedReturn,
+    riskAdjustedReturn,
     scenarioAnalysis: stock.valuation.scenarioAnalysis ?? null,
-    bearCAGR: stock.valuation.scenarioAnalysis?.downsideCAGR ?? null,
-    baseCAGR: stock.valuation.scenarioAnalysis?.baseCAGR ?? null,
-    bullCAGR: stock.valuation.scenarioAnalysis?.upsideCAGR ?? null,
-    probabilityWeightedCAGR: stock.valuation.scenarioAnalysis?.probabilityWeightedCAGR ?? null,
-    scenarioProbabilities: stock.valuation.scenarioAnalysis?.probabilities ?? null,
-    cycleNormalization: stock.valuation.cycleNormalization ?? null,
-    capitalIntensity: stock.valuation.capitalIntensity ?? null,
-    competitivePressure: stock.valuation.competitivePressure ?? null,
-    growthQuality: stock.valuation.growthQuality ?? null,
-    investmentCommittee: stock.valuation.investmentCommittee ?? null,
-    investmentCommitteeScore: stock.valuation.investmentCommittee?.score ?? null,
     expectedReturnProfile: stock.valuation.expectedReturnProfile ?? null,
     dataIntegrity: stock.dataIntegrity ?? null,
     investmentThesis: stock.valuation.investmentThesis ?? null,
@@ -688,8 +838,7 @@ function scoreStock(stock) {
     marginOfSafetyDistorted,
     meetsRequiredMOS,
     meetsCAGRTarget,
-    hasPriceAwareValuation,
-    qualifiesForBuyList: !!(hasPriceAwareValuation && meetsCAGRTarget && meetsRequiredMOS),
+    qualifiesForBuyList: !!(meetsCAGRTarget && meetsRequiredMOS),
     valuationMethods: stock.valuation.valuationMethods ?? null,
     outlierFlags: stock.valuation.outlierFlags ?? [],
     methodAgreementScore: stock.valuation.methodAgreementScore ?? null,
@@ -700,36 +849,11 @@ function scoreStock(stock) {
     projectionAssumptions: stock.valuation.projectionAssumptions ?? null,
     valuationMethodAudits: stock.valuation.methodAudits ?? null,
     fiveYearPriceTarget: stock.valuation.fiveYearPriceTarget ?? null,
-    intrinsicValue: stock.valuation.intrinsicValue ?? null,
-    marketValue: stock.valuation.marketValue ?? null,
-    valuationConsensus: stock.valuation.valuationConsensus ?? null,
-    ownerEarningsReturn: stock.valuation.ownerEarningsReturn ?? null,
-    returnEngineV2: stock.valuation.returnEngineV2 ?? null,
-    marketExpectations: stock.valuation.marketExpectations ?? null,
-    monteCarlo: stock.valuation.monteCarlo ?? null,
     analystEstimates: stock.analystEstimates ?? null,
     currentPrice: stock.price.current ?? null,
     fairValueEstimate: stock.valuation.fairValueEstimate ?? null,
     dilutionRate: stock.valuation.dilutionRate ?? null,
     sbcIntensity: stock.valuation.sbcIntensity ?? null,
-    calibration: stock.valuation.calibration ?? null,
-    calibrationAdjustment: stock.valuation.expectedReturnProfile?.calibrationAdjustment ?? 0,
-    calibrationActive: stock.valuation.expectedReturnProfile?.calibrationActive ?? false,
-    adaptiveWeightAudit: stock.valuation.methodSelection?.adaptiveWeights ?? null,
-    portfolioProfile: stock.valuation.portfolioProfile ?? null,
-    decisionDashboard: {
-      expectedCAGR: expectedReturn,
-      confidence: confidence.score,
-      investmentGrade: investment.score >= 88 ? 'A+' : investment.score >= 80 ? 'A' : investment.score >= 73 ? 'B+' : investment.score >= 65 ? 'B' : investment.score >= 55 ? 'C' : investment.score >= 42 ? 'D' : 'F',
-      buyBelow: Number.isFinite(fairValue) ? fairValue * (1 - requiredMOS) : null,
-      fairValueToday: fairValue,
-      fiveYearTarget: stock.valuation.fiveYearPriceTarget?.exitPrice ?? stock.valuation.returnEngineV2?.actionableExitPrice ?? null,
-      suggestedWeightRange: stock.valuation.portfolioProfile?.suggestedWeightRange ?? null,
-      positionTier: stock.valuation.portfolioProfile?.positionTier ?? null,
-      strengths: stock.valuation.investmentThesis?.strengths ?? [],
-      risks: stock.valuation.investmentThesis?.risks ?? [],
-      summary: stock.valuation.investmentThesis?.summary ?? null,
-    },
   };
 }
 
@@ -737,7 +861,9 @@ function scoreStock(stock) {
 
 function assignSelectiveRatings(scoredStocks) {
   const sorted = [...scoredStocks].sort((a, b) =>
-    ((b.investmentCommitteeScore ?? b.investmentScore ?? -Infinity) - (a.investmentCommitteeScore ?? a.investmentScore ?? -Infinity)) ||
+    ((b.investmentScore ?? -Infinity) - (a.investmentScore ?? -Infinity)) ||
+    ((b.futureReturnScore ?? -Infinity) - (a.futureReturnScore ?? -Infinity)) ||
+    ((b.futureQualityScore ?? -Infinity) - (a.futureQualityScore ?? -Infinity)) ||
     ((b.businessQualityScore ?? -Infinity) - (a.businessQualityScore ?? -Infinity)) ||
     ((b.confidenceScore ?? -Infinity) - (a.confidenceScore ?? -Infinity))
   );
@@ -747,17 +873,11 @@ function assignSelectiveRatings(scoredStocks) {
 
   sorted.forEach((stock, index) => {
     const percentile = (index + 1) / total;
-    const expectedReturn = stock.expectedReturn ?? stock.fundamentalGrowthRate ?? null;
+    const expectedReturn = stock.riskAdjustedReturn ?? stock.expectedReturn ?? stock.fundamentalGrowthRate ?? null;
     const confidence = stock.confidenceScore ?? 0;
     const quality = stock.businessQualityScore ?? 0;
     const downsideProtection = stock.downsideProtectionScore ?? 50;
     const qualifies = stock.qualifiesForBuyList === true;
-
-    if (stock.hasPriceAwareValuation === false) {
-      stock.rating = 'Watch';
-      stock.ratingReason = 'Insufficient valuation data';
-      return;
-    }
 
     // Ratings are selective by both rank and absolute underwriting quality.
     // A stock cannot earn a top rating solely because it ranks well in a weak universe.
@@ -767,6 +887,7 @@ function assignSelectiveRatings(scoredStocks) {
       expectedReturn != null && expectedReturn >= 0.15 &&
       confidence >= 75 &&
       quality >= 75 &&
+      (stock.futureQualityScore ?? 0) >= 72 &&
       downsideProtection >= 55
     ) {
       stock.rating = 'Exceptional';
@@ -775,7 +896,8 @@ function assignSelectiveRatings(scoredStocks) {
       qualifies &&
       expectedReturn != null && expectedReturn >= 0.13 &&
       confidence >= 68 &&
-      quality >= 68
+      quality >= 68 &&
+      (stock.futureQualityScore ?? 0) >= 65
     ) {
       stock.rating = 'Strong Buy';
     } else if (
@@ -799,13 +921,6 @@ function assignSelectiveRatings(scoredStocks) {
       stock.rating = 'Avoid';
     } else {
       stock.rating = 'Hold';
-    }
-    if (!stock.ratingReason) {
-      if (stock.scenarioAnalysis?.plausibilityCapped) stock.ratingReason = 'Expected return was reduced by the institutional plausibility ceiling.';
-      else if ((stock.methodAgreementScore ?? 100) < 50) stock.ratingReason = 'Valuation methods disagree materially.';
-      else if ((stock.confidenceScore ?? 100) < 60) stock.ratingReason = 'Forecast confidence is too low for a higher rating.';
-      else if (stock.marginOfSafety != null && stock.marginOfSafety < stock.requiredMOS) stock.ratingReason = 'Current price does not provide the required margin of safety.';
-      else stock.ratingReason = 'Rating reflects risk-adjusted return, quality, confidence and downside protection.';
     }
   });
 
@@ -833,7 +948,7 @@ function applyPercentileRatings(scoredStocks) {
   // Independent global leaderboards: quality ignores price, opportunity focuses on
   // return/MOS. This makes it obvious whether a stock is a great business, a cheap
   // security, or both.
-  assignRank(scoredStocks, 'businessQualityScore', 'qualityRank', 'qualityPercentile', 'qualityLeaderScore');
+  assignRank(scoredStocks, 'futureQualityScore', 'qualityRank', 'qualityPercentile', 'qualityLeaderScore');
   assignRank(scoredStocks, 'valuationAttractivenessScore', 'opportunityRank', 'opportunityPercentile', 'opportunityLeaderScore');
   assignRank(scoredStocks, 'investmentScore', 'overallRank', 'overallPercentile', 'overallLeaderScore');
   for (const s of scoredStocks) s.globalUniverseSize = scoredStocks.length;
@@ -847,6 +962,7 @@ function applyPercentileRatings(scoredStocks) {
   for (const bucket of categoryRanks.values()) {
     bucket.sort((a, b) =>
       (b.investmentScore - a.investmentScore) ||
+      (b.futureQualityScore - a.futureQualityScore) ||
       (b.businessQualityScore - a.businessQualityScore) ||
       (b.valuationAttractivenessScore - a.valuationAttractivenessScore) ||
       (b.confidenceScore - a.confidenceScore)
@@ -872,9 +988,9 @@ function scoreUniverse(stocks) {
 }
 
 const api = {
-  classifyCategory, classifyStock: CategoryEngine.classifyStock, scoreStock, scoreUniverse,
+  classifyCategory, scoreStock, scoreUniverse,
   applySectorZScores, applyPercentileRatings,
-  scorePricingPower, dynamicMOS, expectedCAGR, computeInvestmentScore, computeV6QualityScore,
+  scorePricingPower, dynamicMOS, expectedCAGR, computeInvestmentScore, computeV6QualityScore, computeFutureQualityScore,
   blendedRevenueGrowth, computeConfidenceScore,
 };
 
