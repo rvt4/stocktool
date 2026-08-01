@@ -1,5 +1,5 @@
 /**
- * StockTool category engine v1.1 (V38.5)
+ * StockTool category engine v1.0
  *
  * Categories describe the BUSINESS, not whether the shares are cheap today.
  * Classification uses a multi-year operating profile plus forward estimates.
@@ -58,10 +58,6 @@
     const shares = series(yrs, 'sharesOutTTM', 5);
     const positiveFcfRate = recent.length ? recent.filter(y => y.fcf > 0).length / recent.length : 0.5;
     const positiveIncomeRate = recent.length ? recent.filter(y => y.netIncome > 0).length / recent.length : 0.5;
-    const recentTwo = yrs.slice(-2);
-    const recentPositiveIncomeRate = recentTwo.length ? recentTwo.filter(y => y.netIncome > 0).length / recentTwo.length : positiveIncomeRate;
-    const latest = yrs.at(-1) || {};
-    const latestNetMargin = latest.revenue > 0 && finite(latest.netIncome) ? latest.netIncome / latest.revenue : null;
 
     const e = stock?.analystEstimates || {};
     const y1 = e.revenueGrowthCurrentYear ?? e.revenueGrowthFwd ?? stock?.growthYear1 ?? revMedian ?? 0;
@@ -81,12 +77,6 @@
     const priorDeterioration = revenueDeclineYears >= 1 || (opMargins.length >= 4 && Math.min(...opMargins.slice(0, -1)) < opMargins[0] - 0.025);
     const recoveryEvidence = priorDeterioration && ((opMarginTrend > 0.008) || (fcfMarginTrend > 0.008) || growthAcceleration > 0.05) && forwardGrowth > -0.02;
 
-    // V38.5: Turnaround must describe a current operating impairment.
-    // A weak year several years ago must not relabel a healthy secular grower.
-    const currentOperatingImpairment = recentRevenueDeclineYears > 0 || recentSevereDecline ||
-      recentPositiveIncomeRate < 0.50 || (finite(latestNetMargin) && latestNetMargin < -0.01) ||
-      (forwardGrowth < 0.01 && (opMarginTrend < -0.004 || fcfMarginTrend < -0.004));
-
     const valuation = stock?.valuation || {};
     const fcfYield = valuation.fcfYield;
     const earningsYield = valuation.forwardPe > 0 ? 1 / valuation.forwardPe : valuation.pe > 0 ? 1 / valuation.pe : null;
@@ -104,7 +94,7 @@
     return {
       years: yrs.length, forwardGrowth, y1, y2, rev3, rev5, revMedian, revVol,
       growthAcceleration, avgRoic, marginStability, opMarginTrend, fcfMarginTrend,
-      positiveFcfRate, positiveIncomeRate, recentPositiveIncomeRate, latestNetMargin, currentOperatingImpairment, shareTrend, revenueDeclineYears, recentRevenueDeclineYears,
+      positiveFcfRate, positiveIncomeRate, shareTrend, revenueDeclineYears, recentRevenueDeclineYears,
       severeDecline, recentSevereDecline, priorDeterioration, recoveryEvidence, fcfYield, earningsYield,
       dividendYield, payout, cyclicalIndustry, defensiveIndustry,
     };
@@ -144,7 +134,7 @@
     const turnaround = 100 * (
       0.22 * (p.priorDeterioration ? 1 : 0) +
       0.28 * (p.recoveryEvidence ? 1 : 0) +
-      0.28 * (p.currentOperatingImpairment ? 1 : 0) +
+      0.28 * ((p.recentRevenueDeclineYears > 0 || p.recentSevereDecline || p.positiveIncomeRate < .60) ? 1 : 0) +
       0.14 * pct(p.growthAcceleration, 0, 0.12) +
       0.10 * pct(p.opMarginTrend, 0, 0.025) +
       0.08 * pct(p.fcfMarginTrend, 0, 0.025)
@@ -187,8 +177,8 @@
 
     // Hard gates prevent one noisy metric from creating the wrong business label.
     if (!(p.forwardGrowth >= 0.18 && (p.rev3 ?? p.forwardGrowth) >= 0.12)) scores['Hyper Growth'] *= 0.45;
-    const activeImpairment = !!p.currentOperatingImpairment;
-    if (!(p.priorDeterioration && p.recoveryEvidence && activeImpairment)) scores.Turnaround *= 0.12;
+    const activeImpairment = p.recentRevenueDeclineYears > 0 || p.recentSevereDecline || p.positiveIncomeRate < .60;
+    if (!(p.priorDeterioration && p.recoveryEvidence && activeImpairment)) scores.Turnaround *= 0.22;
     if (!(p.cyclicalIndustry || (p.revVol ?? 0) >= 0.18)) scores.Cyclical *= 0.45;
     if (!(p.dividendYield >= 0.022 && (p.payout == null || p.payout <= 1.10))) scores.Dividend *= 0.45;
     if (!((p.fcfYield ?? 0) >= 0.045 || (p.earningsYield ?? 0) >= 0.05)) scores.Value *= 0.55;
@@ -210,8 +200,8 @@
     // Turnaround is a current operating condition, not a memory of an old weak
     // period. Durable businesses with healthy forward growth, consistently
     // positive cash flow, and no recent impairment remain Compounders/Growth.
-    if (category === 'Turnaround' && !activeImpairment && p.forwardGrowth >= .05 &&
-        p.positiveFcfRate >= .60 && (p.avgRoic ?? 0) >= .10) {
+    if (category === 'Turnaround' && !activeImpairment && p.forwardGrowth >= .07 &&
+        p.positiveFcfRate >= .80 && (p.avgRoic ?? 0) >= .12) {
       const durable = scores.Compounder >= scores.Growth ? 'Compounder' : 'Growth';
       category = durable;
       top = scores[durable];
