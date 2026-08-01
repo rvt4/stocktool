@@ -430,7 +430,7 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
     path,
     source: 'v37_reliability_guarded_persistence_forecast',
     assumptions: {
-      version: '37.0',
+      version: '38.5',
       regime: state.regime,
       analyst1: state.analyst1,
       analyst2: state.analyst2,
@@ -506,7 +506,14 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
     const b = Number(ys[i]?.sharesOutTTM);
     if (a > 0 && b > 0) historicalShareRates.push(b / a - 1);
   }
-  const shareGrowth = clamp(robustRate(historicalShareRates.filter(x => Math.abs(x) <= 0.25).slice(-5)) ?? 0, -0.05, 0.05);
+  const rawShareGrowth = robustRate(historicalShareRates.filter(x => Math.abs(x) <= 0.25).slice(-5)) ?? 0;
+  const highQualityGrowth = avgGrowth3 >= 0.18 && persistence >= 0.60 && roicQuality >= 0.45;
+  // Historical dilution often reflects an earlier compensation phase. Do not
+  // compound the worst historical rate forever when per-share economics, FCF
+  // conversion and growth quality are improving. This is a guardrail, not a
+  // ticker override: truly persistent dilution still remains in the forecast.
+  const dilutionCap = highQualityGrowth ? 0.032 : avgGrowth3 >= 0.12 ? 0.040 : 0.050;
+  const shareGrowth = clamp(rawShareGrowth, -0.05, dilutionCap);
   const startShares = Number(latest.sharesOutTTM) || Number(latest.shares) || null;
   const rev1 = Number(estimates.revenueCurrentYear) > 0
     ? Number(estimates.revenueCurrentYear)
@@ -712,8 +719,11 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
       analystNet1,
       analystNet2,
       shareGrowth,
+      rawShareGrowth,
+      dilutionCap,
+      highQualityGrowth,
     },
-    source: 'v37_margin_floor_and_mature_cap_forecast',
+    source: 'v38_5_company_profile_margin_and_dilution_forecast',
   };
 }
 module.exports = {

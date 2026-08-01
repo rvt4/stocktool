@@ -53,13 +53,25 @@ function profileFor(stock, category, lifecycle = {}) {
       : { dcf: .50, dcfSBCAdjusted: .25, epsExit: .20, ebitdaExit: .05 },
     maxBase: growth >= .18 ? .24 : .19, maxRerating: .045,
   };
-  if (industry === 'software') return {
-    name: 'software-growth-quality', primary: ['dcfSBCAdjusted', 'dcf'], support: ['revenueExit', 'epsExit'],
-    weights: growth >= .18
-      ? { dcfSBCAdjusted: .35, dcf: .25, revenueExit: .22, epsExit: .18 }
-      : { dcfSBCAdjusted: .35, dcf: .30, epsExit: .25, ownerEarnings: .10 },
-    maxBase: growth >= .18 ? .25 : .20, maxRerating: .045,
-  };
+  if (industry === 'software') {
+    const eliteGrowth = growth >= .24 && persistence >= .62;
+    return {
+      name: eliteGrowth ? 'software-platform-growth' : 'software-growth-quality',
+      primary: eliteGrowth ? ['dcfSBCAdjusted', 'revenueExit'] : ['dcfSBCAdjusted', 'dcf'],
+      support: ['revenueExit', 'epsExit', 'dcf'],
+      // High-growth software should not be valued almost entirely from near-term
+      // FCF while it is deliberately reinvesting. SBC-adjusted DCF still matters,
+      // but revenue and EPS exits receive more weight when growth persistence and
+      // quality support the platform economics.
+      weights: eliteGrowth
+        ? { dcfSBCAdjusted: .28, dcf: .17, revenueExit: .30, epsExit: .25 }
+        : growth >= .18
+          ? { dcfSBCAdjusted: .35, dcf: .25, revenueExit: .22, epsExit: .18 }
+          : { dcfSBCAdjusted: .35, dcf: .30, epsExit: .25, ownerEarnings: .10 },
+      maxBase: eliteGrowth ? .28 : growth >= .18 ? .25 : .20,
+      maxRerating: eliteGrowth ? .055 : .045,
+    };
+  }
   if (['Dividend Compounder', 'Mature'].includes(stage) || category === 'Dividend') return {
     name: 'mature-owner-cash-flow', primary: ['dcf', 'ownerEarnings'], support: ['epsExit'],
     weights: { dcf: .45, ownerEarnings: .35, epsExit: .20 }, maxBase: .15, maxRerating: .020,
@@ -179,8 +191,10 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
   let rawValuationDrag = null;
   let maxTrustedNegativeDrag = null;
   const forwardGrowth = Number(lifecycle?.forwardGrowth ?? stock?.valuation?.businessForecast?.currentOperatingRate ?? 0);
-  const eliteOperatingSetup = quality.quality >= .65 && quality.reliability >= .52 &&
-    quality.persistence >= .52 && forwardGrowth >= .20;
+  const eliteOperatingSetup = quality.quality >= .63 && quality.reliability >= .50 &&
+    quality.persistence >= .52 && forwardGrowth >= .18;
+  const exceptionalGrowthSetup = eliteOperatingSetup && forwardGrowth >= .28 &&
+    quality.quality >= .68 && quality.persistence >= .62;
 
   if (finite(adjustedCAGR)) {
     if (finite(operatingCAGR)) {
@@ -201,12 +215,13 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
           forwardPe > 0 ? (forwardPe - 55) / 95 : 0,
           evRevenue > 0 ? (evRevenue - 12) / 28 : 0
         ), 0, 1);
-        const profileDragBase = profile.name.includes('software') ? .19
+        const profileDragBase = profile.name.includes('software-platform') ? .16
+          : profile.name.includes('software') ? .19
           : profile.name.includes('innovation') ? .17
             : profile.name.includes('growth') ? .16 : .12;
         maxTrustedNegativeDrag = clamp(
           profileDragBase * (.42 + .58 * valuationTrust) + extremeValuation * .10,
-          .07, .28
+          exceptionalGrowthSetup ? .06 : .07, exceptionalGrowthSetup ? .24 : .28
         );
         valuationDragFloor = businessAnchor - maxTrustedNegativeDrag;
         adjustedCAGR = Math.max(adjustedCAGR, valuationDragFloor);
@@ -246,6 +261,7 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
     maxReratingContribution: dynamicReratingAllowance,
     valuationTrust,
     eliteOperatingSetup,
+    exceptionalGrowthSetup,
     rawValuationDrag,
     valuationDragFloor,
     maxTrustedNegativeDrag,
