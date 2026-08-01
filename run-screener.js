@@ -343,10 +343,14 @@ async function run() {
     const institutionalCAGR = result.returnEngineV2?.expectedCAGR ?? result.ownerEarningsReturn?.expectedCAGR;
     const probabilityWeightedCAGR = scenarioAnalysis?.probabilityWeightedCAGR;
     if (Number.isFinite(institutionalCAGR)) {
-      // V32: the lifecycle/reality-checked institutional return is authoritative.
-      // Scenario analysis expresses uncertainty around that anchor; it must never
-      // replace the anchor and reintroduce 30%+ mature-company CAGRs.
-      const canonicalCAGR = institutionalCAGR;
+      // V40: the end-of-period valuation remains the anchor, but scenario probabilities
+      // now matter. Blend only 30% of the probability-weighted result and constrain the
+      // adjustment to +/-3 percentage points so scenarios cannot recreate implausible
+      // mature-company CAGRs.
+      const scenarioSignal = Number.isFinite(probabilityWeightedCAGR)
+        ? Math.max(institutionalCAGR - 0.03, Math.min(institutionalCAGR + 0.03, probabilityWeightedCAGR))
+        : institutionalCAGR;
+      const canonicalCAGR = institutionalCAGR * 0.70 + scenarioSignal * 0.30;
       const downsidePenalty = Number(expectedReturnProfile?.downsidePenalty) || 0;
       const uncertaintyPenalty = Number(expectedReturnProfile?.uncertaintyPenalty) || 0;
       const dataPenalty = Number(expectedReturnProfile?.dataPenalty) || 0;
@@ -363,6 +367,8 @@ async function run() {
         bullCAGR: scenarioAnalysis?.upsideCAGR ?? null,
         riskAdjustedCAGR: anchoredRiskAdjusted,
         institutionalBaseCAGR: institutionalCAGR,
+        scenarioAdjustedCAGR: canonicalCAGR,
+        scenarioBlendWeight: 0.30,
         probabilityWeighted: Number.isFinite(probabilityWeightedCAGR),
         rawScenarioWeightedCAGR: Number.isFinite(probabilityWeightedCAGR) ? probabilityWeightedCAGR : null,
       };
