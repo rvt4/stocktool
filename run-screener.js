@@ -374,6 +374,8 @@ async function run() {
     stock.valuation.competitivePressure = scenarioAnalysis?.competitivePressure ?? null;
     stock.valuation.growthQuality = scenarioAnalysis?.growthQuality ?? null;
     stock.valuation.expectedReturnProfile = expectedReturnProfile;
+    stock.valuation.returnAttribution = expectedReturnProfile?.returnAttribution ?? null;
+    stock.valuation.forecastStability = expectedReturnProfile?.forecastStability ?? null;
     stock.valuation.calibration = calibration;
     const downside = computeDownsideRisk(stock, scenarioAnalysis, dataIntegrity, industryModel);
     stock.valuation.downside = downside;
