@@ -9,6 +9,26 @@ function buildDecisionExplanation(stock, c, p, capital) {
   if(c.risk<=35) positives.push(`Low modeled downside risk (${c.risk}/100)`); else if(c.risk>=65) negatives.push(`Elevated downside risk (${c.risk}/100)`);
   if(c.confidence>=78) positives.push(`High evidence confidence (${c.confidence}/100)`); else if(c.confidence<55) negatives.push(`Limited forecast confidence (${c.confidence}/100)`);
   if(p.pBeat15Cagr>=.65) positives.push(`${fmtPct(p.pBeat15Cagr)} modeled probability of beating 15% CAGR`); else if(p.pBeat15Cagr<.35) negatives.push(`Only ${fmtPct(p.pBeat15Cagr)} modeled probability of beating 15% CAGR`);
-  return {version:'decision-explanation-v1',summary:`${stock.rating}: ${stock.ratingReason}`,strengths:positives.slice(0,5),risks:negatives.concat(capital.flags||[]).slice(0,5),keyMetrics:{expectedCAGR:stock.expectedReturn,marginOfSafety:stock.marginOfSafety,pBeat15Cagr:p.pBeat15Cagr,pPermanentLoss:p.pPermanentLoss}};
+
+  const attribution = stock?.valuation?.returnAttribution;
+  const projectionBreakdown = attribution?.available ? {
+    revenueGrowth: attribution.components.revenueGrowth,
+    marginChange: attribution.components.marginChange,
+    shareCountChange: attribution.components.shareCountChange,
+    dividends: attribution.components.dividends,
+    valuationChange: attribution.components.valuationChange,
+    expectedCAGR: attribution.expectedCAGR,
+    reconstructedCAGR: attribution.reconstructedCAGR,
+  } : null;
+
+  return {
+    version:'decision-explanation-v2',
+    summary:`${stock.rating}: ${stock.ratingReason}`,
+    strengths:positives.slice(0,5),
+    risks:negatives.concat(capital.flags||[]).slice(0,5),
+    keyMetrics:{expectedCAGR:stock.expectedReturn,marginOfSafety:stock.marginOfSafety,pBeat15Cagr:p.pBeat15Cagr,pPermanentLoss:p.pPermanentLoss},
+    projectionBreakdown,
+    forecastStability: stock?.valuation?.forecastStability ?? null,
+  };
 }
 module.exports={buildDecisionExplanation};
