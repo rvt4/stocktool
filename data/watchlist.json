@@ -1,0 +1,4094 @@
+[
+  {
+    "ticker": "NVDA",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "AAPL",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "MSFT",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "AMZN",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "GOOGL",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "AVGO",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "GOOG",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "META",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "MU",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "LLY",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "JPM",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "TSLA",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "BRKB",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "AMD",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "XOM",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "JNJ",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "V",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "WMT",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "ABBV",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "AMAT",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "CSCO",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "INTC",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "MA",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "COST",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "CAT",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "BAC",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "LRCX",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "UNH",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "CVX",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "GE",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "PG",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "HD",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "MRK",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "KO",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "GS",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "PM",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "NFLX",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "KLAC",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "RTX",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "GEV",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "PLTR",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "WFC",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "PANW",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "TXN",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "MS",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "SNDK",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "LIN",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "C",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "TMO",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "ORCL",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "AMGN",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "IBM",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "APH",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "WDC",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "NEE",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "MCD",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "ADI",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "ANET",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "CRWD",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "PEP",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "VZ",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "MRVL",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "UNP",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "AXP",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "QCOM",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "WELL",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "ABT",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "TJX",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "SCHW",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "DIS",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "GILD",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "ETN",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "BA",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "BLK",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "T",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "DE",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "COP",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "PFE",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "CVS",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "UBER",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "PLD",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "BKNG",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "DELL",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "BMY",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "COF",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CRM",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "SPGI",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "PH",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CB",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "GLW",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "DHR",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "PGR",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "MO",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "VRTX",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "SBUX",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "ISRG",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "VRT",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "LMT",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "HWM",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "LOW",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "SYK",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "BNY",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "SO",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "TT",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "MDT",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "EQIX",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "MCK",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "NEM",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "DUK",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "PNC",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "USB",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CSX",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "GD",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "PWR",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "ADP",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "APP",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "NOW",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "BX",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CME",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "MPC",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "FTNT",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "CMI",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "WMB",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "CDNS",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "FCX",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "VLO",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "SNOW",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "MMM",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CEG",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "WM",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "JCI",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "ADBE",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "UPS",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "ACN",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "MRSH",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "NET",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "TMUS",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "PSX",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "ELV",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "EMR",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "ICE",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "DDOG",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "TRV",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "ITW",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "MAR",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "NSC",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "HON",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "HOOD",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "EOG",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "CMCSA",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "MDLZ",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "AMT",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "INTU",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "CI",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "SPOT",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "AON",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "AEP",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "ROST",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "GM",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "SPG",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "SHW",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "CL",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "ORLY",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "HLT",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "NOC",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "RCL",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "URI",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "MCO",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "SLB",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "SNPS",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "CTAS",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "FDX",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "TDG",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "PCAR",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "MSI",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "MPWR",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "MNST",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "REGN",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "KKR",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CRH",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "ALL",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "ECL",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "DLR",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "BSX",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "APD",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "FIX",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "TFC",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "KMI",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "DASH",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "HPE",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "D",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "SPCX",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "WBD",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "AJG",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "HONA",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "SRE",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "TGT",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "TRGP",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "O",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "CTVA",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "GWW",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "LITE",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "OKE",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "TER",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "BE",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CIEN",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "COR",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "LNG",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "ABNB",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "VST",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "AFL",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "HCA",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "LHX",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "BKR",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "COHR",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "KEYS",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "F",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "AME",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CARR",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "DAL",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "NUE",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "ETR",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "FAST",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CAH",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "PSA",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "EA",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "ROK",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "FITB",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "DVN",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "XEL",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "APO",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "WAB",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "PYPL",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "ALAB",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "MET",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "STT",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "NU",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "EBAY",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "NKE",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "EXC",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "AZO",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "EW",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "VTR",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "HUM",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "AMP",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "FLEX",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "FERG",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "MCHP",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "BDX",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "ADSK",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "RSG",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "ODFL",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "IDXX",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "TTWO",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "OXY",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "CVNA",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "AIG",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "ADM",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "ED",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "PRU",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CMG",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "YUM",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "NDAQ",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "XYZ",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "PEG",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "GRMN",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "AU",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "IBKR",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CBRE",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "A",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "FANG",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "SYY",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "CRDO",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "HIG",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "MSCI",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "PCG",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "KDP",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "AXON",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "WEC",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "WAT",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "RKLB",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "UAL",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "IRM",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "ROP",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "NTRA",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "RVMD",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "MTB",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "KVUE",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "ALNY",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "DHI",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "VMC",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "PAYX",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "KMB",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "ON",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "COIN",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "HBAN",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "ACGL",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "IQV",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "EME",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "JBL",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "IR",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CCI",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "NTRS",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "MLM",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "CASY",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "EQT",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "STLD",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "NTAP",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "CCL",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "SUNB",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CNC",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "ZTS",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "AEE",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "KR",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "DTE",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "MSTR",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "EIX",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "EXR",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "CFG",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "RBLX",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "CBOE",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "FTI",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "TDY",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "ILMN",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "BIIB",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "EXPE",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "ATO",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "RJF",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CNP",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "Q",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "CRS",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "NRG",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "VICI",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "ES",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "CRWV",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "LYV",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "GEHC",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "TPR",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "RMD",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "CW",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "XYL",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "FE",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "TWLO",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "PPL",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "CINF",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "HAL",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "FICO",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "WTW",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "OTIS",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "ATI",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "VEEV",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "DXCM",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "MTD",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "FISV",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "AVB",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "DOV",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "AWK",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "WDAY",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "RF",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "LPLA",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "HUBB",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "DG",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "NVT",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "EQR",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "WSM",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "PPG",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "VRSK",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "HSY",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "DGX",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "QSR",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "WST",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "WWD",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "TPL",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "MKL",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "XPO",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "RPRX",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "CHRW",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "TROW",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CPRT",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "SYF",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "LH",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "ARES",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "P",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "PHM",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "EXPD",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "MDB",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "CPAY",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "MKSI",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "OKTA",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "PFG",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "SW",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "CHD",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "CMS",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "INSM",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "ZM",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "NI",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "VLTO",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "HPQ",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "MTZ",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "DRI",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "DOW",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "FFIV",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "OMC",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "RDDT",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "FTAI",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "UTHR",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "DLTR",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "JBHT",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "KHC",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "STRL",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "VRSN",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "BURL",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "KEY",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "EXE",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "SOFI",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "FSLR",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "FIS",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "FWONK",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "USFD",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "ULTA",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "LUV",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "MRNA",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "STE",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "ENTG",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "CTSH",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "VTRS",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "PKG",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "RBA",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "RS",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "EVRG",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "IP",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "SNA",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "EFX",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "EL",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "AFRM",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "AMCR",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "CPNG",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "CF",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "INCY",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "L",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "LNT",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "BRO",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "GIS",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "GH",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "SNX",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "LSCC",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "IFF",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "MTSI",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "ESS",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "DD",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "HEIA",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "RBC",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "FN",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "FTV",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "SBAC",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "ROKU",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "EWBC",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "GPN",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "STZ",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "FCNCA",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "BAM",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "VIK",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "INVH",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "ITT",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "SMCI",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "OVV",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "ZBH",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "TLN",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "LII",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "ROIV",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "KIM",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "THC",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "LEN",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "WY",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "RGLD",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "NBIX",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "AKAM",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "PR",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "MDLN",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "SCCO",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "FDXF",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "GPC",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "WRB",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CDW",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "BR",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "PFGC",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "BALL",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "WPC",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "HST",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "IEX",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "BBY",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "BG",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "WCC",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "NVR",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "TXT",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "BWXT",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "NLY",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "TSCO",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "LYB",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "CDE",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "MAS",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "TSN",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "RGA",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CLH",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "NXT",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "NDSN",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "DOC",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "J",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "MAA",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "OHI",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "ASTS",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "JAZZ",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "APG",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "ARMK",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "DTM",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "EG",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "SUI",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "TTMI",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "REG",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "JLL",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "PNFP",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "ZS",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "HEI",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "TRU",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "ONTO",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "RRX",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "FLUT",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "BBIO",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "SGI",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "EXEL",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "RL",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "RIVN",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "SSNC",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "TOL",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "ALB",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "DINO",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "AIZ",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "MLI",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "LDOS",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "GEN",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "UNM",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "PTC",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "SWK",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "COO",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "NTNX",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "DECK",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "MEDP",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "LAMR",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "TEAM",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "EQH",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "RNR",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "GL",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "RPM",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "LECO",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CSL",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "ALLE",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "BWA",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "TOST",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "IREN",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "DY",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "QXO",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "DKS",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "MOD",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "GGG",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "APA",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "SMTC",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "MKC",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "SITM",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "TXRH",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "CCK",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "UDR",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "LVS",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "AIT",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "RVTY",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "PNW",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "ELS",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "ASND",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "ECHO",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "WSO",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "IONQ",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "FNF",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "ZBRA",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "HAS",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "ALLY",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "GNRC",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "EVR",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "ELAN",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "WBS",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "SN",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "GLPI",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "TYL",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "AVY",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "DT",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "RKT",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "FHN",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "PEN",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "SJM",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "SF",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "ROL",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "AEIS",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "APTV",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "AA",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "AGNC",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "BJ",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "TW",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "ARWR",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "CG",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "TRMB",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "GDDY",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "SOLV",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "TECH",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "WTRG",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "CLX",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "AMH",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "KNX",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "SAIA",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "HII",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "RBRK",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "CRL",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "EGP",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "ALGN",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "PODD",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "GWRE",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "BAX",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "BMRN",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "BPOP",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CPT",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "CRCL",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "TKO",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "SANM",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "RMBS",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "OC",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "FIVE",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "LULU",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "DKNG",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "JKHY",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "EHC",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "CSGP",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "ARW",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "FOXA",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "IOT",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "NYT",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "AHR",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "PINS",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "FRT",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "MUSA",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "SPXC",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "BXP",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "DCI",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "IVZ",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CR",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "SCI",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "DOCN",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "CACI",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CGNX",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "WTFC",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "AES",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "U",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "AXSM",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "MOH",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "OGE",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "COKE",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "AR",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "AYI",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "ZION",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "GFL",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "DAR",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "ALSN",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "R",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "LFUS",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "WMS",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "BRX",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "SEIC",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "PNR",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CHTR",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "SSB",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "SOLS",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "NWSA",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "MDGL",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "HUBS",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "HL",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "VIAV",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "PRI",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "DPZ",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "CFR",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "ORI",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "OSK",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "HALO",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "ENSG",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "WTS",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "AFG",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "BMNR",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "CNH",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "COLB",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "VMI",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CUBE",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "IONS",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "RRC",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "KTOS",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "FLS",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CORT",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "ADC",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "DOCU",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "NNN",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "AAL",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "SWKS",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "WAL",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "VOYA",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "MTCH",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "AMG",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "MANH",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "FDS",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "TKR",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "FORM",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "BEN",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "TTC",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "GME",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "ESI",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "IT",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "TIGO",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "ACM",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "AAOI",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "ARE",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "W",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "JEF",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "QGEN",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "GMED",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "VNOM",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "AXS",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "FR",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "MGM",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "NCLH",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "KMX",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "HSIC",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "HXL",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "AMKR",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "UGI",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "ATR",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "TTEK",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "REXR",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "RAL",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "CNM",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "BAH",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "IDA",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "UHS",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "KEX",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "EMN",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "AM",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "NFG",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "CBSH",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CHRD",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "SSD",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "ONON",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "APLD",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "CRBG",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "STAG",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "DVA",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "AVTR",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "HLI",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "BROS",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "ETSY",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "LAD",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "WYNN",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "AAON",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "QRVO",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "BLDR",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "THG",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "HRL",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "AVT",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "LNC",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "KNSL",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "RGEN",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "H",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "WULF",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "ECG",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "MOS",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "NOV",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "LEA",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "AUR",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "GFS",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "TTD",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "AGCO",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "LSTR",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "POWL",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "VNO",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "HR",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "AXTA",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "XP",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CAG",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "AOS",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "GTES",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "OMF",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "SFM",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "CRUS",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "AWI",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "FOX",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "LW",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "FAF",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "PB",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "ULS",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "FNB",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CHE",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "LKQ",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "SARO",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CART",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "EXP",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "ST",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "FPS",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "INGR",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "RYN",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "MP",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "BRKR",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "MSGS",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "UHALB",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "M",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "CAVA",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "CROX",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "MSA",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "PL",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "WFRD",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "ALGM",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "WEX",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CLF",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "OKLO",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "CZR",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "GXO",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "MBGL",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "TAP",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "MTDR",
+    "sector": "Energy"
+  },
+  {
+    "ticker": "AS",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "TPG",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "POOL",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "AVAV",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "MTG",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "VFC",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "TFX",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "FBIN",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "IESC",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "BIO",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "VICR",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "SON",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "PAYC",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "MIDD",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "OWL",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "FND",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "STWD",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "PRMB",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "MSM",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CHDN",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "MHK",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "CHYM",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "DOX",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "PCTY",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "HRB",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "WH",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "SIRI",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "LYFT",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CUZ",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "S",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "WTM",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "PCOR",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "RLI",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "OZK",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CE",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "MTN",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "VSNT",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "ENPH",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "ALK",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "NXST",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "BC",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "VIRT",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "GNTX",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "AN",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "ESTC",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "VVV",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "TEM",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "SAIC",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "G",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "SHC",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "PRIM",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "Z",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "KBR",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "ESAB",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CHWY",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "BSY",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "WSC",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "RITM",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "LPX",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "DUOL",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "LLYVK",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "EPR",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "NEU",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "FCN",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "SLM",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "IRDM",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "GLXY",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "SITE",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "BEPC",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "VNT",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "CELH",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "KRC",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "BYD",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "MDU",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "EPAM",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "NVST",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "GAP",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "TREX",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "MRP",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "DBX",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "TNL",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "FIG",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "PLNT",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "CPB",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "FIGR",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "RYAN",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "MAT",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "PATH",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "GSAT",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "COLD",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "ELF",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "MKTX",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "GTLB",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "LAZ",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CWEN",
+    "sector": "Utilities"
+  },
+  {
+    "ticker": "JBS",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "OLLI",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "RHI",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "JHX",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "SLGN",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "THO",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "YETI",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "EXLS",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "LOPE",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "BBWI",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "BFAM",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "PAG",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "NWS",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "ACI",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "WING",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "VKTX",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "PVH",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "BHF",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "POST",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "FHB",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "DRS",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "OGN",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "APPF",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "AGO",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "OLED",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "ADT",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "CCC",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "BFB",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "AMTM",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "KRMN",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "BILL",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "LBRDK",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "HLNE",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "GPK",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "MORN",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "ALM",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "DLB",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "EEFT",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "LOAR",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "SMG",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "RNG",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "LINE",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "HAYW",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CAR",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CHH",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "FRHC",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "OLN",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "DOCS",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "KD",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "PPLI",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "BOKF",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "FRPT",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "FOUR",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "QS",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "WLK",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "MPT",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "IPGP",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "WU",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "CACC",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "UI",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "AUGO",
+    "sector": "Materials"
+  },
+  {
+    "ticker": "PEGA",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "FWONA",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "KVYO",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "HHH",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "PSN",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "MFP",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CAI",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "WHR",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "LLYVA",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "SNDR",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "SMMT",
+    "sector": "Healthcare"
+  },
+  {
+    "ticker": "DDS",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "LBTYA",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "BIRK",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "JAN",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "LBTYK",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "ZG",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "REYN",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "SEB",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "INGM",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "CNA",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "BFA",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "FRMI",
+    "sector": "Real Estate"
+  },
+  {
+    "ticker": "COLM",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "SFD",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "MWH",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "PPC",
+    "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "TFSL",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "SAIL",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "BLSH",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "LENB",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "XE",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "CBC",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "UHAL",
+    "sector": "Industrials"
+  },
+  {
+    "ticker": "LBRDA",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "NIQ",
+    "sector": "Communication Services"
+  },
+  {
+    "ticker": "UWMC",
+    "sector": "Financials"
+  },
+  {
+    "ticker": "HOLX",
+    "sector": "Healthcare"
+  }
+]
