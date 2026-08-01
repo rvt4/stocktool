@@ -53,25 +53,13 @@ function profileFor(stock, category, lifecycle = {}) {
       : { dcf: .50, dcfSBCAdjusted: .25, epsExit: .20, ebitdaExit: .05 },
     maxBase: growth >= .18 ? .24 : .19, maxRerating: .045,
   };
-  if (industry === 'software') {
-    const eliteGrowth = growth >= .24 && persistence >= .62;
-    return {
-      name: eliteGrowth ? 'software-platform-growth' : 'software-growth-quality',
-      primary: eliteGrowth ? ['dcfSBCAdjusted', 'revenueExit'] : ['dcfSBCAdjusted', 'dcf'],
-      support: ['revenueExit', 'epsExit', 'dcf'],
-      // High-growth software should not be valued almost entirely from near-term
-      // FCF while it is deliberately reinvesting. SBC-adjusted DCF still matters,
-      // but revenue and EPS exits receive more weight when growth persistence and
-      // quality support the platform economics.
-      weights: eliteGrowth
-        ? { dcfSBCAdjusted: .28, dcf: .17, revenueExit: .30, epsExit: .25 }
-        : growth >= .18
-          ? { dcfSBCAdjusted: .35, dcf: .25, revenueExit: .22, epsExit: .18 }
-          : { dcfSBCAdjusted: .35, dcf: .30, epsExit: .25, ownerEarnings: .10 },
-      maxBase: eliteGrowth ? .28 : growth >= .18 ? .25 : .20,
-      maxRerating: eliteGrowth ? .055 : .045,
-    };
-  }
+  if (industry === 'software') return {
+    name: 'software-growth-quality', primary: ['dcfSBCAdjusted', 'dcf'], support: ['revenueExit', 'epsExit'],
+    weights: growth >= .18
+      ? { dcfSBCAdjusted: .35, dcf: .25, revenueExit: .22, epsExit: .18 }
+      : { dcfSBCAdjusted: .35, dcf: .30, epsExit: .25, ownerEarnings: .10 },
+    maxBase: growth >= .18 ? .25 : .20, maxRerating: .045,
+  };
   if (['Dividend Compounder', 'Mature'].includes(stage) || category === 'Dividend') return {
     name: 'mature-owner-cash-flow', primary: ['dcf', 'ownerEarnings'], support: ['epsExit'],
     weights: { dcf: .45, ownerEarnings: .35, epsExit: .20 }, maxBase: .15, maxRerating: .020,
@@ -173,9 +161,41 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
 
   const exit = model?.projection?.[Math.max(0, investmentYears - 1)] || model?.projection?.at(-1) || {};
   const start = stock?.financials?.years?.at(-1) || {};
-  const startPerShare = start.sharesOutTTM > 0 ? Math.max(start.fcf || start.netIncome || 0, 0) / start.sharesOutTTM : null;
-  const exitPerShare = exit.shares > 0 ? Math.max(exit.fcf || exit.netIncome || 0, 0) / exit.shares : null;
-  const operatingCAGR = startPerShare > 0 && exitPerShare > 0 ? Math.pow(exitPerShare / startPerShare, 1 / years) - 1 : null;
+
+  // V40: calculate the operating anchor from the actual projected business at the
+  // investment horizon. Do not let a temporarily depressed FCF/net-income base make
+  // a mature company appear capable of compounding at 30%+ for five years.
+  const startRevenue = Number(start.revenue);
+  const exitRevenue = Number(exit.revenue);
+  const startShares = Number(start.sharesOutTTM);
+  const exitShares = Number(exit.shares);
+  const startFcfMargin = startRevenue > 0 ? Number(start.fcf || 0) / startRevenue : null;
+  const exitFcfMargin = Number(exit.fcfMargin);
+  const startNetMargin = startRevenue > 0 ? Number(start.netIncome || 0) / startRevenue : null;
+  const exitNetMargin = Number(exit.netMargin);
+
+  const revenueCAGR = startRevenue > 0 && exitRevenue > 0
+    ? Math.pow(exitRevenue / startRevenue, 1 / years) - 1 : null;
+  const shareCAGR = startShares > 0 && exitShares > 0
+    ? Math.pow(startShares / exitShares, 1 / years) - 1 : null;
+
+  // Prefer FCF margins when both endpoints are usable. Fall back to net margins.
+  const marginStart = startFcfMargin > .005 && exitFcfMargin > .005 ? startFcfMargin
+    : startNetMargin > .005 && exitNetMargin > .005 ? startNetMargin : null;
+  const marginEnd = startFcfMargin > .005 && exitFcfMargin > .005 ? exitFcfMargin
+    : startNetMargin > .005 && exitNetMargin > .005 ? exitNetMargin : null;
+  const rawMarginCAGR = marginStart > 0 && marginEnd > 0
+    ? Math.pow(marginEnd / marginStart, 1 / years) - 1 : 0;
+
+  // Component discipline: a five-year central case should not be driven by an
+  // extreme starting margin or heroic buybacks. These are annual contribution caps,
+  // not arbitrary CAGR overrides; the final CAGR still maps exactly to the final
+  // actionable exit price below.
+  const revenueContribution = finite(revenueCAGR) ? clamp(revenueCAGR, -.12, .30) : null;
+  const marginContribution = clamp(rawMarginCAGR || 0, -.04, .045);
+  const shareContribution = finite(shareCAGR) ? clamp(shareCAGR, -.04, .035) : 0;
+  const operatingCAGR = finite(revenueContribution)
+    ? revenueContribution + marginContribution + shareContribution : null;
   const quality = qualityContext(stock, lifecycle);
   const disagreement = median(rows.map(x => Math.abs(x.presentValue - fairValueToday) / fairValueToday)) || 0;
   const agreementScore = Math.round(clamp(100 - disagreement * 180, 0, 100));
@@ -191,15 +211,24 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
   let rawValuationDrag = null;
   let maxTrustedNegativeDrag = null;
   const forwardGrowth = Number(lifecycle?.forwardGrowth ?? stock?.valuation?.businessForecast?.currentOperatingRate ?? 0);
-  const eliteOperatingSetup = quality.quality >= .63 && quality.reliability >= .50 &&
-    quality.persistence >= .52 && forwardGrowth >= .18;
-  const exceptionalGrowthSetup = eliteOperatingSetup && forwardGrowth >= .28 &&
-    quality.quality >= .68 && quality.persistence >= .62;
+  const eliteOperatingSetup = quality.quality >= .65 && quality.reliability >= .52 &&
+    quality.persistence >= .52 && forwardGrowth >= .20;
 
   if (finite(adjustedCAGR)) {
     if (finite(operatingCAGR)) {
       const maxFromOperations = operatingCAGR + dynamicReratingAllowance + dividendYield;
       adjustedCAGR = Math.min(adjustedCAGR, maxFromOperations);
+
+      // Mature/compounder sanity ceiling. Very high modeled returns must be earned by
+      // projected revenue, margins, and per-share economics—not by valuation-method
+      // outliers or a low comparison base. Hyper-growth profiles retain more room.
+      const profileCeiling = profile.name.includes('software') || profile.name.includes('innovation')
+        ? .30 : profile.name.includes('growth') ? .27
+          : profile.name.includes('quality-compounder') ? .22
+            : profile.name.includes('financial') ? .20 : .19;
+      const evidenceCeiling = clamp(maxFromOperations + Math.max(0, quality.quality - .70) * .04,
+        -.20, profileCeiling);
+      adjustedCAGR = Math.min(adjustedCAGR, evidenceCeiling);
 
       // V36: valuation is evidence, not certainty. When a high-quality, high-growth
       // business has a credible operating forecast, an internally disputed set of
@@ -215,13 +244,12 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
           forwardPe > 0 ? (forwardPe - 55) / 95 : 0,
           evRevenue > 0 ? (evRevenue - 12) / 28 : 0
         ), 0, 1);
-        const profileDragBase = profile.name.includes('software-platform') ? .16
-          : profile.name.includes('software') ? .19
+        const profileDragBase = profile.name.includes('software') ? .19
           : profile.name.includes('innovation') ? .17
             : profile.name.includes('growth') ? .16 : .12;
         maxTrustedNegativeDrag = clamp(
           profileDragBase * (.42 + .58 * valuationTrust) + extremeValuation * .10,
-          exceptionalGrowthSetup ? .06 : .07, exceptionalGrowthSetup ? .24 : .28
+          .07, .28
         );
         valuationDragFloor = businessAnchor - maxTrustedNegativeDrag;
         adjustedCAGR = Math.max(adjustedCAGR, valuationDragFloor);
@@ -235,7 +263,7 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
 
 
   return {
-    version: 'v36-business-first-primary-valuation',
+    version: 'v40-projection-anchored-primary-valuation',
     profile: profile.name,
     primaryMethods: profile.primary,
     supportingMethods: profile.support,
@@ -250,6 +278,14 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
     rawCAGR,
     expectedCAGR: adjustedCAGR,
     operatingCAGR,
+    operatingBridge: {
+      revenueCAGR,
+      revenueContribution,
+      rawMarginCAGR,
+      marginContribution,
+      shareCAGR,
+      shareContribution,
+    },
     dividends,
     years,
     agreementScore,
@@ -261,7 +297,6 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
     maxReratingContribution: dynamicReratingAllowance,
     valuationTrust,
     eliteOperatingSetup,
-    exceptionalGrowthSetup,
     rawValuationDrag,
     valuationDragFloor,
     maxTrustedNegativeDrag,
