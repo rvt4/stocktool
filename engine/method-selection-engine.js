@@ -102,12 +102,6 @@ function selectValuationMethods(stock, category, methods) {
     else if ((suitability[key] || 0) < .25) excludedMethods.push({ method: key, reason: 'Low method suitability', suitability: suitability[key] });
   }
 
-  // V39 quality-aware, lifecycle-aware method weighting.
-  // The model should not treat every 30-40x multiple as equally unreasonable:
-  // durable, high-ROIC businesses with long runways deserve more weight on
-  // forward earnings/revenue methods, while low-quality or fragile businesses
-  // remain anchored to cash flow and EBITDA.
-  //
   // V18 business-aware method weighting. High-quality scaling brands and innovation
   // businesses receive more weight on forward revenue/earnings methods; mature and
   // capital-intensive companies lean toward cash flow and EBITDA. This is systematic
@@ -132,25 +126,9 @@ function selectValuationMethods(stock, category, methods) {
     rawWeights.ownerEarnings *= archetype==='Scaling Consumer Brand'?.55:.72;
   }
   if (innovation && highQualityGrowth >= .55) {
-    const premium = 1 + clamp((highQualityGrowth - .55) / .35, 0, 1) * .75;
-    rawWeights.revenueExit *= 1.30 * premium;
-    rawWeights.epsExit *= 1.05 + .25 * highQualityGrowth;
-    rawWeights.dcfSBCAdjusted *= 1.10 + .15 * highQualityGrowth;
-    rawWeights.ownerEarnings *= .62;
-  }
-
-  // High-quality compounders get a measured forward-method tilt even outside
-  // software. This is the systematic replacement for ticker-specific overrides.
-  const durableCompounder = highQualityGrowth >= .62 &&
-    (category === 'Compounder' || category === 'Growth' || category === 'Hyper Growth') &&
-    (lifecycle.forwardGrowth ?? 0) >= .08;
-  if (durableCompounder) {
-    const q = clamp((highQualityGrowth - .62) / .28, 0, 1);
-    rawWeights.epsExit *= 1.18 + .42 * q;
-    rawWeights.revenueExit *= 1.12 + .38 * q;
-    rawWeights.dcfSBCAdjusted *= 1.08 + .18 * q;
-    rawWeights.ownerEarnings *= .78 - .18 * q;
-    rawWeights.ebitdaExit *= .95;
+    rawWeights.revenueExit *= 1.45;
+    rawWeights.dcfSBCAdjusted *= 1.15;
+    rawWeights.ownerEarnings *= .70;
   }
   if (matureCash) {
     rawWeights.dcf *= 1.15;
@@ -165,7 +143,7 @@ function selectValuationMethods(stock, category, methods) {
     .sort((a, b) => weights[b] - weights[a]);
 
   return {
-    version: 'quality-aware-v39',
+    version: 'business-model-first-v19',
     industry,
     category,
     primaryMethod: ranked[0] || null,
@@ -174,7 +152,7 @@ function selectValuationMethods(stock, category, methods) {
     baseWeights: normalize(base),
     suitability,
     effectiveStartingWeights: weights,
-    diagnostics: { ...diagnostics, highQualityGrowth, consumerBrand, innovation, durableCompounder, matureCash, archetype },
+    diagnostics: { ...diagnostics, highQualityGrowth, consumerBrand, innovation, matureCash, archetype },
     excludedMethods,
   };
 }

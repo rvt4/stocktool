@@ -1,5 +1,5 @@
 /**
- * StockTool category engine v1.0
+ * StockTool category engine v1.1 (V38.5)
  *
  * Categories describe the BUSINESS, not whether the shares are cheap today.
  * Classification uses a multi-year operating profile plus forward estimates.
@@ -80,10 +80,9 @@
     const recentSevereDecline = revRates.slice(-2).some(x => x < -0.10);
     const priorDeterioration = revenueDeclineYears >= 1 || (opMargins.length >= 4 && Math.min(...opMargins.slice(0, -1)) < opMargins[0] - 0.025);
     const recoveryEvidence = priorDeterioration && ((opMarginTrend > 0.008) || (fcfMarginTrend > 0.008) || growthAcceleration > 0.05) && forwardGrowth > -0.02;
-    // V39: a turnaround must still have a CURRENT impairment. A weak year from
-    // several years ago must not relabel a healthy secular grower (AMD was the
-    // clearest failure mode). Current impairment is intentionally based on the
-    // latest two reported years and latest profitability, not a five-year average.
+
+    // V38.5: Turnaround must describe a current operating impairment.
+    // A weak year several years ago must not relabel a healthy secular grower.
     const currentOperatingImpairment = recentRevenueDeclineYears > 0 || recentSevereDecline ||
       recentPositiveIncomeRate < 0.50 || (finite(latestNetMargin) && latestNetMargin < -0.01) ||
       (forwardGrowth < 0.01 && (opMarginTrend < -0.004 || fcfMarginTrend < -0.004));
