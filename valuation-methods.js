@@ -1,13 +1,15 @@
 /**
  * StockTool V2 lifecycle/moat-aware valuation engine
  *
- * V3.0 principles:
+ * V38.1 valuation rebuild principles:
  *  - one shared five-year operating projection for every valuation method
  *  - analyst estimates anchor years 1-2 when available
  *  - category-aware growth fade and margin normalization
  *  - company-specific, risk-aware discount rates and terminal growth
  *  - exit multiples blend company, sector, quality, and growth persistence
  *  - no valuation method is deleted solely for disagreeing with DCF
+ *  - lifecycle labels cannot silently replace the canonical investment category
+ *  - high-quality growth businesses use a robust primary/consensus blend rather than one brittle method
  */
 
 const CategoryEngine = require('./engine/category-engine');
@@ -61,6 +63,47 @@ function historicalMedianGrowth(yrs) {
 // ---------- Shared category inference ----------
 function inferValuationCategory(stock) {
   return CategoryEngine.classifyCategory(stock);
+}
+
+function canonicalCategory(value) {
+  const v = String(value || '').trim();
+  if (['Hyper Growth', 'Growth', 'Compounder', 'Value', 'Dividend', 'Turnaround', 'Cyclical'].includes(v)) return v;
+  if (v === 'Elite Compounder') return 'Compounder';
+  if (v === 'Dividend Compounder') return 'Dividend';
+  if (v === 'Temporary Disruption') return 'Growth';
+  if (['Financial', 'Utility', 'Asset Heavy', 'Mature'].includes(v)) return 'Value';
+  return null;
+}
+
+function resolveValuationCategory(stock, lifecycle = null) {
+  const engineCategory = canonicalCategory(inferValuationCategory(stock));
+  const lifecycleCategory = canonicalCategory(lifecycle?.stage || lifecycle?.name || lifecycle?.type);
+  const yrs = stock.financials?.years || [];
+  const last = yrs.at(-1) || {};
+  const prior = yrs.at(-2) || {};
+  const revGrowth = prior.revenue > 0 && last.revenue > 0 ? last.revenue / prior.revenue - 1 : null;
+  const forwardGrowth = Number(stock.analystEstimates?.revenueGrowthNextYear ?? stock.analystEstimates?.revenueGrowthFwd);
+  const fcfMargin = last.revenue > 0 && Number.isFinite(last.fcf) ? last.fcf / last.revenue : null;
+  const profitable = Number(last.netIncome) > 0 || Number(last.operatingIncome) > 0 || Number(last.fcf) > 0;
+  const quality = Number(stock.valuation?.economicQuality?.score ?? stock.qualityScore ?? stock.quality?.score);
+  const genuineDistress =
+    (Number.isFinite(revGrowth) && revGrowth < -0.08) ||
+    (Number.isFinite(forwardGrowth) && forwardGrowth < -0.05) ||
+    (!profitable && Number.isFinite(fcfMargin) && fcfMargin < -0.05);
+
+  // A lifecycle model may call a cyclical growth reset a “turnaround.” That label is
+  // useful for forecast normalization, but it should not reclassify a profitable,
+  // still-growing business such as a semiconductor platform as a turnaround stock.
+  if (lifecycleCategory === 'Turnaround' && !genuineDistress) {
+    if (engineCategory && engineCategory !== 'Turnaround') return engineCategory;
+    if ((Number.isFinite(forwardGrowth) && forwardGrowth >= 0.18) || (Number.isFinite(revGrowth) && revGrowth >= 0.15)) return 'Growth';
+    if (profitable && (quality >= 70 || (fcfMargin ?? 0) >= 0.08)) return 'Compounder';
+    return 'Value';
+  }
+
+  // Prefer the dedicated category engine for the public screener label. Lifecycle
+  // remains available separately for fade speed, margin normalization and horizon.
+  return engineCategory || lifecycleCategory || 'Value';
 }
 
 // ---------- Dilution ----------
@@ -958,16 +1001,59 @@ function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
   };
 }
 
+function robustDecisionBlend(stock, category, lifecycle, primaryValuation, consensus, combined, legacyPriceTarget, model) {
+  const currentPrice = Number(stock.price?.current);
+  const agreement = clamp((combined?.agreementScore ?? 50) / 100, 0, 1);
+  const profile = stock.valuation?.businessProfile || {};
+  const moat = clamp(Number(profile.moatScore ?? 0.5), 0, 1);
+  const forecastReliability = clamp(Number(profile.forecastReliability ?? 0.5), 0, 1);
+  const growthCategory = ['Hyper Growth', 'Growth', 'Compounder'].includes(category);
+  const primaryFair = Number(primaryValuation?.fairValueToday);
+  const consensusFair = Number(consensus?.actionableFairValue ?? combined?.blendedFairValue);
+  const primaryExit = Number(primaryValuation?.actionableExitValue);
+  const consensusExit = Number(legacyPriceTarget?.exitPrice);
+  const years = Number(model?.projection?.length || lifecycle?.forecastYears || 5);
+
+  // Low agreement should reduce confidence, not allow a single selected method to
+  // completely erase the information in the other independently valid methods.
+  let primaryWeight = growthCategory ? 0.58 : 0.72;
+  primaryWeight += (agreement - 0.5) * 0.20;
+  primaryWeight += (forecastReliability - 0.5) * 0.10;
+  primaryWeight -= growthCategory ? (moat - 0.5) * 0.08 : 0;
+  primaryWeight = clamp(primaryWeight, growthCategory ? 0.48 : 0.60, 0.84);
+
+  const blend = (a, b) => {
+    if (a > 0 && b > 0) return a * primaryWeight + b * (1 - primaryWeight);
+    return a > 0 ? a : b > 0 ? b : null;
+  };
+  const fairValueToday = blend(primaryFair, consensusFair);
+  const actionableExitValue = blend(primaryExit, consensusExit);
+  const dividends = Number(primaryValuation?.dividends ?? legacyPriceTarget?.dividendsReceived ?? 0);
+  const expectedCAGR = currentPrice > 0 && actionableExitValue > 0 && years > 0
+    ? Math.pow((actionableExitValue + dividends) / currentPrice, 1 / years) - 1
+    : Number(primaryValuation?.expectedCAGR);
+
+  return {
+    fairValueToday, actionableExitValue, expectedCAGR, dividends, primaryWeight,
+    consensusWeight: 1 - primaryWeight,
+    primaryFairValue: primaryFair > 0 ? primaryFair : null,
+    consensusFairValue: consensusFair > 0 ? consensusFair : null,
+    primaryExitValue: primaryExit > 0 ? primaryExit : null,
+    consensusExitValue: consensusExit > 0 ? consensusExit : null,
+    agreementScore: combined?.agreementScore ?? null,
+    version: 'v38.1-robust-primary-consensus-blend',
+  };
+}
+
 function valuateStock(stock, sectorExitMultiples, calibration = null) {
   const lifecycle = classifyLifecycle(stock);
-  const category = lifecycle.stage === 'Elite Compounder' ? 'Compounder'
-    : lifecycle.stage === 'Dividend Compounder' ? 'Dividend'
-    : lifecycle.stage === 'Temporary Disruption' ? 'Growth'
-    : ['Financial','Utility','Asset Heavy','Mature'].includes(lifecycle.stage) ? 'Value'
-    : lifecycle.stage;
-  const forecastCategory = lifecycle.stage;
+  const category = resolveValuationCategory(stock, lifecycle);
   const sectorMultiples = sectorExitMultiples[stock.sector] || sectorExitMultiples.Unknown || {};
-  const model = projectFinancials(stock, stock.growthYear1, lifecycle.forecastYears, calibration, forecastCategory, lifecycle);
+  // Keep the model category canonical. Passing lifecycle.stage here previously meant
+  // labels such as “Secular Compute Platform” or “Temporary Disruption” leaked into
+  // discount-rate, terminal-growth and method-weight lookups that only understand the
+  // seven canonical categories. Lifecycle is still supplied separately to the forecast.
+  const model = projectFinancials(stock, stock.growthYear1, lifecycle.forecastYears, calibration, category, lifecycle);
   const moat = computeMoat(stock, lifecycle);
   const baseBusinessProfile = { ...buildBusinessProfile(stock, category, model), moatScore: moat.score / 100, moatV2: moat, lifecycle };
   const premiumPersistenceModel = computePremiumPersistence(stock, baseBusinessProfile, lifecycle, moat);
@@ -1009,16 +1095,18 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     stock, category, lifecycle, methodResults: exitResults, model,
   });
   const legacyPriceTarget = fiveYearPriceTargetCAGR(stock, model, exitResults, combined.effectiveWeights);
-  const selectedExitPrice = primaryValuation?.actionableExitValue ?? legacyPriceTarget.exitPrice;
+  const decisionBlend = robustDecisionBlend(stock, category, lifecycle, primaryValuation, consensus, combined, legacyPriceTarget, model);
+  const selectedExitPrice = decisionBlend.actionableExitValue ?? primaryValuation?.actionableExitValue ?? legacyPriceTarget.exitPrice;
   const returnEngineV2 = computeReturnEngineV2(stock, model, selectedExitPrice, consensus, lifecycle);
-  if (primaryValuation && Number.isFinite(primaryValuation.expectedCAGR)) {
-    returnEngineV2.expectedCAGR = primaryValuation.expectedCAGR;
-    returnEngineV2.actionableCAGR = primaryValuation.expectedCAGR;
-    returnEngineV2.rawMarketCAGR = primaryValuation.rawCAGR;
-    returnEngineV2.actionableExitPrice = primaryValuation.actionableExitValue;
-    returnEngineV2.rawMarketExitPrice = primaryValuation.rawExitValue;
-    returnEngineV2.totalFutureValue = primaryValuation.actionableExitValue + primaryValuation.dividends;
+  if (Number.isFinite(decisionBlend.expectedCAGR)) {
+    returnEngineV2.expectedCAGR = decisionBlend.expectedCAGR;
+    returnEngineV2.actionableCAGR = decisionBlend.expectedCAGR;
+    returnEngineV2.rawMarketCAGR = primaryValuation?.rawCAGR ?? legacyPriceTarget.rawCagr;
+    returnEngineV2.actionableExitPrice = decisionBlend.actionableExitValue;
+    returnEngineV2.rawMarketExitPrice = primaryValuation?.rawExitValue ?? legacyPriceTarget.exitPrice;
+    returnEngineV2.totalFutureValue = decisionBlend.actionableExitValue + decisionBlend.dividends;
     returnEngineV2.primaryValuation = primaryValuation;
+    returnEngineV2.decisionBlend = decisionBlend;
   }
   const ownerEarningsReturn = buildOwnerEarningsReturn(stock, model, ownerEarnings, dcf, consensus, lifecycle, moat, businessProfile);
   const fiveYearPriceTarget = {
@@ -1036,14 +1124,15 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     dividendsReceived: returnEngineV2.dividendsReceived ?? legacyPriceTarget.dividendsReceived ?? 0,
     totalFutureValue: returnEngineV2.totalFutureValue ?? null,
     breakdown: returnEngineV2.breakdown,
-    returnEngineVersion: 'business-first-justified-valuation-v36',
+    returnEngineVersion: 'v38.1-robust-category-and-valuation-rebuild',
     primaryValuation,
+    decisionBlend,
     ownerEarningsValidationCAGR: ownerEarningsReturn.expectedCAGR,
     fundamentalBusinessCAGR: returnEngineV2.fundamentalCAGR,
     multipleDominated: returnEngineV2.multipleDominated,
   };
   const currentPrice = stock.price.current;
-  const finalFairValue = primaryValuation?.fairValueToday ?? consensus.actionableFairValue ?? combined.blendedFairValue ?? dcf.fairValuePerShare ?? ownerEarnings.fairValuePerShare;
+  const finalFairValue = decisionBlend.fairValueToday ?? primaryValuation?.fairValueToday ?? consensus.actionableFairValue ?? combined.blendedFairValue ?? dcf.fairValuePerShare ?? ownerEarnings.fairValuePerShare;
   const marginOfSafety = finalFairValue && currentPrice
     ? (finalFairValue - currentPrice) / finalFairValue : null;
 
@@ -1070,6 +1159,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     marketValue: consensus.marketValue,
     valuationConsensus: consensus,
     primaryValuation,
+    decisionBlend,
     ownerEarningsReturn,
     returnEngineV2,
     marketExpectations,
@@ -1083,7 +1173,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '37.0-consensus-dilution-margin-guards', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '38.1-canonical-category-robust-decision-blend', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
@@ -1096,7 +1186,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
 const api = {
   computeSectorExitMultiples, valuateStock, projectFinancials, estimateDilutionRate,
   combineValuations, meanRevertedMultiple, qualityPremiumWeight, fiveYearPriceTargetCAGR,
-  inferValuationCategory, buildGrowthPath, buildBusinessProfile, businessSpecificWeights, intelligentExitMultiple, analystReliability, capitalAllocationScore, ownerEarningsFromProjection,
+  inferValuationCategory, resolveValuationCategory, buildGrowthPath, buildBusinessProfile, businessSpecificWeights, intelligentExitMultiple, analystReliability, capitalAllocationScore, ownerEarningsFromProjection,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 if (typeof window !== 'undefined') window.ValuationMethods = api;
