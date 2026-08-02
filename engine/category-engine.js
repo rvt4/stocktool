@@ -40,7 +40,7 @@
 
   const CYCLICAL_SECTORS = new Set(['Energy', 'Materials']);
   const CYCLICAL_INDUSTRY_WORDS = /steel|metal|mining|oil|gas|drilling|chemical|paper|lumber|airline|auto manufacturer|semiconductor equipment|homebuild|shipping|freight|commodity/i;
-  const DEFENSIVE_INDUSTRY_WORDS = /utility|regulated|telecom|reit|pipeline|tobacco|consumer staple/i;
+  const DEFENSIVE_INDUSTRY_WORDS = /utility|regulated|telecom|reit|pipeline|tobacco|consumer staple|beverage|food|household products/i;
 
   function buildCategoryProfile(stock) {
     const yrs = stock?.financials?.years || [];
@@ -97,6 +97,7 @@
       positiveFcfRate, positiveIncomeRate, shareTrend, revenueDeclineYears, recentRevenueDeclineYears,
       severeDecline, recentSevereDecline, priorDeterioration, recoveryEvidence, fcfYield, earningsYield,
       dividendYield, payout, cyclicalIndustry, defensiveIndustry,
+      sector: stock?.sector || '', industryText,
     };
   }
 
@@ -175,8 +176,17 @@
     if (p.years < 3) return { category: 'Unknown', confidence: 0, scores: {}, profile: p, reason: 'Insufficient history' };
     const scores = scoreArchetypes(p);
 
-    // Hard gates prevent one noisy metric from creating the wrong business label.
-    if (!(p.forwardGrowth >= 0.18 && (p.rev3 ?? p.forwardGrowth) >= 0.12)) scores['Hyper Growth'] *= 0.45;
+    // Hard gates prevent one noisy analyst estimate from creating a Hyper Growth label.
+    // Hyper Growth requires both high forward growth and demonstrated multi-year growth,
+    // plus cash-flow evidence. Financials and mature staples are classified by their
+    // economics rather than by a temporary revenue spike.
+    const financialSector = /financial/i.test(p.sector);
+    const staplesSector = /consumer staples/i.test(p.sector);
+    const hyperEligible = p.forwardGrowth >= 0.22 &&
+      (p.rev3 ?? p.forwardGrowth) >= 0.16 &&
+      p.y2 >= 0.18 && p.positiveFcfRate >= 0.60 &&
+      !financialSector && !staplesSector;
+    if (!hyperEligible) scores['Hyper Growth'] *= 0.22;
     // A turnaround requires a CURRENT operating impairment, not merely one weak
     // comparison year. This prevents healthy secular growers coming out of a cycle
     // (for example a semiconductor company with positive FCF and strong forward
@@ -205,6 +215,22 @@
     if (category === 'Growth' && scores.Compounder >= scores.Growth - 5 && p.avgRoic >= 0.16 && p.positiveFcfRate >= 0.8) {
       category = 'Compounder'; top = scores.Compounder;
     }
+
+    // Mature, cash-generative growers should read as Compounders. This catches large
+    // established platforms whose current growth is healthy but no longer hyper-growth.
+    const matureCompounder = p.forwardGrowth < 0.20 && p.positiveFcfRate >= 0.80 &&
+      p.positiveIncomeRate >= 0.80 && (p.avgRoic ?? 0) >= 0.14 && p.marginStability >= 0.60;
+    if ((category === 'Growth' || category === 'Hyper Growth') && matureCompounder &&
+        scores.Compounder >= scores.Growth - 10) {
+      category = 'Compounder'; top = scores.Compounder;
+    }
+
+    // Financial businesses are never labeled Hyper Growth by revenue alone.
+    if (financialSector && category === 'Hyper Growth') {
+      category = scores.Compounder >= scores.Value ? 'Compounder' : 'Value';
+      top = scores[category];
+    }
+
     // Turnaround is a current operating condition, not a memory of an old weak
     // period. Durable businesses with healthy forward growth, consistently
     // positive cash flow, and no recent impairment remain Compounders/Growth.
