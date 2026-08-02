@@ -24,11 +24,27 @@ function assignProbabilityRating(stock, components, probability) {
   const { model }=sectorAdjustedComposite(stock,components); const g=model.gates;
   const er=probability.inputs.er, mos=probability.inputs.mos, q=components.quality, c=components.confidence, r=components.risk;
   const bear=n(stock.scenarioAnalysis?.downsideCAGR,n(stock.valuation?.scenarioAnalysis?.downsideCAGR,-.20));
+  const agreement=n(stock.methodAgreementScore,n(stock.valuation?.methodAgreementScore,0));
+  const ic=n(stock.investmentCommitteeScore,n(stock.icScore,70));
+  const years=stock.financials?.years||[];
+  const recent=years.slice(-5);
+  const positiveFcfRate=recent.length?recent.filter(y=>n(y.fcf,0)>0).length/recent.length:0;
+  const absurdMargin=recent.some(y=>{
+    const rev=n(y.revenue,0), fcf=n(y.fcf,null), ni=n(y.netIncome,null);
+    return rev>0&&((fcf!=null&&Math.abs(fcf/rev)>1.5)||(ni!=null&&Math.abs(ni/rev)>1.5));
+  });
+  const integrityWarning=!!(stock.dataIntegrity?.decisionIntegrityWarning||stock.returnPlausibilityAdjusted||absurdMargin);
+  const fragileValuation=agreement<45||integrityWarning;
+  const highGrowth=stock.category==='Hyper Growth'||stock.category==='Growth';
+  const highGrowthEvidence=!highGrowth||(positiveFcfRate>=.60&&agreement>=55&&c>=72);
+  const exceptionalEvidence=agreement>=65&&ic>=70&&!integrityWarning&&highGrowthEvidence;
+  const strongEvidence=agreement>=50&&ic>=60&&!integrityWarning&&highGrowthEvidence;
   let rating='Hold'; let reason='Expected return and evidence do not clear a higher-conviction threshold.';
   if(probability.pPermanentLoss>.52 || er<-.06 || mos<-.40){rating='Sell';reason='Downside or overvaluation risk dominates the modeled return.';}
-  else if(q>=g.exceptionalQuality&&er>=g.exceptionalCagr&&mos>=.20&&c>=78&&r<=g.maxRisk&&probability.pBeat15Cagr>=.72&&bear>=-.10){rating='Exceptional Buy';reason='Exceptional quality, a wide margin of safety and high probability of exceeding the return hurdle all agree.';}
-  else if(q>=g.strongQuality&&er>=g.strongCagr&&mos>=.10&&c>=68&&r<=g.maxRisk+8&&probability.pBeat15Cagr>=.60){rating='Strong Buy';reason='Quality, valuation and probability-weighted return clear the sector-specific high-conviction gates.';}
-  else if(er>=.115&&q>=62&&c>=55&&probability.pPositiveReturn>=.58){rating='Buy';reason='Expected return is attractive, but one or more conviction gates remain below Strong Buy levels.';}
+  else if(q>=g.exceptionalQuality&&er>=g.exceptionalCagr&&mos>=.20&&c>=78&&r<=g.maxRisk&&probability.pBeat15Cagr>=.72&&bear>=-.05&&exceptionalEvidence){rating='Exceptional Buy';reason='Exceptional quality, valuation agreement, downside resilience and return probability all clear the high-conviction gates.';}
+  else if(q>=g.strongQuality&&er>=g.strongCagr&&mos>=.12&&c>=68&&r<=g.maxRisk+8&&probability.pBeat15Cagr>=.62&&strongEvidence){rating='Strong Buy';reason='Quality, valuation agreement and probability-weighted return clear the sector-specific high-conviction gates.';}
+  else if(er>=.115&&q>=62&&c>=55&&probability.pPositiveReturn>=.58&&!fragileValuation){rating='Buy';reason='Expected return is attractive, but one or more conviction gates remain below Strong Buy levels.';}
+  else if(fragileValuation&&er>=.075){rating='Hold';reason='The modeled return may be attractive, but valuation agreement or data integrity is too weak for a Buy rating.';}
   // Distinguish a poor business from an excellent business at an unattractive
   // price. High-quality companies with a non-negative modeled return remain Hold
   // unless permanent-loss risk is genuinely elevated.
