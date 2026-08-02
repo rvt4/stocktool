@@ -156,7 +156,7 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   const dei = facts.facts?.dei || {};
   const byYear = {}; // year -> partial record
 
-  function pullAnnual(tag, field, { additive = false } = {}) {
+  function pullAnnual(tag, field, { additive = false, preferLargest = false } = {}) {
     const units = usGaap[tag]?.units;
     if (!units) return;
     const arr = units.USD || units.shares || units['USD/shares'] || Object.values(units)[0];
@@ -180,10 +180,15 @@ function parseAnnualFinancials(facts, maxYears = 10) {
       byYear[year] = byYear[year] || { year };
       if (additive) {
         byYear[year][field] = (Number(byYear[year][field]) || 0) + Number(x.val);
-      } else {
+        byYear[year][`${field}Source`] = tag;
+      } else if (!preferLargest || !Number.isFinite(Number(byYear[year][field])) || Number(x.val) > Number(byYear[year][field])) {
+        // Revenue tags frequently overlap. For diversified and financial companies,
+        // a narrower tag (for example a single operating segment) can be filed after
+        // the consolidated tag. Keep the largest annual-duration consolidated-scale
+        // fact instead of blindly allowing the final tag to overwrite total revenue.
         byYear[year][field] = Number(x.val);
+        byYear[year][`${field}Source`] = tag;
       }
-      byYear[year][`${field}Source`] = tag;
     }
   }
 
@@ -209,16 +214,16 @@ function parseAnnualFinancials(facts, maxYears = 10) {
 
   // Revenue is the least standardized SEC field. Pull broad fallbacks first and
   // preferred general-company tags last so the strongest fact wins per fiscal year.
-  pullAnnual('PremiumsEarnedNet', 'revenue');
-  pullAnnual('InvestmentIncomeInterestAndDividend', 'revenue');
-  pullAnnual('InterestAndDividendIncomeOperating', 'revenue');
-  pullAnnual('InterestIncomeExpenseNonoperatingNet', 'revenue');
-  pullAnnual('RevenuesNetOfInterestExpense', 'revenue'); // banks / brokers
-  pullAnnual('OperatingRevenues', 'revenue');
-  pullAnnual('SalesRevenueNet', 'revenue');
-  pullAnnual('RevenueFromContractWithCustomerIncludingAssessedTax', 'revenue');
-  pullAnnual('Revenues', 'revenue');
-  pullAnnual('RevenueFromContractWithCustomerExcludingAssessedTax', 'revenue'); // preferred modern tag
+  pullAnnual('PremiumsEarnedNet', 'revenue', { preferLargest: true });
+  pullAnnual('InvestmentIncomeInterestAndDividend', 'revenue', { preferLargest: true });
+  pullAnnual('InterestAndDividendIncomeOperating', 'revenue', { preferLargest: true });
+  pullAnnual('InterestIncomeExpenseNonoperatingNet', 'revenue', { preferLargest: true });
+  pullAnnual('RevenuesNetOfInterestExpense', 'revenue', { preferLargest: true }); // banks / brokers
+  pullAnnual('OperatingRevenues', 'revenue', { preferLargest: true });
+  pullAnnual('SalesRevenueNet', 'revenue', { preferLargest: true });
+  pullAnnual('RevenueFromContractWithCustomerIncludingAssessedTax', 'revenue', { preferLargest: true });
+  pullAnnual('Revenues', 'revenue', { preferLargest: true });
+  pullAnnual('RevenueFromContractWithCustomerExcludingAssessedTax', 'revenue', { preferLargest: true }); // preferred modern tag
   pullAnnual('NetIncomeLoss', 'netIncome');
   pullAnnual('GrossProfit', 'grossProfit');
   pullAnnual('OperatingIncomeLoss', 'operatingIncome');

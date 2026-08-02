@@ -63,10 +63,24 @@ function classifyCategory(stock) {
   const recentRevenueDecline = yrs.slice(-4).some((y, i, arr) => i > 0 && y.revenue < arr[i - 1].revenue * 0.97);
   const positiveIncomeYears = yrs.slice(-4).filter(y => y.netIncome > 0).length;
 
-  // Forward growth takes priority so a current high-growth company is not mislabeled
-  // a turnaround because one older comparison year was weak.
-  if (forwardGrowth >= 0.25) return 'Hyper Growth';
-  if (forwardGrowth >= 0.15) return 'Growth';
+  // Category is a business description, not a one-year analyst-growth label.
+  // Require persistence and sector fit before assigning Hyper Growth. This prevents
+  // acquisitive industrials, financials and staples with a temporary estimate spike
+  // from receiving the same underwriting treatment as a durable secular grower.
+  const sectorText = [stock.sector, stock.industry, stock.valuation?.industryModel?.model]
+    .filter(Boolean).join(' ').toLowerCase();
+  const isFinancial = /financial|bank|insurance|credit|capital market|asset management/.test(sectorText);
+  const isStaples = /consumer staples|consumer defensive|staples|beverage|food|household/.test(sectorText);
+  const positiveFcfRate = yrs.slice(-5).length
+    ? yrs.slice(-5).filter(y => Number(y.fcf) > 0).length / yrs.slice(-5).length : 0;
+  const historicalMedianGrowth = historicalGrowth ?? 0;
+  const bothForwardYearsStrong = currentForward >= 0.20 && nextForward >= 0.18;
+  const durableHyperGrowth = forwardGrowth >= 0.22 && bothForwardYearsStrong &&
+    historicalMedianGrowth >= 0.10 && positiveFcfRate >= 0.60 && !isFinancial &&
+    (!isStaples || historicalMedianGrowth >= 0.16);
+
+  if (durableHyperGrowth) return 'Hyper Growth';
+  if (forwardGrowth >= 0.13 && !isFinancial) return 'Growth';
   if (avgRoic != null && avgRoic >= 0.15 && forwardGrowth >= 0.08) return 'Compounder';
   if (recentRevenueDecline && marginRecovery && forwardGrowth < 0.12) return 'Turnaround';
   if (recentRevenueDecline && positiveIncomeYears <= 2 && forwardGrowth < 0.08) return 'Cyclical';
