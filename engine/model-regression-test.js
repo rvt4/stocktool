@@ -3,7 +3,7 @@ const assert = require('assert');
 const CategoryEngine = require('./category-engine');
 const { assignSelectiveRatings } = require('./rating-engine');
 const { computeInvestmentCommitteeScore } = require('./investment-committee-engine');
-const { applyDecisionSystemV29 } = require('./decision-system-v29');
+const { applyDecisionSystemV30 } = require('./decision-system-v30');
 
 function years({rev=[100,110,121,133,146], roic=.16, fcfMargin=.12, shares=100}){
  return rev.map((r,i)=>({revenue:r,fcf:r*fcfMargin,netIncome:r*.10,roic,opMargin:.16,grossMargin:.45,sharesOutTTM:shares*(1+i*.002)}));
@@ -31,6 +31,14 @@ assert.ok(committee.yesVotes>=3,'A balanced high-quality case should receive mul
 
 const fatalCommittee={...committee,yesVotes:4,fatalNo:true,unanimous:false,members:{...committee.members,valuation:{score:40,vote:'no'}}};
 const candidate={ticker:'Y',category:'Growth',rating:'Strong Buy',probabilityWeightedCAGR:.18,expectedReturn:.18,baseCAGR:.18,bearCAGR:.10,bullCAGR:.25,confidenceScore:85,methodAgreementScore:70,marginOfSafety:.25,businessQualityScore:85,downsideRiskScore:30,valuation:{investmentCommittee:fatalCommittee,economicQuality:{overall:85}},dataIntegrity:{score:85},financials:{years:years({})}};
-applyDecisionSystemV29([candidate]);
+applyDecisionSystemV30([candidate]);
 assert.notStrictEqual(candidate.rating,'Strong Buy','A fatal committee no vote must block Strong Buy');
 console.log('model regression tests passed');
+
+
+const megaPlatform={sector:'Communication Services',industry:'Internet Content',financials:{years:years({rev:[20000,23000,27000,32000,38000],roic:.13,fcfMargin:.20})},analystEstimates:{revenueGrowthCurrentYear:.18,revenueGrowthNextYear:.16},valuation:{fcfYield:.035,forwardPe:22,dividendYield:0}};
+assert.strictEqual(CategoryEngine.classifyCategory(megaPlatform),'Compounder','Large profitable sub-25% growth platforms should classify as Compounder');
+
+const cheapMediocre={ticker:'CHEAP',category:'Value',probabilityWeightedCAGR:.18,expectedReturn:.18,baseCAGR:.18,bearCAGR:.10,bullCAGR:.24,confidenceScore:80,methodAgreementScore:80,marginOfSafety:.35,businessQualityScore:55,downsideRiskScore:35,valuation:{economicQuality:{overall:55}},dataIntegrity:{score:80},financials:{years:years({roic:.06,fcfMargin:.05})}};
+applyDecisionSystemV30([cheapMediocre]);
+assert.notStrictEqual(cheapMediocre.rating,'Strong Buy','Cheapness alone must not create a Strong Buy when business quality is mediocre');

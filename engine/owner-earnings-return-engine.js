@@ -46,10 +46,13 @@ function justifiedOwnerEarningsMultiple(stock, model, lifecycle, moat, profile, 
 
   const stage = String(lifecycle?.stage || '');
   if (/Cyclical|Turnaround|Declin/i.test(stage)) qualityPremium *= 0.82;
-  if (/Dividend|Mature|Financial|Utility/i.test(stage)) qualityPremium *= 0.92;
+  const isFinancial = /Financial/i.test(stage) || /financial|bank|credit|lending|fintech|broker|insurance/i.test(`${stock.sector || ''} ${stock.industry || ''}`);
+  const profitableGrowthFinancial = isFinancial && growth >= 0.10 && Number(final.netMargin || 0) >= 0.08;
+  if (/Dividend|Mature|Utility/i.test(stage)) qualityPremium *= 0.92;
+  if (/Financial/i.test(stage)) qualityPremium *= profitableGrowthFinancial ? 1.02 : 0.92;
   if (/Elite|Compounder|Growth/i.test(stage)) qualityPremium *= 1.04;
 
-  return clamp(perpetuityMultiple * qualityPremium, 9, 32);
+  return clamp(perpetuityMultiple * qualityPremium, profitableGrowthFinancial ? 12 : 9, profitableGrowthFinancial ? 36 : 32);
 }
 
 function buildOwnerEarningsReturn(stock, model, ownerResult, dcfResult, consensus, lifecycle, moat, profile) {

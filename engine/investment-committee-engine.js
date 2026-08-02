@@ -64,7 +64,7 @@ function computeInvestmentCommitteeScore(stock, scenario, growthQuality, capital
   const noVotes = memberValues.filter(x => x.vote === 'no').length;
   const fatalNo = members.valuation.vote === 'no' || members.risk.vote === 'no';
   const score = Math.round(clamp(
-    business * .27 + growth * .20 + valuation * .24 + risk * .18 + capitalAllocation * .11,
+    business * .34 + growth * .22 + valuation * .18 + risk * .16 + capitalAllocation * .10,
     0, 100
   ));
 

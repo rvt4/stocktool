@@ -258,9 +258,9 @@
     // Lifecycle overrides use business maturity rather than temporary valuation.
     // Large, consistently profitable platforms with sub-25% forward growth are
     // compounders even when a strong current year would otherwise trigger Hyper Growth.
-    const establishedPlatform = p.latestRevenue >= 25e9 && p.years >= 5 &&
+    const establishedPlatform = p.latestRevenue >= 20e9 && p.years >= 5 &&
       p.forwardGrowth < .25 && p.positiveFcfRate >= .80 && p.positiveIncomeRate >= .80 &&
-      (p.avgRoic ?? 0) >= .14;
+      ((p.avgRoic ?? 0) >= .12 || (p.marginStability >= .70 && p.forwardGrowth < .20));
     if ((category === 'Growth' || category === 'Hyper Growth') && establishedPlatform) {
       category = 'Compounder';
       top = scores.Compounder;

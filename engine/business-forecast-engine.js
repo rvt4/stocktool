@@ -641,9 +641,10 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
           { value: start, weight: 0.25 },
           { value: analystFloorAnchor, weight: 0.30 },
         ]) ?? analystFloorAnchor;
+        const profitableGrowthFinancial = avgGrowth3 >= 0.10 && analystFloorAnchor >= 0.08;
         const financialFloor = Math.max(
-          analystFloorAnchor * 0.70,
-          Math.min(observedAnchor * 0.82, analystFloorAnchor * 0.92)
+          analystFloorAnchor * (profitableGrowthFinancial ? 0.82 : 0.70),
+          Math.min(observedAnchor * (profitableGrowthFinancial ? 0.90 : 0.82), analystFloorAnchor * 0.95)
         );
         target = Math.max(target, financialFloor);
       }
