@@ -417,12 +417,53 @@ function expectedCAGR(s, category) {
     (rawShareCountCagr != null ? -rawShareCountCagr : 0) !== shareCountReduction,
   ].some(Boolean);
 
-  const total = clamp(
-    forwardRevGrowth + marginExpansionAnnualized + shareCountReduction + dividendYield,
-    -0.50, 1.00 // belt-and-suspenders clamp on the combined total
+  // Sustainable per-share value growth is not the simple sum of every favorable
+  // input. Revenue growth carries most of the economics; margin expansion, buybacks,
+  // and dividends are incremental contributors whose persistence is much lower.
+  // This prevents temporary estimate spikes (KDP-like cases) from producing 30%+
+  // fundamental CAGRs and prevents financials from being treated like asset-light SaaS.
+  const sector = String(s.sector || '');
+  const isFinancial = /financial/i.test(sector);
+  const isStaples = /consumer staples/i.test(sector);
+  const isCyclical = category === 'Cyclical' || /energy|materials/i.test(sector);
+  const positiveFcfRate = yrs.length
+    ? yrs.slice(-5).filter(y => Number(y.fcf) > 0).length / Math.min(5, yrs.length)
+    : 0.5;
+  const roics = yrs.slice(-5).map(y => y.roic).filter(Number.isFinite);
+  const avgRoic = mean(roics);
+  const normalizedRoic = avgRoic == null ? 0.10 : (Math.abs(avgRoic) > 2 ? avgRoic / 100 : avgRoic);
+  const durabilitySignal = clamp(
+    0.45 * clamp((normalizedRoic - 0.05) / 0.25, 0, 1) +
+    0.35 * positiveFcfRate +
+    0.20 * clamp((s.valuation?.compounder?.score ?? 50) / 100, 0, 1),
+    0, 1
   );
-  return { fundamentalGrowthRate: total, lowConfidence: clampedInputs, revGrowthSources, revGrowthSourcesUsed, cagrDistortion, breakdown: {
-    forwardRevGrowth, marginExpansionAnnualized, shareCountReduction, dividendYield
+
+  const organicGrowth = forwardRevGrowth;
+  const marginContribution = clamp(marginExpansionAnnualized * 0.45, -0.05, 0.05);
+  const capitalReturnContribution = clamp(shareCountReduction, -0.08, 0.06) + dividendYield;
+  const rawFundamentalGrowth = organicGrowth + marginContribution + capitalReturnContribution;
+
+  let baseCap = category === 'Hyper Growth' ? 0.24
+    : category === 'Growth' ? 0.20
+    : category === 'Compounder' ? 0.18
+    : category === 'Dividend' ? 0.14
+    : category === 'Value' ? 0.15
+    : category === 'Turnaround' ? 0.14
+    : 0.13;
+  // Elite economics can earn a modestly higher cap; weak durability lowers it.
+  baseCap += (durabilitySignal - 0.55) * 0.08;
+  if (isFinancial) baseCap = Math.min(baseCap, 0.16);
+  if (isStaples) baseCap = Math.min(baseCap, 0.145);
+  if (isCyclical) baseCap = Math.min(baseCap, 0.13);
+  const sustainableCap = clamp(baseCap, 0.09, 0.25);
+  const total = clamp(rawFundamentalGrowth, -0.35, sustainableCap);
+  const sustainabilityCapped = rawFundamentalGrowth > sustainableCap + 1e-9;
+
+  return { fundamentalGrowthRate: total, lowConfidence: clampedInputs || sustainabilityCapped, revGrowthSources, revGrowthSourcesUsed, cagrDistortion, breakdown: {
+    forwardRevGrowth, marginExpansionAnnualized, marginContribution,
+    shareCountReduction, dividendYield, rawFundamentalGrowth,
+    sustainableCap, durabilitySignal, sustainabilityCapped
   } };
 }
 
@@ -667,9 +708,17 @@ function computeV6QualityScore(stock, categoryComposite, pricingPowerScore, conf
     durability * 0.02 +
     growthQualityScore * 0.01;
 
-  // Expand the middle of the distribution so elite businesses separate from average
-  // ones instead of clustering in a narrow 55-80 band.
-  const expandedQuality = clamp(50 + (rawQuality - 50) * 1.38, 0, 100);
+  // Quality must be selective. The previous 1.38x expansion pushed many merely good
+  // companies into the 95-100 range. A convex curve keeps average businesses near the
+  // middle while reserving 95+ for unusually complete evidence across moat, ROIC, cash
+  // conversion, margins, and capital allocation.
+  const normalizedQuality = clamp(rawQuality / 100, 0, 1);
+  let expandedQuality = 100 * Math.pow(normalizedQuality, 1.22);
+  const eliteDimensions = [moat, roicScore, fcfConsistencyScore, marginStabilityScore,
+    pricingPowerScore, capitalAllocation].filter(v => v >= 82).length;
+  if (expandedQuality > 94 && eliteDimensions < 4) expandedQuality = 94;
+  if (expandedQuality > 97 && eliteDimensions < 5) expandedQuality = 97;
+  expandedQuality = clamp(expandedQuality, 0, 100);
 
   return {
     score: Math.round(expandedQuality),
