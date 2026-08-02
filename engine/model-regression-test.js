@@ -42,3 +42,47 @@ assert.strictEqual(CategoryEngine.classifyCategory(megaPlatform),'Compounder','L
 const cheapMediocre={ticker:'CHEAP',category:'Value',probabilityWeightedCAGR:.18,expectedReturn:.18,baseCAGR:.18,bearCAGR:.10,bullCAGR:.24,confidenceScore:80,methodAgreementScore:80,marginOfSafety:.35,businessQualityScore:55,downsideRiskScore:35,valuation:{economicQuality:{overall:55}},dataIntegrity:{score:80},financials:{years:years({roic:.06,fcfMargin:.05})}};
 applyDecisionSystemV30([cheapMediocre]);
 assert.notStrictEqual(cheapMediocre.rating,'Strong Buy','Cheapness alone must not create a Strong Buy when business quality is mediocre');
+
+const { selectedValuation, profileFor } = require('./primary-valuation-engine');
+const digitalFinancial = {
+  ticker:'DFP', name:'Digital lender', sector:'Financial Services', industry:'Credit Services',
+  price:{current:16.31}, growthYear1:.28,
+  analystEstimates:{revenueGrowthNextYear:.22},
+  financials:{years:[
+    {revenue:4.00,netIncome:.45,fcf:-1,sharesOutTTM:1.250,sbc:.20},
+    {revenue:4.88,netIncome:.77,fcf:-1,sharesOutTTM:1.289,sbc:.36},
+  ]},
+  valuation:{
+    industryModel:{model:'financials'}, dividendYield:0, forwardPe:28, evRevenue:4.3,
+    moat:{score:49}, pricingPowerV2:{score:55},
+    businessProfile:{premiumPersistence:.45,forecastReliability:.53},
+    economicQuality:{overall:45}, compounder:{score:50},
+  }
+};
+const financialLifecycle={stage:'Financial',forwardGrowth:.22,growthPersistenceScore:45};
+const financialProfile=profileFor(digitalFinancial,'Value',financialLifecycle);
+assert.ok(financialProfile.invalidMethods.includes('ebitdaExit'),
+  'EV/EBITDA must be disabled for deposit-funded digital financial platforms');
+const financialProjection={projection:[
+  {year:2027,revenue:5.93,netMargin:.180,fcfMargin:-1,shares:1.325,eps:.81},
+  {year:2028,revenue:6.86,netMargin:.179,fcfMargin:-1,shares:1.354,eps:.91},
+  {year:2029,revenue:7.90,netMargin:.165,fcfMargin:-1,shares:1.376,eps:.95},
+  {year:2030,revenue:8.88,netMargin:.151,fcfMargin:-1,shares:1.390,eps:.96},
+  {year:2031,revenue:9.68,netMargin:.144,fcfMargin:-1,shares:1.401,eps:1.00},
+]};
+const financialMethods={
+  epsExit:{fairValuePerShare:8.74,exitPricePerShare:16.35},
+  revenueExit:{fairValuePerShare:11.10,exitPricePerShare:20.76},
+  ownerEarnings:{fairValuePerShare:9.41,exitPricePerShare:15.50},
+  ebitdaExit:{fairValuePerShare:1.88,exitPricePerShare:3.52},
+  dcf:{fairValuePerShare:null,exitPricePerShare:null},
+  dcfSBCAdjusted:{fairValuePerShare:null,exitPricePerShare:null},
+};
+const financialValuation=selectedValuation({
+  stock:digitalFinancial, category:'Value', lifecycle:financialLifecycle,
+  methodResults:financialMethods, model:financialProjection,
+});
+assert.ok(financialValuation.selectedMethods.every(x=>x.method!=='ebitdaExit'),
+  'Invalid EV/EBITDA output must not enter the digital-financial valuation blend');
+assert.ok(financialValuation.expectedCAGR > 0,
+  'A profitable, credibly growing digital financial platform should not receive a negative base CAGR solely from an invalid EV/EBITDA terminal value');

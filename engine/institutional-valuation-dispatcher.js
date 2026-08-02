@@ -96,13 +96,16 @@ function resolveInstitutionalValuationModel(stock, category, lifecycle = {}) {
         key: 'digital-financial-platform',
         label: 'Digital financial platform',
         primary: ['epsExit', 'revenueExit'],
-        support: ['ownerEarnings', 'ebitdaExit'],
-        weights: { epsExit: .46, revenueExit: .30, ownerEarnings: .14, ebitdaExit: .10 },
+        support: ['ownerEarnings'],
+        weights: { epsExit: .56, revenueExit: .28, ownerEarnings: .16 },
         maxBase: .22,
         maxRerating: .040,
-        invalidMethods: ['dcf', 'dcfSBCAdjusted'],
+        invalidMethods: ['dcf', 'dcfSBCAdjusted', 'ebitdaExit'],
         useNetMarginForBridge: true,
-        notes: ['Routes high-growth lenders/fintech platforms away from conventional FCF DCF, which is distorted by loan origination and funding flows.'],
+        notes: [
+          'Routes high-growth lenders/fintech platforms away from conventional FCF DCF, which is distorted by loan origination and funding flows.',
+          'Disables EV/EBITDA because debt and EBITDA are not economically comparable for deposit-funded lenders and can create a false terminal-value collapse.'
+        ],
       };
     }
     return {

@@ -254,7 +254,11 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
       // valuation methods cannot impose unlimited negative multiple drag. Extreme
       // valuations may still produce low or negative returns, but the burden of
       // proof rises with disagreement and forecast quality.
-      if (eliteOperatingSetup) {
+      const profitableDigitalFinancial = profile.name === 'digital-financial-platform' &&
+        revenueContribution >= .12 && exitNetMargin >= .08 &&
+        Number(exit.eps) > 0 && agreementScore >= 55;
+
+      if (eliteOperatingSetup || profitableDigitalFinancial) {
         const businessAnchor = Math.min(operatingCAGR, dynamicBaseCeiling);
         rawValuationDrag = rawCAGR - businessAnchor;
         const forwardPe = Number(stock?.valuation?.forwardPe ?? stock?.valuation?.pe ?? 0);
@@ -263,12 +267,14 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
           forwardPe > 0 ? (forwardPe - 55) / 95 : 0,
           evRevenue > 0 ? (evRevenue - 12) / 28 : 0
         ), 0, 1);
-        const profileDragBase = profile.name.includes('software') ? .19
-          : profile.name.includes('innovation') ? .17
-            : profile.name.includes('growth') ? .16 : .12;
+        const profileDragBase = profile.name === 'digital-financial-platform' ? .10
+          : profile.name.includes('software') ? .19
+            : profile.name.includes('innovation') ? .17
+              : profile.name.includes('growth') ? .16 : .12;
         maxTrustedNegativeDrag = clamp(
           profileDragBase * (.42 + .58 * valuationTrust) + extremeValuation * .10,
-          .07, .28
+          profile.name === 'digital-financial-platform' ? .075 : .07,
+          profile.name === 'digital-financial-platform' ? .18 : .28
         );
         valuationDragFloor = businessAnchor - maxTrustedNegativeDrag;
         adjustedCAGR = Math.max(adjustedCAGR, valuationDragFloor);
@@ -282,7 +288,7 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
 
 
   return {
-    version: 'v44-institutional-sector-dispatch',
+    version: 'v45-financial-terminal-sanity',
     profile: profile.name,
     profileLabel: profile.label || profile.name,
     specialistModel: !!profile.specialist,
