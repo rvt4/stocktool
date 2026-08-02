@@ -1,0 +1,13 @@
+{
+  "generatedAt": "2026-08-02T05:49:16.667Z",
+  "methodology": "Prospective walk-forward test using only stored model snapshots. This is not a reconstructed 10-year point-in-time fundamentals backtest.",
+  "topN": 20,
+  "minConfidence": 60,
+  "periods": 0,
+  "cumulativeReturn": 0,
+  "arithmeticMeanPeriodReturn": null,
+  "volatility": null,
+  "sharpeLike": null,
+  "maxDrawdown": 0,
+  "periodDetails": []
+}

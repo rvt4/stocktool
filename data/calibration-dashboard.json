@@ -1,0 +1,21 @@
+{
+  "generatedAt": "2026-08-02T05:49:16.366Z",
+  "status": "collecting-history",
+  "minimumRecommendedObservations": 100,
+  "overall": {
+    "observations": 0,
+    "predictedMean": null,
+    "realizedMean": null,
+    "bias": null,
+    "medianError": null,
+    "mae": null,
+    "rmse": 0,
+    "correlation": null,
+    "hitRatePositive": null,
+    "hitRateBeatSPY": null
+  },
+  "byRating": {},
+  "byCategory": {},
+  "byIndustry": {},
+  "byEngineVersion": {}
+}
