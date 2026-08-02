@@ -31,6 +31,7 @@ const { applyInstitutionalSanity } = require('./engine/institutional-sanity-engi
 const { computeEconomicQuality } = require('./engine/economic-quality-engine');
 const { applyDecisionSystemV27 } = require('./engine/decision-system-v27');
 const { validate } = require('./engine/validation-suite');
+const { persistCalibrationSnapshot } = require('./engine/calibration-store');
 
 const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'), 'utf8'));
 
@@ -374,8 +375,6 @@ async function run() {
     stock.valuation.competitivePressure = scenarioAnalysis?.competitivePressure ?? null;
     stock.valuation.growthQuality = scenarioAnalysis?.growthQuality ?? null;
     stock.valuation.expectedReturnProfile = expectedReturnProfile;
-    stock.valuation.returnAttribution = expectedReturnProfile?.returnAttribution ?? null;
-    stock.valuation.forecastStability = expectedReturnProfile?.forecastStability ?? null;
     stock.valuation.calibration = calibration;
     const downside = computeDownsideRisk(stock, scenarioAnalysis, dataIntegrity, industryModel);
     stock.valuation.downside = downside;
@@ -387,6 +386,18 @@ async function run() {
   }
 
   const scored = writeResults(records, false);
+
+  // Persist the exact investable output before any future model changes.
+  // Supabase is the durable source; a local snapshot is also written for auditing.
+  try {
+    const snapshot = await persistCalibrationSnapshot(scored);
+    console.log(`Calibration snapshot: ${snapshot.inserted} Supabase rows; ${snapshot.localCount} local rows.`);
+  } catch (error) {
+    // Do not destroy a successful nightly screener run because calibration storage failed.
+    // The failure remains visible in Actions and can be retried independently.
+    console.error(`Calibration snapshot failed: ${error.message}`);
+  }
+
   const updatedHistory = updateForecastHistory(forecastHistory, scored);
   fs.writeFileSync(forecastHistoryPath, JSON.stringify(updatedHistory, null, 2));
   console.log(`Done. Wrote ${records.length} scored stocks to data/results.json`);
