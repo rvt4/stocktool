@@ -81,6 +81,7 @@
     const fcfYield = valuation.fcfYield;
     const earningsYield = valuation.forwardPe > 0 ? 1 / valuation.forwardPe : valuation.pe > 0 ? 1 / valuation.pe : null;
     const dividendYield = valuation.dividendYield || 0;
+    const latestRevenue = Number(yrs.at(-1)?.revenue) || 0;
     const payout = (() => {
       const last = yrs.at(-1) || {};
       return last.fcf > 0 && last.sharesOutTTM > 0 && finite(last.dividendPerShare)
@@ -96,7 +97,7 @@
       growthAcceleration, avgRoic, marginStability, opMarginTrend, fcfMarginTrend,
       positiveFcfRate, positiveIncomeRate, shareTrend, revenueDeclineYears, recentRevenueDeclineYears,
       severeDecline, recentSevereDecline, priorDeterioration, recoveryEvidence, fcfYield, earningsYield,
-      dividendYield, payout, cyclicalIndustry, defensiveIndustry,
+      dividendYield, payout, latestRevenue, cyclicalIndustry, defensiveIndustry,
       sector: stock?.sector || '', industryText,
     };
   }
@@ -252,6 +253,26 @@
       const durable = scores.Compounder >= scores.Growth ? 'Compounder' : 'Growth';
       category = durable;
       top = scores[durable];
+    }
+
+    // Lifecycle overrides use business maturity rather than temporary valuation.
+    // Large, consistently profitable platforms with sub-25% forward growth are
+    // compounders even when a strong current year would otherwise trigger Hyper Growth.
+    const establishedPlatform = p.latestRevenue >= 25e9 && p.years >= 5 &&
+      p.forwardGrowth < .25 && p.positiveFcfRate >= .80 && p.positiveIncomeRate >= .80 &&
+      (p.avgRoic ?? 0) >= .14;
+    if ((category === 'Growth' || category === 'Hyper Growth') && establishedPlatform) {
+      category = 'Compounder';
+      top = scores.Compounder;
+    }
+
+    // Defensive staples with a meaningful, covered dividend are income compounders,
+    // not generic Value names. Keep the public category vocabulary stable by using
+    // Dividend while the lifecycle engine can still describe them as compounders.
+    if (staplesSector && p.dividendYield >= .02 && p.positiveFcfRate >= .80 &&
+        (p.payout == null || p.payout <= 1.10) && p.y2 < .16 && (p.rev3 ?? 0) < .12) {
+      category = 'Dividend';
+      top = scores.Dividend;
     }
 
     const dataCoverage = clamp((p.years - 2) / 6, 0, 1);

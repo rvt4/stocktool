@@ -466,6 +466,8 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
 }
 
 function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
+  const industry = stock.valuation?.industryModel?.model || 'general';
+  const isFinancial = industry === 'financials' || /financial|bank|credit|lending|fintech|broker|insurance/i.test(`${stock.sector || ''} ${stock.industry || ''}`);
   const ys = (stock.financials?.years || []).slice(-9);
   const state = growthModel?.assumptions?.state || deriveBusinessState(stock, lifecycle);
   const estimates = stock.analystEstimates || {};
@@ -626,6 +628,24 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
       if (analystFloorAnchor != null && isDurableGrowth) {
         const floor = Math.min(analystFloorAnchor * 0.72, analystFloorAnchor - 0.015);
         target = Math.max(target, floor);
+      }
+
+      // Banks, lenders and fintech platforms cannot be normalized like ordinary
+      // operating companies. Loan funding makes FCF unusable, while EPS is the
+      // relevant near-term profitability signal. Preserve a conservative portion
+      // of analyst-implied and recently demonstrated net margin instead of fading
+      // a profitable financial platform to an arbitrary low single-digit margin.
+      if (isFinancial && analystFloorAnchor != null && analystFloorAnchor > 0) {
+        const observedAnchor = weightedMean([
+          { value: recentMedian, weight: recentMedian == null ? 0 : 0.45 },
+          { value: start, weight: 0.25 },
+          { value: analystFloorAnchor, weight: 0.30 },
+        ]) ?? analystFloorAnchor;
+        const financialFloor = Math.max(
+          analystFloorAnchor * 0.70,
+          Math.min(observedAnchor * 0.82, analystFloorAnchor * 0.92)
+        );
+        target = Math.max(target, financialFloor);
       }
     }
 
