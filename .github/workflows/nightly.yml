@@ -50,10 +50,52 @@ jobs:
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
         run: node run-screener.js
 
+      - name: Compact and verify generated JSON
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          const files = [
+            'data/results.json',
+            'data/forecast-history.json',
+            'data/calibration-report.json',
+            'data/validation-report.json',
+            'data/latest-prediction-snapshot.json',
+          ];
+
+          const hardLimit = 100 * 1024 * 1024;
+          const safetyLimit = 95 * 1024 * 1024;
+
+          for (const file of files) {
+            if (!fs.existsSync(file)) continue;
+
+            const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+            const compact = JSON.stringify(parsed);
+            const temp = `${file}.tmp`;
+            fs.writeFileSync(temp, compact);
+            fs.renameSync(temp, file);
+
+            const bytes = fs.statSync(file).size;
+            const mib = bytes / 1024 / 1024;
+            console.log(`${file}: ${mib.toFixed(2)} MiB`);
+
+            if (bytes >= hardLimit) {
+              throw new Error(`${file} exceeds GitHub's 100 MiB hard limit after compaction.`);
+            }
+            if (bytes >= safetyLimit) {
+              throw new Error(`${file} is above the 95 MiB safety limit and must be split before publishing.`);
+            }
+          }
+          NODE
+
       - name: Commit updated results
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add data/results.json
+          git add data/results.json data/forecast-history.json data/calibration-report.json data/validation-report.json data/latest-prediction-snapshot.json
           git diff --staged --quiet || git commit -m "Nightly screener update $(date -u +%Y-%m-%d)"
           git push
+
+# V25 optional post-run validation command:
+# node engine/validation-suite.js

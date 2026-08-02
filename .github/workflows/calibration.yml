@@ -1,0 +1,40 @@
+name: Calibration and Walk-Forward Backtest
+
+on:
+  schedule:
+    - cron: '30 8 1 * *' # monthly, after the nightly screener
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Resolve mature forecast outcomes
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node scripts/resolve-outcomes.js
+      - name: Build calibration report
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node scripts/calibration-report.js
+      - name: Run prospective walk-forward backtest
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node scripts/walk-forward-backtest.js --top=20 --min-confidence=60
+      - name: Commit reports
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add data/calibration-dashboard.json data/walk-forward-backtest.json
+          git diff --staged --quiet || git commit -m "Monthly calibration update $(date -u +%Y-%m-%d)"
+          git push
