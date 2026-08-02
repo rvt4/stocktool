@@ -10,6 +10,7 @@
 
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 const finite = x => Number.isFinite(Number(x));
+const { resolveInstitutionalValuationModel, specialistReliabilityAdjustment } = require('./institutional-valuation-dispatcher');
 const median = values => {
   const a = values.filter(finite).map(Number).sort((x, y) => x - y);
   if (!a.length) return null;
@@ -23,6 +24,20 @@ const METHOD_LABELS = {
 };
 
 function profileFor(stock, category, lifecycle = {}) {
+  const specialist = resolveInstitutionalValuationModel(stock, category, lifecycle);
+  if (specialist) return {
+    name: specialist.key,
+    label: specialist.label,
+    primary: specialist.primary,
+    support: specialist.support,
+    weights: specialist.weights,
+    maxBase: specialist.maxBase,
+    maxRerating: specialist.maxRerating,
+    invalidMethods: specialist.invalidMethods || [],
+    specialistNotes: specialist.notes || [],
+    useNetMarginForBridge: !!specialist.useNetMarginForBridge,
+    specialist: true,
+  };
   const industry = stock?.valuation?.industryModel?.model || 'general';
   const stage = lifecycle.stage || category || 'Value';
   const archetype = lifecycle.archetype || lifecycle.economicModel?.archetype || '';
@@ -83,7 +98,10 @@ function profileFor(stock, category, lifecycle = {}) {
 
 function reliability(method, presentValue, futureValue, centerPresent, centerFuture, profile, stock) {
   if (!(presentValue > 0) || !(futureValue > 0)) return 0;
-  let r = 1;
+  if (profile.invalidMethods?.includes(method)) return 0;
+  let r = specialistReliabilityAdjustment(profile.specialist ? {
+    key: profile.name, invalidMethods: profile.invalidMethods
+  } : null, method, stock);
   const pRatio = Math.max(presentValue / centerPresent, centerPresent / presentValue);
   const fRatio = Math.max(futureValue / centerFuture, centerFuture / futureValue);
   if (pRatio > 3 || fRatio > 3) r *= .20;
@@ -180,9 +198,10 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
     ? Math.pow(startShares / exitShares, 1 / years) - 1 : null;
 
   // Prefer FCF margins when both endpoints are usable. Fall back to net margins.
-  const marginStart = startFcfMargin > .005 && exitFcfMargin > .005 ? startFcfMargin
+  const forceNetMarginBridge = !!profile.useNetMarginForBridge;
+  const marginStart = !forceNetMarginBridge && startFcfMargin > .005 && exitFcfMargin > .005 ? startFcfMargin
     : startNetMargin > .005 && exitNetMargin > .005 ? startNetMargin : null;
-  const marginEnd = startFcfMargin > .005 && exitFcfMargin > .005 ? exitFcfMargin
+  const marginEnd = !forceNetMarginBridge && startFcfMargin > .005 && exitFcfMargin > .005 ? exitFcfMargin
     : startNetMargin > .005 && exitNetMargin > .005 ? exitNetMargin : null;
   const rawMarginCAGR = marginStart > 0 && marginEnd > 0
     ? Math.pow(marginEnd / marginStart, 1 / years) - 1 : 0;
@@ -263,8 +282,11 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
 
 
   return {
-    version: 'v41-future-quality-primary-valuation',
+    version: 'v44-institutional-sector-dispatch',
     profile: profile.name,
+    profileLabel: profile.label || profile.name,
+    specialistModel: !!profile.specialist,
+    specialistNotes: profile.specialistNotes || [],
     primaryMethods: profile.primary,
     supportingMethods: profile.support,
     selectedMethods: rows.map(x => ({
