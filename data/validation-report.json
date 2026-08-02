@@ -1,1 +1,1 @@
-{"version":"validation-v1","generatedAt":"2026-08-02T08:48:48.466Z","stocks":964,"ratingDistribution":{"Exceptional Buy":3,"Strong Buy":21,"Buy":42,"Hold":264,"Avoid":123,"Sell":511},"exceptionalShare":0.0031120331950207467,"strongOrBetterShare":0.024896265560165973,"issues":[],"passed":true}
+{"version":"validation-v1","generatedAt":"2026-08-02T16:20:37.766Z","stocks":964,"ratingDistribution":{"Strong Buy":9,"Buy":52,"Hold":295,"Avoid":110,"Sell":498},"exceptionalShare":0,"strongOrBetterShare":0.00933609958506224,"issues":[],"passed":true}
