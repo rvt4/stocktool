@@ -90,6 +90,7 @@ function classifyLifecycle(stock) {
   else if (archetype.archetype === 'Stable Dividend Compounder') stage = 'Dividend Compounder';
   else if (archetype.archetype === 'Stable Consumer Compounder') stage = 'Compounder';
   else if (archetype.archetype === 'Consumer Brand Compounder' || archetype.archetype === 'Industrial Compounder' || archetype.archetype === 'Software Compounder' || archetype.archetype === 'Healthcare Compounder' || archetype.archetype === 'Network Compounder') stage = persistenceScore >= .68 ? 'Elite Compounder' : 'Compounder';
+  else if (archetype.archetype === 'Digital Financial Platform') stage = analystForward >= .20 ? 'Growth' : 'Compounder';
   else if (industry === 'financials') stage = 'Financial';
   else if (industry === 'reit') stage = 'Asset Heavy';
   else if (industry === 'utilities') stage = 'Utility';

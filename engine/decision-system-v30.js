@@ -150,6 +150,17 @@ function applyDecisionSystemV30(stocks) {
       risk: clamp(n(stock.downsideRiskScore, n(stock.valuation?.downside?.score, 50)), 0, 100),
       confidence: clamp(n(stock.confidenceScore, 50), 0, 100),
     };
+    const financialStrength = Math.round(clamp(
+      n(stock.balanceSheetScore, n(stock.valuation?.balanceSheetScore, 50)) * .55 +
+      components.risk * .25 + components.confidence * .20, 0, 100));
+    stock.componentScores = {
+      moat: Math.round(clamp(n(stock.valuation?.moat?.score, quality), 0, 100)),
+      growth: Math.round(components.growth),
+      capitalAllocation: Math.round(capital.score),
+      financialStrength,
+      valuation: Math.round(components.valuation),
+    };
+    stock.valuation.componentScores = stock.componentScores;
     const composite = sectorAdjustedComposite(stock, components);
     // V30 quality-first underwriting: cheapness cannot overcome a mediocre business.
     // Expected return remains important, but business quality is the largest single

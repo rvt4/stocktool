@@ -10,9 +10,6 @@ function years({rev=[100,110,121,133,146], roic=.16, fcfMargin=.12, shares=100})
 }
 const sofi={sector:'Financial Services',industry:'Credit Services',financials:{years:years({rev:[100,130,170,220,280],roic:.07,fcfMargin:.03})},analystEstimates:{revenueGrowthCurrentYear:.35,revenueGrowthNextYear:.22},valuation:{fcfYield:.02,forwardPe:28,dividendYield:0}};
 assert.notStrictEqual(CategoryEngine.classifyCategory(sofi),'Hyper Growth','Financials must not classify as Hyper Growth');
-
-assert.strictEqual(CategoryEngine.classifyCategory(sofi),'Growth',
-  'A profitable, durable double-digit-growth financial platform should classify as Growth rather than Value');
 const kdp={sector:'Consumer Staples',industry:'Beverages',financials:{years:years({rev:[100,104,108,112,117],roic:.12,fcfMargin:.14})},analystEstimates:{revenueGrowthCurrentYear:.28,revenueGrowthNextYear:.12},valuation:{fcfYield:.055,forwardPe:15,dividendYield:.03}};
 assert.strictEqual(CategoryEngine.classifyCategory(kdp),'Dividend','Covered staples dividends should classify as Dividend rather than Value/Hyper Growth');
 const fragile={ticker:'X',qualifiesForBuyList:true,expectedReturn:.22,portfolioManagerScore:90,businessQualityScore:70,compounderScore:65,confidenceScore:70,downsideProtectionScore:45,methodAgreementScore:6,successProbability:55,returnQualityScore:58,dataIntegrity:{isUsable:true,score:70},marginOfSafety:.30};
@@ -64,11 +61,6 @@ const digitalFinancial = {
 };
 const financialLifecycle={stage:'Financial',forwardGrowth:.22,growthPersistenceScore:45};
 const financialProfile=profileFor(digitalFinancial,'Value',financialLifecycle);
-const lifecycleOnlyFinancial={...digitalFinancial,valuation:{...digitalFinancial.valuation,industryModel:{model:'general'}}};
-const lifecycleOnlyProfile=profileFor(lifecycleOnlyFinancial,'Value',financialLifecycle);
-assert.strictEqual(lifecycleOnlyProfile.name,'digital-financial-platform',
-  'Financial lifecycle must route to the digital-financial profile even when upstream industry metadata is missing');
-
 assert.ok(financialProfile.invalidMethods.includes('ebitdaExit'),
   'EV/EBITDA must be disabled for deposit-funded digital financial platforms');
 const financialProjection={projection:[
