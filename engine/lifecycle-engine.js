@@ -129,8 +129,20 @@ function classifyLifecycle(stock) {
     Mature: { forecastYears: 5, fadeYears: 7, terminalGrowth: .022, multipleFade: 'moderate' },
   }[stage];
 
-  const confidence = clamp(.30 + (e.numAnalysts || 0) / 90 + Math.min(recent.length, 7) * .04 + positiveFcf * .14
-    + grossStability * .06 + fcfStability * .06 - growthVolatility * .45 - marginVolatility * .60, .30, .95);
+  let confidence;
+  if (archetype.archetype === 'Digital Financial Platform') {
+    const analystCoverage = clamp((e.numAnalysts || 0) / 18, 0, 1);
+    const positiveIncome = recent.length ? recent.filter(y => Number(y.netIncome) > 0).length / recent.length : .35;
+    const twoYearConsensus = Number.isFinite(forward1) && Number.isFinite(forward2) ? 1 : .55;
+    confidence = clamp(
+      .42 + analystCoverage * .18 + Math.min(recent.length, 7) * .035 + positiveIncome * .12 +
+      twoYearConsensus * .08 + grossStability * .05 - growthVolatility * .28 - marginVolatility * .28,
+      .48, .90
+    );
+  } else {
+    confidence = clamp(.30 + (e.numAnalysts || 0) / 90 + Math.min(recent.length, 7) * .04 + positiveFcf * .14
+      + grossStability * .06 + fcfStability * .06 - growthVolatility * .45 - marginVolatility * .60, .30, .95);
+  }
 
   return {
     stage, ...config,

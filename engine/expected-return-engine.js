@@ -8,7 +8,10 @@ function finite(x) { return Number.isFinite(Number(x)); }
 function forecastStability(stock, scenario) {
   const projection = stock?.valuation?.projection || [];
   const growth = projection.map(x => Number(x.growth)).filter(finite);
-  const margins = projection.map(x => Number(x.fcfMargin)).filter(finite);
+  const financial = stock?.valuation?.businessArchetype === 'Digital Financial Platform' ||
+    stock?.valuation?.lifecycle?.archetype === 'Digital Financial Platform' ||
+    /financial/i.test(String(stock?.sector || ''));
+  const margins = projection.map(x => Number(financial ? x.netMargin : x.fcfMargin)).filter(finite);
   const variability = values => {
     if (values.length < 2) return .12;
     const mean = values.reduce((a, b) => a + b, 0) / values.length;
@@ -43,7 +46,9 @@ function computeExpectedReturnProfile(stock, scenarioAnalysis, integrity) {
   const downsidePenalty = bear == null ? 0.04 : Math.max(0, -bear) * 0.35;
   const uncertaintyPenalty = bull != null && bear != null ? Math.max(0, bull - bear - 0.30) * 0.10 : 0.02;
   const instabilityPenalty = (1 - stability.score) * 0.035;
-  const dataPenalty = (1 - (integrity?.score ?? 50) / 100) * 0.08;
+  const financial = stock?.valuation?.businessArchetype === 'Digital Financial Platform' ||
+    stock?.valuation?.lifecycle?.archetype === 'Digital Financial Platform';
+  const dataPenalty = (1 - (integrity?.score ?? 50) / 100) * (financial ? 0.055 : 0.08);
   const riskAdjustedCAGR = expected - downsidePenalty - uncertaintyPenalty - instabilityPenalty - dataPenalty;
   const returnQualityScore = Math.round(clamp(
     ((riskAdjustedCAGR - 0.04) / 0.22) * 66 +

@@ -31,6 +31,7 @@ function applyExitMultipleDiscipline({
   sectorMultiple = null,
   industry = null,
   futureQuality = null,
+  businessArchetype = null,
 }) {
   if (!(rawMultiple > 0)) return { multiple: null, rawMultiple, ceiling: null, wasCapped: false };
 
@@ -54,9 +55,39 @@ function applyExitMultipleDiscipline({
   if (industry === 'financials' && type === 'revenueExit') ceiling *= .50;
 
   const genericFloor = type === 'epsExit' ? 7 : type === 'ebitdaExit' ? 5 : .7;
+  const archetype = String(businessArchetype || '').toLowerCase();
+  const digitalFinancial = archetype.includes('digital financial');
+
+  // Digital financial platforms deserve a distinct terminal-multiple framework.
+  // They often begin at a premium, so this does NOT preserve today's multiple.
+  // Instead it estimates the sustainable premium from exit growth, profitability
+  // evidence, durability, and forecast reliability. This allows compression when
+  // today's premium is excessive without forcing the company to a mature-bank P/E.
+  let justifiedArchetypeMultiple = null;
+  if (digitalFinancial && type === 'epsExit') {
+    justifiedArchetypeMultiple = clamp(
+      13.5 + Math.max(0, effectiveGrowth) * 38 + q * 4.0 + fq * 4.5 + persistence * 3.0 + reliability * 2.0,
+      16,
+      30
+    );
+    ceiling = Math.max(ceiling, justifiedArchetypeMultiple * 1.08);
+  } else if (digitalFinancial && type === 'revenueExit') {
+    justifiedArchetypeMultiple = clamp(
+      1.35 + Math.max(0, effectiveGrowth) * 8.5 + q * .75 + fq * .85 + persistence * .55 + reliability * .35,
+      1.8,
+      5.5
+    );
+    ceiling = Math.max(ceiling, justifiedArchetypeMultiple * 1.10);
+  }
+
   const durableStage = ['Growth', 'Hyper Growth', 'Elite Compounder', 'Compounder', 'Temporary Disruption'].includes(lifecycleStage);
   const support = clamp((q - .55) * .65 + (fq - .52) * 1.35 + (persistence - .50) * .85 + (reliability - .50) * .55, 0, 1);
   let premiumFloor = genericFloor;
+  if (digitalFinancial && justifiedArchetypeMultiple > 0) {
+    // Keep a modest discount to the justified value so the floor is a guardrail,
+    // not a target. Weak quality/reliability still produces a lower multiple.
+    premiumFloor = Math.max(premiumFloor, justifiedArchetypeMultiple * (.84 + .08 * support));
+  }
   if (durableStage && sectorMultiple > 0 && support > 0) {
     const retention = type === 'epsExit' ? .62 + .28 * support
       : type === 'ebitdaExit' ? .60 + .25 * support
@@ -78,6 +109,8 @@ function applyExitMultipleDiscipline({
     qualitySupport,
     futureQuality: fq,
     premiumPersistence: persistence,
+    businessArchetype,
+    justifiedArchetypeMultiple,
   };
 }
 

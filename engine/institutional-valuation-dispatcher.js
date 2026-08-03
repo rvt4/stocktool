@@ -48,7 +48,7 @@ function resolveInstitutionalValuationModel(stock, category, lifecycle = {}) {
     if (digital) return {
       key:'digital-financial-platform', label:'Digital financial platform',
       primary:['epsExit','revenueExit'], support:['ownerEarnings'],
-      weights:{epsExit:.54,revenueExit:.31,ownerEarnings:.15}, maxBase:.22,maxRerating:.04,
+      weights:{epsExit:.60,revenueExit:.25,ownerEarnings:.15}, maxBase:.23,maxRerating:.045,
       invalidMethods:['dcf','dcfSBCAdjusted','ebitdaExit'], useNetMarginForBridge:true,
       notes:['EV/EBITDA and conventional FCF DCF are disabled for funded financial platforms.','Revenue and EPS are blended with owner earnings using financial-specific reliability rules.']
     };
@@ -64,10 +64,15 @@ function specialistReliabilityAdjustment(model, method, stock) {
   if (model.invalidMethods?.includes(method)) return 0;
   const facts = recentOperatingFacts(stock);
   let m = 1;
-  if (method === 'epsExit') m *= clamp(.62 + facts.positiveIncomeRate * .48, .45, 1.10);
-  if (method === 'ownerEarnings') m *= clamp(.50 + facts.positiveIncomeRate * .30 + facts.positiveFcfRate * .20, .35, 1.00);
+  const digitalFinancial = model.key === 'digital-financial-platform';
+  if (method === 'epsExit') m *= digitalFinancial
+    ? clamp(.72 + facts.positiveIncomeRate * .30 + Math.max(0, facts.analystGrowth || 0) * .35, .65, 1.12)
+    : clamp(.62 + facts.positiveIncomeRate * .48, .45, 1.10);
+  if (method === 'ownerEarnings') m *= digitalFinancial
+    ? clamp(.62 + facts.positiveIncomeRate * .30, .55, .95)
+    : clamp(.50 + facts.positiveIncomeRate * .30 + facts.positiveFcfRate * .20, .35, 1.00);
   if (method === 'dcf' || method === 'dcfSBCAdjusted') m *= clamp(.25 + facts.positiveFcfRate * .75, .10, 1.00);
-  if (method === 'revenueExit') m *= facts.revenueProxyRate > .4 ? .35 : 1;
+  if (method === 'revenueExit') m *= facts.revenueProxyRate > .4 ? .35 : (digitalFinancial ? 1.08 : 1);
   return clamp(m,0,1.15);
 }
 module.exports={resolveInstitutionalValuationModel,specialistReliabilityAdjustment,recentOperatingFacts};

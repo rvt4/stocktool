@@ -46,6 +46,30 @@ assert.doesNotThrow(() => applyDecisionSystemV30([missingValuation]),
 assert.ok(missingValuation.valuation && missingValuation.valuation.componentScores,
   'The decision system should create a valuation container for limited-history records');
 
+
+// V35/V47: digital financial platforms retain a justified, execution-dependent
+// premium without preserving today's multiple or using EV/EBITDA.
+{
+  const { applyExitMultipleDiscipline } = require('./exit-multiple-engine');
+  const eps = applyExitMultipleDiscipline({
+    type: 'epsExit', rawMultiple: 14, exitGrowth: .16, valuationGrowth: .16,
+    quality: .62, futureQuality: .66, forecastReliability: .72,
+    premiumPersistence: .58, lifecycleStage: 'Growth', sectorMultiple: 15.6,
+    industry: 'financials', businessArchetype: 'Digital Financial Platform',
+  });
+  assert(eps.multiple >= 18, `digital-financial justified P/E floor too low: ${eps.multiple}`);
+  assert(eps.multiple <= 30, `digital-financial justified P/E too high: ${eps.multiple}`);
+  assert(eps.justifiedArchetypeMultiple > 0, 'digital-financial audit should expose justified multiple');
+
+  const ordinaryBank = applyExitMultipleDiscipline({
+    type: 'epsExit', rawMultiple: 14, exitGrowth: .06, valuationGrowth: .06,
+    quality: .55, futureQuality: .55, forecastReliability: .75,
+    premiumPersistence: .40, lifecycleStage: 'Financial', sectorMultiple: 13,
+    industry: 'financials', businessArchetype: 'Financial Compounder',
+  });
+  assert(ordinaryBank.multiple < eps.multiple, 'ordinary banks should not inherit digital-platform premium');
+}
+
 console.log('model regression tests passed');
 
 

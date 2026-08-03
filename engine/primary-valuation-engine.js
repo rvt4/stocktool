@@ -117,11 +117,13 @@ function reliability(method, presentValue, futureValue, centerPresent, centerFut
   const last = recent.at(-1) || {};
   const sbcIntensity = last.revenue > 0 ? Number(last.sbc || 0) / last.revenue : 0;
 
-  if (method === 'ownerEarnings' && positiveFcf < .8) r *= .50;
-  if (method === 'epsExit' && positiveIncome < .8) r *= .55;
+  const digitalFinancial = profile.name === 'digital-financial-platform';
+  if (method === 'ownerEarnings' && positiveFcf < .8 && !digitalFinancial) r *= .50;
+  if (method === 'epsExit' && positiveIncome < .8) r *= digitalFinancial ? .82 : .55;
   if (method === 'dcf' && positiveFcf < .6) r *= .60;
   if (method === 'dcfSBCAdjusted' && sbcIntensity < .01) r *= .70;
-  if (method === 'revenueExit' && !profile.name.includes('growth') && !profile.name.includes('innovation')) r *= .35;
+  if (method === 'revenueExit' && !digitalFinancial && !profile.name.includes('growth') && !profile.name.includes('innovation')) r *= .35;
+  if (method === 'revenueExit' && digitalFinancial) r *= 1.08;
   return clamp(r, .05, 1);
 }
 
@@ -290,7 +292,7 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
 
 
   return {
-    version: 'v46-archetype-routing',
+    version: 'v47-dynamic-terminal-premium',
     businessArchetype: lifecycle?.archetype || lifecycle?.economicModel?.archetype || null,
     profile: profile.name,
     profileLabel: profile.label || profile.name,
