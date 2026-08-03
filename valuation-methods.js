@@ -29,6 +29,7 @@ const { selectValuationMethods } = require('./engine/method-selection-engine');
 const { generateForecast } = require('./engine/forecast-engine');
 const { forecastMarginPaths } = require('./engine/business-forecast-engine');
 const { classifyLifecycle } = require('./engine/lifecycle-engine');
+const { classifyBusinessArchetype } = require('./engine/business-archetype-engine');
 const { computeMoat } = require('./engine/moat-engine');
 const { deriveExitMultiple } = require('./engine/fade-engine');
 const { adaptiveMethodWeights } = require('./engine/adaptive-weight-engine');
@@ -960,6 +961,10 @@ function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
 
 function valuateStock(stock, sectorExitMultiples, calibration = null) {
   const lifecycle = classifyLifecycle(stock);
+  const archetypeProfile = classifyBusinessArchetype(stock, { analystForward: stock?.analystEstimates?.revenueGrowthNextYear ?? stock?.analystEstimates?.revenueGrowthCurrentYear });
+  lifecycle.archetype = archetypeProfile.archetype;
+  lifecycle.economicModel = archetypeProfile;
+  if (!Number.isFinite(Number(lifecycle.forwardGrowth))) lifecycle.forwardGrowth = archetypeProfile.forwardGrowth;
   const category = lifecycle.stage === 'Elite Compounder' ? 'Compounder'
     : lifecycle.stage === 'Dividend Compounder' ? 'Dividend'
     : lifecycle.stage === 'Temporary Disruption' ? 'Growth'
