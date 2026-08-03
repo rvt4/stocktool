@@ -477,6 +477,7 @@ function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, busine
     sectorMultiple,
     industry: stock.valuation?.industryModel?.model || null,
     futureQuality: result.futureQuality,
+    businessArchetype: life.archetype || life.economicModel?.archetype || stock.valuation?.businessArchetype || null,
   });
   return { ...result, ...disciplined, multiple: disciplined.multiple, premiumModel };
 }
