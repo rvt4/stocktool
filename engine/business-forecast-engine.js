@@ -343,15 +343,41 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
   ));
   if (state.analyst2 != null && state.analyst2 >= 0.25) persistenceYears = Math.max(persistenceYears, 4);
 
+  // Exceptional growth becomes progressively harder to sustain. Apply an
+  // economic fade burden that rises with the amount of growth above 18%, the
+  // company's scale, forecast volatility, and weak persistence evidence. This
+  // is a cross-sectional rule—not a ticker override—and prevents analyst growth
+  // from being carried through the full horizon with too little regression.
+  const excessGrowth = Math.max(0, Math.max(y1, y2) - 0.18);
+  const scaleBurden = clamp(1 - scale.combined, 0, 0.35);
+  const uncertaintyBurden = clamp(state.growthVolatility / 0.22, 0, 1) * 0.35;
+  const weakPersistenceBurden = (1 - state.persistenceScore) * 0.35;
+  const fadeBurden = clamp(
+    excessGrowth / 0.22 * (0.45 + scaleBurden + uncertaintyBurden + weakPersistenceBurden),
+    0, 1
+  );
+  const persistenceReduction = Math.round(fadeBurden * 2);
+  persistenceYears = Math.max(2, persistenceYears - persistenceReduction);
+
   // The bridge anchor is an intermediate operating rate, not the terminal rate.
   // It incorporates current evidence and persistence, then converges to terminal
   // only in the final phase of the forecast.
-  const bridgeAnchor = clamp(weightedMean([
+  const rawBridgeAnchor = weightedMean([
     { value: state.forwardAverage, weight: 0.34 },
     { value: state.recentRate, weight: state.recentRate == null ? 0 : 0.18 },
     { value: state.growth3, weight: state.growth3 == null ? 0 : 0.16 },
     { value: terminal + (y2 - terminal) * (0.28 + 0.38 * state.persistenceScore), weight: 0.32 },
-  ]) ?? terminal, terminal + 0.01, Math.max(terminal + 0.01, y2));
+  ]) ?? terminal;
+  const sustainableExcessRetention = clamp(
+    0.30 + state.persistenceScore * 0.42 + scale.runway * 0.16 - fadeBurden * 0.28,
+    0.24, 0.82
+  );
+  const bridgeCeiling = terminal + Math.max(0, y2 - terminal) * sustainableExcessRetention;
+  const bridgeAnchor = clamp(
+    Math.min(rawBridgeAnchor, bridgeCeiling),
+    terminal + 0.01,
+    Math.max(terminal + 0.01, y2)
+  );
 
   const maxAnnualDrop = clamp(
     0.045 + (1 - state.persistenceScore) * 0.055 +
@@ -428,9 +454,9 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
 
   return {
     path,
-    source: 'v37_reliability_guarded_persistence_forecast',
+    source: 'v39_economic_growth_fade_forecast',
     assumptions: {
-      version: '38.5',
+      version: '39.0',
       regime: state.regime,
       analyst1: state.analyst1,
       analyst2: state.analyst2,
@@ -445,6 +471,11 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
       inflection: state.inflection,
       persistenceScore: state.persistenceScore,
       persistenceYears,
+      excessGrowth,
+      fadeBurden,
+      persistenceReduction,
+      sustainableExcessRetention,
+      rawBridgeOperatingAnchor: rawBridgeAnchor,
       bridgeOperatingAnchor: bridgeAnchor,
       terminalOperatingAnchor: terminal,
       maxAnnualGrowthDrop: maxAnnualDrop,

@@ -103,17 +103,26 @@ function computePremiumPersistence(stock, profile = {}, lifecycle = {}, moat = {
   const floor = ['energy', 'materials'].includes(industry) ? .08 : .16;
   const ceiling = ['software', 'healthcare-innovation', 'semiconductors-hardware'].includes(industry)
     ? .86 : economicModel.secular ? .80 : scalingBrand ? .78 : .72;
+  // Persistence is intentionally convex: merely decent businesses retain only
+  // a modest premium, while truly exceptional economics can preserve a large
+  // portion of their sector premium. This prevents average companies from
+  // receiving a free uplift and avoids forcing elite compounders back to the
+  // sector median.
+  const persistenceCurve = Math.pow(qualityPersistence, 1.35);
   const retainedPremium = clamp(
-    industryAnchor * .32 + qualityPersistence * .68,
+    industryAnchor * .24 + persistenceCurve * .76,
     floor,
     ceiling
   );
+  const multiplePersistenceScore = Math.round(retainedPremium * 100);
 
   return {
-    version: 'v35-quality-persistence',
+    version: 'v36-premium-persistence',
     score: qualityPersistence,
     qualityPersistence,
     retainedPremium,
+    multiplePersistenceScore,
+    persistenceCurve,
     expectedFade: 1 - retainedPremium,
     industryAnchor,
     secularBonus,

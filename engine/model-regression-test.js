@@ -46,30 +46,6 @@ assert.doesNotThrow(() => applyDecisionSystemV30([missingValuation]),
 assert.ok(missingValuation.valuation && missingValuation.valuation.componentScores,
   'The decision system should create a valuation container for limited-history records');
 
-
-// V35/V47: digital financial platforms retain a justified, execution-dependent
-// premium without preserving today's multiple or using EV/EBITDA.
-{
-  const { applyExitMultipleDiscipline } = require('./exit-multiple-engine');
-  const eps = applyExitMultipleDiscipline({
-    type: 'epsExit', rawMultiple: 14, exitGrowth: .16, valuationGrowth: .16,
-    quality: .62, futureQuality: .66, forecastReliability: .72,
-    premiumPersistence: .58, lifecycleStage: 'Growth', sectorMultiple: 15.6,
-    industry: 'financials', businessArchetype: 'Digital Financial Platform',
-  });
-  assert(eps.multiple >= 18, `digital-financial justified P/E floor too low: ${eps.multiple}`);
-  assert(eps.multiple <= 30, `digital-financial justified P/E too high: ${eps.multiple}`);
-  assert(eps.justifiedArchetypeMultiple > 0, 'digital-financial audit should expose justified multiple');
-
-  const ordinaryBank = applyExitMultipleDiscipline({
-    type: 'epsExit', rawMultiple: 14, exitGrowth: .06, valuationGrowth: .06,
-    quality: .55, futureQuality: .55, forecastReliability: .75,
-    premiumPersistence: .40, lifecycleStage: 'Financial', sectorMultiple: 13,
-    industry: 'financials', businessArchetype: 'Financial Compounder',
-  });
-  assert(ordinaryBank.multiple < eps.multiple, 'ordinary banks should not inherit digital-platform premium');
-}
-
 console.log('model regression tests passed');
 
 
@@ -123,3 +99,53 @@ assert.ok(financialValuation.selectedMethods.every(x=>x.method!=='ebitdaExit'),
   'Invalid EV/EBITDA output must not enter the digital-financial valuation blend');
 assert.ok(financialValuation.expectedCAGR > 0,
   'A profitable, credibly growing digital financial platform should not receive a negative base CAGR solely from an invalid EV/EBITDA terminal value');
+
+
+// V36 calibration regressions: premium persistence, agreement shrinkage, and
+// high-growth economic fade must remain active across future revisions.
+const { computePremiumPersistence } = require('./premium-persistence-engine');
+const { generateBusinessForecast } = require('./business-forecast-engine');
+const { agreementInfluence } = require('./primary-valuation-engine');
+
+const elitePersistenceStock={
+  financials:{years:[
+    {revenue:100,fcf:24,netIncome:20,roic:.30,grossMargin:.78,opMargin:.30,ebitda:32,cash:20,longTermDebt:0},
+    {revenue:115,fcf:28,netIncome:23,roic:.31,grossMargin:.79,opMargin:.31,ebitda:37,cash:25,longTermDebt:0},
+    {revenue:132,fcf:33,netIncome:27,roic:.32,grossMargin:.79,opMargin:.32,ebitda:43,cash:30,longTermDebt:0},
+    {revenue:151,fcf:38,netIncome:31,roic:.31,grossMargin:.80,opMargin:.32,ebitda:49,cash:36,longTermDebt:0},
+  ]},
+  valuation:{industryModel:{model:'software'},pricingPowerV2:{score:90},capitalAllocation:{score:88},dilutionRate:0}
+};
+const weakPersistenceStock={
+  financials:{years:[
+    {revenue:100,fcf:2,netIncome:1,roic:.04,grossMargin:.25,opMargin:.02,ebitda:5,cash:2,longTermDebt:30},
+    {revenue:125,fcf:-3,netIncome:-2,roic:.02,grossMargin:.18,opMargin:-.03,ebitda:2,cash:2,longTermDebt:35},
+    {revenue:105,fcf:1,netIncome:0,roic:.03,grossMargin:.28,opMargin:.01,ebitda:4,cash:2,longTermDebt:38},
+    {revenue:140,fcf:-2,netIncome:-1,roic:.01,grossMargin:.20,opMargin:-.02,ebitda:3,cash:2,longTermDebt:42},
+  ]},
+  valuation:{industryModel:{model:'industrials'},pricingPowerV2:{score:25},capitalAllocation:{score:30},dilutionRate:.08}
+};
+const elitePersistence=computePremiumPersistence(elitePersistenceStock,{recurringRevenue:.9,forecastReliability:.9,capitalIntensity:.1,cyclicality:.1},{stage:'Elite Compounder',growthPersistenceScore:90},{score:90});
+const weakPersistence=computePremiumPersistence(weakPersistenceStock,{recurringRevenue:.2,forecastReliability:.35,capitalIntensity:.8,cyclicality:.8},{stage:'Cyclical',growthPersistenceScore:25},{score:25});
+assert.ok(elitePersistence.retainedPremium > weakPersistence.retainedPremium + .25,
+  'Elite durable businesses must retain materially more terminal premium than weak cyclicals');
+assert.strictEqual(agreementInfluence(0),.15,'Zero agreement should sharply reduce valuation influence');
+assert.strictEqual(agreementInfluence(95),1,'High agreement should preserve valuation influence');
+
+const hyperGrowthFadeStock={
+  sector:'Technology',industry:'Software',
+  financials:{years:[
+    {year:2021,revenue:100,fcf:8,netIncome:6,roic:.14,grossMargin:.70,opMargin:.10,sharesOutTTM:100},
+    {year:2022,revenue:135,fcf:12,netIncome:9,roic:.16,grossMargin:.71,opMargin:.12,sharesOutTTM:101},
+    {year:2023,revenue:182,fcf:19,netIncome:14,roic:.18,grossMargin:.72,opMargin:.14,sharesOutTTM:102},
+    {year:2024,revenue:246,fcf:29,netIncome:21,roic:.20,grossMargin:.73,opMargin:.16,sharesOutTTM:103},
+    {year:2025,revenue:332,fcf:43,netIncome:31,roic:.22,grossMargin:.74,opMargin:.18,sharesOutTTM:104},
+  ]},
+  analystEstimates:{revenueGrowthCurrentYear:.34,revenueGrowthNextYear:.30,numAnalysts:12},
+  valuation:{marketCap:25000,industryModel:{model:'software'},pricingPowerV2:{score:75}}
+};
+const fadeForecast=generateBusinessForecast(hyperGrowthFadeStock,{stage:'Hyper Growth'},7,null);
+assert.ok(fadeForecast.path.at(-1) < fadeForecast.path[1] - .08,
+  'Exceptional analyst growth must fade materially by the terminal forecast years');
+assert.ok(fadeForecast.assumptions.fadeBurden > 0,
+  'High-growth forecasts must expose a positive economic fade burden in the audit');

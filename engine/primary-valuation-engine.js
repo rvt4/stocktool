@@ -10,6 +10,16 @@
 
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 const finite = x => Number.isFinite(Number(x));
+
+function agreementInfluence(score) {
+  const s = clamp(Number(score || 0), 0, 100);
+  if (s < 20) return 0.15;
+  if (s < 40) return 0.28;
+  if (s < 60) return 0.45;
+  if (s < 80) return 0.68;
+  if (s < 90) return 0.85;
+  return 1.00;
+}
 const { resolveInstitutionalValuationModel, specialistReliabilityAdjustment } = require('./institutional-valuation-dispatcher');
 const median = values => {
   const a = values.filter(finite).map(Number).sort((x, y) => x - y);
@@ -117,13 +127,11 @@ function reliability(method, presentValue, futureValue, centerPresent, centerFut
   const last = recent.at(-1) || {};
   const sbcIntensity = last.revenue > 0 ? Number(last.sbc || 0) / last.revenue : 0;
 
-  const digitalFinancial = profile.name === 'digital-financial-platform';
-  if (method === 'ownerEarnings' && positiveFcf < .8 && !digitalFinancial) r *= .50;
-  if (method === 'epsExit' && positiveIncome < .8) r *= digitalFinancial ? .82 : .55;
+  if (method === 'ownerEarnings' && positiveFcf < .8) r *= .50;
+  if (method === 'epsExit' && positiveIncome < .8) r *= .55;
   if (method === 'dcf' && positiveFcf < .6) r *= .60;
   if (method === 'dcfSBCAdjusted' && sbcIntensity < .01) r *= .70;
-  if (method === 'revenueExit' && !digitalFinancial && !profile.name.includes('growth') && !profile.name.includes('innovation')) r *= .35;
-  if (method === 'revenueExit' && digitalFinancial) r *= 1.08;
+  if (method === 'revenueExit' && !profile.name.includes('growth') && !profile.name.includes('innovation')) r *= .35;
   return clamp(r, .05, 1);
 }
 
@@ -222,7 +230,11 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
   const quality = qualityContext(stock, lifecycle);
   const disagreement = median(rows.map(x => Math.abs(x.presentValue - fairValueToday) / fairValueToday)) || 0;
   const agreementScore = Math.round(clamp(100 - disagreement * 180, 0, 100));
-  const valuationTrust = clamp(.18 + (agreementScore / 100) * .48 + quality.reliability * .34, .18, 1);
+  const agreementWeight = agreementInfluence(agreementScore);
+  const valuationTrust = clamp(
+    agreementWeight * .66 + quality.reliability * .34,
+    .12, 1
+  );
 
   // Mature businesses cannot earn 30%+ central returns from rerating. Growth
   // businesses can earn more, but only when operating value creation supports it.
@@ -236,6 +248,18 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
   const forwardGrowth = Number(lifecycle?.forwardGrowth ?? stock?.valuation?.businessForecast?.currentOperatingRate ?? 0);
   const eliteOperatingSetup = quality.quality >= .65 && quality.reliability >= .52 &&
     quality.persistence >= .52 && forwardGrowth >= .20;
+
+  // When valuation methods disagree, treat the blended valuation as weak
+  // evidence rather than a precise forecast. Shrink both positive rerating and
+  // negative compression toward the operating return anchor. This avoids a
+  // broken outlier DCF creating either a false bargain or a false disaster.
+  let disagreementShrinkApplied = false;
+  let preAgreementCAGR = adjustedCAGR;
+  if (finite(adjustedCAGR) && finite(operatingCAGR) && agreementWeight < 1) {
+    const operatingAnchor = clamp(operatingCAGR + dividendYield, -.25, dynamicBaseCeiling);
+    adjustedCAGR = operatingAnchor + (adjustedCAGR - operatingAnchor) * agreementWeight;
+    disagreementShrinkApplied = Math.abs(adjustedCAGR - preAgreementCAGR) > 1e-9;
+  }
 
   if (finite(adjustedCAGR)) {
     if (finite(operatingCAGR)) {
@@ -292,7 +316,7 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
 
 
   return {
-    version: 'v47-dynamic-terminal-premium',
+    version: 'v46-archetype-routing',
     businessArchetype: lifecycle?.archetype || lifecycle?.economicModel?.archetype || null,
     profile: profile.name,
     profileLabel: profile.label || profile.name,
@@ -345,6 +369,9 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
     maxBaseCAGR: dynamicBaseCeiling,
     maxReratingContribution: dynamicReratingAllowance,
     valuationTrust,
+    agreementWeight,
+    preAgreementCAGR,
+    disagreementShrinkApplied,
     eliteOperatingSetup,
     rawValuationDrag,
     valuationDragFloor,
@@ -352,4 +379,4 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
   };
 }
 
-module.exports = { selectedValuation, profileFor };
+module.exports = { selectedValuation, profileFor, agreementInfluence };
