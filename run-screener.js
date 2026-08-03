@@ -292,6 +292,17 @@ async function run() {
     // semiconductors while revenue multiples receive more room for software).
     const industryModel = inferIndustryModel(stock);
     stock.valuation.industryModel = industryModel;
+
+    // Build a price-agnostic economics layer before valuation. This lets the
+    // forecast and exit-multiple engines use the same moat, pricing-power and
+    // durability evidence later shown in the dashboard. Recompute after
+    // valuation as well so lifecycle/moat refinements are incorporated.
+    const prePricingPower = computePricingPowerV2(stock, industryModel);
+    const preCompounder = computeCompounderScore(stock, prePricingPower, industryModel);
+    stock.valuation.pricingPowerV2 = prePricingPower;
+    stock.valuation.compounder = preCompounder;
+    stock.valuation.economicQuality = computeEconomicQuality(stock, prePricingPower, preCompounder, industryModel);
+
     const result = valuateStock(stock, sectorExitMultiples, calibration);
     stock.valuation.fairValueEstimate = result.blendedFairValue;
     stock.valuation.valuationMethods = result.methods;
@@ -333,7 +344,10 @@ async function run() {
     const compounder = computeCompounderScore(stock, pricingPowerV2, industryModel);
     stock.valuation.pricingPowerV2 = pricingPowerV2;
     stock.valuation.compounder = compounder;
-    stock.valuation.economicQuality = computeEconomicQuality(stock, pricingPowerV2, compounder, industryModel);
+    stock.valuation.economicQuality = computeEconomicQuality(
+      stock, pricingPowerV2, compounder, industryModel, result.moat, result.lifecycle
+    );
+    stock.valuation.businessEconomics = stock.valuation.economicQuality.businessEconomics;
     let scenarioAnalysis = buildScenarios(stock, result, dataIntegrity);
     scenarioAnalysis = applyInstitutionalSanity(stock, scenarioAnalysis, result.agreementScore);
     const rawExpectedReturnProfile = computeExpectedReturnProfile(stock, scenarioAnalysis, dataIntegrity);
