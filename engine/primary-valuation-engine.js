@@ -155,7 +155,8 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
       ? presentValue * Math.pow(terminalExitValue / presentValue, investmentYears / fullForecastYears)
       : terminalExitValue;
     return { key, presentValue, futureValue: horizonExitValue, terminalExitValue };
-  }).filter(x => x.presentValue > 0 && x.futureValue > 0 && (profile.weights[x.key] || 0) > 0);
+  }).filter(x => x.presentValue > 0 && x.futureValue > 0 &&
+    !profile.invalidMethods?.includes(x.key) && (profile.weights[x.key] || 0) > 0);
 
   if (all.length < 2) return null;
   const centerPresent = median(all.map(x => x.presentValue));
@@ -288,10 +289,11 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
 
 
   return {
-    version: 'v45-financial-terminal-sanity',
+    version: 'v46-archetype-aware-financial-blend',
     profile: profile.name,
     profileLabel: profile.label || profile.name,
     specialistModel: !!profile.specialist,
+    archetype: lifecycle?.archetype || lifecycle?.economicModel?.archetype || profile.label || profile.name,
     specialistNotes: profile.specialistNotes || [],
     primaryMethods: profile.primary,
     supportingMethods: profile.support,

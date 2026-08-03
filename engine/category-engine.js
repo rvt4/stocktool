@@ -227,9 +227,18 @@
     }
 
     // Financial businesses are never labeled Hyper Growth by revenue alone.
-    if (financialSector && category === 'Hyper Growth') {
-      category = scores.Compounder >= scores.Value ? 'Compounder' : 'Value';
-      top = scores[category];
+    // A profitable digital financial platform with durable double-digit growth is
+    // classified as Growth rather than Value; mature banks remain Value/Compounder.
+    if (financialSector) {
+      const digitalFinancialGrowth = p.forwardGrowth >= .12 && p.y2 >= .10 &&
+        p.positiveIncomeRate >= .60 && !p.recentSevereDecline;
+      if (digitalFinancialGrowth) {
+        category = scores.Compounder >= scores.Growth + 8 ? 'Compounder' : 'Growth';
+        top = scores[category];
+      } else if (category === 'Hyper Growth') {
+        category = scores.Compounder >= scores.Value ? 'Compounder' : 'Value';
+        top = scores[category];
+      }
     }
 
     // Turnaround is a current operating condition, not a memory of an old weak

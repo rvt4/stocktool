@@ -51,7 +51,11 @@ function resolveInstitutionalValuationModel(stock, category, lifecycle = {}) {
   const text = textFor(stock);
   const facts = recentOperatingFacts(stock);
   const industryModel = stock?.valuation?.industryModel?.model || '';
-  const isFinancial = industryModel === 'financials' || /bank|financial|credit|lending|fintech|broker|capital market|asset manage|insurance/.test(text);
+  const lifecycleStage = String(lifecycle?.stage || lifecycle?.name || '').toLowerCase();
+  const lifecycleArchetype = String(lifecycle?.archetype || lifecycle?.economicModel?.archetype || '').toLowerCase();
+  const isFinancial = industryModel === 'financials' || lifecycleStage === 'financial' ||
+    /digital financial|financial compounder|fintech/.test(lifecycleArchetype) ||
+    /bank|financial|credit|lending|fintech|broker|capital market|asset manage|insurance/.test(text);
   const isInsurance = /insurance|reinsurance|property casualty|life insurer|insurance broker/.test(text);
   const isAssetManager = /asset management|investment management|wealth management|capital markets|brokerage|exchange/.test(text);
   const isReit = industryModel === 'reit' || /reit|real estate investment trust/.test(text);
@@ -88,16 +92,19 @@ function resolveInstitutionalValuationModel(stock, category, lifecycle = {}) {
   }
 
   if (isFinancial) {
-    const highGrowthPlatform = (facts.analystGrowth ?? 0) >= .14 ||
+    const projectedNetMargin = Number(stock?.valuation?.businessForecast?.targetNetMargin ?? stock?.valuation?.businessForecast?.netMarginTarget ?? 0);
+    const highGrowthPlatform = /digital financial|fintech/.test(lifecycleArchetype) ||
+      (facts.analystGrowth ?? 0) >= .12 ||
       ['Growth', 'Hyper Growth'].includes(category) ||
-      Number(lifecycle?.forwardGrowth ?? 0) >= .14;
+      Number(lifecycle?.forwardGrowth ?? 0) >= .12 ||
+      (projectedNetMargin >= .08 && (facts.analystGrowth ?? 0) >= .08);
     if (highGrowthPlatform) {
       return {
         key: 'digital-financial-platform',
         label: 'Digital financial platform',
         primary: ['epsExit', 'revenueExit'],
         support: ['ownerEarnings'],
-        weights: { epsExit: .56, revenueExit: .28, ownerEarnings: .16 },
+        weights: { epsExit: .58, revenueExit: .27, ownerEarnings: .15 },
         maxBase: .22,
         maxRerating: .040,
         invalidMethods: ['dcf', 'dcfSBCAdjusted', 'ebitdaExit'],

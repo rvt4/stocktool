@@ -67,7 +67,14 @@ function classifyBusinessArchetype(stock, metrics = {}) {
     archetype = forward >= .14 ? 'Healthcare Innovation Growth' : 'Healthcare Compounder';
     secular = true; cyclicalBias=.10; premiumAnchor=.50; durationBias=2;
   } else if (industry === 'financials') {
-    archetype = 'Financial Compounder'; cyclicalBias=.40; premiumAnchor=.20;
+    const digitalPlatform = forward >= .12 && positiveFcf >= .35 &&
+      (positiveFcf >= .55 || Number(last.netIncome) > 0 || opMed >= .08);
+    if (digitalPlatform) {
+      archetype = 'Digital Financial Platform'; secular = true;
+      cyclicalBias = .32; premiumAnchor = .38; durationBias = 1;
+    } else {
+      archetype = 'Financial Compounder'; cyclicalBias=.40; premiumAnchor=.20;
+    }
   } else if (industry === 'utilities') {
     archetype = 'Regulated Cash Compounder'; cyclicalBias=.08; premiumAnchor=.25;
   } else if (industry === 'reit') {
