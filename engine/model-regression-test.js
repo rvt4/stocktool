@@ -149,3 +149,37 @@ assert.ok(fadeForecast.path.at(-1) < fadeForecast.path[1] - .08,
   'Exceptional analyst growth must fade materially by the terminal forecast years');
 assert.ok(fadeForecast.assumptions.fadeBurden > 0,
   'High-growth forecasts must expose a positive economic fade burden in the audit');
+
+// V37 business-economics regressions. Quality must be price agnostic and must
+// materially separate durable, capital-light compounders from weak cyclicals.
+const { computeBusinessEconomics } = require('./business-economics-engine');
+const eliteEconomicsStock={
+  price:{current:500}, marketCap:120000,
+  financials:{years:[
+    {revenue:100,fcf:25,netIncome:20,roic:.28,grossMargin:.78,opMargin:.28,sharesOutTTM:100,capex:2,longTermDebt:0,cash:20},
+    {revenue:116,fcf:30,netIncome:24,roic:.30,grossMargin:.79,opMargin:.30,sharesOutTTM:99,capex:2.2,longTermDebt:0,cash:25},
+    {revenue:134,fcf:36,netIncome:29,roic:.31,grossMargin:.80,opMargin:.31,sharesOutTTM:98,capex:2.5,longTermDebt:0,cash:31},
+    {revenue:154,fcf:43,netIncome:35,roic:.32,grossMargin:.80,opMargin:.32,sharesOutTTM:97,capex:2.8,longTermDebt:0,cash:38},
+  ]}, analystEstimates:{revenueGrowthNextFY:.15,analystCount:18}, valuation:{analystReliability:{score:88}}
+};
+const weakEconomicsStock={
+  price:{current:5}, marketCap:1200,
+  financials:{years:[
+    {revenue:100,fcf:2,netIncome:1,roic:.04,grossMargin:.25,opMargin:.02,sharesOutTTM:100,capex:15,longTermDebt:35,cash:2},
+    {revenue:130,fcf:-5,netIncome:-3,roic:.01,grossMargin:.17,opMargin:-.04,sharesOutTTM:108,capex:21,longTermDebt:45,cash:2},
+    {revenue:95,fcf:1,netIncome:0,roic:.03,grossMargin:.29,opMargin:.01,sharesOutTTM:116,capex:14,longTermDebt:52,cash:1},
+    {revenue:140,fcf:-4,netIncome:-2,roic:.00,grossMargin:.18,opMargin:-.03,sharesOutTTM:126,capex:24,longTermDebt:62,cash:1},
+  ]}, analystEstimates:{revenueGrowthNextFY:.08,analystCount:3}, valuation:{analystReliability:{score:35}}
+};
+const eliteEconomics=computeBusinessEconomics(eliteEconomicsStock,{pricingPower:{score:92},moat:{score:92},compounder:{score:90,growthQualityScore:88},lifecycle:{forwardGrowth:.15,growthPersistenceScore:88},industryModel:{model:'software'}});
+const weakEconomics=computeBusinessEconomics(weakEconomicsStock,{pricingPower:{score:25},moat:{score:28},compounder:{score:30,growthQualityScore:25},lifecycle:{forwardGrowth:.08,growthPersistenceScore:25},industryModel:{model:'industrials'}});
+assert.ok(eliteEconomics.overall > weakEconomics.overall + 35,
+  'Business economics must strongly separate elite compounders from weak cyclicals');
+assert.ok(eliteEconomics.premiumRetentionMultiplier > weakEconomics.premiumRetentionMultiplier,
+  'Elite economics must preserve more justified terminal premium');
+assert.ok(eliteEconomics.requiredMarginOfSafety < weakEconomics.requiredMarginOfSafety,
+  'Higher-quality businesses may use a lower required margin of safety');
+const changedQuote={...eliteEconomicsStock,price:{current:50}};
+const changedQuoteEconomics=computeBusinessEconomics(changedQuote,{pricingPower:{score:92},moat:{score:92},compounder:{score:90,growthQualityScore:88},lifecycle:{forwardGrowth:.15,growthPersistenceScore:88},industryModel:{model:'software'}});
+assert.strictEqual(changedQuoteEconomics.overall,eliteEconomics.overall,
+  'Business economics score must not change when only the stock price changes');

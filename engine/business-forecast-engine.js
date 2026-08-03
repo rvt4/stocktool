@@ -352,8 +352,11 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
   const scaleBurden = clamp(1 - scale.combined, 0, 0.35);
   const uncertaintyBurden = clamp(state.growthVolatility / 0.22, 0, 1) * 0.35;
   const weakPersistenceBurden = (1 - state.persistenceScore) * 0.35;
+  const economics = stock?.valuation?.economicQuality?.businessEconomics || stock?.valuation?.businessEconomics || null;
+  const economicsFadeMultiplier = clamp(Number(economics?.growthFadeMultiplier ?? 1), .62, .96);
+  const durabilityRelief = clamp((Number(economics?.durability ?? 50) - 50) / 250, -.08, .16);
   const fadeBurden = clamp(
-    excessGrowth / 0.22 * (0.45 + scaleBurden + uncertaintyBurden + weakPersistenceBurden),
+    excessGrowth / 0.22 * (0.45 + scaleBurden + uncertaintyBurden + weakPersistenceBurden) * economicsFadeMultiplier - durabilityRelief,
     0, 1
   );
   const persistenceReduction = Math.round(fadeBurden * 2);
@@ -473,6 +476,8 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
       persistenceYears,
       excessGrowth,
       fadeBurden,
+      economicsFadeMultiplier,
+      businessEconomicsScore: Number(economics?.overall ?? 50),
       persistenceReduction,
       sustainableExcessRetention,
       rawBridgeOperatingAnchor: rawBridgeAnchor,

@@ -120,7 +120,9 @@ function applyDecisionSystemV30(stocks) {
       : {};
 
     const capital = computeCapitalAllocationV2(stock);
-    const quality = Math.round(clamp(n(stock.valuation?.economicQuality?.overall, n(stock.businessQualityScore, 50)) * .82 + capital.score * .18, 0, 100));
+    const economics = stock.valuation?.economicQuality?.businessEconomics || stock.valuation?.businessEconomics || null;
+    const economicQuality = n(economics?.overall, n(stock.valuation?.economicQuality?.overall, n(stock.businessQualityScore, 50)));
+    const quality = Math.round(clamp(economicQuality * .90 + capital.score * .10, 0, 100));
     const returnProfile = buildActionableReturn(stock);
     const mosProfile = buildActionableMOS(stock);
 
@@ -162,12 +164,17 @@ function applyDecisionSystemV30(stocks) {
       n(stock.balanceSheetScore, n(stock.valuation?.balanceSheetScore, 50)) * .55 +
       components.risk * .25 + components.confidence * .20, 0, 100));
     stock.componentScores = {
-      moat: Math.round(clamp(n(stock.valuation?.moat?.score, quality), 0, 100)),
+      moat: Math.round(clamp(n(economics?.moat, n(stock.valuation?.moat?.score, quality)), 0, 100)),
+      pricingPower: Math.round(clamp(n(economics?.pricingPower, n(stock.valuation?.pricingPowerV2?.score, 50)), 0, 100)),
+      durability: Math.round(clamp(n(economics?.durability, quality), 0, 100)),
+      reinvestmentRunway: Math.round(clamp(n(economics?.reinvestmentRunway, components.growth), 0, 100)),
       growth: Math.round(components.growth),
       capitalAllocation: Math.round(capital.score),
       financialStrength,
       valuation: Math.round(components.valuation),
+      economicQuality: Math.round(economicQuality),
     };
+    stock.requiredMarginOfSafety = n(economics?.requiredMarginOfSafety, stock.requiredMarginOfSafety);
     stock.valuation.componentScores = stock.componentScores;
     const composite = sectorAdjustedComposite(stock, components);
     // V30 quality-first underwriting: cheapness cannot overcome a mediocre business.
@@ -215,7 +222,7 @@ function applyDecisionSystemV30(stocks) {
       stock.ratingReason = 'Extreme return input requires price/share-count verification before a buy rating.';
     }
     stock.v27 = {
-      version: 'v30-quality-first-calibration', components,
+      version: 'v37-business-economics-quality-first', components,
       sectorModel: composite.model.key,
       sectorAdjustedScore: composite.score,
       sectorGates: decision.sectorGates,

@@ -88,14 +88,19 @@ function computePremiumPersistence(stock, profile = {}, lifecycle = {}, moat = {
     ? clamp((grossMedian - .35) * .30, 0, .08) + clamp((Number(lifecycle.forwardGrowth || 0) - .10) * .18, 0, .06) + (scalingBrand ? .06 : 0)
     : 0;
 
-  const qualityPersistence = clamp(
-    moat01 * .18 + pricing * .13 + roic * .15 + marginStability * .11 + growthStability * .06 +
-    recurring * .08 + reliability * .08 + growthPersistence * .09 + capitalLight * .04 +
+  const economics = stock?.valuation?.economicQuality?.businessEconomics || stock?.valuation?.businessEconomics || null;
+  const economics01 = clamp(Number(economics?.overall ?? 50) / 100, 0, 1);
+  const economicsRetention = clamp(Number(economics?.premiumRetentionMultiplier ?? 1), .50, 1.08);
+
+  const rawQualityPersistence = clamp(
+    moat01 * .16 + pricing * .12 + roic * .13 + marginStability * .10 + growthStability * .05 +
+    recurring * .07 + reliability * .07 + growthPersistence * .08 + capitalLight * .04 +
     capitalAllocation * .03 + balanceSheet * .03 + dilutionScore * .04 + (1 - cyclicality) * .04 +
-    stageAdjustment + secularBonus + brandBonus,
+    economics01 * .12 + stageAdjustment + secularBonus + brandBonus,
     0,
     1
   );
+  const qualityPersistence = clamp(rawQualityPersistence * economicsRetention, 0, 1);
 
   // Retained premium is intentionally nonlinear. Elite businesses receive a
   // meaningful premium runway, while mediocre companies do not receive a free
@@ -117,7 +122,7 @@ function computePremiumPersistence(stock, profile = {}, lifecycle = {}, moat = {
   const multiplePersistenceScore = Math.round(retainedPremium * 100);
 
   return {
-    version: 'v36-premium-persistence',
+    version: 'v37-business-economics-persistence',
     score: qualityPersistence,
     qualityPersistence,
     retainedPremium,
@@ -142,6 +147,8 @@ function computePremiumPersistence(stock, profile = {}, lifecycle = {}, moat = {
       balanceSheet,
       dilutionDiscipline: dilutionScore,
       cyclicalityResistance: 1 - cyclicality,
+      businessEconomics: economics01,
+      economicsRetentionMultiplier: economicsRetention,
     },
   };
 }
