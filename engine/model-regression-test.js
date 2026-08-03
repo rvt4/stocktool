@@ -33,6 +33,19 @@ const fatalCommittee={...committee,yesVotes:4,fatalNo:true,unanimous:false,membe
 const candidate={ticker:'Y',category:'Growth',rating:'Strong Buy',probabilityWeightedCAGR:.18,expectedReturn:.18,baseCAGR:.18,bearCAGR:.10,bullCAGR:.25,confidenceScore:85,methodAgreementScore:70,marginOfSafety:.25,businessQualityScore:85,downsideRiskScore:30,valuation:{investmentCommittee:fatalCommittee,economicQuality:{overall:85}},dataIntegrity:{score:85},financials:{years:years({})}};
 applyDecisionSystemV30([candidate]);
 assert.notStrictEqual(candidate.rating,'Strong Buy','A fatal committee no vote must block Strong Buy');
+
+
+const missingValuation={
+ ticker:'LIMITED', category:'Unknown', probabilityWeightedCAGR:.08, expectedReturn:.08,
+ baseCAGR:.08, bearCAGR:.02, bullCAGR:.14, confidenceScore:55,
+ methodAgreementScore:50, marginOfSafety:.05, businessQualityScore:50,
+ downsideRiskScore:50, dataIntegrity:{score:60}, financials:{years:years({rev:[100,110]})}
+};
+assert.doesNotThrow(() => applyDecisionSystemV30([missingValuation]),
+  'Limited-history records without a valuation object must not crash the decision system');
+assert.ok(missingValuation.valuation && missingValuation.valuation.componentScores,
+  'The decision system should create a valuation container for limited-history records');
+
 console.log('model regression tests passed');
 
 

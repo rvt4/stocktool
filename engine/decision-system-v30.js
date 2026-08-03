@@ -111,6 +111,14 @@ function applyScarcityGuard(stocks) {
 
 function applyDecisionSystemV30(stocks) {
   for (const stock of stocks) {
+    if (!stock || typeof stock !== 'object') continue;
+    // Some valid records (especially limited-history companies) reach the
+    // decision layer without a valuation audit object. Component scores are
+    // still useful, so create the container instead of crashing the run.
+    stock.valuation = stock.valuation && typeof stock.valuation === 'object'
+      ? stock.valuation
+      : {};
+
     const capital = computeCapitalAllocationV2(stock);
     const quality = Math.round(clamp(n(stock.valuation?.economicQuality?.overall, n(stock.businessQualityScore, 50)) * .82 + capital.score * .18, 0, 100));
     const returnProfile = buildActionableReturn(stock);
