@@ -59,52 +59,52 @@ function profileFor(stock, category, lifecycle = {}) {
 
   if (industry === 'financials') return {
     name: 'financial-earnings', primary: ['epsExit', 'dcf'], support: ['ownerEarnings'],
-    weights: { epsExit: .55, dcf: .30, ownerEarnings: .15 }, maxBase: .18, maxRerating: .035,
+    weights: { epsExit: .40, dcf: .35, ownerEarnings: .25 }, maxBase: .18, maxRerating: .035,
   };
   if (industry === 'reit') return {
     name: 'asset-income', primary: ['ebitdaExit', 'dcf'], support: ['ownerEarnings'],
-    weights: { ebitdaExit: .50, dcf: .30, ownerEarnings: .20 }, maxBase: .16, maxRerating: .025,
+    weights: { ebitdaExit: .38, dcf: .37, ownerEarnings: .25 }, maxBase: .16, maxRerating: .025,
   };
   if (industry === 'utilities' || stage === 'Utility') return {
     name: 'regulated-cash-flow', primary: ['dcf', 'ownerEarnings'], support: ['ebitdaExit'],
-    weights: { dcf: .50, ownerEarnings: .30, ebitdaExit: .20 }, maxBase: .14, maxRerating: .020,
+    weights: { dcf: .50, ownerEarnings: .38, ebitdaExit: .12 }, maxBase: .14, maxRerating: .020,
   };
   if (['energy', 'materials'].includes(industry) || ['Cyclical', 'Asset Heavy'].includes(stage)) return {
     name: 'cycle-normalized', primary: ['dcf', 'ebitdaExit'], support: ['ownerEarnings'],
-    weights: { dcf: .45, ebitdaExit: .40, ownerEarnings: .15 }, maxBase: .17, maxRerating: .025,
+    weights: { dcf: .47, ebitdaExit: .28, ownerEarnings: .25 }, maxBase: .17, maxRerating: .025,
   };
   if (industry === 'semiconductors-hardware') return {
     name: 'innovation-cash-flow', primary: ['dcf', 'dcfSBCAdjusted'], support: ['epsExit', 'revenueExit'],
     weights: growth >= .18 && persistence >= .55
-      ? { dcf: .45, dcfSBCAdjusted: .25, epsExit: .20, revenueExit: .10 }
-      : { dcf: .50, dcfSBCAdjusted: .25, epsExit: .20, ebitdaExit: .05 },
+      ? { dcf: .43, dcfSBCAdjusted: .30, ownerEarnings: .12, epsExit: .10, revenueExit: .05 }
+      : { dcf: .48, dcfSBCAdjusted: .27, ownerEarnings: .15, epsExit: .08, ebitdaExit: .02 },
     maxBase: growth >= .18 ? .24 : .19, maxRerating: .045,
   };
   if (industry === 'software') return {
     name: 'software-growth-quality', primary: ['dcfSBCAdjusted', 'dcf'], support: ['revenueExit', 'epsExit'],
     weights: growth >= .18
-      ? { dcfSBCAdjusted: .35, dcf: .25, revenueExit: .22, epsExit: .18 }
-      : { dcfSBCAdjusted: .35, dcf: .30, epsExit: .25, ownerEarnings: .10 },
+      ? { dcfSBCAdjusted: .35, dcf: .30, ownerEarnings: .15, revenueExit: .10, epsExit: .10 }
+      : { dcfSBCAdjusted: .35, dcf: .30, ownerEarnings: .22, epsExit: .13 },
     maxBase: growth >= .18 ? .25 : .20, maxRerating: .045,
   };
   if (['Dividend Compounder', 'Mature'].includes(stage) || category === 'Dividend') return {
     name: 'mature-owner-cash-flow', primary: ['dcf', 'ownerEarnings'], support: ['epsExit'],
-    weights: { dcf: .45, ownerEarnings: .35, epsExit: .20 }, maxBase: .15, maxRerating: .020,
+    weights: { dcf: .45, ownerEarnings: .43, epsExit: .12 }, maxBase: .15, maxRerating: .020,
   };
   if (['Growth', 'Hyper Growth', 'Temporary Disruption'].includes(stage) || growth >= .15) return {
     name: 'growth-quality', primary: ['dcf', 'epsExit'], support: ['dcfSBCAdjusted', 'revenueExit'],
     weights: sbc > .03
-      ? { dcf: .30, dcfSBCAdjusted: .30, epsExit: .25, revenueExit: .15 }
-      : { dcf: .40, epsExit: .30, ebitdaExit: .20, revenueExit: .10 },
+      ? { dcf: .32, dcfSBCAdjusted: .30, ownerEarnings: .18, epsExit: .12, revenueExit: .08 }
+      : { dcf: .42, ownerEarnings: .25, epsExit: .18, ebitdaExit: .10, revenueExit: .05 },
     maxBase: growth >= .25 ? .26 : .22, maxRerating: .045,
   };
   if (['Elite Compounder', 'Compounder'].includes(stage) || category === 'Compounder') return {
     name: 'quality-compounder', primary: ['dcf', 'ownerEarnings'], support: ['epsExit'],
-    weights: { dcf: .45, ownerEarnings: .25, epsExit: .25, ebitdaExit: .05 }, maxBase: .19, maxRerating: .030,
+    weights: { dcf: .43, ownerEarnings: .37, epsExit: .15, ebitdaExit: .05 }, maxBase: .19, maxRerating: .030,
   };
   return {
     name: 'value-cash-flow', primary: ['dcf', 'ownerEarnings'], support: ['epsExit', 'ebitdaExit'],
-    weights: { dcf: .40, ownerEarnings: .25, epsExit: .20, ebitdaExit: .15 }, maxBase: .18, maxRerating: .030,
+    weights: { dcf: .43, ownerEarnings: .35, epsExit: .12, ebitdaExit: .10 }, maxBase: .18, maxRerating: .030,
   };
 }
 

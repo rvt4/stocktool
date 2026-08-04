@@ -194,17 +194,23 @@ function applyDecisionSystemV30(stocks) {
     const mosScore = clamp(50 + n(mosProfile.actionable, 0) * 100, 0, 100);
     const moatScore = clamp(n(economics?.moat, n(stock.valuation?.moat?.score, 50)), 0, 100);
     const durableReturn = returnScore * clamp((quality * .42 + components.confidence * .28 + moatScore * .18 + capital.score * .12) / 100, .35, 1);
-    const investmentRaw = durableReturn * .32 + quality * .25 + mosScore * .17 +
-      components.confidence * .10 + moatScore * .08 + capital.score * .05 + components.risk * .03;
-    // Stretch the useful middle of the distribution without manufacturing 100s.
-    const investmentScore = Math.round(clamp(50 + (investmentRaw - 50) * 1.32, 0, 96));
+    const recentYears = (stock.financials?.years || []).slice(-5);
+    const negativeFcfRate = recentYears.length ? recentYears.filter(y => n(y.fcf, 0) <= 0).length / recentYears.length : .35;
+    const dilution = n(capital.annualDilution, 0);
+    const evidencePenalty = clamp((55 - n(capital.evidenceScore, 55)) * .08, 0, 4);
+    const fundamentalPenalty = negativeFcfRate * 8 + clamp((dilution - .02) * 120, 0, 7) + evidencePenalty;
+    const investmentRaw = durableReturn * .34 + quality * .24 + mosScore * .17 +
+      components.confidence * .09 + moatScore * .07 + capital.score * .07 + components.risk * .02 - fundamentalPenalty;
+    // Wider, intuitive distribution: elite setups can reach the 80s/90s while
+    // mediocre and destructive cases separate cleanly below 50.
+    const investmentScore = Math.round(clamp(50 + (investmentRaw - 50) * 1.55, 0, 97));
     stock.investmentScore = investmentScore;
     stock.portfolioManagerScore = investmentScore;
     stock.investmentScoreBreakdown = {
       durableReturn: Math.round(durableReturn), quality: Math.round(quality),
       marginOfSafety: Math.round(mosScore), confidence: Math.round(components.confidence),
       moat: Math.round(moatScore), capitalAllocation: Math.round(capital.score),
-      downsideProtection: Math.round(components.risk), raw: investmentRaw,
+      downsideProtection: Math.round(components.risk), fundamentalPenalty: Math.round(fundamentalPenalty * 10) / 10, raw: investmentRaw,
     };
 
     const probability = computeProbabilityProfile(stock, components);

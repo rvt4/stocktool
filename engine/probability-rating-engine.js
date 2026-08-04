@@ -12,16 +12,20 @@ function computeProbabilityProfile(stock, components) {
   const confidence=components.confidence;
   const risk=components.risk;
   const agreement=n(stock.methodAgreementScore, n(stock.valuation?.methodAgreementScore,50));
+  // V43: probabilities are deliberately conservative. Expected return drives the
+  // result, while quality and evidence can only modestly raise conviction. This
+  // prevents ordinary good companies from displaying 97-99% certainty.
   const z =
-    (er-.10)*9.5 + mos*2.2 + (quality-70)/18 + (confidence-65)/24 + (agreement-55)/35 - (risk-45)/24;
-  const pOutperform=clamp(logistic(z),.01,.99);
-  const pPermanentLoss=clamp(logistic((risk-52)/13-(mos+.05)*3.0-(quality-70)/30),.01,.85);
-  const pBeat15=clamp(logistic(z-(.15-er)*7.5),.01,.99);
-  // A transparent long-run equity benchmark, not a claim about a known future
-  // index return. This is the modeled probability of exceeding a 10% CAGR hurdle.
+    (er-.10)*7.0 + mos*1.15 + (quality-70)/30 + (confidence-65)/38 +
+    (agreement-55)/55 - (risk-45)/30;
+  const evidence = clamp((confidence*.45 + agreement*.35 + quality*.20)/100, .25, .95);
+  const shrink = p => .50 + (p-.50) * (.45 + evidence*.45);
+  const pOutperform=clamp(shrink(logistic(z)),.05,.95);
+  const pPermanentLoss=clamp(logistic((risk-55)/15-(mos+.05)*2.4-(quality-70)/35),.02,.75);
+  const pBeat15=clamp(shrink(logistic(z-(.15-er)*8.5)),.03,.94);
   const marketBenchmarkCAGR=.10;
-  const pBeatMarket=clamp(logistic(z-(marketBenchmarkCAGR-er)*7.5),.01,.99);
-  return {version:'probability-profile-v2',pPositiveReturn:pOutperform,pBeatMarket,pBeat15Cagr:pBeat15,pPermanentLoss,marketBenchmarkCAGR,modelKey:model.key,inputs:{er,mos,quality,confidence,risk,agreement}};
+  const pBeatMarket=clamp(shrink(logistic(z-(marketBenchmarkCAGR-er)*8.5)),.05,.95);
+  return {version:'probability-profile-v3',pPositiveReturn:pOutperform,pBeatMarket,pBeat15Cagr:pBeat15,pPermanentLoss,marketBenchmarkCAGR,modelKey:model.key,inputs:{er,mos,quality,confidence,risk,agreement}};
 }
 
 function assignProbabilityRating(stock, components, probability) {
