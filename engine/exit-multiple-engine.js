@@ -32,6 +32,7 @@ function applyExitMultipleDiscipline({
   industry = null,
   futureQuality = null,
   businessArchetype = null,
+  currentMultiple = null,
 }) {
   if (!(rawMultiple > 0)) return { multiple: null, rawMultiple, ceiling: null, wasCapped: false };
 
@@ -95,10 +96,22 @@ function applyExitMultipleDiscipline({
     premiumFloor = Math.max(premiumFloor, sectorMultiple * retention);
   }
 
+  // V40 valuation-support discipline. A high current multiple is not evidence
+  // that the same premium should survive. When the stock begins far above the
+  // growth-based ceiling, require unusually strong quality, persistence and
+  // reliability before allowing a generous exit multiple. Elite businesses keep
+  // room for a justified premium; ordinary high-multiple stocks compress faster.
+  const current = Number(currentMultiple);
+  const currentPremium = current > 0 ? Math.max(0, current / Math.max(ceiling, genericFloor) - 1) : 0;
+  const premiumEvidence = clamp(q * .30 + fq * .30 + persistence * .25 + reliability * .15, 0, 1);
+  const unsupportedPremium = currentPremium * (1 - Math.pow(premiumEvidence, 1.35));
+  const valuationSupportFactor = clamp(1 - unsupportedPremium * .32, .72, 1);
+  ceiling *= valuationSupportFactor;
+
   const boundedCeiling = Math.max(ceiling, premiumFloor);
   const multiple = clamp(rawMultiple, premiumFloor, boundedCeiling);
   return {
-    version: 'v36-justified-exit-discipline',
+    version: 'v40-evidence-supported-exit-discipline',
     multiple,
     rawMultiple,
     ceiling: boundedCeiling,
@@ -111,6 +124,11 @@ function applyExitMultipleDiscipline({
     premiumPersistence: persistence,
     businessArchetype,
     justifiedArchetypeMultiple,
+    currentMultiple: current > 0 ? current : null,
+    currentPremium,
+    premiumEvidence,
+    unsupportedPremium,
+    valuationSupportFactor,
   };
 }
 

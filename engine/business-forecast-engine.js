@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Business Forecast Engine V37
+ * Business Forecast Engine V40
  *
  * Forecasts the operating business first and leaves category/lifecycle as a
  * diagnostic rather than the primary forecast driver. The engine distinguishes:
@@ -326,6 +326,31 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
         { value: terminal, weight: 0.14 },
       ]);
 
+  // V40 analyst-optimism guard. Consensus is most useful near the current
+  // operating evidence; the farther it sits above history and current momentum,
+  // the less of that gap should flow into the central case. The penalty grows for
+  // large companies, volatile histories, and weak persistence, while durable
+  // inflections retain most of the upside.
+  const evidenceAnchor = weightedMean([
+    { value: state.qMomentum?.recentAverage, weight: state.qMomentum ? 0.30 : 0 },
+    { value: state.recentRate, weight: state.recentRate == null ? 0 : 0.35 },
+    { value: state.growth3, weight: state.growth3 == null ? 0 : 0.20 },
+    { value: state.longRate, weight: state.longRate == null ? 0 : 0.15 },
+  ]) ?? state.currentOperatingRate;
+  const analystAverage = mean([state.analyst1, state.analyst2].filter(finite));
+  const analystOptimismGap = analystAverage == null ? 0 : Math.max(0, analystAverage - evidenceAnchor - 0.025);
+  const scaleSkepticism = clamp(1 - scale.combined, 0, 0.40);
+  const volatilitySkepticism = clamp(state.growthVolatility / 0.24, 0, 1);
+  const inflectionRelief = ['inflecting', 'accelerating'].includes(state.regime)
+    ? clamp(state.inflection / 0.18, 0, 1) * state.persistenceScore * 0.55 : 0;
+  const analystOptimismPenalty = clamp(
+    analystOptimismGap * (0.28 + scaleSkepticism * 0.80 + volatilitySkepticism * 0.20 + (1 - state.persistenceScore) * 0.32) * (1 - inflectionRelief),
+    0,
+    0.055
+  );
+  y1 -= analystOptimismPenalty * 0.70;
+  y2 -= analystOptimismPenalty;
+
   if (['inflecting', 'accelerating'].includes(state.regime)) {
     y1 += clamp(state.inflection * 0.10, 0, 0.025);
     y2 += clamp(state.inflection * 0.07, 0, 0.018);
@@ -351,7 +376,9 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
     (state.regime === 'normalizing' ? 1.0 : 0),
     2, Math.min(7, Math.max(2, years - 1))
   ));
-  if (state.analyst2 != null && state.analyst2 >= 0.25) persistenceYears = Math.max(persistenceYears, 4);
+  if (state.analyst2 != null && state.analyst2 >= 0.25 && state.persistenceScore >= 0.68 && state.forecastAgreement >= 0.62) {
+    persistenceYears = Math.max(persistenceYears, 4);
+  }
 
   // Exceptional growth becomes progressively harder to sustain. Apply an
   // economic fade burden that rises with the amount of growth above 18%, the
@@ -467,9 +494,9 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
 
   return {
     path,
-    source: 'v39_economic_growth_fade_forecast',
+    source: 'v40_evidence_disciplined_growth_forecast',
     assumptions: {
-      version: '39.0',
+      version: '40.0',
       regime: state.regime,
       analyst1: state.analyst1,
       analyst2: state.analyst2,
@@ -500,6 +527,13 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
       scale,
       projectedRevenueMultiple: revenueMultiple,
       analystReliability: state.analystBreadth,
+      evidenceAnchor,
+      analystAverage,
+      analystOptimismGap,
+      analystOptimismPenalty,
+      scaleSkepticism,
+      volatilitySkepticism,
+      inflectionRelief,
       analystConsensusChecks: { year1: state.analyst1Check, year2: state.analyst2Check, absoluteEstimateReliable: state.absoluteEstimateReliable },
       calibrationApplied: !!calibration?.isCalibrated,
       year1: path[0],
