@@ -80,7 +80,7 @@
         <th data-key="confidenceScore">Confidence</th>
         <th data-key="marginOfSafety">MOS</th>
         <th data-key="requiredMOS">Req. MOS</th>
-        <th data-key="investmentCommitteeScore">IC Score</th>
+        <th data-key="investmentScore">Investment</th>
         <th data-key="businessQualityScore">Quality</th>
         <th data-key="componentScores.moat">Moat</th>
         <th data-key="capitalAllocationScore">Capital Alloc.</th>
@@ -272,6 +272,8 @@ function buildDetailHtml(s) {
     <br>${confDeductions}
     <br><strong>Growth source:</strong> ${s.growthSource === 'yfinance_supabase' ? 'YFinance consensus cached in Supabase' : s.growthSource === 'finnhub_analyst_consensus' ? 'Finnhub analyst consensus' : 'Blended recent-quarter + trailing SEC data'}
     <br><strong>Expected Investor CAGR</strong> (owner-earnings primary — starts at today's price and includes dividends and justified terminal valuation): ${s.expectedReturn != null ? pct(s.expectedReturn) : 'n/a — insufficient exit-multiple data'}
+    ${s.returnAttribution?.available ? `<br><strong>Return attribution:</strong> Revenue ${pct(s.returnAttribution.components?.revenueGrowth)} · Growth fade ${pct(s.returnAttribution.components?.growthFade)} · Margins ${pct(s.returnAttribution.components?.marginChange)} · Share count ${pct(s.returnAttribution.components?.shareCountChange)} · Dividends ${pct(s.returnAttribution.components?.dividends)} · Valuation ${pct(s.returnAttribution.components?.valuationChange)}` : ''}
+    ${s.investmentScoreBreakdown ? `<br><strong>Investment Score:</strong> ${s.investmentScore ?? '—'}/100 · Durable return ${s.investmentScoreBreakdown.durableReturn ?? '—'} · Quality ${s.investmentScoreBreakdown.quality ?? '—'} · MOS ${s.investmentScoreBreakdown.marginOfSafety ?? '—'} · Confidence ${s.investmentScoreBreakdown.confidence ?? '—'} · Moat ${s.investmentScoreBreakdown.moat ?? '—'} · Capital allocation ${s.investmentScoreBreakdown.capitalAllocation ?? '—'}` : ''}
     <br><strong>Fundamental Growth Rate</strong> (price-agnostic — how fast the business's own per-share value compounds): ${pct(s.fundamentalGrowthRate)}
     <br><strong>Fund. growth breakdown:</strong>
     Rev growth ${pct(s.cagrBreakdown.forwardRevGrowth)} ·
@@ -402,7 +404,7 @@ function render() {
       <td class="${confClass(s.confidenceScore)}">${s.confidenceScore ?? '—'}</td>
       <td class="${s.marginOfSafety >= s.requiredMOS ? 'pos' : 'neg'}">${pct(s.marginOfSafety)}${mosFlag}</td>
       <td>${pct(s.requiredMOS)}</td>
-      <td class="${confClass(s.investmentCommitteeScore)}">${s.investmentCommitteeScore ?? s.portfolioManagerScore ?? s.investmentScore ?? '—'}</td>
+      <td class="${confClass(s.investmentScore)}">${s.investmentScore ?? s.portfolioManagerScore ?? s.investmentCommitteeScore ?? '—'}</td>
       <td class="${confClass(s.businessQualityScore)}">${s.businessQualityScore ?? '—'}</td>
       <td class="${confClass(s.componentScores?.moat)}">${s.componentScores?.moat ?? s.moat?.score ?? '—'}</td>
       <td class="${confClass(s.capitalAllocationScore)}">${s.capitalAllocationScore ?? '—'}</td>

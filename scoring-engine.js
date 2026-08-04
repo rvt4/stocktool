@@ -884,6 +884,7 @@ function scoreStock(stock) {
     riskAdjustedReturn,
     scenarioAnalysis: stock.valuation.scenarioAnalysis ?? null,
     expectedReturnProfile: stock.valuation.expectedReturnProfile ?? null,
+    returnAttribution: stock.valuation.expectedReturnProfile?.returnAttribution ?? null,
     dataIntegrity: stock.dataIntegrity ?? null,
     investmentThesis: stock.valuation.investmentThesis ?? null,
     investmentGrade: investment.score >= 88 ? 'A+' : investment.score >= 80 ? 'A' : investment.score >= 73 ? 'B+' : investment.score >= 65 ? 'B' : investment.score >= 55 ? 'C' : investment.score >= 42 ? 'D' : 'F',
