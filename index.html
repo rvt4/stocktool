@@ -65,7 +65,7 @@
     <select id="categoryFilter"><option value="">All categories</option></select>
     <select id="ratingFilter"><option value="">All ratings</option></select>
     <input id="tickerSearch" placeholder="Search ticker...">
-    <label style="font-size:0.85rem;color:#aaa;"><input type="checkbox" id="qualifiesOnly"> 15% return + MOS only</label>
+    <label style="font-size:0.85rem;color:#aaa;"><input type="checkbox" id="qualifiesOnly"> 15% modeled return + MOS only</label>
   </div>
   <table id="tbl">
     <thead>
@@ -82,11 +82,13 @@
         <th data-key="requiredMOS">Req. MOS</th>
         <th data-key="investmentCommitteeScore">IC Score</th>
         <th data-key="businessQualityScore">Quality</th>
+        <th data-key="componentScores.moat">Moat</th>
+        <th data-key="capitalAllocationScore">Capital Alloc.</th>
         <th data-key="compounderScore">Compounder</th>
         <th data-key="growthQuality.score">Growth Q.</th>
         <th data-key="pricingPowerV2Score">Pricing</th>
         <th data-key="downsideProtectionScore">Protection</th>
-        <th data-key="successProbability">Success</th>
+        <th data-key="beatMarketProbability">Beat Mkt.</th>
         <th data-key="qualityRank">Q Rank</th>
         <th data-key="opportunityRank">O Rank</th>
       </tr>
@@ -312,6 +314,8 @@ function buildDetailHtml(s) {
 <div><strong>Market-based value:</strong> ${s.marketValue == null ? '—' : '$' + num(s.marketValue)}</div>
 <div><strong>Actionable fair value:</strong> ${s.fairValueEstimate == null ? '—' : '$' + num(s.fairValueEstimate)}</div>
 <div><strong>Expected investor CAGR:</strong> ${pct(s.expectedReturn)}</div>
+<div><strong>Quality haircut:</strong> ${pct(s.expectedReturnProfile?.qualityHaircut)}</div>
+<div><strong>Durability composite:</strong> ${s.expectedReturnProfile?.durabilityComposite == null ? '—' : num(s.expectedReturnProfile.durabilityComposite, 0) + '/100'}</div>
 ${s.ownerEarningsReturn ? `<div><strong>V20 primary model:</strong> ${s.ownerEarningsReturn.primaryMethod || 'Owner Earnings'}</div><div><strong>Normalized owner earnings/share:</strong> ${money(s.ownerEarningsReturn.normalizedStartOwnerEarningsPerShare)}</div><div><strong>Exit owner earnings/share:</strong> ${money(s.ownerEarningsReturn.exitOwnerEarningsPerShare)}</div><div><strong>Owner-earnings growth:</strong> ${pct(s.ownerEarningsReturn.ownerEarningsGrowth)}</div><div><strong>Justified terminal P/OE:</strong> ${s.ownerEarningsReturn.terminalMultiple == null ? '—' : s.ownerEarningsReturn.terminalMultiple.toFixed(1) + 'x'}</div><div><strong>Validation gap:</strong> ${pct(s.ownerEarningsReturn.validationGap)}</div>` : ''}
 <div><strong>Fundamental CAGR:</strong> ${pct(s.fundamentalGrowthRate)}</div>
 <div><strong>Valuation impact:</strong> ${pct((s.expectedReturn ?? 0) - (s.fundamentalGrowthRate ?? 0))}</div>
@@ -330,7 +334,7 @@ ${s.ownerEarningsReturn ? `<div><strong>V20 primary model:</strong> ${s.ownerEar
       <div>Valuation engine: ${s.businessProfile?.engine ?? s.projectionAssumptions?.businessProfile?.engine ?? "—"}</div>
       <div><strong>Expected return: ${pct(s.expectedReturn)}</strong></div>
       <div>Probability-adjusted return: ${pct(s.probabilityAdjustedReturn)}</div>
-      <div>Success evidence score: ${s.successProbability ?? "—"}%</div>
+      <div>Probability of beating 10% market hurdle: ${s.beatMarketProbability ?? s.successProbability ?? "—"}%</div>
       <div>Investment score: ${s.investmentScore ?? "—"}/100</div>
       <div>Business quality: ${s.businessQualityScore ?? "—"}/100</div>
       <div>Opportunity score: ${s.valuationAttractivenessScore ?? "—"}/100</div>
@@ -400,11 +404,13 @@ function render() {
       <td>${pct(s.requiredMOS)}</td>
       <td class="${confClass(s.investmentCommitteeScore)}">${s.investmentCommitteeScore ?? s.portfolioManagerScore ?? s.investmentScore ?? '—'}</td>
       <td class="${confClass(s.businessQualityScore)}">${s.businessQualityScore ?? '—'}</td>
+      <td class="${confClass(s.componentScores?.moat)}">${s.componentScores?.moat ?? s.moat?.score ?? '—'}</td>
+      <td class="${confClass(s.capitalAllocationScore)}">${s.capitalAllocationScore ?? '—'}</td>
       <td class="${confClass(s.compounderScore)}">${s.compounderScore ?? '—'}</td>
       <td class="${confClass(s.growthQuality?.score)}">${s.growthQuality?.score ?? '—'}</td>
       <td class="${confClass(s.pricingPowerV2Score)}">${s.pricingPowerV2Score ?? '—'}</td>
       <td class="${confClass(s.downsideProtectionScore)}">${s.downsideProtectionScore ?? '—'}</td>
-      <td class="${confClass(s.successProbability)}">${s.successProbability ?? '—'}%</td>
+      <td class="${confClass(s.beatMarketProbability ?? s.successProbability)}">${s.beatMarketProbability ?? s.successProbability ?? '—'}%</td>
       <td>${s.qualityRank ?? '—'}</td>
       <td>${s.opportunityRank ?? '—'}</td>
     `;
