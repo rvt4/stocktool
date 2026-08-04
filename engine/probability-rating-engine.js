@@ -17,7 +17,11 @@ function computeProbabilityProfile(stock, components) {
   const pOutperform=clamp(logistic(z),.01,.99);
   const pPermanentLoss=clamp(logistic((risk-52)/13-(mos+.05)*3.0-(quality-70)/30),.01,.85);
   const pBeat15=clamp(logistic(z-(.15-er)*7.5),.01,.99);
-  return {version:'probability-profile-v1',pPositiveReturn:pOutperform,pBeat15Cagr:pBeat15,pPermanentLoss,modelKey:model.key,inputs:{er,mos,quality,confidence,risk,agreement}};
+  // A transparent long-run equity benchmark, not a claim about a known future
+  // index return. This is the modeled probability of exceeding a 10% CAGR hurdle.
+  const marketBenchmarkCAGR=.10;
+  const pBeatMarket=clamp(logistic(z-(marketBenchmarkCAGR-er)*7.5),.01,.99);
+  return {version:'probability-profile-v2',pPositiveReturn:pOutperform,pBeatMarket,pBeat15Cagr:pBeat15,pPermanentLoss,marketBenchmarkCAGR,modelKey:model.key,inputs:{er,mos,quality,confidence,risk,agreement}};
 }
 
 function assignProbabilityRating(stock, components, probability) {

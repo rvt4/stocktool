@@ -49,7 +49,15 @@ function computeExpectedReturnProfile(stock, scenarioAnalysis, integrity) {
   const financial = stock?.valuation?.businessArchetype === 'Digital Financial Platform' ||
     stock?.valuation?.lifecycle?.archetype === 'Digital Financial Platform';
   const dataPenalty = (1 - (integrity?.score ?? 50) / 100) * (financial ? 0.055 : 0.08);
-  const riskAdjustedCAGR = expected - downsidePenalty - uncertaintyPenalty - instabilityPenalty - dataPenalty;
+  // Weak economics should reduce the return estimate itself, not merely its
+  // confidence score. This prevents fragile high-growth forecasts from receiving
+  // the same actionable CAGR as durable compounders.
+  const moat = Number(stock?.valuation?.moat?.score ?? stock?.componentScores?.moat ?? 50);
+  const growthQuality = Number(stock?.valuation?.growthQuality?.score ?? stock?.growthQuality?.score ?? 50);
+  const capitalAllocation = Number(stock?.capitalAllocationScore ?? stock?.valuation?.capitalAllocation?.score ?? 50);
+  const durabilityComposite = clamp(moat * .45 + growthQuality * .35 + capitalAllocation * .20, 0, 100);
+  const qualityHaircut = clamp((68 - durabilityComposite) / 100 * .09, 0, .045);
+  const riskAdjustedCAGR = expected - downsidePenalty - uncertaintyPenalty - instabilityPenalty - dataPenalty - qualityHaircut;
   const returnQualityScore = Math.round(clamp(
     ((riskAdjustedCAGR - 0.04) / 0.22) * 66 +
     evidenceConfidence * 24 +
@@ -70,6 +78,8 @@ function computeExpectedReturnProfile(stock, scenarioAnalysis, integrity) {
     uncertaintyPenalty,
     instabilityPenalty,
     dataPenalty,
+    qualityHaircut,
+    durabilityComposite,
     evidenceConfidence,
     forecastStability: stability,
     returnAttribution: attribution,

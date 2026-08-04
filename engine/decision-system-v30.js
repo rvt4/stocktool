@@ -232,6 +232,10 @@ function applyDecisionSystemV30(stocks) {
       mosProfile,
     };
     stock.probabilityProfile = probability;
+    stock.beatMarketProbability = Math.round((probability.pBeatMarket ?? probability.pPositiveReturn) * 100);
+    // Preserve the legacy field for compatibility, but make its meaning explicit
+    // and actionable in the dashboard.
+    stock.successProbability = stock.beatMarketProbability;
     stock.capitalAllocationScore = capital.score;
     stock.sectorAdjustedDecisionScore = composite.score;
     stock.decisionExplanation = buildDecisionExplanation(stock, components, probability, capital);

@@ -292,9 +292,18 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
   const historyBias = Number(cal.historyBias) || 0;
   const terminal = terminalAnchor(stock, state, scale);
 
-  const analystWeight1 = state.analyst1 == null ? 0 : clamp((0.48 + state.analystBreadth * 0.22) * (state.analyst1Check?.reliability ?? 1), 0.22, 0.76);
-  const momentumWeight = state.qMomentum ? 0.12 : 0;
-  const historicalWeight = ['inflecting', 'recovery', 'accelerating'].includes(state.regime) ? 0.05 : 0.14;
+  // V38 evidence blend: consensus is useful, but it should not dominate the
+  // forecast. Target roughly 40% analyst / 30% history / 30% current momentum and
+  // internal operating state, with reliability and regime-aware adjustments.
+  const analystWeight1 = state.analyst1 == null ? 0 : clamp(
+    (0.34 + state.analystBreadth * 0.10) * (state.analyst1Check?.reliability ?? 1),
+    0.18, 0.44
+  );
+  const historicalWeight = clamp(
+    ['inflecting', 'recovery', 'accelerating'].includes(state.regime) ? 0.22 : 0.30,
+    0.20, 0.34
+  );
+  const momentumWeight = state.qMomentum ? 0.16 : 0.08;
   const stateWeight = Math.max(0, 1 - analystWeight1 - momentumWeight - historicalWeight);
 
   let y1 = weightedMean([
@@ -311,9 +320,10 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
         { value: terminal, weight: 0.15 },
       ])
     : weightedMean([
-        { value: state.analyst2 + analystBias, weight: clamp((0.56 + state.analystBreadth * 0.18) * (state.analyst2Check?.reliability ?? 1), 0.25, 0.78) },
-        { value: y1, weight: 0.16 },
-        { value: terminal, weight: 0.10 },
+        { value: state.analyst2 + analystBias, weight: clamp((0.34 + state.analystBreadth * 0.10) * (state.analyst2Check?.reliability ?? 1), 0.18, 0.44) },
+        { value: y1, weight: 0.32 },
+        { value: state.longRate, weight: state.longRate == null ? 0 : 0.14 },
+        { value: terminal, weight: 0.14 },
       ]);
 
   if (['inflecting', 'accelerating'].includes(state.regime)) {
