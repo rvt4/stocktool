@@ -385,15 +385,27 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
   // company's scale, forecast volatility, and weak persistence evidence. This
   // is a cross-sectional rule—not a ticker override—and prevents analyst growth
   // from being carried through the full horizon with too little regression.
-  const excessGrowth = Math.max(0, Math.max(y1, y2) - 0.18);
+  const peakGrowth = Math.max(y1, y2);
+  const excessGrowth = Math.max(0, peakGrowth - 0.18);
+  // Progressive realism: sustaining each additional point of growth becomes
+  // harder at the extreme. This is intentionally nonlinear rather than a flat
+  // haircut, and durable high-quality businesses receive relief below.
+  const progressiveExcess =
+    Math.max(0, Math.min(peakGrowth, .20) - .15) * .18 +
+    Math.max(0, Math.min(peakGrowth, .25) - .20) * .42 +
+    Math.max(0, Math.min(peakGrowth, .35) - .25) * .78 +
+    Math.max(0, peakGrowth - .35) * 1.10;
   const scaleBurden = clamp(1 - scale.combined, 0, 0.35);
   const uncertaintyBurden = clamp(state.growthVolatility / 0.22, 0, 1) * 0.35;
   const weakPersistenceBurden = (1 - state.persistenceScore) * 0.35;
   const economics = stock?.valuation?.economicQuality?.businessEconomics || stock?.valuation?.businessEconomics || null;
   const economicsFadeMultiplier = clamp(Number(economics?.growthFadeMultiplier ?? 1), .62, .96);
   const durabilityRelief = clamp((Number(economics?.durability ?? 50) - 50) / 250, -.08, .16);
+  const moatRelief = clamp((Number(economics?.moat ?? stock?.valuation?.moat?.score ?? 50) - 65) / 300, 0, .10);
+  const capitalRelief = clamp((Number(economics?.capitalAllocation ?? stock?.capitalAllocationScore ?? 50) - 65) / 500, 0, .06);
   const fadeBurden = clamp(
-    excessGrowth / 0.22 * (0.45 + scaleBurden + uncertaintyBurden + weakPersistenceBurden) * economicsFadeMultiplier - durabilityRelief,
+    excessGrowth / 0.22 * (0.42 + scaleBurden + uncertaintyBurden + weakPersistenceBurden) * economicsFadeMultiplier +
+    progressiveExcess - durabilityRelief - moatRelief - capitalRelief,
     0, 1
   );
   const persistenceReduction = Math.round(fadeBurden * 2);
@@ -494,9 +506,9 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
 
   return {
     path,
-    source: 'v40_evidence_disciplined_growth_forecast',
+    source: 'v41_progressive_evidence_disciplined_growth_forecast',
     assumptions: {
-      version: '40.0',
+      version: '41.0',
       regime: state.regime,
       analyst1: state.analyst1,
       analyst2: state.analyst2,
@@ -513,6 +525,7 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
       persistenceYears,
       excessGrowth,
       fadeBurden,
+      progressiveGrowthBurden: progressiveExcess,
       economicsFadeMultiplier,
       businessEconomicsScore: Number(economics?.overall ?? 50),
       persistenceReduction,

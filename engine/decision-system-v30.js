@@ -82,6 +82,7 @@ function growthScore(stock) {
 
 function applyScarcityGuard(stocks) {
   const byScore = [...stocks].sort((a, b) =>
+    (n(b.investmentScore, 0) - n(a.investmentScore, 0)) ||
     (b.sectorAdjustedDecisionScore - a.sectorAdjustedDecisionScore) ||
     (b.businessQualityScore - a.businessQualityScore) ||
     (b.decisionExpectedReturn - a.decisionExpectedReturn)
@@ -120,6 +121,7 @@ function applyDecisionSystemV30(stocks) {
       : {};
 
     const capital = computeCapitalAllocationV2(stock);
+    stock.valuation.capitalAllocation = capital;
     const economics = stock.valuation?.economicQuality?.businessEconomics || stock.valuation?.businessEconomics || null;
     const economicQuality = n(economics?.overall, n(stock.valuation?.economicQuality?.overall, n(stock.businessQualityScore, 50)));
     const quality = Math.round(clamp(economicQuality * .90 + capital.score * .10, 0, 100));
@@ -186,6 +188,25 @@ function applyDecisionSystemV30(stocks) {
       0, 100
     ));
     composite.score = Math.round(clamp(composite.score * .45 + qualityFirstScore * .55, 0, 100));
+
+    // V41 Investment Score: a deliberately wider, quality-aware ranking scale.
+    // Return and MOS matter, but only after evidence quality and downside resilience.
+    const mosScore = clamp(50 + n(mosProfile.actionable, 0) * 100, 0, 100);
+    const moatScore = clamp(n(economics?.moat, n(stock.valuation?.moat?.score, 50)), 0, 100);
+    const durableReturn = returnScore * clamp((quality * .42 + components.confidence * .28 + moatScore * .18 + capital.score * .12) / 100, .35, 1);
+    const investmentRaw = durableReturn * .32 + quality * .25 + mosScore * .17 +
+      components.confidence * .10 + moatScore * .08 + capital.score * .05 + components.risk * .03;
+    // Stretch the useful middle of the distribution without manufacturing 100s.
+    const investmentScore = Math.round(clamp(50 + (investmentRaw - 50) * 1.32, 0, 96));
+    stock.investmentScore = investmentScore;
+    stock.portfolioManagerScore = investmentScore;
+    stock.investmentScoreBreakdown = {
+      durableReturn: Math.round(durableReturn), quality: Math.round(quality),
+      marginOfSafety: Math.round(mosScore), confidence: Math.round(components.confidence),
+      moat: Math.round(moatScore), capitalAllocation: Math.round(capital.score),
+      downsideProtection: Math.round(components.risk), raw: investmentRaw,
+    };
+
     const probability = computeProbabilityProfile(stock, components);
     const decision = assignProbabilityRating(stock, components, probability);
 
@@ -237,6 +258,7 @@ function applyDecisionSystemV30(stocks) {
     // and actionable in the dashboard.
     stock.successProbability = stock.beatMarketProbability;
     stock.capitalAllocationScore = capital.score;
+    stock.capitalAllocationSignals = [...(capital.signals || []), ...(capital.flags || []).map(x => `Warning: ${x}`)];
     stock.sectorAdjustedDecisionScore = composite.score;
     stock.decisionExplanation = buildDecisionExplanation(stock, components, probability, capital);
   }
@@ -245,6 +267,7 @@ function applyDecisionSystemV30(stocks) {
   const rank = { 'Exceptional Buy': 6, 'Strong Buy': 5, 'Buy': 4, 'Hold': 3, 'Avoid': 2, 'Sell': 1 };
   return [...stocks].sort((a, b) =>
     (rank[b.rating] - rank[a.rating]) ||
+    (n(b.investmentScore, 0) - n(a.investmentScore, 0)) ||
     (b.sectorAdjustedDecisionScore - a.sectorAdjustedDecisionScore) ||
     (b.businessQualityScore - a.businessQualityScore) ||
     (b.decisionExpectedReturn - a.decisionExpectedReturn)

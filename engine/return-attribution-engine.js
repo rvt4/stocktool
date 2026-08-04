@@ -24,37 +24,50 @@ function buildReturnAttribution(stock, primaryValuation, scenarioAnalysis) {
   const expectedCAGR = Number(p.expectedCAGR ?? scenarioAnalysis?.baseCAGR);
 
   if (!(years > 0) || !(currentPrice > 0) || !(totalEndingValue > 0) || !finite(expectedCAGR)) {
-    return { version: 'return-attribution-v1', available: false, expectedCAGR: finite(expectedCAGR) ? expectedCAGR : null };
+    return { version: 'return-attribution-v2', available: false, expectedCAGR: finite(expectedCAGR) ? expectedCAGR : null };
   }
 
   const revenue = finite(bridge.revenueContribution) ? Number(bridge.revenueContribution) : 0;
+  const forecastAssumptions = stock?.valuation?.projectionAssumptions || stock?.valuation?.forecast?.assumptions || {};
+  const growthPath = (stock?.valuation?.projection || []).map(x => Number(x.growth)).filter(finite);
+  const firstGrowth = growthPath.length ? growthPath[0] : Number(forecastAssumptions.year1);
+  const terminalGrowth = growthPath.length ? growthPath.at(-1) : Number(forecastAssumptions.longRunAnchor);
+  const explicitFade = finite(firstGrowth) && finite(terminalGrowth)
+    ? clamp(Math.max(0, firstGrowth - terminalGrowth) / Math.max(years, 1) * .55, 0, .08)
+    : 0;
+  const progressiveBurden = finite(forecastAssumptions.progressiveGrowthBurden)
+    ? clamp(Number(forecastAssumptions.progressiveGrowthBurden) / Math.max(years, 1), 0, .04) : 0;
+  const growthFade = -(explicitFade + progressiveBurden);
+  const preFadeRevenue = revenue - growthFade;
   const margin = finite(bridge.marginContribution) ? Number(bridge.marginContribution) : 0;
   const buybacks = finite(bridge.shareContribution) ? Number(bridge.shareContribution) : 0;
   const dividendYield = dividends > 0 ? Math.pow((exitValue + dividends) / Math.max(exitValue, 0.01), 1 / years) - 1 : 0;
 
   // Convert intuitive annual arithmetic assumptions into additive log returns.
   const logExpected = Math.log1p(clamp(expectedCAGR, -0.95, 5));
-  const logRevenue = Math.log1p(clamp(revenue, -0.80, 2));
+  const logRevenue = Math.log1p(clamp(preFadeRevenue, -0.80, 2));
+  const logGrowthFade = Math.log1p(clamp(growthFade, -0.80, 2));
   const logMargin = Math.log1p(clamp(margin, -0.80, 2));
   const logBuybacks = Math.log1p(clamp(buybacks, -0.80, 2));
   const logDividend = Math.log1p(clamp(dividendYield, -0.80, 2));
-  const logValuation = logExpected - logRevenue - logMargin - logBuybacks - logDividend;
+  const logValuation = logExpected - logRevenue - logGrowthFade - logMargin - logBuybacks - logDividend;
 
   const components = {
     revenueGrowth: Math.expm1(logRevenue),
+    growthFade: Math.expm1(logGrowthFade),
     marginChange: Math.expm1(logMargin),
     shareCountChange: Math.expm1(logBuybacks),
     dividends: Math.expm1(logDividend),
     valuationChange: Math.expm1(logValuation),
   };
 
-  const operatingCAGR = Math.expm1(logRevenue + logMargin + logBuybacks);
-  const reconstructedCAGR = Math.expm1(logRevenue + logMargin + logBuybacks + logDividend + logValuation);
+  const operatingCAGR = Math.expm1(logRevenue + logGrowthFade + logMargin + logBuybacks);
+  const reconstructedCAGR = Math.expm1(logRevenue + logGrowthFade + logMargin + logBuybacks + logDividend + logValuation);
   const scenarioRange = finite(scenarioAnalysis?.upsideCAGR) && finite(scenarioAnalysis?.downsideCAGR)
     ? Number(scenarioAnalysis.upsideCAGR) - Number(scenarioAnalysis.downsideCAGR) : null;
 
   return {
-    version: 'return-attribution-v1',
+    version: 'return-attribution-v2',
     available: true,
     expectedCAGR,
     reconstructedCAGR,
@@ -68,7 +81,10 @@ function buildReturnAttribution(stock, primaryValuation, scenarioAnalysis) {
       totalEndingValue,
       directCAGR: cagr(currentPrice, totalEndingValue, years),
       scenarioRange,
-      formula: 'log(1+CAGR) = revenue + margin + share count + dividends + valuation',
+      formula: 'log(1+CAGR) = revenue + growth fade + margin + share count + dividends + valuation',
+      firstGrowth: finite(firstGrowth) ? firstGrowth : null,
+      terminalGrowth: finite(terminalGrowth) ? terminalGrowth : null,
+      progressiveGrowthBurden: progressiveBurden,
     },
   };
 }
