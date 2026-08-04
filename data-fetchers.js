@@ -256,8 +256,28 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   // names. Reported under either tag depending on the company.
   pullAnnual('ShareBasedCompensation', 'sbc');
   pullAnnual('AllocatedShareBasedCompensationExpense', 'sbc');
+  // Balance-sheet and capital-allocation facts. Pull broad fallbacks first,
+  // then preferred tags last so later scoring can distinguish reinvestment,
+  // leverage, repurchases, issuance, dividends and acquisition spending.
+  pullAnnual('LongTermDebt', 'longTermDebt');
+  pullAnnual('LongTermDebtAndFinanceLeaseObligationsNoncurrent', 'longTermDebt');
   pullAnnual('LongTermDebtNoncurrent', 'longTermDebt');
+  pullAnnual('ShortTermBorrowings', 'shortTermDebt');
+  pullAnnual('LongTermDebtCurrent', 'shortTermDebt');
+  pullAnnual('LongTermDebtAndFinanceLeaseObligationsCurrent', 'shortTermDebt');
+  pullAnnual('StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest', 'stockholdersEquity');
+  pullAnnual('StockholdersEquity', 'stockholdersEquity');
+  pullAnnual('CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', 'cash');
   pullAnnual('CashAndCashEquivalentsAtCarryingValue', 'cash');
+  pullAnnual('PaymentsForRepurchaseOfCommonStock', 'shareRepurchases');
+  pullAnnual('PaymentsForRepurchaseOfEquity', 'shareRepurchases');
+  pullAnnual('ProceedsFromStockOptionsExercised', 'shareIssuanceProceeds');
+  pullAnnual('ProceedsFromIssuanceOfCommonStock', 'shareIssuanceProceeds');
+  pullAnnual('ProceedsFromStockIssued', 'shareIssuanceProceeds');
+  pullAnnual('PaymentsOfDividends', 'dividendsPaid');
+  pullAnnual('PaymentsOfDividendsCommonStock', 'dividendsPaid');
+  pullAnnual('PaymentsToAcquireBusinessesNetOfCashAcquired', 'acquisitions');
+  pullAnnual('PaymentsToAcquireBusinessesGross', 'acquisitions');
   pullAnnual('InventoryNet', 'inventory');
   pullAnnual('CostOfGoodsAndServicesSold', 'cogs');
   pullAnnual('DepreciationDepletionAndAmortization', 'da');
@@ -434,8 +454,23 @@ function parseAnnualFinancials(facts, maxYears = 10) {
       const grossMargin = (y.grossProfit != null && y.revenue) ? y.grossProfit / y.revenue
         : (y.cogs != null && y.revenue) ? (y.revenue - y.cogs) / y.revenue : null;
       const opMargin = (y.operatingIncome != null && y.revenue) ? y.operatingIncome / y.revenue : null;
-      const invested = (y.longTermDebt || 0) + (y.cash != null ? -y.cash : 0); // rough proxy, refine as needed
-      const roic = (y.operatingIncome != null && invested) ? y.operatingIncome / Math.abs(invested) : null;
+      // Approximate operating ROIC using NOPAT divided by debt + equity - cash.
+      // This is materially better than the old debt-minus-cash denominator, which
+      // collapsed for cash-rich companies and systematically distorted the capital-
+      // allocation score. Keep the estimate auditable and omit it when the denominator
+      // is not economically meaningful.
+      const totalDebt = (Number(y.longTermDebt) || 0) + (Number(y.shortTermDebt) || 0);
+      const equity = Number(y.stockholdersEquity);
+      const cash = Number(y.cash) || 0;
+      const investedCapital = Number.isFinite(equity)
+        ? totalDebt + equity - cash
+        : null;
+      const nopat = Number.isFinite(Number(y.operatingIncome))
+        ? Number(y.operatingIncome) * 0.79
+        : null;
+      const roic = Number.isFinite(nopat) && Number.isFinite(investedCapital) && investedCapital > 0
+        ? nopat / investedCapital
+        : null;
       const inventoryTurnover = (y.cogs != null && y.inventory) ? y.cogs / y.inventory : null;
       const ebitda = (y.operatingIncome != null) ? y.operatingIncome + (y.da || 0) : null;
       // SBC-adjusted FCF: standard FCF (CFO - capex) treats SBC as a non-cash add-back,
@@ -445,7 +480,8 @@ function parseAnnualFinancials(facts, maxYears = 10) {
       // healthier than the economic reality once dilution is accounted for.
       const fcfSBCAdjusted = fcf != null ? fcf - (y.sbc || 0) : null;
       const sbcIntensity = (y.sbc != null && y.revenue) ? y.sbc / y.revenue : null;
-      return { ...y, fcf, fcfIsProxy, fcfSBCAdjusted, sbcIntensity, grossMargin, opMargin, roic, inventoryTurnover, ebitda };
+      return { ...y, fcf, fcfIsProxy, fcfSBCAdjusted, sbcIntensity, grossMargin, opMargin,
+        totalDebt, investedCapital, nopat, roic, inventoryTurnover, ebitda };
     });
 
   return years;
