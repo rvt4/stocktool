@@ -326,7 +326,12 @@ ${s.ownerEarningsReturn ? `<div><strong>V20 primary model:</strong> ${s.ownerEar
 <div><strong>Rerating probability:</strong> ${s.primaryValuation?.reratingProbability != null ? pct(s.primaryValuation.reratingProbability) : '—'}</div>
 <div><strong>Probability-weighted valuation contribution:</strong> ${s.primaryValuation?.probabilityWeightedValuationDrag != null ? pct(s.primaryValuation.probabilityWeightedValuationDrag) : '—'}</div>
 <div><strong>Operating return anchor:</strong> ${s.primaryValuation?.operatingAnchorForRerating != null ? pct(s.primaryValuation.operatingAnchorForRerating) : '—'}</div>
-<div><strong>Valuation blend:</strong> ${s.primaryValuation?.robustBlend ? 'Robust geometric / winsorized' : 'Legacy weighted average'}</div>
+<div><strong>Canonical valuation:</strong> ${s.primaryValuation?.unifiedForecastLinkedValuation ? 'Unified forecast / target-linked PV' : 'Legacy independent blend'}</div>
+<div><strong>Implied discount rate:</strong> ${s.primaryValuation?.impliedDiscountRate != null ? pct(s.primaryValuation.impliedDiscountRate) : '—'}</div>
+<div><strong>PV of future target:</strong> ${s.primaryValuation?.presentValueOfExit == null ? '—' : '$' + num(s.primaryValuation.presentValueOfExit)}</div>
+<div><strong>PV of dividends:</strong> ${s.primaryValuation?.presentValueOfDividends == null ? '—' : '$' + num(s.primaryValuation.presentValueOfDividends)}</div>
+<div><strong>Method-blend diagnostic:</strong> ${s.primaryValuation?.methodBlendFairValueToday == null ? '—' : '$' + num(s.primaryValuation.methodBlendFairValueToday)}</div>
+<div><strong>Blend consistency gap:</strong> ${s.primaryValuation?.valuationConsistencyGap == null ? '—' : pct(s.primaryValuation.valuationConsistencyGap)}</div>
 <div><strong>Confidence:</strong> ${s.confidenceScore ?? '—'}/100</div>
 <div><strong>Calibration:</strong> ${s.calibrationActive ? 'Active' : 'Collecting history'} (${s.calibration?.observationCount ?? 0} observations)</div>
 <div><strong>Suggested max weight:</strong> ${pct(s.portfolioProfile?.suggestedMaxWeight)}</div>

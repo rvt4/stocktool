@@ -1035,7 +1035,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     dividendsReceived: returnEngineV2.dividendsReceived ?? legacyPriceTarget.dividendsReceived ?? 0,
     totalFutureValue: returnEngineV2.totalFutureValue ?? null,
     breakdown: returnEngineV2.breakdown,
-    returnEngineVersion: 'projection-anchored-future-value-v40',
+    returnEngineVersion: 'unified-forecast-linked-valuation-v50',
     primaryValuation,
     ownerEarningsValidationCAGR: ownerEarningsReturn.expectedCAGR,
     fundamentalBusinessCAGR: returnEngineV2.fundamentalCAGR,
