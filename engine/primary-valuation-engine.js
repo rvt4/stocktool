@@ -44,6 +44,12 @@ function weightedMedian(rows, field = 'presentValue') {
   return a.at(-1)?.value ?? null;
 }
 
+function weightedAverageRows(rows, field) {
+  const prepared = (rows || []).filter(x => finite(x?.[field]) && Number(x.weight) > 0);
+  const total = prepared.reduce((sum, x) => sum + Number(x.weight), 0);
+  return total > 0 ? prepared.reduce((sum, x) => sum + Number(x[field]) * Number(x.weight), 0) / total : null;
+}
+
 function robustWeightedValue(rows, field) {
   const center = weightedMedian(rows, field);
   if (!(center > 0)) return null;
@@ -235,7 +241,7 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
   rows = normalizeRows(rows).filter(x => x.weight >= .035);
   rows = normalizeRows(rows);
 
-  const fairValueToday = robustWeightedValue(rows, 'presentValue');
+  const methodBlendFairValueToday = robustWeightedValue(rows, 'presentValue');
   const rawExitValue = robustWeightedValue(rows, 'futureValue');
   const currentPrice = Number(stock?.price?.current);
   const years = investmentYears;
@@ -284,7 +290,7 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
   const operatingCAGR = finite(revenueContribution)
     ? revenueContribution + marginContribution + shareContribution : null;
   const quality = qualityContext(stock, lifecycle);
-  const disagreement = median(rows.map(x => Math.abs(x.presentValue - fairValueToday) / fairValueToday)) || 0;
+  const disagreement = median(rows.map(x => Math.abs(x.presentValue - methodBlendFairValueToday) / methodBlendFairValueToday)) || 0;
   const agreementScore = Math.round(clamp(100 - disagreement * 180, 0, 100));
   const agreementWeight = agreementInfluence(agreementScore);
   const valuationTrust = clamp(
@@ -390,9 +396,42 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
     ? Math.max(0, currentPrice * Math.pow(1 + adjustedCAGR, years) - dividends)
     : null;
 
+  // V50 single-source-of-truth valuation bridge. Each selected method already
+  // supplies a present value and a value at the investment horizon. Their ratio
+  // implies the annual discount rate used by that method. We blend those implied
+  // rates, then discount the canonical actionable future value back to today.
+  // This mathematically links fair value today, the five-year target, dividends,
+  // and expected CAGR. A separately blended present value remains available only
+  // as a diagnostic, so it can no longer produce contradictions such as a fair
+  // value today above the future target for a non-dividend stock.
+  const impliedRateRows = rows.map(x => {
+    const rate = x.presentValue > 0 && x.futureValue > 0
+      ? Math.pow(x.futureValue / x.presentValue, 1 / years) - 1
+      : null;
+    return { ...x, impliedDiscountRate: finite(rate) ? clamp(rate, .035, .22) : null };
+  }).filter(x => finite(x.impliedDiscountRate));
+  const impliedDiscountRate = clamp(
+    weightedAverageRows(impliedRateRows, 'impliedDiscountRate') ?? .10,
+    .05, .18
+  );
+  const annualDividend = years > 0 ? dividends / years : 0;
+  let presentValueOfDividends = 0;
+  for (let t = 1; t <= years; t++) {
+    presentValueOfDividends += annualDividend / Math.pow(1 + impliedDiscountRate, t);
+  }
+  const presentValueOfExit = actionableExitValue != null
+    ? actionableExitValue / Math.pow(1 + impliedDiscountRate, years)
+    : null;
+  const linkedFairValueToday = presentValueOfExit != null
+    ? presentValueOfExit + presentValueOfDividends
+    : methodBlendFairValueToday;
+  const fairValueToday = linkedFairValueToday;
+  const valuationConsistencyGap = methodBlendFairValueToday > 0 && linkedFairValueToday > 0
+    ? methodBlendFairValueToday / linkedFairValueToday - 1
+    : null;
 
   return {
-    version: 'v46-archetype-routing',
+    version: 'v50-unified-forecast-linked-valuation',
     businessArchetype: lifecycle?.archetype || lifecycle?.economicModel?.archetype || null,
     profile: profile.name,
     profileLabel: profile.label || profile.name,
@@ -407,6 +446,12 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
       fairValueToday: x.presentValue, exitValue: x.futureValue, terminalExitValue: x.terminalExitValue,
     })),
     fairValueToday,
+    linkedFairValueToday,
+    methodBlendFairValueToday,
+    impliedDiscountRate,
+    presentValueOfExit,
+    presentValueOfDividends,
+    valuationConsistencyGap,
     rawExitValue,
     actionableExitValue,
     rawCAGR,
@@ -430,6 +475,12 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
       projectedRevenue: exitRevenue > 0 ? exitRevenue : null,
       projectedShares: exitShares > 0 ? exitShares : null,
       rawBlendedExitValue: rawExitValue,
+      methodBlendFairValueToday,
+      linkedFairValueToday,
+      impliedDiscountRate,
+      presentValueOfExit,
+      presentValueOfDividends,
+      valuationConsistencyGap,
       actionableExitValue,
       modeledDividends: dividends,
       totalEndingValue: actionableExitValue != null ? actionableExitValue + dividends : null,
@@ -458,6 +509,7 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
     operatingAnchorForRerating,
     extremeValuationForProbability,
     robustBlend: true,
+    unifiedForecastLinkedValuation: true,
   };
 }
 
