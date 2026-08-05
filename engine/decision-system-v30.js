@@ -120,7 +120,25 @@ function applyDecisionSystemV30(stocks) {
       ? stock.valuation
       : {};
 
-    const capital = computeCapitalAllocationV2(stock);
+    // scoreUniverse intentionally emits a compact public record and no longer
+    // carries the raw financial statements. Recomputing capital allocation here
+    // therefore used an empty history and returned the same neutral-ish 55 for
+    // every company. Reuse the canonical pre-scoring result when present; only
+    // recompute when this function receives a raw record with actual history.
+    const existingCapital = stock.capitalAllocation || stock.valuation?.capitalAllocation || null;
+    const hasRawCapitalHistory = Array.isArray(stock.financials?.years) && stock.financials.years.length >= 2;
+    const computedCapital = hasRawCapitalHistory ? computeCapitalAllocationV2(stock) : null;
+    const capitalSource = computedCapital || existingCapital || {
+      version: 'capital-allocation-unavailable', score: n(stock.capitalAllocationScore, 50),
+      evidenceScore: 0, signals: [], flags: ['Capital-allocation evidence unavailable'],
+    };
+    const capital = {
+      ...capitalSource,
+      score: Math.round(clamp(n(capitalSource.score, n(stock.capitalAllocationScore, 50)), 0, 100)),
+      signals: Array.isArray(capitalSource.signals) ? capitalSource.signals : [],
+      flags: Array.isArray(capitalSource.flags) ? capitalSource.flags : [],
+    };
+    stock.capitalAllocation = capital;
     stock.valuation.capitalAllocation = capital;
     const economics = stock.valuation?.economicQuality?.businessEconomics || stock.valuation?.businessEconomics || null;
     const economicQuality = n(economics?.overall, n(stock.valuation?.economicQuality?.overall, n(stock.businessQualityScore, 50)));
@@ -133,6 +151,7 @@ function applyDecisionSystemV30(stocks) {
     stock.decisionExpectedReturn = returnProfile.actionable;
     stock.probabilityWeightedCAGR = returnProfile.actionable;
     stock.expectedReturn = returnProfile.actionable;
+    stock.expectedAlpha = Number.isFinite(returnProfile.actionable) ? returnProfile.actionable - 0.10 : null;
     stock.marginOfSafety = mosProfile.actionable;
     stock.returnPlausibilityAdjusted = returnProfile.wasCapped || returnProfile.extremeInput;
     stock.marginOfSafetyAdjusted = mosProfile.wasCapped;
@@ -199,8 +218,10 @@ function applyDecisionSystemV30(stocks) {
     const dilution = n(capital.annualDilution, 0);
     const evidencePenalty = clamp((55 - n(capital.evidenceScore, 55)) * .08, 0, 4);
     const fundamentalPenalty = negativeFcfRate * 8 + clamp((dilution - .02) * 120, 0, 7) + evidencePenalty;
-    const investmentRaw = durableReturn * .34 + quality * .24 + mosScore * .17 +
-      components.confidence * .09 + moatScore * .07 + capital.score * .07 + components.risk * .02 - fundamentalPenalty;
+    const pricingPower = clamp(n(economics?.pricingPower, n(stock.pricingPowerV2Score, 50)), 0, 100);
+    const investmentRaw = durableReturn * .33 + quality * .22 + mosScore * .16 +
+      components.confidence * .08 + moatScore * .07 + capital.score * .08 +
+      pricingPower * .05 + components.risk * .01 - fundamentalPenalty;
     // Wider, intuitive distribution: elite setups can reach the 80s/90s while
     // mediocre and destructive cases separate cleanly below 50.
     const investmentScore = Math.round(clamp(50 + (investmentRaw - 50) * 1.55, 0, 97));
@@ -210,6 +231,7 @@ function applyDecisionSystemV30(stocks) {
       durableReturn: Math.round(durableReturn), quality: Math.round(quality),
       marginOfSafety: Math.round(mosScore), confidence: Math.round(components.confidence),
       moat: Math.round(moatScore), capitalAllocation: Math.round(capital.score),
+      pricingPower: Math.round(pricingPower),
       downsideProtection: Math.round(components.risk), fundamentalPenalty: Math.round(fundamentalPenalty * 10) / 10, raw: investmentRaw,
     };
 

@@ -108,6 +108,25 @@ function applyExitMultipleDiscipline({
   const valuationSupportFactor = clamp(1 - unsupportedPremium * .32, .72, 1);
   ceiling *= valuationSupportFactor;
 
+  // Terminal-maturity fade: premium businesses may retain a justified premium,
+  // but a 5-7 year exit multiple must reflect that today's hyper-growth company
+  // will be larger and slower by the end of the forecast. This is applied after
+  // quality support, so elite compounders are treated more gently than speculative
+  // high-multiple names.
+  const eliteEvidence = clamp(q * .35 + fq * .30 + persistence * .20 + reliability * .15, 0, 1);
+  let maturityFadeFactor = 1;
+  if (lifecycleStage === 'Hyper Growth') {
+    maturityFadeFactor = clamp(.82 + eliteEvidence * .12 + Math.max(0, effectiveGrowth - .18) * .20, .82, .95);
+  } else if (lifecycleStage === 'Growth') {
+    maturityFadeFactor = clamp(.89 + eliteEvidence * .08, .89, .97);
+  } else if (lifecycleStage === 'Temporary Disruption') {
+    maturityFadeFactor = clamp(.92 + eliteEvidence * .06, .92, .98);
+  } else if (lifecycleStage === 'Compounder' || lifecycleStage === 'Elite Compounder') {
+    maturityFadeFactor = clamp(.96 + eliteEvidence * .04, .96, 1);
+  }
+  ceiling *= maturityFadeFactor;
+  premiumFloor *= clamp(maturityFadeFactor + .03, .86, 1);
+
   const boundedCeiling = Math.max(ceiling, premiumFloor);
   const multiple = clamp(rawMultiple, premiumFloor, boundedCeiling);
   return {
@@ -129,6 +148,8 @@ function applyExitMultipleDiscipline({
     premiumEvidence,
     unsupportedPremium,
     valuationSupportFactor,
+    maturityFadeFactor,
+    eliteEvidence,
   };
 }
 
