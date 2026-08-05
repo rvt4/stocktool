@@ -33,6 +33,7 @@ const { classifyBusinessArchetype } = require('./engine/business-archetype-engin
 const { computeMoat } = require('./engine/moat-engine');
 const { deriveExitMultiple } = require('./engine/fade-engine');
 const { adaptiveMethodWeights } = require('./engine/adaptive-weight-engine');
+const { computeCapitalAllocationV2 } = require('./engine/capital-allocation-v2');
 
 function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
 function mean(arr) { return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
@@ -535,27 +536,18 @@ function analystReliability(stock) {
 }
 
 function capitalAllocationScore(stock) {
-  const yrs = stock.financials?.years || [];
-  if (yrs.length < 2) return { score: 50, signals: ['Limited capital-allocation history'] };
-  const last = yrs.at(-1) || {};
-  const prev = yrs.at(-2) || {};
-  const signals = [];
-  let score = 50;
-  const shares = yrs.slice(-4).map(y => y.sharesOutTTM).filter(x => x > 0);
-  const dilution = shares.length >= 2 ? cagr(shares[0], shares.at(-1), shares.length - 1) : null;
-  if (dilution != null && dilution <= -0.01) { score += 15; signals.push('Net share count declining'); }
-  else if (dilution != null && dilution >= 0.03) { score -= 18; signals.push('Meaningful shareholder dilution'); }
-  const debtChange = prev.longTermDebt > 0 ? (last.longTermDebt - prev.longTermDebt) / prev.longTermDebt : null;
-  if (debtChange != null && debtChange <= -0.10) { score += 10; signals.push('Debt declining'); }
-  else if (debtChange != null && debtChange >= 0.25) { score -= 10; signals.push('Debt rising quickly'); }
-  const avgRoic = mean(yrs.slice(-3).map(y => y.roic).filter(Number.isFinite));
-  if (avgRoic != null && avgRoic >= 0.20) { score += 15; signals.push('High returns on invested capital'); }
-  else if (avgRoic != null && avgRoic < 0.06) { score -= 12; signals.push('Low returns on invested capital'); }
-  const payout = stock.valuation?.dividendYield || 0;
-  if (payout > 0.02 && last.fcf > 0) { score += 5; signals.push('Dividend supported by free cash flow'); }
-  const sbcIntensity = last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : 0;
-  if (sbcIntensity > 0.12) { score -= 12; signals.push('Heavy stock-based compensation'); }
-  return { score: Math.round(clamp(score, 0, 100)), signals };
+  // V44: use the shared evidence-aware capital-allocation engine. The legacy
+  // implementation below this valuation layer only saw a narrow subset of fields,
+  // which caused almost every company to fall back to 55 (50 neutral + a dividend
+  // bonus). Keeping one canonical engine prevents the valuation result from
+  // overwriting the richer score later in the pipeline.
+  const result = computeCapitalAllocationV2(stock);
+  return {
+    ...result,
+    score: Math.round(clamp(Number(result?.score ?? 50), 0, 100)),
+    signals: Array.isArray(result?.signals) ? result.signals : [],
+    flags: Array.isArray(result?.flags) ? result.flags : [],
+  };
 }
 
 function ownerEarningsFromProjection(stock, model) {
@@ -1090,7 +1082,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '37.0-consensus-dilution-margin-guards', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '44.0-canonical-capital-allocation', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
