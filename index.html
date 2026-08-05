@@ -74,6 +74,7 @@
         <th data-key="category">Category</th>
         <th data-key="rating">Rating</th>
         <th data-key="probabilityWeightedCAGR">PW CAGR</th>
+        <th data-key="expectedAlpha">Alpha</th>
         <th data-key="bearCAGR">Bear</th>
         <th data-key="baseCAGR">Base</th>
         <th data-key="bullCAGR">Bull</th>
@@ -398,6 +399,7 @@ function render() {
       <td>${s.category}</td>
       <td><span class="badge ${ratingClass(s.rating)}">${s.rating}</span></td>
       <td>${s.probabilityWeightedCAGR == null ? returnDisplay : `<span class="${s.probabilityWeightedCAGR >= .15 ? 'pos' : 'neg'}">${pct(s.probabilityWeightedCAGR)}</span>`}</td>
+      <td class="${(s.expectedAlpha ?? ((s.probabilityWeightedCAGR ?? s.expectedReturn ?? 0) - .10)) >= 0 ? 'pos' : 'neg'}">${pct(s.expectedAlpha ?? ((s.probabilityWeightedCAGR ?? s.expectedReturn ?? 0) - .10))}</td>
       <td class="neg">${pct(s.bearCAGR)}</td>
       <td>${pct(s.baseCAGR)}</td>
       <td class="pos">${pct(s.bullCAGR)}</td>

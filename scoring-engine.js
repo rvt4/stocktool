@@ -877,10 +877,16 @@ function scoreStock(stock) {
     pricingPowerSignals: pricingPower.signals,
     capitalAllocationScore: stock.valuation.capitalAllocation?.score ?? null,
     capitalAllocationSignals: stock.valuation.capitalAllocation?.signals ?? [],
+    // Preserve the full canonical object for the post-scoring decision layer.
+    // V44 only kept the scalar score, so decision-system-v30 recomputed from a
+    // stripped record with no financial history and collapsed every company to 55.
+    capitalAllocation: stock.valuation.capitalAllocation ?? null,
     analystReliability: stock.valuation.analystReliability ?? null,
     reverseDCFGap: stock.valuation.reverseDCFGap ?? null,
     fundamentalGrowthRate,
     expectedReturn,
+    // Expected excess return versus the model's long-run 10% equity hurdle.
+    expectedAlpha: expectedReturn != null ? expectedReturn - 0.10 : null,
     riskAdjustedReturn,
     scenarioAnalysis: stock.valuation.scenarioAnalysis ?? null,
     expectedReturnProfile: stock.valuation.expectedReturnProfile ?? null,
