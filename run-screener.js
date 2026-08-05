@@ -332,6 +332,7 @@ async function run() {
     stock.valuation.intrinsicValue = result.intrinsicValue;
     stock.valuation.marketValue = result.marketValue;
     stock.valuation.valuationConsensus = result.valuationConsensus;
+    stock.valuation.primaryValuation = result.primaryValuation;
     stock.valuation.ownerEarningsReturn = result.ownerEarningsReturn;
     stock.valuation.returnEngineV2 = result.returnEngineV2;
     stock.valuation.marketExpectations = result.marketExpectations;

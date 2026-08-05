@@ -919,6 +919,7 @@ function scoreStock(stock) {
     projectionAssumptions: stock.valuation.projectionAssumptions ?? null,
     valuationMethodAudits: stock.valuation.methodAudits ?? null,
     fiveYearPriceTarget: stock.valuation.fiveYearPriceTarget ?? null,
+    primaryValuation: stock.valuation.primaryValuation ?? stock.valuation.fiveYearPriceTarget?.primaryValuation ?? null,
     analystEstimates: stock.analystEstimates ?? null,
     currentPrice: stock.price.current ?? null,
     fairValueEstimate: stock.valuation.fairValueEstimate ?? null,

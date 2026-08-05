@@ -1005,7 +1005,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   // consensus remains available for audit, but only business-appropriate methods
   // drive fair value, future target, and expected return.
   const primaryValuation = selectedValuation({
-    stock, category, lifecycle, methodResults: exitResults, model,
+    stock, category, lifecycle, methodResults: exitResults, model, calibration,
   });
   const legacyPriceTarget = fiveYearPriceTargetCAGR(stock, model, exitResults, combined.effectiveWeights);
   const selectedExitPrice = primaryValuation?.actionableExitValue ?? legacyPriceTarget.exitPrice;

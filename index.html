@@ -323,6 +323,10 @@ ${s.ownerEarningsReturn ? `<div><strong>V20 primary model:</strong> ${s.ownerEar
 <div><strong>Fundamental CAGR:</strong> ${pct(s.fundamentalGrowthRate)}</div>
 <div><strong>Valuation impact:</strong> ${pct((s.expectedReturn ?? 0) - (s.fundamentalGrowthRate ?? 0))}</div>
 <div><strong>Agreement:</strong> ${s.methodAgreementScore ?? '—'}/100</div>
+<div><strong>Rerating probability:</strong> ${s.primaryValuation?.reratingProbability != null ? pct(s.primaryValuation.reratingProbability) : '—'}</div>
+<div><strong>Probability-weighted valuation contribution:</strong> ${s.primaryValuation?.probabilityWeightedValuationDrag != null ? pct(s.primaryValuation.probabilityWeightedValuationDrag) : '—'}</div>
+<div><strong>Operating return anchor:</strong> ${s.primaryValuation?.operatingAnchorForRerating != null ? pct(s.primaryValuation.operatingAnchorForRerating) : '—'}</div>
+<div><strong>Valuation blend:</strong> ${s.primaryValuation?.robustBlend ? 'Robust geometric / winsorized' : 'Legacy weighted average'}</div>
 <div><strong>Confidence:</strong> ${s.confidenceScore ?? '—'}/100</div>
 <div><strong>Calibration:</strong> ${s.calibrationActive ? 'Active' : 'Collecting history'} (${s.calibration?.observationCount ?? 0} observations)</div>
 <div><strong>Suggested max weight:</strong> ${pct(s.portfolioProfile?.suggestedMaxWeight)}</div>
