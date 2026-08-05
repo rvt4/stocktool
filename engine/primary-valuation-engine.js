@@ -21,12 +21,61 @@ function agreementInfluence(score) {
   return 1.00;
 }
 const { resolveInstitutionalValuationModel, specialistReliabilityAdjustment } = require('./institutional-valuation-dispatcher');
+const { adaptiveMethodWeights } = require('./adaptive-weight-engine');
 const median = values => {
   const a = values.filter(finite).map(Number).sort((x, y) => x - y);
   if (!a.length) return null;
   const m = Math.floor(a.length / 2);
   return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
 };
+
+
+function weightedMedian(rows, field = 'presentValue') {
+  const a = (rows || []).filter(x => finite(x?.[field]) && Number(x.weight) > 0)
+    .map(x => ({ value: Number(x[field]), weight: Number(x.weight) }))
+    .sort((x, y) => x.value - y.value);
+  const total = a.reduce((s, x) => s + x.weight, 0);
+  if (!(total > 0)) return null;
+  let running = 0;
+  for (const x of a) {
+    running += x.weight;
+    if (running >= total / 2) return x.value;
+  }
+  return a.at(-1)?.value ?? null;
+}
+
+function robustWeightedValue(rows, field) {
+  const center = weightedMedian(rows, field);
+  if (!(center > 0)) return null;
+  // Winsorize each method around the weighted median before using a geometric
+  // blend. This preserves method information while preventing a single heroic
+  // or broken valuation from dominating the fair value.
+  const prepared = rows.filter(x => finite(x?.[field]) && Number(x[field]) > 0 && Number(x.weight) > 0)
+    .map(x => ({ value: clamp(Number(x[field]), center * .45, center * 2.20), weight: Number(x.weight) }));
+  const total = prepared.reduce((s, x) => s + x.weight, 0);
+  if (!(total > 0)) return null;
+  return Math.exp(prepared.reduce((s, x) => s + (x.weight / total) * Math.log(x.value), 0));
+}
+
+function reratingProbability({ rawValuationDrag, agreementScore, quality, premiumPersistence, forecastReliability, extremeValuation, profileName }) {
+  if (!finite(rawValuationDrag) || Math.abs(rawValuationDrag) < .002) return 0;
+  const agreement = clamp(Number(agreementScore || 0) / 100, 0, 1);
+  const q = clamp(Number(quality || 0), 0, 1);
+  const persistence = clamp(Number(premiumPersistence || 0), 0, 1);
+  const reliability = clamp(Number(forecastReliability || 0), 0, 1);
+  const extreme = clamp(Number(extremeValuation || 0), 0, 1);
+  const isNegative = rawValuationDrag < 0;
+
+  if (isNegative) {
+    // Compression is not certain. It becomes more likely when valuation is truly
+    // extreme and methods agree, and less likely for durable premium businesses.
+    const premiumDefense = q * .30 + persistence * .35 + reliability * .20 +
+      (/quality-compounder|software|innovation/.test(String(profileName || '')) ? .10 : 0);
+    return clamp(.18 + agreement * .34 + extreme * .34 - premiumDefense * .34, .10, .82);
+  }
+  // Positive rerating also deserves skepticism; cheapness must be corroborated.
+  return clamp(.14 + agreement * .42 + reliability * .15 + q * .08 - extreme * .08, .10, .72);
+}
 
 const METHOD_LABELS = {
   dcf: 'DCF', dcfSBCAdjusted: 'SBC-adjusted DCF', ownerEarnings: 'Owner Earnings',
@@ -152,7 +201,7 @@ function qualityContext(stock, lifecycle = {}) {
   return { quality, moat, pricing, persistence, reliability, economic, compounder };
 }
 
-function selectedValuation({ stock, category, lifecycle, methodResults, model }) {
+function selectedValuation({ stock, category, lifecycle, methodResults, model, calibration = null }) {
   const profile = profileFor(stock, category, lifecycle);
   const fullForecastYears = Math.max(1, Number(model?.projection?.length) || 5);
   const investmentYears = Math.min(5, fullForecastYears);
@@ -172,15 +221,22 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
   if (all.length < 2) return null;
   const centerPresent = median(all.map(x => x.presentValue));
   const centerFuture = median(all.map(x => x.futureValue));
+  const adaptive = adaptiveMethodWeights({
+    industry: stock?.valuation?.industryModel?.model || 'general',
+    category,
+    startingWeights: profile.weights,
+    availableKeys: all.map(x => x.key),
+    calibration,
+  });
   let rows = all.map(x => ({
     ...x,
     reliability: reliability(x.key, x.presentValue, x.futureValue, centerPresent, centerFuture, profile, stock),
-  })).map(x => ({ ...x, rawWeight: (profile.weights[x.key] || 0) * x.reliability }));
+  })).map(x => ({ ...x, rawWeight: (adaptive.weights[x.key] || 0) * x.reliability }));
   rows = normalizeRows(rows).filter(x => x.weight >= .035);
   rows = normalizeRows(rows);
 
-  const fairValueToday = rows.reduce((s, x) => s + x.presentValue * x.weight, 0);
-  const rawExitValue = rows.reduce((s, x) => s + x.futureValue * x.weight, 0);
+  const fairValueToday = robustWeightedValue(rows, 'presentValue');
+  const rawExitValue = robustWeightedValue(rows, 'futureValue');
   const currentPrice = Number(stock?.price?.current);
   const years = investmentYears;
   const dividendYield = clamp(Number(stock?.valuation?.dividendYield || 0), 0, .12);
@@ -249,15 +305,35 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
   const eliteOperatingSetup = quality.quality >= .65 && quality.reliability >= .52 &&
     quality.persistence >= .52 && forwardGrowth >= .20;
 
-  // When valuation methods disagree, treat the blended valuation as weak
-  // evidence rather than a precise forecast. Shrink both positive rerating and
-  // negative compression toward the operating return anchor. This avoids a
-  // broken outlier DCF creating either a false bargain or a false disaster.
+  // Valuation rerating is probabilistic, not certain. Separate the operating
+  // return anchor from the raw valuation contribution, then probability-weight
+  // that contribution based on agreement, forecast evidence, valuation extremity,
+  // and premium persistence.
   let disagreementShrinkApplied = false;
   let preAgreementCAGR = adjustedCAGR;
-  if (finite(adjustedCAGR) && finite(operatingCAGR) && agreementWeight < 1) {
-    const operatingAnchor = clamp(operatingCAGR + dividendYield, -.25, dynamicBaseCeiling);
-    adjustedCAGR = operatingAnchor + (adjustedCAGR - operatingAnchor) * agreementWeight;
+  let reratingProbabilityValue = null;
+  let probabilityWeightedValuationDrag = null;
+  let operatingAnchorForRerating = null;
+  const forwardPeForProbability = Number(stock?.valuation?.forwardPe ?? stock?.valuation?.pe ?? 0);
+  const evRevenueForProbability = Number(stock?.valuation?.evRevenue ?? 0);
+  const extremeValuationForProbability = clamp(Math.max(
+    forwardPeForProbability > 0 ? (forwardPeForProbability - 38) / 82 : 0,
+    evRevenueForProbability > 0 ? (evRevenueForProbability - 8) / 24 : 0
+  ), 0, 1);
+  if (finite(adjustedCAGR) && finite(operatingCAGR)) {
+    operatingAnchorForRerating = clamp(operatingCAGR + dividendYield, -.25, dynamicBaseCeiling);
+    const fullValuationDrag = adjustedCAGR - operatingAnchorForRerating;
+    reratingProbabilityValue = reratingProbability({
+      rawValuationDrag: fullValuationDrag,
+      agreementScore,
+      quality: quality.quality,
+      premiumPersistence: quality.persistence,
+      forecastReliability: quality.reliability,
+      extremeValuation: extremeValuationForProbability,
+      profileName: profile.name,
+    });
+    probabilityWeightedValuationDrag = fullValuationDrag * reratingProbabilityValue;
+    adjustedCAGR = operatingAnchorForRerating + probabilityWeightedValuationDrag;
     disagreementShrinkApplied = Math.abs(adjustedCAGR - preAgreementCAGR) > 1e-9;
   }
 
@@ -324,6 +400,7 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
     specialistNotes: profile.specialistNotes || [],
     primaryMethods: profile.primary,
     supportingMethods: profile.support,
+    adaptiveMethodWeights: adaptive,
     selectedMethods: rows.map(x => ({
       method: x.key, label: METHOD_LABELS[x.key] || x.key,
       weight: x.weight, reliability: x.reliability,
@@ -376,6 +453,11 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model })
     rawValuationDrag,
     valuationDragFloor,
     maxTrustedNegativeDrag,
+    reratingProbability: reratingProbabilityValue,
+    probabilityWeightedValuationDrag,
+    operatingAnchorForRerating,
+    extremeValuationForProbability,
+    robustBlend: true,
   };
 }
 
