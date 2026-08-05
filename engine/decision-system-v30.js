@@ -281,6 +281,26 @@ function applyDecisionSystemV30(stocks) {
       mosProfile,
     };
     stock.probabilityProfile = probability;
+    const baseScenario = n(stock.baseCAGR, returnProfile.actionable);
+    const bearScenario = n(stock.bearCAGR, baseScenario - .05);
+    const bullScenario = n(stock.bullCAGR, baseScenario + .06);
+    const scenarioRange = Math.max(0, bullScenario - bearScenario);
+    const forecastEvidence = clamp(
+      components.confidence * .46 + n(stock.methodAgreementScore, n(stock.valuation?.methodAgreementScore, 50)) * .24 +
+      quality * .18 + (100 - clamp(scenarioRange * 220, 0, 100)) * .12,
+      0, 100
+    );
+    stock.forecastConfidenceScore = Math.round(forecastEvidence);
+    stock.forecastConfidenceLabel = forecastEvidence >= 86 ? 'Very High'
+      : forecastEvidence >= 74 ? 'High'
+        : forecastEvidence >= 60 ? 'Medium'
+          : forecastEvidence >= 45 ? 'Low' : 'Speculative';
+    stock.scenarioAsymmetry = {
+      downsideSpread: baseScenario - bearScenario,
+      upsideSpread: bullScenario - baseScenario,
+      skew: (bullScenario - baseScenario) - (baseScenario - bearScenario),
+      range: scenarioRange,
+    };
     stock.beatMarketProbability = Math.round((probability.pBeatMarket ?? probability.pPositiveReturn) * 100);
     // Preserve the legacy field for compatibility, but make its meaning explicit
     // and actionable in the dashboard.

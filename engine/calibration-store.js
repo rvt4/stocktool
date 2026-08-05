@@ -55,7 +55,7 @@ function compactPrediction(stock, asOf = new Date()) {
   const growth = projection?.growthModel?.assumptions || {};
   const category = valuation.category || stock.category || null;
   const industry = valuation.industryModel?.model || valuation.industryModel?.key || 'general';
-  const modelVersion = projection.version || process.env.MODEL_VERSION || 'v42-calibration-foundation';
+  const modelVersion = process.env.MODEL_VERSION || projection.version || 'v47';
 
   const payload = {
     ticker: String(stock.ticker || '').toUpperCase(),
@@ -69,22 +69,35 @@ function compactPrediction(stock, asOf = new Date()) {
     sector: stock.sector || null,
     market_cap: finite(valuation.marketCap ?? stock.marketCap),
     rating: stock.rating || null,
-    confidence: finite(stock.confidenceScore ?? valuation.confidence ?? profile.confidence),
+    confidence: finite(stock.forecastConfidenceScore ?? stock.confidenceScore ?? valuation.confidence ?? profile.confidence),
+    forecast_confidence_label: stock.forecastConfidenceLabel || null,
+    investment_score: finite(stock.investmentScore ?? stock.portfolioManagerScore),
     ic_score: finite(stock.icScore ?? valuation.investmentCommittee?.score),
     quality_score: finite(stock.qualityScore ?? valuation.economicQuality?.score ?? valuation.economicQuality),
+    moat_score: finite(stock.componentScores?.moat ?? valuation.moat?.score),
     pricing_score: finite(stock.pricingPowerScore ?? valuation.pricingPowerV2?.score),
-    protection_score: finite(stock.protectionScore ?? valuation.downside?.score),
+    protection_score: finite(stock.protectionScore ?? stock.downsideProtectionScore ?? valuation.downside?.protectionScore ?? valuation.downside?.score),
+    capital_allocation_score: finite(stock.capitalAllocationScore ?? stock.capitalAllocation?.score ?? valuation.capitalAllocation?.score),
     success_probability: pct(stock.successProbability ?? profile.successProbability),
     expected_cagr: pct(profile.expectedCAGR ?? stock.expectedReturn),
     risk_adjusted_cagr: pct(profile.riskAdjustedCAGR),
+    expected_alpha: pct(stock.expectedAlpha ?? ((profile.expectedCAGR ?? stock.expectedReturn) != null ? (profile.expectedCAGR ?? stock.expectedReturn) - .10 : null)),
     bear_cagr: pct(profile.bearCAGR ?? scenario.downsideCAGR),
     base_cagr: pct(profile.baseCAGR ?? scenario.baseCAGR),
     bull_cagr: pct(profile.bullCAGR ?? scenario.upsideCAGR),
+    scenario_downside_spread: pct(stock.baseCAGR != null && stock.bearCAGR != null ? stock.baseCAGR - stock.bearCAGR : null),
+    scenario_upside_spread: pct(stock.bullCAGR != null && stock.baseCAGR != null ? stock.bullCAGR - stock.baseCAGR : null),
     fundamental_cagr: pct(valuation.returnEngineV2?.fundamentalCAGR ?? valuation.ownerEarningsReturn?.fundamentalCAGR),
     fair_value: finite(valuation.fairValueEstimate),
     five_year_target: finite(valuation.fiveYearPriceTarget),
     required_mos: pct(stock.requiredMarginOfSafety ?? valuation.requiredMarginOfSafety),
     margin_of_safety: pct(stock.marginOfSafety ?? valuation.marginOfSafety),
+    pe: finite(stock.pe ?? valuation.pe ?? stock.metrics?.pe),
+    ev_ebit: finite(stock.evEbit ?? valuation.evEbit ?? stock.metrics?.evEbit),
+    ev_fcf: finite(stock.evFcf ?? valuation.evFcf ?? stock.metrics?.evFcf),
+    price_to_fcf: finite(stock.pFcf ?? valuation.pFcf ?? stock.metrics?.pFcf),
+    analyst_revenue_growth: pct(stock.analystEstimates?.revenueGrowthNextYear ?? stock.analystEstimates?.revenueGrowth),
+    analyst_eps_growth: pct(stock.analystEstimates?.epsGrowthNextYear ?? stock.analystEstimates?.epsGrowth),
     revenue: finite(latest.revenue),
     eps: finite(latest.eps),
     fcf: finite(latest.fcf ?? latest.freeCashFlow),
@@ -98,6 +111,7 @@ function compactPrediction(stock, asOf = new Date()) {
     discount_rate: pct(valuation.returnEngineV2?.discountRate ?? valuation.projectionAssumptions?.discountRate),
     terminal_growth: pct(valuation.returnEngineV2?.terminalGrowth ?? valuation.projectionAssumptions?.terminalGrowth),
     method_values: methodRows(stock),
+    return_attribution: profile.returnAttribution || stock.returnAttribution || null,
     assumptions: {
       lifecycle: valuation.lifecycle || null,
       moat: valuation.moat || null,
