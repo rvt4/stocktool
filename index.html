@@ -326,6 +326,10 @@ ${s.ownerEarningsReturn ? `<div><strong>V20 primary model:</strong> ${s.ownerEar
 <div><strong>Rerating probability:</strong> ${s.primaryValuation?.reratingProbability != null ? pct(s.primaryValuation.reratingProbability) : '—'}</div>
 <div><strong>Probability-weighted valuation contribution:</strong> ${s.primaryValuation?.probabilityWeightedValuationDrag != null ? pct(s.primaryValuation.probabilityWeightedValuationDrag) : '—'}</div>
 <div><strong>Operating return anchor:</strong> ${s.primaryValuation?.operatingAnchorForRerating != null ? pct(s.primaryValuation.operatingAnchorForRerating) : '—'}</div>
+<div><strong>Modeled growth anchor:</strong> ${s.primaryValuation?.modeledGrowthAnchor != null ? pct(s.primaryValuation.modeledGrowthAnchor) : '—'}</div>
+<div><strong>Market-implied growth:</strong> ${s.primaryValuation?.marketImpliedGrowth != null ? pct(s.primaryValuation.marketImpliedGrowth) : '—'}</div>
+<div><strong>Expectations gap:</strong> ${s.primaryValuation?.expectationsGap != null ? pct(s.primaryValuation.expectationsGap) : '—'}</div>
+<div><strong>Expectations adjustment:</strong> ${s.primaryValuation?.marketExpectationsAdjustment != null ? pct(s.primaryValuation.marketExpectationsAdjustment) : '—'}</div>
 <div><strong>Canonical valuation:</strong> ${s.primaryValuation?.unifiedForecastLinkedValuation ? 'Unified forecast / target-linked PV' : 'Legacy independent blend'}</div>
 <div><strong>Implied discount rate:</strong> ${s.primaryValuation?.impliedDiscountRate != null ? pct(s.primaryValuation.impliedDiscountRate) : '—'}</div>
 <div><strong>PV of future target:</strong> ${s.primaryValuation?.presentValueOfExit == null ? '—' : '$' + num(s.primaryValuation.presentValueOfExit)}</div>

@@ -987,6 +987,32 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   // based on today's normalized owner earnings must not dominate an inflecting
   // business whose forecast explicitly models a multi-year margin transition.
   stock.valuation.businessForecast = model.growthModel?.assumptions || null;
+  // V51 market-expectations calibration must be available before the primary
+  // valuation is selected. Reverse DCF is only a modest underwriting input, but
+  // it is useful for distinguishing genuine operating upside from growth that is
+  // already embedded in the current price.
+  const currentPrice = Number(stock.price?.current);
+  const lastForExpectations = stock.financials.years.at(-1) || {};
+  const expectationsDiscountRate = getDynamicDiscountRate(stock, category);
+  const expectationsTerminalGrowth = getDynamicTerminalGrowth(stock, category);
+  let preValuationMarketImpliedGrowth = null;
+  let preValuationMarketImpliedGrowthNote = null;
+  if (lastForExpectations.fcf > 0 && lastForExpectations.sharesOutTTM > 0 && currentPrice > 0) {
+    const implied = solveImpliedGrowth({
+      fcfBase: lastForExpectations.fcf,
+      terminalGrowth: expectationsTerminalGrowth,
+      discountRate: expectationsDiscountRate,
+      years: 10,
+      netDebt: (lastForExpectations.longTermDebt || 0) - (lastForExpectations.cash || 0),
+      sharesOut: lastForExpectations.sharesOutTTM,
+      targetPricePerShare: currentPrice,
+    });
+    preValuationMarketImpliedGrowth = implied.impliedGrowth;
+    preValuationMarketImpliedGrowthNote = implied.reason !== 'converged' ? implied.reason : null;
+  }
+  stock.valuation.marketImpliedGrowth = preValuationMarketImpliedGrowth;
+  stock.valuation.marketImpliedGrowthNote = preValuationMarketImpliedGrowthNote;
+
   const dcf = dcfFromProjection(stock, model, { sbcAdjusted: false });
   const dcfSBCAdjusted = dcfFromProjection(stock, model, { sbcAdjusted: true });
   const ownerEarnings = ownerEarningsFromProjection(stock, model);
@@ -1035,30 +1061,21 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     dividendsReceived: returnEngineV2.dividendsReceived ?? legacyPriceTarget.dividendsReceived ?? 0,
     totalFutureValue: returnEngineV2.totalFutureValue ?? null,
     breakdown: returnEngineV2.breakdown,
-    returnEngineVersion: 'unified-forecast-linked-valuation-v50',
+    returnEngineVersion: 'expectations-calibrated-unified-valuation-v51',
     primaryValuation,
     ownerEarningsValidationCAGR: ownerEarningsReturn.expectedCAGR,
     fundamentalBusinessCAGR: returnEngineV2.fundamentalCAGR,
     multipleDominated: returnEngineV2.multipleDominated,
   };
-  const currentPrice = stock.price.current;
   const finalFairValue = primaryValuation?.fairValueToday ?? consensus.actionableFairValue ?? combined.blendedFairValue ?? dcf.fairValuePerShare ?? ownerEarnings.fairValuePerShare;
   const marginOfSafety = finalFairValue && currentPrice
     ? (finalFairValue - currentPrice) / finalFairValue : null;
 
   const last = stock.financials.years.at(-1) || {};
-  const discountRate = getDynamicDiscountRate(stock, category);
-  const terminalGrowth = getDynamicTerminalGrowth(stock, category);
-  let marketImpliedGrowth = null, marketImpliedGrowthNote = null;
-  if (last.fcf > 0 && last.sharesOutTTM > 0 && currentPrice > 0) {
-    const implied = solveImpliedGrowth({
-      fcfBase: last.fcf, terminalGrowth, discountRate, years: 10,
-      netDebt: (last.longTermDebt || 0) - (last.cash || 0), sharesOut: last.sharesOutTTM,
-      targetPricePerShare: currentPrice,
-    });
-    marketImpliedGrowth = implied.impliedGrowth;
-    marketImpliedGrowthNote = implied.reason !== 'converged' ? implied.reason : null;
-  }
+  const discountRate = expectationsDiscountRate;
+  const terminalGrowth = expectationsTerminalGrowth;
+  const marketImpliedGrowth = preValuationMarketImpliedGrowth;
+  const marketImpliedGrowthNote = preValuationMarketImpliedGrowthNote;
 
   const marketExpectations = buildMarketExpectations(stock, model, marketImpliedGrowth, returnEngineV2);
   const monteCarlo = simulateReturns(stock, returnEngineV2, combined.agreementScore, Math.round((businessProfile.forecastReliability || 0.5) * 100));
@@ -1082,7 +1099,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '44.0-canonical-capital-allocation', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '51.0-expectations-calibrated-forecast', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {

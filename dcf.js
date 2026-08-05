@@ -54,7 +54,22 @@ function getDynamicDiscountRate(stock, category = 'Value') {
   if (category === 'Turnaround') rate += 0.010;
   if (category === 'Cyclical') rate += 0.012;
   if (category === 'Dividend') rate -= 0.002;
-  return clamp(rate, 0.075, 0.125);
+
+  // V51 company-specific forecast risk. Analyst breadth alone is not enough:
+  // disagreement, fragile cash conversion, weak moat and unstable growth should
+  // demand a higher return, while durable cash-generative compounders earn a
+  // modest reduction. Keep the adjustment bounded to avoid false precision.
+  const analystReliability = Number(stock?.valuation?.analystReliability);
+  const agreement = Number(stock?.valuation?.methodAgreementScore);
+  const moat = Number(stock?.valuation?.moat?.score ?? stock?.componentScores?.moat);
+  const growthQuality = Number(stock?.valuation?.growthQuality?.score ?? stock?.growthQuality?.score);
+  const forecastPlausibility = Number(stock?.valuation?.businessForecast?.plausibilityScore ?? stock?.valuation?.projectionAssumptions?.growthModel?.plausibilityScore);
+  if (Number.isFinite(analystReliability)) rate += clamp((70 - analystReliability) / 100 * .010, -.002, .008);
+  if (Number.isFinite(agreement)) rate += clamp((65 - agreement) / 100 * .010, -.002, .007);
+  if (Number.isFinite(moat)) rate += clamp((60 - moat) / 100 * .008, -.003, .006);
+  if (Number.isFinite(growthQuality)) rate += clamp((60 - growthQuality) / 100 * .008, -.003, .006);
+  if (Number.isFinite(forecastPlausibility)) rate += clamp((65 - forecastPlausibility) / 100 * .010, -.002, .007);
+  return clamp(rate, 0.072, 0.135);
 }
 
 function getDynamicTerminalGrowth(stock, category = 'Value') {
