@@ -287,9 +287,36 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
   const revenueContribution = finite(revenueCAGR) ? clamp(revenueCAGR, -.12, .30) : null;
   const marginContribution = clamp(rawMarginCAGR || 0, -.04, .045);
   const shareContribution = finite(shareCAGR) ? clamp(shareCAGR, -.04, .035) : 0;
-  const operatingCAGR = finite(revenueContribution)
+  const rawOperatingCAGR = finite(revenueContribution)
     ? revenueContribution + marginContribution + shareContribution : null;
   const quality = qualityContext(stock, lifecycle);
+
+  // V51 market-expectations calibration. Reverse-DCF implied growth is not used
+  // as a target forecast; it is a price-expectations reference. When the market
+  // already requires more growth than the unified forecast, the operating anchor
+  // receives a meaningful haircut. When the forecast exceeds priced-in growth,
+  // only a small, reliability-weighted credit is granted to avoid double-counting
+  // valuation upside already represented by the selected methods.
+  const marketImpliedGrowth = Number(stock?.valuation?.marketImpliedGrowth);
+  const modeledGrowthAnchor = finite(revenueCAGR)
+    ? Number(revenueCAGR)
+    : Number(lifecycle?.forwardGrowth ?? stock?.valuation?.businessForecast?.currentOperatingRate);
+  const expectationsGap = finite(marketImpliedGrowth) && finite(modeledGrowthAnchor)
+    ? modeledGrowthAnchor - marketImpliedGrowth : null;
+  const expectationsReliability = clamp(
+    quality.reliability * .55 + quality.persistence * .25 + quality.quality * .20,
+    .20, 1
+  );
+  let marketExpectationsAdjustment = 0;
+  if (finite(expectationsGap)) {
+    if (expectationsGap < 0) {
+      marketExpectationsAdjustment = clamp(expectationsGap * (.30 + .25 * (1 - expectationsReliability)), -.045, 0);
+    } else {
+      marketExpectationsAdjustment = clamp(expectationsGap * (.10 + .10 * expectationsReliability), 0, .018);
+    }
+  }
+  const operatingCAGR = finite(rawOperatingCAGR)
+    ? rawOperatingCAGR + marketExpectationsAdjustment : null;
   const disagreement = median(rows.map(x => Math.abs(x.presentValue - methodBlendFairValueToday) / methodBlendFairValueToday)) || 0;
   const agreementScore = Math.round(clamp(100 - disagreement * 180, 0, 100));
   const agreementWeight = agreementInfluence(agreementScore);
@@ -431,7 +458,7 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
     : null;
 
   return {
-    version: 'v50-unified-forecast-linked-valuation',
+    version: 'v51-expectations-calibrated-unified-valuation',
     businessArchetype: lifecycle?.archetype || lifecycle?.economicModel?.archetype || null,
     profile: profile.name,
     profileLabel: profile.label || profile.name,
@@ -464,6 +491,12 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
       marginContribution,
       shareCAGR,
       shareContribution,
+      rawOperatingCAGR,
+      modeledGrowthAnchor,
+      marketImpliedGrowth: finite(marketImpliedGrowth) ? marketImpliedGrowth : null,
+      expectationsGap,
+      marketExpectationsAdjustment,
+      expectationsReliability,
     },
     // Exact audit trail for the displayed CAGR. The expected return is always
     // derived from the actionable value at the end of the investment period,
@@ -507,6 +540,11 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
     reratingProbability: reratingProbabilityValue,
     probabilityWeightedValuationDrag,
     operatingAnchorForRerating,
+    marketImpliedGrowth: finite(marketImpliedGrowth) ? marketImpliedGrowth : null,
+    modeledGrowthAnchor,
+    expectationsGap,
+    marketExpectationsAdjustment,
+    expectationsReliability,
     extremeValuationForProbability,
     robustBlend: true,
     unifiedForecastLinkedValuation: true,

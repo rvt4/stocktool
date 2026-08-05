@@ -115,7 +115,7 @@ function orderedScenarioValues({ current, years, baseExit, dividends, rawBearExi
 
 function buildScenarios(stock, v, integrity) {
   const category = typeof v.category === 'string' ? v.category : (v.category?.name || v.category?.stage || stock.valuation?.category || 'Value');
-  const spread = SPREAD[category] || SPREAD.Value;
+  const baseSpread = SPREAD[category] || SPREAD.Value;
   const profile = v.businessProfile || {};
   const base = v.projection || [];
   const current = Number(stock.price?.current);
@@ -139,6 +139,25 @@ function buildScenarios(stock, v, integrity) {
   const competition = assessCompetitivePressure(stock, profile, stock.valuation?.pricingPowerV2);
   const growthQuality = computeGrowthQuality(stock, cycle, capital, competition);
   const p = probs(stock, integrity, profile, cycle, growthQuality);
+  // V51 scenario widths are evidence-driven rather than nearly fixed by label.
+  // Low confidence, cyclicality, leverage and unstable growth widen the range;
+  // durable, well-supported forecasts narrow it without collapsing uncertainty.
+  const projectionGrowth = base.map(x => Number(x.growth)).filter(finite);
+  const growthMean = projectionGrowth.length ? projectionGrowth.reduce((a,b)=>a+b,0) / projectionGrowth.length : 0;
+  const growthVol = projectionGrowth.length > 1
+    ? Math.sqrt(projectionGrowth.reduce((a,x)=>a + Math.pow(x-growthMean,2),0) / projectionGrowth.length)
+    : .04;
+  const debtToEbitda = Number(stock?.financials?.years?.at(-1)?.debtToEbitda);
+  const leverageRisk = finite(debtToEbitda) ? clamp((debtToEbitda - 1.5) / 4.5, 0, 1) : .25;
+  const uncertaintyMultiplier = clamp(
+    .72 + (1 - p.confidence) * .95 + cycle.cyclicality * .45 + clamp(growthVol / .12, 0, 1) * .35 + leverageRisk * .20,
+    .70, 1.75
+  );
+  const spread = {
+    g: clamp(baseSpread.g * uncertaintyMultiplier, .018, .16),
+    m: clamp(baseSpread.m * uncertaintyMultiplier, .008, .075),
+    x: clamp(baseSpread.x * uncertaintyMultiplier, .07, .38),
+  };
 
   if (!(current > 0) || !(baseExit > 0) || !base.length) {
     return { probabilities: p, scenarios: null, expectedCAGR: null, cycleNormalization: cycle, capitalIntensity: capital, competitivePressure: competition, growthQuality };
@@ -181,6 +200,10 @@ function buildScenarios(stock, v, integrity) {
     capitalIntensity: capital,
     competitivePressure: competition,
     growthQuality,
+    scenarioSpread: spread,
+    scenarioUncertaintyMultiplier: uncertaintyMultiplier,
+    scenarioGrowthVolatility: growthVol,
+    scenarioLeverageRisk: leverageRisk,
   };
 }
 
