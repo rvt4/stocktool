@@ -24,6 +24,7 @@ const { computeReturnEngineV2 } = require('./engine/return-engine');
 const { selectedValuation } = require('./engine/primary-valuation-engine');
 const { buildOwnerEarningsReturn } = require('./engine/owner-earnings-return-engine');
 const { buildMarketExpectations } = require('./engine/market-expectations');
+const { computeExpectationRisk } = require('./engine/expectation-risk-engine');
 const { simulateReturns } = require('./engine/monte-carlo-engine');
 const { selectValuationMethods } = require('./engine/method-selection-engine');
 const { generateForecast } = require('./engine/forecast-engine');
@@ -1078,6 +1079,8 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   const marketImpliedGrowthNote = preValuationMarketImpliedGrowthNote;
 
   const marketExpectations = buildMarketExpectations(stock, model, marketImpliedGrowth, returnEngineV2);
+  const expectationRisk = computeExpectationRisk(stock, model, marketExpectations, primaryValuation, lifecycle, businessProfile);
+  stock.valuation.expectationRisk = expectationRisk;
   const monteCarlo = simulateReturns(stock, returnEngineV2, combined.agreementScore, Math.round((businessProfile.forecastReliability || 0.5) * 100));
 
   return {
@@ -1089,6 +1092,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     ownerEarningsReturn,
     returnEngineV2,
     marketExpectations,
+    expectationRisk,
     monteCarlo,
     agreementScore: combined.agreementScore, methodCount: combined.methodCount,
     effectiveWeights: combined.effectiveWeights, methodSelection: combined.methodSelection, reliabilityFlags: combined.reliabilityFlags,
@@ -1099,7 +1103,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '51.0-expectations-calibrated-forecast', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '52.0-expectation-risk-calibrated-forecast', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {

@@ -330,6 +330,8 @@ ${s.ownerEarningsReturn ? `<div><strong>V20 primary model:</strong> ${s.ownerEar
 <div><strong>Market-implied growth:</strong> ${s.primaryValuation?.marketImpliedGrowth != null ? pct(s.primaryValuation.marketImpliedGrowth) : '—'}</div>
 <div><strong>Expectations gap:</strong> ${s.primaryValuation?.expectationsGap != null ? pct(s.primaryValuation.expectationsGap) : '—'}</div>
 <div><strong>Expectations adjustment:</strong> ${s.primaryValuation?.marketExpectationsAdjustment != null ? pct(s.primaryValuation.marketExpectationsAdjustment) : '—'}</div>
+<div><strong>Expectation risk:</strong> ${s.expectationRisk?.score ?? '—'}/100 (${s.expectationRisk?.level ?? '—'})</div>
+<div><strong>Expectation-risk CAGR penalty:</strong> ${s.expectedReturnProfile?.expectationRiskPenalty != null ? pct(s.expectedReturnProfile.expectationRiskPenalty) : '—'}</div>
 <div><strong>Canonical valuation:</strong> ${s.primaryValuation?.unifiedForecastLinkedValuation ? 'Unified forecast / target-linked PV' : 'Legacy independent blend'}</div>
 <div><strong>Implied discount rate:</strong> ${s.primaryValuation?.impliedDiscountRate != null ? pct(s.primaryValuation.impliedDiscountRate) : '—'}</div>
 <div><strong>PV of future target:</strong> ${s.primaryValuation?.presentValueOfExit == null ? '—' : '$' + num(s.primaryValuation.presentValueOfExit)}</div>
@@ -341,6 +343,7 @@ ${s.ownerEarningsReturn ? `<div><strong>V20 primary model:</strong> ${s.ownerEar
 <div><strong>Suggested max weight:</strong> ${pct(s.portfolioProfile?.suggestedMaxWeight)}</div>
 </div>
 <div style="margin-top:8px"><strong>Market expectations:</strong> ${s.marketExpectations?.summary ?? '—'}</div>
+<div style="margin-top:8px"><strong>Expectation-risk warnings:</strong> ${(s.expectationRisk?.warnings || []).length ? s.expectationRisk.warnings.join(' · ') : 'None identified'}</div>
 <div style="margin-top:8px"><strong>Monte Carlo CAGR:</strong> ${s.monteCarlo ? `10th ${pct(s.monteCarlo.p10)} · Median ${pct(s.monteCarlo.median)} · 90th ${pct(s.monteCarlo.p90)}` : '—'}</div>
 </div>
 <div class="detail-section"><strong>Analyst consensus</strong>${analystHtml(s)}</div>

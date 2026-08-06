@@ -336,6 +336,7 @@ async function run() {
     stock.valuation.ownerEarningsReturn = result.ownerEarningsReturn;
     stock.valuation.returnEngineV2 = result.returnEngineV2;
     stock.valuation.marketExpectations = result.marketExpectations;
+    stock.valuation.expectationRisk = result.expectationRisk;
     stock.valuation.monteCarlo = result.monteCarlo;
 
     // Build quality inputs before scenarios so probabilities and premium persistence
