@@ -44,7 +44,7 @@ assert.ok(underpricedExpectations.marketExpectationsAdjustment > 0, 'low priced-
 assert.ok(underpricedExpectations.marketExpectationsAdjustment <= .018 + 1e-12, 'positive expectations credit must be capped');
 assert.ok(demandingExpectations.marketExpectationsAdjustment < 0, 'demanding priced-in growth should reduce the operating anchor');
 assert.ok(demandingExpectations.expectedCAGR < underpricedExpectations.expectedCAGR, 'higher market expectations must reduce expected CAGR all else equal');
-assert.ok(demandingExpectations.version.includes('v51'), 'V51 valuation version should be active');
+assert.ok(demandingExpectations.version.includes('v53'), 'V53 valuation version should be active');
 console.log('V51 expectations calibration passed', {
   favorable: underpricedExpectations.expectedCAGR,
   demanding: demandingExpectations.expectedCAGR,

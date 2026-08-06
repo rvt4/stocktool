@@ -195,6 +195,59 @@ function normalizeRows(rows) {
   return rows.map(x => ({ ...x, weight: total > 0 ? x.rawWeight / total : 0 }));
 }
 
+// V53: no valuation method should silently become the entire model merely
+// because the alternatives are missing or receive low reliability scores.
+// This preserves specialist models that intentionally use two methods while
+// preventing CAR-like 90%+ DCF concentration from masquerading as consensus.
+function capMethodConcentration(rows) {
+  if (!Array.isArray(rows) || rows.length < 2) return rows || [];
+  const maxWeight = rows.length >= 4 ? .55 : rows.length === 3 ? .65 : .78;
+  let prepared = rows.map(x => ({ ...x, rawWeight: Math.max(0, Number(x.rawWeight) || 0) }));
+  let remaining = 1;
+  const result = [];
+  const pending = [...prepared];
+  while (pending.length) {
+    const total = pending.reduce((sum, x) => sum + x.rawWeight, 0);
+    if (!(total > 0)) {
+      const equal = remaining / pending.length;
+      result.push(...pending.map(x => ({ ...x, weight: equal })));
+      break;
+    }
+    const over = pending.find(x => remaining * x.rawWeight / total > maxWeight + 1e-12);
+    if (!over) {
+      result.push(...pending.map(x => ({ ...x, weight: remaining * x.rawWeight / total })));
+      break;
+    }
+    result.push({ ...over, weight: maxWeight });
+    remaining -= maxWeight;
+    pending.splice(pending.indexOf(over), 1);
+  }
+  return result;
+}
+
+function maxCrediblePositiveRerating({ operatingAnchor, quality, agreementScore, methodConcentration, profileMaxRerating }) {
+  const op = Number(operatingAnchor);
+  const q = clamp(Number(quality || 0), 0, 1);
+  const agreement = clamp(Number(agreementScore || 0) / 100, 0, 1);
+  const concentration = clamp(Number(methodConcentration || 0), 0, 1);
+  const profileAllowance = clamp(Number(profileMaxRerating || .03), .005, .085);
+
+  // Slow or non-compounding businesses must not receive high-teens or 30%+
+  // annual returns purely from theoretical valuation normalization. Stronger
+  // operating businesses earn more rerating room, but still need corroboration.
+  let base;
+  if (!finite(op) || op <= .025) base = .055;
+  else if (op <= .06) base = .070;
+  else if (op <= .10) base = .085;
+  else if (op <= .16) base = .105;
+  else base = .125;
+
+  const qualityCredit = clamp((q - .50) * .055, -.018, .025);
+  const evidenceAdjustment = clamp((agreement - .60) * .035, -.020, .014);
+  const concentrationPenalty = concentration > .80 ? .025 : concentration > .68 ? .014 : 0;
+  return clamp(Math.max(profileAllowance, base + qualityCredit + evidenceAdjustment - concentrationPenalty), .035, .14);
+}
+
 function qualityContext(stock, lifecycle = {}) {
   const moat = clamp(Number(stock?.valuation?.moat?.score ?? 50) / 100, 0, 1);
   const pricing = clamp(Number(stock?.valuation?.pricingPowerV2?.score ?? stock?.pricingPowerScore ?? 50) / 100, 0, 1);
@@ -239,7 +292,8 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
     reliability: reliability(x.key, x.presentValue, x.futureValue, centerPresent, centerFuture, profile, stock),
   })).map(x => ({ ...x, rawWeight: (adaptive.weights[x.key] || 0) * x.reliability }));
   rows = normalizeRows(rows).filter(x => x.weight >= .035);
-  rows = normalizeRows(rows);
+  rows = capMethodConcentration(rows);
+  const maxMethodWeight = rows.reduce((m, x) => Math.max(m, Number(x.weight) || 0), 0);
 
   const methodBlendFairValueToday = robustWeightedValue(rows, 'presentValue');
   const rawExitValue = robustWeightedValue(rows, 'futureValue');
@@ -417,6 +471,20 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
         adjustedCAGR = Math.max(adjustedCAGR, valuationDragFloor);
       }
     }
+    // V53 return-driver plausibility guard. Fair value can still display large
+    // theoretical upside, but central expected CAGR may not assume that all of
+    // that gap closes within five years. This specifically prevents weak/flat
+    // businesses from posting 30%+ expected returns almost entirely from rerating.
+    if (finite(operatingAnchorForRerating) && adjustedCAGR > operatingAnchorForRerating) {
+      const crediblePositiveRerating = maxCrediblePositiveRerating({
+        operatingAnchor: operatingAnchorForRerating,
+        quality: quality.quality,
+        agreementScore,
+        methodConcentration: maxMethodWeight,
+        profileMaxRerating: profile.maxRerating,
+      });
+      adjustedCAGR = Math.min(adjustedCAGR, operatingAnchorForRerating + crediblePositiveRerating);
+    }
     adjustedCAGR = clamp(adjustedCAGR, -.35, dynamicBaseCeiling);
   }
   const actionableExitValue = finite(adjustedCAGR)
@@ -458,7 +526,7 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
     : null;
 
   return {
-    version: 'v51-expectations-calibrated-unified-valuation',
+    version: 'v53-rerating-disciplined-unified-valuation',
     businessArchetype: lifecycle?.archetype || lifecycle?.economicModel?.archetype || null,
     profile: profile.name,
     profileLabel: profile.label || profile.name,
@@ -546,9 +614,12 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
     marketExpectationsAdjustment,
     expectationsReliability,
     extremeValuationForProbability,
+    maxMethodWeight,
+    methodConcentrationCapped: maxMethodWeight <= (rows.length >= 4 ? .55 : rows.length === 3 ? .65 : .78) + 1e-9,
+    crediblePositiveReratingCap: finite(operatingAnchorForRerating) ? maxCrediblePositiveRerating({ operatingAnchor: operatingAnchorForRerating, quality: quality.quality, agreementScore, methodConcentration: maxMethodWeight, profileMaxRerating: profile.maxRerating }) : null,
     robustBlend: true,
     unifiedForecastLinkedValuation: true,
   };
 }
 
-module.exports = { selectedValuation, profileFor, agreementInfluence };
+module.exports = { selectedValuation, profileFor, agreementInfluence, capMethodConcentration, maxCrediblePositiveRerating };
