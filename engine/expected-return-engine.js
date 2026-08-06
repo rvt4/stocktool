@@ -57,7 +57,9 @@ function computeExpectedReturnProfile(stock, scenarioAnalysis, integrity) {
   const capitalAllocation = Number(stock?.capitalAllocationScore ?? stock?.valuation?.capitalAllocation?.score ?? 50);
   const durabilityComposite = clamp(moat * .45 + growthQuality * .35 + capitalAllocation * .20, 0, 100);
   const qualityHaircut = clamp((68 - durabilityComposite) / 100 * .09, 0, .045);
-  const riskAdjustedCAGR = expected - downsidePenalty - uncertaintyPenalty - instabilityPenalty - dataPenalty - qualityHaircut;
+  const expectationRisk = stock?.valuation?.expectationRisk || {};
+  const expectationRiskPenalty = clamp(Number(expectationRisk.cagrPenalty || 0), 0, .025);
+  const riskAdjustedCAGR = expected - downsidePenalty - uncertaintyPenalty - instabilityPenalty - dataPenalty - qualityHaircut - expectationRiskPenalty;
   const returnQualityScore = Math.round(clamp(
     ((riskAdjustedCAGR - 0.04) / 0.22) * 66 +
     evidenceConfidence * 24 +
@@ -79,6 +81,8 @@ function computeExpectedReturnProfile(stock, scenarioAnalysis, integrity) {
     instabilityPenalty,
     dataPenalty,
     qualityHaircut,
+    expectationRiskPenalty,
+    expectationRiskScore: expectationRisk.score ?? null,
     durabilityComposite,
     evidenceConfidence,
     forecastStability: stability,

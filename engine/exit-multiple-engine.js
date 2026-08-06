@@ -127,10 +127,25 @@ function applyExitMultipleDiscipline({
   ceiling *= maturityFadeFactor;
   premiumFloor *= clamp(maturityFadeFactor + .03, .86, 1);
 
+  // V52 expectation-risk maturity rule. Very expensive businesses whose exit
+  // growth falls below 30% cannot preserve a 40x+ terminal earnings multiple
+  // unless exceptional durability evidence supports it.
+  let slowingGrowthCompression = 1;
+  if (type === 'epsExit' && current > 40 && effectiveGrowth < .30) {
+    const justifiedMax = 30 + Math.max(0, effectiveGrowth - .15) * 35 + eliteEvidence * 5;
+    ceiling = Math.min(ceiling, clamp(justifiedMax, 28, 38));
+    slowingGrowthCompression = clamp(ceiling / Math.max(rawMultiple, 1), .55, 1);
+  }
+  if (type === 'ebitdaExit' && current > 30 && effectiveGrowth < .25) {
+    const justifiedMax = 18 + Math.max(0, effectiveGrowth - .12) * 28 + eliteEvidence * 4;
+    ceiling = Math.min(ceiling, clamp(justifiedMax, 17, 27));
+    slowingGrowthCompression = clamp(ceiling / Math.max(rawMultiple, 1), .55, 1);
+  }
+
   const boundedCeiling = Math.max(ceiling, premiumFloor);
   const multiple = clamp(rawMultiple, premiumFloor, boundedCeiling);
   return {
-    version: 'v40-evidence-supported-exit-discipline',
+    version: 'v52-expectation-risk-exit-discipline',
     multiple,
     rawMultiple,
     ceiling: boundedCeiling,
@@ -150,6 +165,7 @@ function applyExitMultipleDiscipline({
     valuationSupportFactor,
     maturityFadeFactor,
     eliteEvidence,
+    slowingGrowthCompression,
   };
 }
 
