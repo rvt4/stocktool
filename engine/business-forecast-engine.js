@@ -699,14 +699,39 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
           : 0.002 + 0.025 * broadLeverageSignal;
       target = Math.max(target, start + minimumExpansion);
     } else if (!lifecycle?.normalizeMargins) {
-      // Stable businesses may mean-revert gently, but never snap back to an old
-      // median merely because older low-margin years exist in the history.
-      const floor = Math.min(start, recentMedian ?? start) - 0.015;
-      target = Math.max(target, floor);
+      // V55 profitability-continuity invariant. Historical medians can describe
+      // an earlier business model (pre-scale platforms, pandemic-era insurers,
+      // turnarounds that have already normalized). In a non-deteriorating central
+      // case, old low-margin years are evidence, not an automatic destination.
+      // Permit ordinary mean reversion, but require evidence before forecasting
+      // a cliff in profitability while revenue is still growing.
+      const recentAnchor = recentMedian ?? start;
+      const evidenceAnchor = weightedMean([
+        { value: start, weight: 0.60 },
+        { value: recentAnchor, weight: 0.40 },
+      ]) ?? start;
+      const compressionAllowance = field === 'ebitda' ? 0.018 : field === 'fcf' ? 0.015 : 0.015;
+      const proportionalFloor = start >= 0
+        ? start * (field === 'ebitda' ? 0.72 : 0.70)
+        : start - compressionAllowance;
+      const continuityFloor = Math.max(
+        start - compressionAllowance,
+        evidenceAnchor - compressionAllowance,
+        proportionalFloor
+      );
+      target = Math.max(target, continuityFloor);
     }
 
     if (lifecycle?.normalizeMargins && !positiveOperatingSetup) {
-      target = longMedian ?? start;
+      // Normalization is reserved for evidence-backed cyclical/turnaround/
+      // financial cases. Even then, do not let a stale historical median create
+      // an unexplained profitability cliff unless the operating state is actually
+      // deteriorating.
+      const normalized = longMedian ?? start;
+      const normalizationFloor = deterioration
+        ? normalized
+        : Math.max(start - (field === 'ebitda' ? 0.030 : 0.025), start >= 0 ? start * 0.62 : start - 0.025);
+      target = Math.max(normalized, normalizationFloor);
     }
 
     // Analyst-anchored profitability floor. A profitable growth/compounder should
@@ -823,7 +848,7 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
     targets,
     diagnostics,
     assumptions: {
-      version: '37.0',
+      version: '55.0',
       avgGrowth3,
       avgGrowth5,
       durableGrowth,
@@ -837,7 +862,7 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
       dilutionCap,
       highQualityGrowth,
     },
-    source: 'v38_5_company_profile_margin_and_dilution_forecast',
+    source: 'v55_profitability_continuity_margin_forecast',
   };
 }
 module.exports = {
