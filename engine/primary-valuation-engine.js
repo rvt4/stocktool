@@ -425,25 +425,78 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
     .12, 1
   );
 
-  // V59 terminal-value anchor. The investor return is calculated directly from
-  // the independently modeled five-year exit value. Operating growth, expectations,
-  // and disagreement remain diagnostics/reliability inputs; they cannot manufacture
-  // a different CAGR and then back-solve a circular price target.
-  const adjustedCAGR = finite(rawCAGR) ? rawCAGR : null;
+  // V60 valuation sanity layer. The selected methods still independently produce
+  // fair value and a raw five-year exit value, but the *actionable* exit value cannot
+  // assume an implausible amount of multiple normalization. This is deliberately
+  // economics-driven (operating compounding + evidence + method concentration), not
+  // ticker-specific and not a flat CAGR cap. It removes the recurring 35% saturation
+  // while keeping genuinely high-growth businesses capable of high returns.
   const qualityPremium = clamp((quality.quality - .55) * .08 + (quality.persistence - .50) * .05, -.025, .055);
   const dynamicReratingAllowance = clamp(profile.maxRerating + qualityPremium, .005, .085);
   const dynamicBaseCeiling = clamp(profile.maxBase + Math.max(0, qualityPremium * .65), profile.maxBase, .30);
   const forwardGrowth = Number(lifecycle?.forwardGrowth ?? stock?.valuation?.businessForecast?.currentOperatingRate ?? 0);
   const eliteOperatingSetup = quality.quality >= .65 && quality.reliability >= .52 && quality.persistence >= .52 && forwardGrowth >= .20;
-  const rawValuationDrag = finite(rawCAGR) && finite(operatingCAGR) ? rawCAGR - (operatingCAGR + dividendYield) : null;
-  const valuationDragFloor = null;
-  const maxTrustedNegativeDrag = null;
-  const disagreementShrinkApplied = false;
-  const preAgreementCAGR = rawCAGR;
-  const reratingProbabilityValue = null;
-  const probabilityWeightedValuationDrag = rawValuationDrag;
   const operatingAnchorForRerating = finite(operatingCAGR) ? operatingCAGR + dividendYield : null;
-  const actionableExitValue = rawExitValue;
+  const rawValuationDrag = finite(rawCAGR) && finite(operatingAnchorForRerating) ? rawCAGR - operatingAnchorForRerating : null;
+  const preAgreementCAGR = rawCAGR;
+
+  let adjustedCAGR = finite(rawCAGR) ? rawCAGR : null;
+  let reratingSanityApplied = false;
+  let crediblePositiveReratingCap = null;
+  let credibleNegativeReratingFloor = null;
+  if (finite(adjustedCAGR) && finite(operatingAnchorForRerating)) {
+    crediblePositiveReratingCap = maxCrediblePositiveRerating({
+      operatingAnchor: operatingAnchorForRerating,
+      quality: quality.quality,
+      agreementScore,
+      methodConcentration: maxMethodWeight,
+      profileMaxRerating: profile.maxRerating,
+    });
+    const positiveLimited = capReratingDependentCAGR({
+      expectedCAGR: adjustedCAGR,
+      operatingAnchor: operatingAnchorForRerating,
+      agreementScore,
+      quality: quality.quality,
+      methodConcentration: maxMethodWeight,
+    });
+
+    // Negative rerating is also bounded. A strong operating business should not be
+    // assigned a deeply negative central return merely because a current premium is
+    // assumed to vanish almost completely. Weak evidence allows more downside, but
+    // the floor remains tied to business economics rather than a fixed stock label.
+    const agreement01 = clamp(agreementScore / 100, 0, 1);
+    const negativeBudget = clamp(
+      .11 + (1 - agreement01) * .055 + (1 - quality.quality) * .035 + (maxMethodWeight > .78 ? .02 : 0),
+      .09, .20
+    );
+    credibleNegativeReratingFloor = operatingAnchorForRerating - negativeBudget;
+    adjustedCAGR = Math.max(positiveLimited, credibleNegativeReratingFloor);
+
+    // Lifecycle base ceilings are soft evidence checks, not repeated hard values.
+    // Excess is compressed rather than clipped, which preserves cross-sectional
+    // ordering and avoids dozens of stocks landing on exactly the same CAGR.
+    const softCeiling = Math.max(dynamicBaseCeiling, operatingAnchorForRerating + crediblePositiveReratingCap);
+    if (adjustedCAGR > softCeiling) {
+      adjustedCAGR = softCeiling + (adjustedCAGR - softCeiling) * .15;
+    }
+    reratingSanityApplied = Math.abs(adjustedCAGR - rawCAGR) > 1e-9;
+  }
+
+  // Keep the displayed target and displayed CAGR mathematically identical. We are
+  // not back-solving fair value; only the five-year actionable target is normalized
+  // when the raw exit-method ensemble implies implausible rerating.
+  const actionableTotalEndingValue = finite(adjustedCAGR)
+    ? currentPrice * Math.pow(1 + adjustedCAGR, years)
+    : null;
+  const actionableExitValue = actionableTotalEndingValue != null
+    ? Math.max(.01, actionableTotalEndingValue - dividends)
+    : rawExitValue;
+  const valuationDragFloor = credibleNegativeReratingFloor;
+  const maxTrustedNegativeDrag = credibleNegativeReratingFloor;
+  const disagreementShrinkApplied = reratingSanityApplied;
+  const reratingProbabilityValue = null;
+  const probabilityWeightedValuationDrag = finite(adjustedCAGR) && finite(operatingAnchorForRerating)
+    ? adjustedCAGR - operatingAnchorForRerating : rawValuationDrag;
 
 
   // V59: fair value today and future exit value are independently produced by the
@@ -552,10 +605,11 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
     extremeValuationForProbability,
     maxMethodWeight,
     methodConcentrationCapped: maxMethodWeight <= (rows.length >= 4 ? .55 : rows.length === 3 ? .65 : .78) + 1e-9,
-    crediblePositiveReratingCap: finite(operatingAnchorForRerating) ? maxCrediblePositiveRerating({ operatingAnchor: operatingAnchorForRerating, quality: quality.quality, agreementScore, methodConcentration: maxMethodWeight, profileMaxRerating: profile.maxRerating }) : null,
+    crediblePositiveReratingCap,
     robustBlend: true,
     unifiedForecastLinkedValuation: false,
     terminalValueAnchored: true,
+    reratingSanityApplied,
   };
 }
 

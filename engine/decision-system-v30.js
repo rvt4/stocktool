@@ -14,15 +14,18 @@ function median(values) {
   return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
 }
 
+// V60: these are sanity reference bands, not hard output caps. Hard category caps
+// caused obvious saturation (many unrelated stocks landing on exactly 35.0%). The
+// primary valuation engine now handles rerating credibility from operating economics.
 const RETURN_CEILINGS = {
-  'Compounder': .32,
-  'Value': .35,
+  'Compounder': .28,
+  'Value': .24,
   'Growth': .30,
-  'Hyper Growth': .32,
-  'Dividend': .27,
-  'Turnaround': .25,
-  'Cyclical': .25,
-  'Unknown': .24,
+  'Hyper Growth': .34,
+  'Dividend': .22,
+  'Turnaround': .28,
+  'Cyclical': .24,
+  'Unknown': .22,
 };
 
 const MOS_CEILINGS = {
@@ -49,12 +52,15 @@ function buildActionableReturn(stock) {
   // price/share input from driving the displayed return and rating.
   const evidence = clamp(.30 + confidence / 250 + agreement / 500, .35, .90);
   let actionable = raw == null ? anchor : (anchor == null ? raw : anchor + (raw - anchor) * evidence);
-  const ceiling = RETURN_CEILINGS[stock.category] ?? .30;
+  const ceiling = RETURN_CEILINGS[stock.category] ?? .26;
   const extremeInput = [raw, base, canonical].some(v => Number.isFinite(v) && (v > .75 || v < -.75));
-  const wasCapped = Number.isFinite(actionable) && actionable > ceiling;
-  actionable = Number.isFinite(actionable) ? clamp(actionable, -.35, ceiling) : null;
+  const aboveReference = Number.isFinite(actionable) && actionable > ceiling;
+  // Do not hard-cap to the reference band. Compress only the excess so ordering is
+  // preserved and the table cannot accumulate at a single artificial ceiling.
+  if (aboveReference) actionable = ceiling + (actionable - ceiling) * .30;
+  actionable = Number.isFinite(actionable) ? clamp(actionable, -.45, .55) : null;
 
-  return { raw, anchor, actionable, ceiling, wasCapped, extremeInput, evidence };
+  return { raw, anchor, actionable, ceiling, wasCapped: aboveReference, extremeInput, evidence };
 }
 
 function buildActionableMOS(stock) {
@@ -161,17 +167,19 @@ function applyDecisionSystemV30(stocks) {
       stock.dataIntegrity = { ...(stock.dataIntegrity || {}), decisionIntegrityWarning: 'Extreme return input; verify price, share count and ticker mapping.' };
     }
 
-    // Scenarios are retained in order, but compressed around the actionable base so
-    // the table cannot show 70%-120% annualized outcomes as ordinary estimates.
+    // V60: preserve the independently modeled scenario engine. V27-V59 re-centered
+    // every stock around roughly -5%/+6%, which erased real business-specific
+    // asymmetry. Only repair missing or invalid ordering; never overwrite valid
+    // bear/base/bull outputs with mechanical spreads.
     if (Number.isFinite(returnProfile.actionable)) {
       const rawBase = n(stock.baseCAGR, returnProfile.actionable);
-      const rawBear = n(stock.bearCAGR, rawBase - .05);
-      const rawBull = n(stock.bullCAGR, rawBase + .06);
-      const bearSpread = clamp(rawBase - rawBear, .035, .12);
-      const bullSpread = clamp(rawBull - rawBase, .045, .14);
-      stock.baseCAGR = clamp((returnProfile.actionable + rawBase) / 2, -.35, returnProfile.ceiling + .02);
-      stock.bearCAGR = clamp(stock.baseCAGR - bearSpread, -.40, stock.baseCAGR - .02);
-      stock.bullCAGR = clamp(stock.baseCAGR + bullSpread, stock.baseCAGR + .02, returnProfile.ceiling + .08);
+      const rawBear = n(stock.bearCAGR, null);
+      const rawBull = n(stock.bullCAGR, null);
+      stock.baseCAGR = Number.isFinite(rawBase) ? rawBase : returnProfile.actionable;
+      stock.bearCAGR = Number.isFinite(rawBear) && rawBear < stock.baseCAGR
+        ? rawBear : stock.baseCAGR - Math.max(.025, Math.abs(stock.baseCAGR) * .25);
+      stock.bullCAGR = Number.isFinite(rawBull) && rawBull > stock.baseCAGR
+        ? rawBull : stock.baseCAGR + Math.max(.035, Math.abs(stock.baseCAGR) * .30);
     }
 
     const components = {

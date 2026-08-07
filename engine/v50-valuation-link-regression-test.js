@@ -42,12 +42,14 @@ assert.ok(result && result.terminalValueAnchored, 'V59 terminal-value anchor mus
 const reconstructedCagr = Math.pow(result.actionableExitValue / stock.price.current, 1 / result.years) - 1;
 assert.ok(Math.abs(reconstructedCagr - result.expectedCAGR) < 1e-10,
   'Expected CAGR must be derived from the independently modeled future target');
-assert.ok(Math.abs(result.actionableExitValue - result.rawExitValue) < 1e-10,
-  'Actionable exit value must equal the selected-method terminal valuation, not a CAGR-backsolved target');
+assert.ok(result.actionableExitValue > 0 && result.rawExitValue > 0,
+  'Both raw selected-method exit value and actionable exit value must remain auditable');
+assert.ok(result.actionableExitValue <= result.rawExitValue + 1e-10,
+  'V60 sanity normalization may reduce a rerating-dependent target but must never inflate it');
 assert.ok(Math.abs(result.fairValueToday - result.methodBlendFairValueToday) < 1e-10,
   'Fair value today must remain the independent selected-method present-value blend');
 
-console.log('V59 terminal-value regression passed', {
+console.log('V60 valuation-link regression passed', {
   fairValueToday: result.fairValueToday,
   futureTarget: result.actionableExitValue,
   expectedCAGR: result.expectedCAGR,

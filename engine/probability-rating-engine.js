@@ -49,11 +49,21 @@ function assignProbabilityRating(stock, components, probability) {
   const highGrowthEvidence=!highGrowth||(positiveFcfRate>=.60&&agreement>=55&&c>=72);
   const exceptionalEvidence=agreement>=65&&ic>=70&&!integrityWarning&&highGrowthEvidence;
   const strongEvidence=agreement>=50&&ic>=60&&!integrityWarning&&highGrowthEvidence;
+  // V60 rating invariants. A high-conviction label must satisfy the actual return
+  // and margin-of-safety hurdle shown in the screener, not merely a sector-relative
+  // composite. This prevents 14% names from becoming Strong Buy and prevents a Buy
+  // when the displayed MOS is below that company's required MOS.
+  const requiredMos=n(stock.requiredMarginOfSafety, n(stock.valuation?.businessEconomics?.requiredMarginOfSafety, .15));
+  const exceptionalReturn=Math.max(.18,n(g.exceptionalCagr,.18));
+  const strongReturn=Math.max(.15,n(g.strongCagr,.15));
+  const buyReturn=.12;
+  const mosPass=mos>=requiredMos;
+  const exceptionalMosPass=mos>=Math.max(requiredMos,.20);
   let rating='Hold'; let reason='Expected return and evidence do not clear a higher-conviction threshold.';
   if(probability.pPermanentLoss>.52 || er<-.06 || mos<-.40){rating='Sell';reason='Downside or overvaluation risk dominates the modeled return.';}
-  else if(q>=g.exceptionalQuality&&er>=g.exceptionalCagr&&mos>=.20&&c>=78&&r<=g.maxRisk&&probability.pBeat15Cagr>=.72&&bear>=-.05&&exceptionalEvidence&&expectationRisk<55){rating='Exceptional Buy';reason='Exceptional quality, valuation agreement, downside resilience and return probability all clear the high-conviction gates.';}
-  else if(q>=g.strongQuality&&er>=g.strongCagr&&mos>=.12&&c>=68&&r<=g.maxRisk+8&&probability.pBeat15Cagr>=.62&&strongEvidence&&expectationRisk<68){rating='Strong Buy';reason='Quality, valuation agreement and probability-weighted return clear the sector-specific high-conviction gates.';}
-  else if(er>=.115&&q>=62&&c>=55&&probability.pPositiveReturn>=.58&&!fragileValuation){rating='Buy';reason='Expected return is attractive, but one or more conviction gates remain below Strong Buy levels.';}
+  else if(q>=g.exceptionalQuality&&er>=exceptionalReturn&&exceptionalMosPass&&c>=78&&r<=g.maxRisk&&probability.pBeat15Cagr>=.72&&bear>=-.05&&exceptionalEvidence&&expectationRisk<55){rating='Exceptional Buy';reason='Exceptional quality, return, required margin of safety, valuation agreement and downside resilience clear every high-conviction gate.';}
+  else if(q>=g.strongQuality&&er>=strongReturn&&mosPass&&c>=68&&r<=g.maxRisk+8&&probability.pBeat15Cagr>=.62&&strongEvidence&&expectationRisk<68){rating='Strong Buy';reason='Quality, at least 15% expected return, required margin of safety and evidence clear the Strong Buy gates.';}
+  else if(er>=buyReturn&&mosPass&&q>=62&&c>=55&&probability.pPositiveReturn>=.58&&!fragileValuation){rating='Buy';reason='Expected return and required margin of safety are attractive, but one or more high-conviction gates remain below Strong Buy levels.';}
   else if(fragileValuation&&er>=.075){rating='Hold';reason='The modeled return may be attractive, but valuation agreement or data integrity is too weak for a Buy rating.';}
   // Distinguish a poor business from an excellent business at an unattractive
   // price. High-quality companies with a non-negative modeled return remain Hold
