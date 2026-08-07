@@ -259,12 +259,17 @@ function projectFinancials(stock, growthInput = null, years = 5, calibration = n
       ?? startNetMargin + (targetNetMargin - startNetMargin) * (t / years);
     let eps = shares ? revenue * netMargin / shares : null;
 
-    if (t === 1 && estimates.epsCurrentYear != null) {
-      eps = estimates.epsCurrentYear;
-      netMargin = revenue && shares ? eps * shares / revenue : netMargin;
-    } else if (t === 2 && estimates.epsNextYear != null) {
-      eps = estimates.epsNextYear;
-      netMargin = revenue && shares ? eps * shares / revenue : netMargin;
+    // V57 forecast reconciliation: analyst EPS is evidence, not an instruction that
+    // may overwrite the internally forecast operating margin. Convert consensus EPS
+    // to an implied margin and blend it only when it is economically coherent.
+    const analystEps = t === 1 ? estimates.epsCurrentYear : t === 2 ? estimates.epsNextYear : null;
+    if (analystEps != null && revenue > 0 && shares > 0) {
+      const impliedMargin = Number(analystEps) * shares / revenue;
+      const marginBand = Math.max(0.025, Math.abs(netMargin) * 0.35);
+      const coherentMargin = clamp(impliedMargin, netMargin - marginBand, netMargin + marginBand);
+      const analystWeight = Math.abs(impliedMargin - netMargin) <= marginBand ? 0.45 : 0.20;
+      netMargin = netMargin * (1 - analystWeight) + coherentMargin * analystWeight;
+      eps = revenue * netMargin / shares;
     }
 
     projection.push({
@@ -908,7 +913,13 @@ function combineValuations(methods, category = 'Value', stock = null, businessPr
     : [];
   const disagreement = Math.max(median(robustDeviations) || 0, (median(anchorDivergence) || 0) * 0.65);
   const agreementScore = Math.round(clamp(100 - disagreement * 150, 0, 100));
-  return { blendedFairValue, agreementScore, methodCount: available.length, effectiveWeights, reliabilityFlags, cashFlowAnchor: anchor, methodSelection: { ...methodSelection, adaptiveWeights: adaptive } };
+  // V57 reports a valuation interval instead of pretending the weighted point estimate
+  // is precise. Weighted dispersion expands the range when valid methods disagree.
+  const variance = normalized.reduce((sum, x) => sum + x.normalizedWeight * Math.pow(x.value - blendedFairValue, 2), 0);
+  const dispersion = blendedFairValue > 0 ? Math.sqrt(Math.max(0, variance)) / blendedFairValue : 0;
+  const rangeWidth = clamp(0.08 + dispersion * 0.70, 0.08, 0.40);
+  const fairValueRange = { low: blendedFairValue * (1 - rangeWidth), midpoint: blendedFairValue, high: blendedFairValue * (1 + rangeWidth), width: rangeWidth, dispersion };
+  return { blendedFairValue, fairValueRange, agreementScore, methodCount: available.length, effectiveWeights, reliabilityFlags, cashFlowAnchor: anchor, methodSelection: { ...methodSelection, adaptiveWeights: adaptive } };
 }
 
 function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
@@ -1095,7 +1106,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     expectationRisk,
     monteCarlo,
     agreementScore: combined.agreementScore, methodCount: combined.methodCount,
-    effectiveWeights: combined.effectiveWeights, methodSelection: combined.methodSelection, reliabilityFlags: combined.reliabilityFlags,
+    effectiveWeights: combined.effectiveWeights, fairValueRange: combined.fairValueRange, methodSelection: combined.methodSelection, reliabilityFlags: combined.reliabilityFlags,
     outlierFlags: combined.reliabilityFlags, marginOfSafety, fiveYearPriceTarget,
     marketImpliedGrowth, marketImpliedGrowthNote, reverseDCFGap: marketImpliedGrowth != null ? model.growthModel.assumptions.year1 - marketImpliedGrowth : null,
     capitalAllocation: capitalAllocationScore(stock), analystReliability: analystReliability(stock),
@@ -1103,7 +1114,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '52.0-expectation-risk-calibrated-forecast', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '57.0-reconciled-operating-forecast', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {

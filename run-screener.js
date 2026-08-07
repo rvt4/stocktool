@@ -308,6 +308,7 @@ async function run() {
     stock.valuation.valuationMethods = result.methods;
     stock.valuation.outlierFlags = result.outlierFlags;
     stock.valuation.effectiveWeights = result.effectiveWeights;
+    stock.valuation.fairValueRange = result.fairValueRange;
     stock.valuation.reliabilityFlags = result.reliabilityFlags;
     stock.valuation.projection = result.projection;
     stock.valuation.projectionAssumptions = result.projectionAssumptions;
