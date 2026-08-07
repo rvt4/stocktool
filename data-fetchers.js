@@ -561,6 +561,24 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   const last = years[years.length - 1] || {};
   const currentPrice = quote?.c || (priceHistory.length ? priceHistory[priceHistory.length - 1].close : null);
 
+  // Corporate-action denominator repair. SEC share-count facts can remain on a
+  // pre-split basis while diluted EPS and the live quote are already split-adjusted.
+  // Net income / diluted EPS gives an independent diluted-share denominator. When it
+  // differs by a corporate-action-sized factor, prefer that internally consistent
+  // denominator rather than allowing every per-share valuation to be off by 10-20x.
+  if (Number(last.netIncome) !== 0 && Number.isFinite(Number(last.dilutedEPS)) && Math.abs(Number(last.dilutedEPS)) > 1e-6) {
+    const epsImpliedShares = Math.abs(Number(last.netIncome) / Number(last.dilutedEPS));
+    const reportedShares = Number(last.sharesOutTTM);
+    const ratio = reportedShares > 0 && epsImpliedShares > 0
+      ? Math.max(reportedShares / epsImpliedShares, epsImpliedShares / reportedShares) : null;
+    if (epsImpliedShares > 100000 && epsImpliedShares < 1e11 && (!reportedShares || (ratio != null && ratio >= 3.5))) {
+      last.rawSharesOutTTM = reportedShares || null;
+      last.sharesOutTTM = epsImpliedShares;
+      last.sharesScaleApplied = reportedShares > 0 ? epsImpliedShares / reportedShares : null;
+      last.sharesSource = 'net_income_div_diluted_eps_corporate_action_repair';
+    }
+  }
+
   // Final live-data repair for the rare issuer whose SEC Company Facts omit every
   // usable diluted-share denominator (Visa is the known example). Finnhub profile2
   // reports marketCapitalization in USD millions. We call it ONLY for missing-share

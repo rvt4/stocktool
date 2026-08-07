@@ -732,7 +732,31 @@ function exitMethod(stock, model, sectorMultiples, type, businessProfile = null,
   const years = model.projection.length;
   let sectorMultiple, metricValue;
   if (type === 'revenueExit') { sectorMultiple = sectorMultiples?.evRevenue; metricValue = exit.revenue; }
-  else if (type === 'epsExit') { sectorMultiple = sectorMultiples?.pe; metricValue = exit.eps; }
+  else if (type === 'epsExit') {
+    sectorMultiple = sectorMultiples?.pe; metricValue = exit.eps;
+    // Banks and funded financials should not inherit an explosive EPS path from a
+    // generic revenue × margin projection. Anchor terminal EPS to current diluted EPS
+    // plus analyst-supported growth, then fade that growth toward a mature ceiling.
+    // This is an archetype rule, not a ticker override.
+    const industry = stock.valuation?.industryModel?.model;
+    const stage = String(lifecycle?.stage || '').toLowerCase();
+    if (industry === 'financials' || stage === 'financial') {
+      const currentEps = Number(last.dilutedEPS) || (last.sharesOutTTM > 0 ? Number(last.netIncome) / last.sharesOutTTM : null);
+      const a = stock.analystEstimates || {};
+      const norm = v => Number.isFinite(Number(v)) ? (Math.abs(Number(v)) > 2 ? Number(v) / 100 : Number(v)) : null;
+      const analystGrowth = norm(a.epsGrowthNextYear ?? a.epsGrowthCurrentYear);
+      const startGrowth = clamp(analystGrowth ?? Number(lifecycle?.forwardGrowth) ?? .08, -.10, .30);
+      let epsAnchor = currentEps;
+      if (currentEps > 0) {
+        for (let t = 1; t <= years; t++) {
+          const fade = years <= 1 ? 1 : (t - 1) / (years - 1);
+          const g = startGrowth + (.06 - startGrowth) * fade;
+          epsAnchor *= 1 + g;
+        }
+        if (metricValue > epsAnchor * 1.20 || metricValue < epsAnchor * .55) metricValue = epsAnchor;
+      }
+    }
+  }
   else { sectorMultiple = sectorMultiples?.evEbitda; metricValue = exit.ebitda; }
   if (!(sectorMultiple > 0) || !Number.isFinite(metricValue) || (type === 'epsExit' && metricValue <= 0)) {
     return { fairValuePerShare: null, exitPricePerShare: null, audit: { reason: 'missing multiple or exit metric' } };
@@ -831,6 +855,7 @@ function methodSpecificReliability(stock, key, value, center, anchor = null) {
   const highGrowthTransition = forwardRate >= 0.18 && persistence >= 0.55 &&
     ['inflecting', 'accelerating', 'recovery'].includes(regime);
   const ratio = Math.max(value / center, center / value);
+  if (ratio > 4.5) return 0;
   let r = ratio <= 1.35 ? 1 : ratio <= 1.75 ? 0.82 : ratio <= 2.4 ? 0.55 : 0.25;
 
   if (key === 'epsExit') r *= analyst;
@@ -885,7 +910,7 @@ function methodSpecificReliability(stock, key, value, center, anchor = null) {
     r *= 0.35;
   }
 
-  return clamp(r, 0.05, 1);
+  return clamp(r, 0, 1);
 }
 
 function redistributeCaps(normalized, caps) {

@@ -264,13 +264,14 @@ function buildDetailHtml(s) {
   return `<td colspan="19">
     ${decisionDashboardHtml(s)}
     ${s.lowConfidence ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Multiple growth inputs hit their sanity clamp for this stock — treat the fundamental growth figure with extra caution.</div>' : ''}
-    ${s.marginOfSafetyDistorted ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Raw margin of safety was an extreme value, clamped to ±100% for display.</div>' : ''}
+    ${s.marginOfSafetyDistorted ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Fair-value gap is extreme; MOS is floored at 0% and overvaluation is shown separately as premium to fair value.</div>' : ''}
     ${s.usedFallbackForCAGRTarget ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ No price-aware return could be computed for this stock (missing exit-multiple data) — the qualify/rating decision fell back to fundamental growth rate alone, which does not account for today\'s entry price.</div>' : ''}
     ${s.ratingReturnMismatchReason ? `<div style="color:#e3d18a;margin-bottom:6px;">⚠️ ${s.ratingReturnMismatchReason}</div>` : ''}
     ${(s.returnQualityFlags || []).includes('Growth and valuation assumptions were normalized for internal consistency') ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Growth and valuation assumptions were normalized so two incompatible extremes do not cancel each other.</div>' : ''}
     ${s.methodCount >= 2 && s.methodAgreementScore != null && s.methodAgreementScore < 40 ? `<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Valuation methods disagree significantly (agreement score ${s.methodAgreementScore}/100) — the blended fair value rests on shaky consensus.</div>` : ''}
     <strong>Confidence: ${s.confidenceScore ?? '—'}/100</strong>
     <br>${confDeductions}
+    ${s.premiumToFairValue > 0 ? `<br><strong>Premium to fair value:</strong> ${pct(s.premiumToFairValue)}` : ''}
     <br><strong>Growth source:</strong> ${s.growthSource === 'yfinance_supabase' ? 'YFinance consensus cached in Supabase' : s.growthSource === 'finnhub_analyst_consensus' ? 'Finnhub analyst consensus' : 'Blended recent-quarter + trailing SEC data'}
     <br><strong>Expected Investor CAGR</strong> (owner-earnings primary — starts at today's price and includes dividends and justified terminal valuation): ${s.expectedReturn != null ? pct(s.expectedReturn) : 'n/a — insufficient exit-multiple data'}
     ${s.returnAttribution?.available ? `<br><strong>Return attribution:</strong> Revenue ${pct(s.returnAttribution.components?.revenueGrowth)} · Growth fade ${pct(s.returnAttribution.components?.growthFade)} · Margins ${pct(s.returnAttribution.components?.marginChange)} · Share count ${pct(s.returnAttribution.components?.shareCountChange)} · Dividends ${pct(s.returnAttribution.components?.dividends)} · Valuation ${pct(s.returnAttribution.components?.valuationChange)}` : ''}

@@ -824,8 +824,10 @@ function scoreStock(stock) {
   // undershoots the market's forward view), the raw percentage can swing to
   // meaningless extremes like -400%. The underlying "this is overvalued" signal is
   // still correct at the extremes; the exact magnitude past ±100% isn't meaningful.
-  const marginOfSafety = rawMarginOfSafety != null ? clamp(rawMarginOfSafety, -1.0, 1.0) : null;
-  const marginOfSafetyDistorted = rawMarginOfSafety != null && rawMarginOfSafety !== marginOfSafety;
+  // MOS is non-negative by definition. Overvaluation is tracked separately as a premium.
+  const marginOfSafety = rawMarginOfSafety != null ? clamp(rawMarginOfSafety, 0, 1.0) : null;
+  const premiumToFairValue = rawMarginOfSafety != null && rawMarginOfSafety < 0 ? -rawMarginOfSafety : 0;
+  const marginOfSafetyDistorted = rawMarginOfSafety != null && (rawMarginOfSafety > 1.0 || rawMarginOfSafety < -1.0);
   const meetsRequiredMOS = marginOfSafety != null ? marginOfSafety >= requiredMOS : null;
 
   const marketImpliedGrowth = stock.valuation.marketImpliedGrowth ?? null;
