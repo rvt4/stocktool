@@ -38,21 +38,17 @@ const methods = {
 };
 
 const result = selectedValuation({ stock, category: 'Compounder', lifecycle, methodResults: methods, model });
-assert.ok(result && result.unifiedForecastLinkedValuation, 'V50 linked valuation must be active');
-assert.ok(result.actionableExitValue > result.fairValueToday,
-  'For a zero-dividend stock with a positive discount rate, the future target must exceed fair value today');
-const reconstructed = result.actionableExitValue / Math.pow(1 + result.impliedDiscountRate, result.years);
-assert.ok(Math.abs(reconstructed - result.fairValueToday) < 1e-8,
-  'Fair value today must be the present value of the canonical future target');
+assert.ok(result && result.terminalValueAnchored, 'V59 terminal-value anchor must be active');
 const reconstructedCagr = Math.pow(result.actionableExitValue / stock.price.current, 1 / result.years) - 1;
 assert.ok(Math.abs(reconstructedCagr - result.expectedCAGR) < 1e-10,
-  'Displayed expected CAGR and future target must describe the same outcome');
-assert.ok(result.methodBlendFairValueToday > 0,
-  'Legacy method blend should remain available as a diagnostic');
+  'Expected CAGR must be derived from the independently modeled future target');
+assert.ok(Math.abs(result.actionableExitValue - result.rawExitValue) < 1e-10,
+  'Actionable exit value must equal the selected-method terminal valuation, not a CAGR-backsolved target');
+assert.ok(Math.abs(result.fairValueToday - result.methodBlendFairValueToday) < 1e-10,
+  'Fair value today must remain the independent selected-method present-value blend');
 
-console.log('V50 valuation-link regression passed', {
+console.log('V59 terminal-value regression passed', {
   fairValueToday: result.fairValueToday,
   futureTarget: result.actionableExitValue,
-  discountRate: result.impliedDiscountRate,
   expectedCAGR: result.expectedCAGR,
 });
