@@ -627,6 +627,44 @@ function normalizedExpectationFcf(stock) {
   return Number(last.fcf);
 }
 
+
+// V61 reverse DCF: solve for revenue growth, not raw FCF growth. The old solver
+// compared an implied FCF-growth rate with modeled revenue growth, which becomes
+// unstable for businesses undergoing large margin transitions. This solver keeps
+// a normalized starting FCF margin and fades it toward the operating model's margin,
+// making the displayed expectation directly comparable with revenue forecasts.
+function solveImpliedRevenueGrowth({ revenueBase, startFcfMargin, targetFcfMargin, terminalGrowth, discountRate, years = 10, netDebt = 0, sharesOut, targetPricePerShare }) {
+  if (!(revenueBase > 0) || !(sharesOut > 0) || !(targetPricePerShare > 0) || !(discountRate > terminalGrowth)) {
+    return { impliedGrowth: null, reason: 'missing_inputs' };
+  }
+  const startMargin = clamp(Number(startFcfMargin) || 0, .005, .45);
+  const endMargin = clamp(Number(targetFcfMargin) || startMargin, .005, .45);
+  const valueAt = g1 => {
+    let revenue = revenueBase, pv = 0, finalFcf = null;
+    for (let t = 1; t <= years; t++) {
+      const p = (t - 1) / Math.max(1, years - 1);
+      const g = g1 + (terminalGrowth - g1) * p;
+      revenue *= 1 + g;
+      const marginP = Math.min(1, t / Math.min(5, years));
+      const margin = startMargin + (endMargin - startMargin) * marginP;
+      finalFcf = revenue * margin;
+      pv += finalFcf / Math.pow(1 + discountRate, t);
+    }
+    const terminalValue = finalFcf * (1 + terminalGrowth) / (discountRate - terminalGrowth);
+    const equity = pv + terminalValue / Math.pow(1 + discountRate, years) - netDebt;
+    return equity / sharesOut;
+  };
+  const LO = -.20, HI = .80;
+  if (valueAt(HI) < targetPricePerShare) return { impliedGrowth: null, reason: 'exceeds_search_range_high' };
+  if (valueAt(LO) > targetPricePerShare) return { impliedGrowth: null, reason: 'exceeds_search_range_low' };
+  let lo = LO, hi = HI;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (valueAt(mid) < targetPricePerShare) lo = mid; else hi = mid;
+  }
+  return { impliedGrowth: (lo + hi) / 2, reason: 'converged', startFcfMargin: startMargin, targetFcfMargin: endMargin };
+}
+
 // ---------- DCF ----------
 function dcfFromProjection(stock, model, { sbcAdjusted = false } = {}) {
   const last = stock.financials.years.at(-1) || {};
@@ -882,7 +920,12 @@ function combineValuations(methods, category = 'Value', stock = null, businessPr
     : { effectiveStartingWeights: businessSpecificWeights(category, businessProfile, null) };
   const startingWeights = { ...methodSelection.effectiveStartingWeights };
   const industryKey = stock?.valuation?.industryModel?.model || 'general';
-  const available = Object.entries(methods).filter(([, v]) => Number.isFinite(v) && v > 0);
+  const allAvailable = Object.entries(methods).filter(([, v]) => Number.isFinite(v) && v > 0);
+  // V61: applicability is a gate. Methods rejected by the business-model selector
+  // are retained in the audit trail, but cannot influence the blend, agreement,
+  // method count, or downstream confidence. This prevents economically irrelevant
+  // outputs (for example revenue multiples on insurers) from poisoning consensus.
+  const available = allAvailable.filter(([key]) => (startingWeights[key] || 0) > 0);
   if (!available.length) return { blendedFairValue: null, agreementScore: null, methodCount: 0, effectiveWeights: {}, reliabilityFlags: [], methodSelection };
   const adaptive = adaptiveMethodWeights({
     industry: industryKey,
@@ -931,7 +974,14 @@ function combineValuations(methods, category = 'Value', stock = null, businessPr
     : [];
   const disagreement = Math.max(median(robustDeviations) || 0, (median(anchorDivergence) || 0) * 0.65);
   const agreementScore = Math.round(clamp(100 - disagreement * 150, 0, 100));
-  return { blendedFairValue, agreementScore, methodCount: available.length, effectiveWeights, reliabilityFlags, cashFlowAnchor: anchor, methodSelection: { ...methodSelection, adaptiveWeights: adaptive } };
+  return {
+    blendedFairValue, agreementScore, methodCount: available.length, effectiveWeights, reliabilityFlags, cashFlowAnchor: anchor,
+    methodSelection: {
+      ...methodSelection, adaptiveWeights: adaptive,
+      eligibleMethods: available.map(([key]) => key),
+      auditOnlyMethods: allAvailable.filter(([key]) => !(startingWeights[key] > 0)).map(([key]) => key),
+    },
+  };
 }
 
 function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
@@ -1021,9 +1071,14 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   const expectationsTerminalGrowth = getDynamicTerminalGrowth(stock, category);
   let preValuationMarketImpliedGrowth = null;
   let preValuationMarketImpliedGrowthNote = null;
-  if (lastForExpectations.fcf > 0 && lastForExpectations.sharesOutTTM > 0 && currentPrice > 0) {
-    const implied = solveImpliedGrowth({
-      fcfBase: normalizedExpectationFcf(stock),
+  if (lastForExpectations.revenue > 0 && lastForExpectations.sharesOutTTM > 0 && currentPrice > 0) {
+    const normalizedFcf = normalizedExpectationFcf(stock);
+    const normalizedMargin = normalizedFcf > 0 ? normalizedFcf / lastForExpectations.revenue : null;
+    const fiveYearRow = model.projection?.[Math.min(4, Math.max(0, model.projection.length - 1))] || model.projection?.at(-1) || {};
+    const implied = solveImpliedRevenueGrowth({
+      revenueBase: lastForExpectations.revenue,
+      startFcfMargin: normalizedMargin,
+      targetFcfMargin: fiveYearRow.fcfMargin ?? normalizedMargin,
       terminalGrowth: expectationsTerminalGrowth,
       discountRate: expectationsDiscountRate,
       years: 10,
@@ -1031,8 +1086,18 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
       sharesOut: lastForExpectations.sharesOutTTM,
       targetPricePerShare: currentPrice,
     });
-    preValuationMarketImpliedGrowth = implied.impliedGrowth;
-    preValuationMarketImpliedGrowthNote = implied.reason !== 'converged' ? implied.reason : null;
+    const rawImplied = implied.impliedGrowth;
+    const modeledAnchor = Number(model.growthModel?.assumptions?.year1 ?? lifecycle.forwardGrowth);
+    // Refuse to turn a numerically converged but economically nonsensical solution
+    // into a confidence penalty. Keep it unavailable and expose the reason instead.
+    const credibilityCeiling = clamp(Math.max(.28, Number.isFinite(modeledAnchor) ? modeledAnchor * 1.8 : .28), .28, .50);
+    if (Number.isFinite(rawImplied) && rawImplied <= credibilityCeiling) {
+      preValuationMarketImpliedGrowth = rawImplied;
+      preValuationMarketImpliedGrowthNote = null;
+    } else {
+      preValuationMarketImpliedGrowth = null;
+      preValuationMarketImpliedGrowthNote = implied.reason !== 'converged' ? implied.reason : 'implied_revenue_growth_outside_economic_range';
+    }
   }
   stock.valuation.marketImpliedGrowth = preValuationMarketImpliedGrowth;
   stock.valuation.marketImpliedGrowthNote = preValuationMarketImpliedGrowthNote;

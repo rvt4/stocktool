@@ -837,6 +837,24 @@ function scoreStock(stock) {
     growthGap, marginOfSafetyDistorted, cagrDistortion
   );
 
+  // V61: business confidence and valuation confidence answer different questions.
+  // Keep both visible so method disagreement cannot be mistaken for uncertainty about
+  // the quality of the underlying company (and vice versa).
+  const lifecycleConfidenceRaw = Number(stock.valuation.lifecycle?.confidence);
+  const lifecycleConfidence = Number.isFinite(lifecycleConfidenceRaw)
+    ? (lifecycleConfidenceRaw <= 1 ? lifecycleConfidenceRaw * 100 : lifecycleConfidenceRaw) : 50;
+  const integrityConfidence = clamp(Number(stock.dataIntegrity?.score ?? 65), 0, 100);
+  const analystConfidence = clamp(Number(stock.valuation.analystReliability ?? 55), 0, 100);
+  const economicsConfidence = clamp(Number(stock.valuation.economicQuality?.forecastReliability ?? 55), 0, 100);
+  const businessConfidenceScore = Math.round(clamp(
+    lifecycleConfidence * .35 + integrityConfidence * .25 + analystConfidence * .20 + economicsConfidence * .20, 0, 100
+  ));
+  const agreementConfidence = clamp(Number(stock.valuation.methodAgreementScore ?? 35), 0, 100);
+  const methodBreadth = clamp((Number(stock.valuation.methodCount ?? 0) / 4) * 100, 0, 100);
+  const valuationConfidenceScore = Math.round(clamp(
+    agreementConfidence * .55 + methodBreadth * .20 + analystConfidence * .10 + lifecycleConfidence * .15, 0, 100
+  ));
+
   // Fall back to fundamentalGrowthRate only when a price target genuinely couldn't be
   // computed (e.g. insufficient exit-multiple data), so stocks don't silently vanish
   // from qualifying — but this is the weaker, price-agnostic signal, so flag it.
@@ -889,6 +907,20 @@ function scoreStock(stock) {
     expectedAlpha: expectedReturn != null ? expectedReturn - 0.10 : null,
     riskAdjustedReturn,
     scenarioAnalysis: stock.valuation.scenarioAnalysis ?? null,
+    // V61: preserve the full probabilistic/economic-quality layer in the compact
+    // public record. The nightly runner computed these fields correctly, but V60
+    // dropped them during scoreUniverse(), leaving the dashboard full of em dashes.
+    scenarioProbabilities: stock.valuation.scenarioAnalysis?.probabilities ?? null,
+    growthQuality: stock.valuation.growthQuality ?? stock.valuation.scenarioAnalysis?.growthQuality ?? null,
+    capitalIntensity: stock.valuation.capitalIntensity ?? stock.valuation.scenarioAnalysis?.capitalIntensity ?? null,
+    competitivePressure: stock.valuation.competitivePressure ?? stock.valuation.scenarioAnalysis?.competitivePressure ?? null,
+    cycleNormalization: stock.valuation.cycleNormalization ?? stock.valuation.scenarioAnalysis?.cycleNormalization ?? null,
+    lifecycle: stock.valuation.lifecycle ?? stock.valuation.projectionAssumptions?.lifecycle ?? null,
+    moat: stock.valuation.moat ?? null,
+    investmentCommittee: stock.valuation.investmentCommittee ?? null,
+    monteCarlo: stock.valuation.monteCarlo ?? null,
+    economicQuality: stock.valuation.economicQuality ?? null,
+    businessEconomics: stock.valuation.businessEconomics ?? stock.valuation.economicQuality?.businessEconomics ?? null,
     expectedReturnProfile: stock.valuation.expectedReturnProfile ?? null,
     marketExpectations: stock.valuation.marketExpectations ?? null,
     expectationRisk: stock.valuation.expectationRisk ?? null,
@@ -900,6 +932,8 @@ function scoreStock(stock) {
     usedFallbackForCAGRTarget,
     lowConfidence,
     confidenceScore: confidence.score,
+    businessConfidenceScore,
+    valuationConfidenceScore,
     confidenceDeductions: confidence.deductions,
     cagrBreakdown: breakdown,
     growthSource: stock.valuation.growthSource ?? null,
@@ -923,6 +957,12 @@ function scoreStock(stock) {
     valuationMethodAudits: stock.valuation.methodAudits ?? null,
     fiveYearPriceTarget: stock.valuation.fiveYearPriceTarget ?? null,
     primaryValuation: stock.valuation.primaryValuation ?? stock.valuation.fiveYearPriceTarget?.primaryValuation ?? null,
+    valuationConsensus: stock.valuation.valuationConsensus ?? null,
+    intrinsicValue: stock.valuation.intrinsicValue ?? null,
+    marketValue: stock.valuation.marketValue ?? null,
+    ownerEarningsReturn: stock.valuation.ownerEarningsReturn ?? null,
+    portfolioProfile: stock.valuation.portfolioProfile ?? null,
+    methodSelection: stock.valuation.methodSelection ?? null,
     analystEstimates: stock.analystEstimates ?? null,
     currentPrice: stock.price.current ?? null,
     fairValueEstimate: stock.valuation.fairValueEstimate ?? null,

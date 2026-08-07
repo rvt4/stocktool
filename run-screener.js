@@ -315,6 +315,7 @@ async function run() {
     stock.valuation.methodAudits = result.methodAudits;
     stock.valuation.methodAgreementScore = result.agreementScore;
     stock.valuation.methodCount = result.methodCount;
+    stock.valuation.methodSelection = result.methodSelection ?? null;
     stock.valuation.marketImpliedGrowth = result.marketImpliedGrowth;
     stock.valuation.marketImpliedGrowthNote = result.marketImpliedGrowthNote;
     stock.valuation.dilutionRate = result.dilutionRate;
