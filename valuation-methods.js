@@ -98,12 +98,17 @@ function estimateDilutionModel(stock, years = 5) {
   const sbcToRevenue = Number(last.sbc) > 0 && revenue > 0 ? Number(last.sbc) / revenue : null;
   const buybackSignal = recent != null && recent < -0.005;
 
-  let initial = weightedAverage([
-    { value: recent, weight: recent == null ? 0 : 0.52 },
-    { value: long, weight: long == null ? 0 : 0.23 },
-    { value: sbcToMarketCap, weight: sbcToMarketCap == null ? 0 : 0.15 },
-    { value: sbcToRevenue == null ? null : sbcToRevenue * 0.35, weight: sbcToRevenue == null ? 0 : 0.10 },
-  ]);
+  // V59: this blend must allow negative values. The generic weightedAverage helper
+  // intentionally drops non-positive valuation values, which accidentally erased net
+  // buybacks and made repurchasers look dilutive.
+  const dilutionSignals = [
+    { value: recent, weight: recent == null ? 0 : 0.60 },
+    { value: long, weight: long == null ? 0 : 0.25 },
+    { value: sbcToMarketCap, weight: sbcToMarketCap == null ? 0 : 0.10 },
+    { value: sbcToRevenue == null ? null : sbcToRevenue * 0.35, weight: sbcToRevenue == null ? 0 : 0.05 },
+  ].filter(x => Number.isFinite(x.value) && x.weight > 0);
+  const dilutionWeight = dilutionSignals.reduce((a,x)=>a+x.weight,0);
+  let initial = dilutionWeight ? dilutionSignals.reduce((a,x)=>a+x.value*x.weight,0)/dilutionWeight : null;
   if (!Number.isFinite(initial)) initial = buybackSignal ? -0.005 : 0.008;
 
   const highSbc = (sbcToRevenue ?? 0) >= 0.08 || (sbcToMarketCap ?? 0) >= 0.025;
@@ -259,17 +264,12 @@ function projectFinancials(stock, growthInput = null, years = 5, calibration = n
       ?? startNetMargin + (targetNetMargin - startNetMargin) * (t / years);
     let eps = shares ? revenue * netMargin / shares : null;
 
-    // V57 forecast reconciliation: analyst EPS is evidence, not an instruction that
-    // may overwrite the internally forecast operating margin. Convert consensus EPS
-    // to an implied margin and blend it only when it is economically coherent.
-    const analystEps = t === 1 ? estimates.epsCurrentYear : t === 2 ? estimates.epsNextYear : null;
-    if (analystEps != null && revenue > 0 && shares > 0) {
-      const impliedMargin = Number(analystEps) * shares / revenue;
-      const marginBand = Math.max(0.025, Math.abs(netMargin) * 0.35);
-      const coherentMargin = clamp(impliedMargin, netMargin - marginBand, netMargin + marginBand);
-      const analystWeight = Math.abs(impliedMargin - netMargin) <= marginBand ? 0.45 : 0.20;
-      netMargin = netMargin * (1 - analystWeight) + coherentMargin * analystWeight;
-      eps = revenue * netMargin / shares;
+    if (t === 1 && estimates.epsCurrentYear != null) {
+      eps = estimates.epsCurrentYear;
+      netMargin = revenue && shares ? eps * shares / revenue : netMargin;
+    } else if (t === 2 && estimates.epsNextYear != null) {
+      eps = estimates.epsNextYear;
+      netMargin = revenue && shares ? eps * shares / revenue : netMargin;
     }
 
     projection.push({
@@ -609,6 +609,24 @@ function ownerEarningsFromProjection(stock, model) {
   }};
 }
 
+// Normalize the starting FCF used only for reverse-DCF market-expectations checks.
+// When current capex is abnormally high and FCF margin is below its own history, raw
+// current FCF can imply absurd priced-in growth. The forward DCF itself still uses the
+// full explicit operating projection.
+function normalizedExpectationFcf(stock) {
+  const ys=(stock.financials?.years||[]).slice(-5), last=ys.at(-1)||{};
+  if (!(last.revenue>0) || !Number.isFinite(Number(last.fcf))) return Number(last.fcf);
+  const margins=ys.map(y=>y.revenue>0&&Number.isFinite(Number(y.fcf))?Number(y.fcf)/y.revenue:null).filter(Number.isFinite);
+  const capex=ys.map(y=>y.revenue>0&&Number.isFinite(Number(y.capex))?Math.abs(Number(y.capex))/y.revenue:null).filter(Number.isFinite);
+  if (margins.length<3 || capex.length<3) return Number(last.fcf);
+  const historicalMargin=median(margins), historicalCapex=median(capex);
+  const currentMargin=Number(last.fcf)/last.revenue, currentCapex=Math.abs(Number(last.capex||0))/last.revenue;
+  if (historicalMargin>currentMargin && currentCapex>historicalCapex*1.25) {
+    return last.revenue*(currentMargin*.55+historicalMargin*.45);
+  }
+  return Number(last.fcf);
+}
+
 // ---------- DCF ----------
 function dcfFromProjection(stock, model, { sbcAdjusted = false } = {}) {
   const last = stock.financials.years.at(-1) || {};
@@ -913,13 +931,7 @@ function combineValuations(methods, category = 'Value', stock = null, businessPr
     : [];
   const disagreement = Math.max(median(robustDeviations) || 0, (median(anchorDivergence) || 0) * 0.65);
   const agreementScore = Math.round(clamp(100 - disagreement * 150, 0, 100));
-  // V57 reports a valuation interval instead of pretending the weighted point estimate
-  // is precise. Weighted dispersion expands the range when valid methods disagree.
-  const variance = normalized.reduce((sum, x) => sum + x.normalizedWeight * Math.pow(x.value - blendedFairValue, 2), 0);
-  const dispersion = blendedFairValue > 0 ? Math.sqrt(Math.max(0, variance)) / blendedFairValue : 0;
-  const rangeWidth = clamp(0.08 + dispersion * 0.70, 0.08, 0.40);
-  const fairValueRange = { low: blendedFairValue * (1 - rangeWidth), midpoint: blendedFairValue, high: blendedFairValue * (1 + rangeWidth), width: rangeWidth, dispersion };
-  return { blendedFairValue, fairValueRange, agreementScore, methodCount: available.length, effectiveWeights, reliabilityFlags, cashFlowAnchor: anchor, methodSelection: { ...methodSelection, adaptiveWeights: adaptive } };
+  return { blendedFairValue, agreementScore, methodCount: available.length, effectiveWeights, reliabilityFlags, cashFlowAnchor: anchor, methodSelection: { ...methodSelection, adaptiveWeights: adaptive } };
 }
 
 function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
@@ -1011,7 +1023,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   let preValuationMarketImpliedGrowthNote = null;
   if (lastForExpectations.fcf > 0 && lastForExpectations.sharesOutTTM > 0 && currentPrice > 0) {
     const implied = solveImpliedGrowth({
-      fcfBase: lastForExpectations.fcf,
+      fcfBase: normalizedExpectationFcf(stock),
       terminalGrowth: expectationsTerminalGrowth,
       discountRate: expectationsDiscountRate,
       years: 10,
@@ -1106,7 +1118,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     expectationRisk,
     monteCarlo,
     agreementScore: combined.agreementScore, methodCount: combined.methodCount,
-    effectiveWeights: combined.effectiveWeights, fairValueRange: combined.fairValueRange, methodSelection: combined.methodSelection, reliabilityFlags: combined.reliabilityFlags,
+    effectiveWeights: combined.effectiveWeights, methodSelection: combined.methodSelection, reliabilityFlags: combined.reliabilityFlags,
     outlierFlags: combined.reliabilityFlags, marginOfSafety, fiveYearPriceTarget,
     marketImpliedGrowth, marketImpliedGrowthNote, reverseDCFGap: marketImpliedGrowth != null ? model.growthModel.assumptions.year1 - marketImpliedGrowth : null,
     capitalAllocation: capitalAllocationScore(stock), analystReliability: analystReliability(stock),
@@ -1114,7 +1126,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '57.0-reconciled-operating-forecast', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '52.0-expectation-risk-calibrated-forecast', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
@@ -1126,7 +1138,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
 
 const api = {
   computeSectorExitMultiples, valuateStock, projectFinancials, estimateDilutionRate,
-  combineValuations, meanRevertedMultiple, qualityPremiumWeight, fiveYearPriceTargetCAGR,
+  combineValuations, meanRevertedMultiple, qualityPremiumWeight, fiveYearPriceTargetCAGR, normalizedExpectationFcf,
   inferValuationCategory, buildGrowthPath, buildBusinessProfile, businessSpecificWeights, intelligentExitMultiple, analystReliability, capitalAllocationScore, ownerEarningsFromProjection,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
