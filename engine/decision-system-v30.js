@@ -70,9 +70,10 @@ function buildActionableMOS(stock) {
   const confidence = clamp(n(stock.confidenceScore, 50), 0, 100);
   const agreement = clamp(n(stock.methodAgreementScore, n(stock.valuation?.methodAgreementScore, 50)), 0, 100);
   const reliability = clamp(.45 + confidence / 500 + agreement / 1000, .50, .78);
-  // Haircut only the positive valuation surplus. Negative MOS is left unchanged.
-  const haircut = raw > 0 ? raw * reliability : raw;
-  const actionable = clamp(haircut, -1, ceiling);
+  // Margin of safety answers how far BELOW fair value the price is. A stock above
+  // fair value has zero MOS; its overvaluation is exposed separately as premiumToFairValue.
+  const haircut = raw > 0 ? raw * reliability : 0;
+  const actionable = clamp(haircut, 0, ceiling);
   return { raw, actionable, ceiling, wasCapped: actionable !== raw, reliability };
 }
 
@@ -159,6 +160,7 @@ function applyDecisionSystemV30(stocks) {
     stock.expectedReturn = returnProfile.actionable;
     stock.expectedAlpha = Number.isFinite(returnProfile.actionable) ? returnProfile.actionable - 0.10 : null;
     stock.marginOfSafety = mosProfile.actionable;
+    stock.premiumToFairValue = Number.isFinite(stock.rawMarginOfSafety) && stock.rawMarginOfSafety < 0 ? -stock.rawMarginOfSafety : 0;
     stock.returnPlausibilityAdjusted = returnProfile.wasCapped || returnProfile.extremeInput;
     stock.marginOfSafetyAdjusted = mosProfile.wasCapped;
 

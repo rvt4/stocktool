@@ -25,13 +25,27 @@ function computeDurability(stock, pricingPower, compounder, lifecycle = null) {
   const years = (stock.financials?.years || []).slice(-8);
   const opMargins = years.map(y => y.operatingMargin ?? y.opMargin);
   const grossMargins = years.map(y => y.grossMargin);
-  const fcfMargins = years.map(y => y.fcfMargin ?? (y.revenue > 0 && finite(y.fcf) ? y.fcf / y.revenue : null));
+  const industry = stock.valuation?.industryModel?.model || 'general';
+  const financialStructure = industry === 'financials';
+  // For asset-heavy reinvesters, reported FCF can be negative because growth capex is
+  // buying productive assets. Use a maintenance-capex owner-cash proxy for durability
+  // when CFO and earnings are positive and capex materially exceeds D&A.
+  const normalizedCashMargins = years.map(y => {
+    if (!(y.revenue > 0)) return null;
+    const raw = finite(y.fcf) ? Number(y.fcf) / y.revenue : null;
+    const da = finite(y.da) ? Math.abs(Number(y.da)) : (finite(y.ebitda) && finite(y.operatingIncome) ? Math.max(0, Number(y.ebitda) - Number(y.operatingIncome)) : null);
+    const capex = finite(y.capex) ? Math.abs(Number(y.capex)) : null;
+    const growthCapexPattern = finite(y.cfo) && Number(y.cfo) > 0 && finite(y.netIncome) && Number(y.netIncome) > 0 && da != null && capex != null && capex > da * 1.35;
+    if (growthCapexPattern) return (Number(y.cfo) - Math.min(capex, da * 1.10)) / y.revenue;
+    return raw;
+  });
+  const fcfMargins = financialStructure ? years.map(y => y.revenue > 0 && finite(y.netIncome) ? Number(y.netIncome) / y.revenue : null) : normalizedCashMargins;
   const revenueGrowth = growthRates(years);
-  const positiveFcf = years.length ? years.filter(y => Number(y.fcf) > 0).length / years.length : null;
+  const positiveFcf = years.length ? years.filter((y,i) => financialStructure ? Number(y.netIncome) > 0 : Number(normalizedCashMargins[i]) > 0).length / years.length : null;
   const positiveIncome = years.length ? years.filter(y => Number(y.netIncome) > 0).length / years.length : null;
   const marginStability = Math.round((lower(volatility(opMargins), .01, .12) + lower(volatility(grossMargins), .01, .12) + lower(volatility(fcfMargins), .015, .16)) / 3);
   const growthStability = lower(volatility(revenueGrowth), .025, .22);
-  let recessionResistance = higher(Math.min(positiveFcf ?? .5, positiveIncome ?? .5), .35, 1);
+  let recessionResistance = higher(financialStructure ? (positiveIncome ?? .5) : Math.min(positiveFcf ?? .5, positiveIncome ?? .5), .35, 1);
   // V61: for verified profitability inflections, the distant loss years describe
   // the old investment phase rather than current durability. Blend in the most
   // recent three-year cash/earnings record instead of treating the sign change as

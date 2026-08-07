@@ -177,6 +177,10 @@ function reliability(method, presentValue, futureValue, centerPresent, centerFut
   } : null, method, stock);
   const pRatio = Math.max(presentValue / centerPresent, centerPresent / presentValue);
   const fRatio = Math.max(futureValue / centerFuture, centerFuture / futureValue);
+  // A method several-fold outside both the cross-method price universe and the
+  // corresponding exit universe is almost always a unit/accounting failure, not
+  // legitimate valuation disagreement. Exclude it rather than granting a token weight.
+  if (pRatio > 4.5 || fRatio > 4.5) return 0;
   if (pRatio > 3 || fRatio > 3) r *= .20;
   else if (pRatio > 2 || fRatio > 2) r *= .45;
   else if (pRatio > 1.6 || fRatio > 1.6) r *= .72;
@@ -193,7 +197,7 @@ function reliability(method, presentValue, futureValue, centerPresent, centerFut
   if (method === 'dcf' && positiveFcf < .6) r *= .60;
   if (method === 'dcfSBCAdjusted' && sbcIntensity < .01) r *= .70;
   if (method === 'revenueExit' && !profile.name.includes('growth') && !profile.name.includes('innovation')) r *= .35;
-  return clamp(r, .05, 1);
+  return clamp(r, 0, 1);
 }
 
 function normalizeRows(rows) {
@@ -323,7 +327,10 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
     return { key, presentValue, futureValue: horizonExitValue, terminalExitValue };
   }).filter(x => x.presentValue > 0 && x.futureValue > 0 && (profile.weights[x.key] || 0) > 0);
 
-  if (all.length < 2) return null;
+  // Specialist financial models may intentionally have only one economically valid method.
+  // Do not fall back to the generic all-method blend in that case; keep the specialist
+  // method and explicitly penalize its agreement/evidence below.
+  if (!all.length || (all.length < 2 && !profile.specialist)) return null;
   const centerPresent = median(all.map(x => x.presentValue));
   const centerFuture = median(all.map(x => x.futureValue));
   const adaptive = adaptiveMethodWeights({
@@ -418,7 +425,9 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
   const operatingCAGR = finite(rawOperatingCAGR)
     ? rawOperatingCAGR + marketExpectationsAdjustment : null;
   const disagreement = median(rows.map(x => Math.abs(x.presentValue - methodBlendFairValueToday) / methodBlendFairValueToday)) || 0;
-  const agreementScore = Math.round(clamp(100 - disagreement * 180, 0, 100));
+  // One-method specialist valuations are useful, but they are not consensus. Never
+  // manufacture 100/100 agreement merely because every inapplicable method was removed.
+  const agreementScore = rows.length === 1 ? 35 : Math.round(clamp(100 - disagreement * 180, 0, 100));
   const agreementWeight = agreementInfluence(agreementScore);
   const valuationTrust = clamp(
     agreementWeight * .66 + quality.reliability * .34,
