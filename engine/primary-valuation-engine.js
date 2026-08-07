@@ -248,6 +248,46 @@ function maxCrediblePositiveRerating({ operatingAnchor, quality, agreementScore,
   return clamp(Math.max(profileAllowance, base + qualityCredit + evidenceAdjustment - concentrationPenalty), .035, .14);
 }
 
+
+function capReratingDependentCAGR({ expectedCAGR, operatingAnchor, agreementScore, quality, methodConcentration }) {
+  const expected = Number(expectedCAGR);
+  const operating = Number(operatingAnchor);
+  if (!finite(expected) || !finite(operating) || expected <= operating) return expectedCAGR;
+
+  const agreement = clamp(Number(agreementScore || 0) / 100, 0, 1);
+  const q = clamp(Number(quality || 0), 0, 1);
+  const concentration = clamp(Number(methodConcentration || 0), 0, 1);
+
+  // V54: a low-growth business cannot manufacture an equity-like 30%+ base
+  // return from mean reversion alone. The rerating budget is deliberately
+  // tighter when operating compounding is weak, methods disagree, or one
+  // method dominates. This is applied as a final invariant after every other
+  // ceiling/floor so later logic cannot re-inflate the CAGR.
+  let reratingBudget;
+  if (operating <= .02) reratingBudget = .045;
+  else if (operating <= .05) reratingBudget = .055;
+  else if (operating <= .08) reratingBudget = .070;
+  else if (operating <= .12) reratingBudget = .085;
+  else if (operating <= .18) reratingBudget = .105;
+  else reratingBudget = .125;
+
+  reratingBudget += clamp((q - .55) * .035, -.012, .016);
+  reratingBudget += clamp((agreement - .65) * .025, -.015, .009);
+  if (concentration > .80) reratingBudget -= .020;
+  else if (concentration > .68) reratingBudget -= .010;
+
+  // Absolute guardrails by operating strength. These are intentionally below
+  // the model-wide 30% ceiling for weak businesses, while preserving genuine
+  // high-growth cases such as NBIX/NVDA/FIX.
+  const absoluteCeiling = operating <= .02 ? .09
+    : operating <= .05 ? .115
+      : operating <= .08 ? .14
+        : operating <= .12 ? .17
+          : operating <= .18 ? .22 : .30;
+
+  return Math.min(expected, operating + clamp(reratingBudget, .025, .14), absoluteCeiling);
+}
+
 function qualityContext(stock, lifecycle = {}) {
   const moat = clamp(Number(stock?.valuation?.moat?.score ?? 50) / 100, 0, 1);
   const pricing = clamp(Number(stock?.valuation?.pricingPowerV2?.score ?? stock?.pricingPowerScore ?? 50) / 100, 0, 1);
@@ -484,6 +524,17 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
         profileMaxRerating: profile.maxRerating,
       });
       adjustedCAGR = Math.min(adjustedCAGR, operatingAnchorForRerating + crediblePositiveRerating);
+
+      // V54 final invariant: low operating compounding plus rerating cannot
+      // produce a heroic base CAGR. This catches CAR-like cases even when the
+      // raw DCF blend or a later floor would otherwise re-inflate the result.
+      adjustedCAGR = capReratingDependentCAGR({
+        expectedCAGR: adjustedCAGR,
+        operatingAnchor: operatingAnchorForRerating,
+        agreementScore,
+        quality: quality.quality,
+        methodConcentration: maxMethodWeight,
+      });
     }
     adjustedCAGR = clamp(adjustedCAGR, -.35, dynamicBaseCeiling);
   }
@@ -526,7 +577,7 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
     : null;
 
   return {
-    version: 'v53-rerating-disciplined-unified-valuation',
+    version: 'v54-rerating-dependency-disciplined-valuation',
     businessArchetype: lifecycle?.archetype || lifecycle?.economicModel?.archetype || null,
     profile: profile.name,
     profileLabel: profile.label || profile.name,
@@ -622,4 +673,4 @@ function selectedValuation({ stock, category, lifecycle, methodResults, model, c
   };
 }
 
-module.exports = { selectedValuation, profileFor, agreementInfluence, capMethodConcentration, maxCrediblePositiveRerating };
+module.exports = { selectedValuation, profileFor, agreementInfluence, capMethodConcentration, maxCrediblePositiveRerating, capReratingDependentCAGR };
