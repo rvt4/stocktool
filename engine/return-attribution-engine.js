@@ -24,7 +24,7 @@ function buildReturnAttribution(stock, primaryValuation, scenarioAnalysis) {
   const expectedCAGR = Number(p.expectedCAGR ?? scenarioAnalysis?.baseCAGR);
 
   if (!(years > 0) || !(currentPrice > 0) || !(totalEndingValue > 0) || !finite(expectedCAGR)) {
-    return { version: 'return-attribution-v2', available: false, expectedCAGR: finite(expectedCAGR) ? expectedCAGR : null };
+    return { version: 'return-attribution-v57', available: false, expectedCAGR: finite(expectedCAGR) ? expectedCAGR : null };
   }
 
   const revenue = finite(bridge.revenueContribution) ? Number(bridge.revenueContribution) : 0;
@@ -67,7 +67,7 @@ function buildReturnAttribution(stock, primaryValuation, scenarioAnalysis) {
     ? Number(scenarioAnalysis.upsideCAGR) - Number(scenarioAnalysis.downsideCAGR) : null;
 
   return {
-    version: 'return-attribution-v2',
+    version: 'return-attribution-v57',
     available: true,
     expectedCAGR,
     reconstructedCAGR,
@@ -81,7 +81,8 @@ function buildReturnAttribution(stock, primaryValuation, scenarioAnalysis) {
       totalEndingValue,
       directCAGR: cagr(currentPrice, totalEndingValue, years),
       scenarioRange,
-      formula: 'log(1+CAGR) = revenue + growth fade + margin + share count + dividends + valuation',
+      formula: 'Total return is multiplicative; log contributions are shown only because log factors add exactly.',
+      multiplicativeIdentity: '(1+CAGR)^years = ending value / starting price',
       firstGrowth: finite(firstGrowth) ? firstGrowth : null,
       terminalGrowth: finite(terminalGrowth) ? terminalGrowth : null,
       progressiveGrowthBurden: progressiveBurden,

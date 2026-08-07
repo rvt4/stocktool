@@ -95,11 +95,16 @@ function selectValuationMethods(stock, category, methods) {
   const rawWeights = {};
   const excludedMethods = [];
 
+  // V57: method applicability is a gate, not merely a soft weight. A valuation
+  // method that is economically mismatched to the business cannot influence fair value.
+  const applicabilityFloor = 0.25;
+
   for (const key of METHOD_KEYS) {
     const available = Number.isFinite(methods?.[key]) && methods[key] > 0;
-    rawWeights[key] = available ? (base[key] || 0) * (suitability[key] || .1) : 0;
+    const applicable = available && (suitability[key] || 0) >= applicabilityFloor;
+    rawWeights[key] = applicable ? (base[key] || 0) * (suitability[key] || .1) : 0;
     if (!available) excludedMethods.push({ method: key, reason: 'No valid valuation produced' });
-    else if ((suitability[key] || 0) < .25) excludedMethods.push({ method: key, reason: 'Low method suitability', suitability: suitability[key] });
+    else if (!applicable) excludedMethods.push({ method: key, reason: 'Economically inapplicable', suitability: suitability[key], hardExcluded: true });
   }
 
   // V18 business-aware method weighting. High-quality scaling brands and innovation
@@ -143,7 +148,7 @@ function selectValuationMethods(stock, category, methods) {
     .sort((a, b) => weights[b] - weights[a]);
 
   return {
-    version: 'business-model-first-v19',
+    version: 'business-model-first-v57',
     industry,
     category,
     primaryMethod: ranked[0] || null,
