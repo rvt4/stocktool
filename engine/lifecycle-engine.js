@@ -85,6 +85,22 @@ function classifyLifecycle(stock) {
     && (gross.length < 2 || gross.at(-1) >= median(gross.slice(-4)) - .035)
     && positiveFcf >= .50;
 
+  // V61 profitability-inflection regime. A company crossing from investment-stage
+  // losses into durable positive margins is not automatically a cyclical merely
+  // because historical earnings changed sign. Require operating improvement,
+  // positive recent cash generation and continued revenue growth so the rule does
+  // not excuse ordinary deteriorating or commodity-cycle businesses.
+  const netMargins = recent.map(y => y.revenue > 0 && Number.isFinite(y.netIncome) ? y.netIncome / y.revenue : null).filter(Number.isFinite);
+  const recentFcfMargins = recent.map(y => y.revenue > 0 && Number.isFinite(y.fcf) ? y.fcf / y.revenue : null).filter(Number.isFinite);
+  const netInflection = netMargins.length >= 3 && netMargins.at(-1) > .02
+    && median(netMargins.slice(0, -1)) < netMargins.at(-1) - .035;
+  const fcfInflection = recentFcfMargins.length >= 3 && recentFcfMargins.at(-1) > .04
+    && recentFcfMargins.at(-1) > median(recentFcfMargins.slice(0, -1)) + .025;
+  const profitabilityInflection = !['energy','materials'].includes(industry)
+    && analystForward >= .08 && forward2 >= .06
+    && positiveFcf >= .40 && (netInflection || fcfInflection)
+    && (op.length < 2 || op.at(-1) >= median(op.slice(-4)));
+
   let stage;
   if (archetype.archetype === 'Scaling Consumer Brand') stage = analystForward >= .24 && persistenceScore >= .60 ? 'Hyper Growth' : 'Growth';
   else if (archetype.archetype === 'Secular Compute Platform') stage = analystForward >= .24 && persistenceScore >= .62 ? 'Hyper Growth' : 'Growth';
@@ -97,6 +113,7 @@ function classifyLifecycle(stock) {
   else if (industry === 'reit') stage = 'Asset Heavy';
   else if (industry === 'utilities') stage = 'Utility';
   else if (temporaryDisruption && forward2 >= .10 && industry !== 'semiconductors-hardware') stage = 'Temporary Disruption';
+  else if (profitabilityInflection) stage = analystForward >= .13 ? 'Growth' : 'Compounder';
   else if (revenueDrawdown && marginRecovery && analystForward >= 0 && !cyclicalIndustry) stage = 'Turnaround';
   else if (cyclicalIndustry && (growthVolatility >= .14 || marginVolatility >= .06 || revenueDrawdown) && persistenceScore < .72) stage = 'Cyclical';
   else if (analystForward >= .24 && persistenceGrowth >= .16 && persistenceScore >= .58 && !structuralFinancial && industry !== 'consumer-staples') stage = 'Hyper Growth';
@@ -158,9 +175,9 @@ function classifyLifecycle(stock) {
     compoundingPotential,
     persistenceGrowth,
     avgRoic, positiveFcfRate: positiveFcf, growthVolatility, marginVolatility,
-    temporaryDisruption,
-    normalizeMargins: stage === 'Turnaround' || stage === 'Financial' || (stage === 'Cyclical' && cyclicalIndustry),
-    marginNormalizationReason: stage === 'Turnaround' ? 'turnaround' : stage === 'Financial' ? 'financial' : (stage === 'Cyclical' && cyclicalIndustry) ? 'evidence-backed-cycle' : null,
+    temporaryDisruption, profitabilityInflection, netInflection, fcfInflection,
+    normalizeMargins: stage === 'Turnaround' || stage === 'Financial' || profitabilityInflection || (stage === 'Cyclical' && cyclicalIndustry),
+    marginNormalizationReason: stage === 'Turnaround' ? 'turnaround' : stage === 'Financial' ? 'financial' : profitabilityInflection ? 'profitability-inflection' : (stage === 'Cyclical' && cyclicalIndustry) ? 'evidence-backed-cycle' : null,
     confidence,
     archetype: archetype.archetype, economicModel: archetype,
     diagnostics: { industry, marketCap, revenueDrawdown, marginRecovery, fcfStability, grossStability, pricing, moat, scalePenalty, archetype },

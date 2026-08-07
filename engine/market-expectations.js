@@ -25,7 +25,7 @@ function buildMarketExpectations(stock,model,marketImpliedGrowth,returnV2){
   targetNetMargin:exit.netMargin??null,
   multipleReratingContribution:returnV2?.breakdown?.multipleRerating??null,
   interpretation,
-  summary:marketImpliedGrowth==null?'Market-implied growth unavailable.':`Current price implies roughly ${(marketImpliedGrowth*100).toFixed(1)}% annual FCF growth versus ${(Number(modeledYear1)*100).toFixed(1)}% modeled near-term revenue growth. ${interpretation}`
+  summary:marketImpliedGrowth==null?'Market-implied growth unavailable.':`Current price implies roughly ${(marketImpliedGrowth*100).toFixed(1)}% annual revenue growth versus ${(Number(modeledYear1)*100).toFixed(1)}% modeled near-term revenue growth. ${interpretation}`
  };
 }
 module.exports={buildMarketExpectations};

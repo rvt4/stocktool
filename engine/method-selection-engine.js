@@ -78,6 +78,16 @@ function dataSuitability(stock, category, industry) {
     suitability.ebitdaExit *= .65;
   }
 
+  // V61 business-model eligibility. Revenue multiples are only decision-useful
+  // when revenue is a reasonable proxy for eventual owner economics. Low-margin
+  // spread businesses, regulated/asset-income structures, commodity businesses,
+  // and healthcare-service/insurance models fail that test systematically.
+  const latestNetMargin = last.revenue > 0 && Number.isFinite(last.netIncome) ? last.netIncome / last.revenue : null;
+  const latestFcfMargin = last.revenue > 0 && Number.isFinite(last.fcf) ? last.fcf / last.revenue : null;
+  const revenueMultipleInvalid = ['healthcare-services','financials','utilities','reit','energy','materials'].includes(industry)
+    || ((latestNetMargin != null && latestNetMargin < .07) && (latestFcfMargin != null && latestFcfMargin < .08) && !['software','healthcare-innovation'].includes(industry));
+  if (revenueMultipleInvalid) suitability.revenueExit = 0;
+
   return {
     suitability,
     diagnostics: {

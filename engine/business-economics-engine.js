@@ -21,7 +21,7 @@ function growthRates(years, field = 'revenue') {
   return out;
 }
 
-function computeDurability(stock, pricingPower, compounder) {
+function computeDurability(stock, pricingPower, compounder, lifecycle = null) {
   const years = (stock.financials?.years || []).slice(-8);
   const opMargins = years.map(y => y.operatingMargin ?? y.opMargin);
   const grossMargins = years.map(y => y.grossMargin);
@@ -31,7 +31,18 @@ function computeDurability(stock, pricingPower, compounder) {
   const positiveIncome = years.length ? years.filter(y => Number(y.netIncome) > 0).length / years.length : null;
   const marginStability = Math.round((lower(volatility(opMargins), .01, .12) + lower(volatility(grossMargins), .01, .12) + lower(volatility(fcfMargins), .015, .16)) / 3);
   const growthStability = lower(volatility(revenueGrowth), .025, .22);
-  const recessionResistance = higher(Math.min(positiveFcf ?? .5, positiveIncome ?? .5), .35, 1);
+  let recessionResistance = higher(Math.min(positiveFcf ?? .5, positiveIncome ?? .5), .35, 1);
+  // V61: for verified profitability inflections, the distant loss years describe
+  // the old investment phase rather than current durability. Blend in the most
+  // recent three-year cash/earnings record instead of treating the sign change as
+  // evidence of ordinary cyclicality.
+  if (lifecycle?.profitabilityInflection && years.length >= 3) {
+    const latest3 = years.slice(-3);
+    const recentFcf = latest3.filter(y => Number(y.fcf) > 0).length / latest3.length;
+    const recentIncome = latest3.filter(y => Number(y.netIncome) > 0).length / latest3.length;
+    const recentResistance = higher(Math.min(recentFcf, recentIncome), .35, 1);
+    recessionResistance = Math.round(recessionResistance * .35 + recentResistance * .65);
+  }
   const pricing = clamp(Number(pricingPower?.score ?? 50), 0, 100);
   const compound = clamp(Number(compounder?.score ?? 50), 0, 100);
   const score = Math.round(clamp(marginStability * .28 + growthStability * .20 + recessionResistance * .22 + pricing * .14 + compound * .16, 0, 100));
@@ -101,7 +112,7 @@ function computeBusinessEconomics(stock, inputs = {}) {
   const lifecycle = inputs.lifecycle || stock.valuation?.lifecycle || {};
   const industryModel = inputs.industryModel || stock.valuation?.industryModel || {};
   const capitalAllocation = computeCapitalAllocationV2(stock);
-  const durability = computeDurability(stock, pricingPower, compounder);
+  const durability = computeDurability(stock, pricingPower, compounder, lifecycle);
   const runway = computeRunway(stock, lifecycle, compounder);
   const industryStructure = computeIndustryStructure(industryModel);
   const capitalIntensity = computeCapitalIntensity(stock, industryModel);
