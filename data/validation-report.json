@@ -1,1 +1,10 @@
-{"version":"validation-v1","generatedAt":"2026-08-07T18:37:56.548Z","stocks":964,"ratingDistribution":{"Exceptional Buy":1,"Strong Buy":1,"Buy":24,"Hold":195,"Avoid":99,"Sell":644},"exceptionalShare":0.001037344398340249,"strongOrBetterShare":0.002074688796680498,"issues":[],"passed":true}
+{
+  "version": "validation-v1",
+  "generatedAt": "2026-08-07T19:14:19.340Z",
+  "stocks": 0,
+  "ratingDistribution": {},
+  "exceptionalShare": 0,
+  "strongOrBetterShare": 0,
+  "issues": [],
+  "passed": true
+}
