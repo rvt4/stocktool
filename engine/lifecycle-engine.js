@@ -77,7 +77,9 @@ function classifyLifecycle(stock) {
   const marginRecovery = op.length >= 3 && op.at(-1) > median(op.slice(0, -1)) + .02;
   const archetype = classifyBusinessArchetype(stock, { analystForward, growth5 });
   const cyclicalIndustry = ['energy', 'materials'].includes(industry) || (['industrials', 'semiconductors-hardware'].includes(industry) && archetype.cyclicalBias >= .60);
-  const structuralFinancial = ['financials', 'reit', 'utilities'].includes(industry);
+  const descriptor = `${stock.sector || ''} ${stock.industry || ''}`;
+  const isManagedCare = /managed care|health insurance|health plan|healthcare|health care/i.test(descriptor);
+  const structuralFinancial = !isManagedCare && ['financials', 'reit', 'utilities'].includes(industry);
   const temporaryDisruption = (latestGrowth < historicalMedian - .10 || forward1 < historicalMedian - .10)
     && forward2 > forward1 + .04
     && (gross.length < 2 || gross.at(-1) >= median(gross.slice(-4)) - .035)
@@ -91,7 +93,7 @@ function classifyLifecycle(stock) {
   else if (archetype.archetype === 'Stable Consumer Compounder') stage = 'Compounder';
   else if (archetype.archetype === 'Consumer Brand Compounder' || archetype.archetype === 'Industrial Compounder' || archetype.archetype === 'Software Compounder' || archetype.archetype === 'Healthcare Compounder' || archetype.archetype === 'Network Compounder') stage = persistenceScore >= .68 ? 'Elite Compounder' : 'Compounder';
   else if (archetype.archetype === 'Digital Financial Platform') stage = analystForward >= .20 ? 'Growth' : 'Compounder';
-  else if (industry === 'financials') stage = 'Financial';
+  else if (industry === 'financials' && !isManagedCare) stage = 'Financial';
   else if (industry === 'reit') stage = 'Asset Heavy';
   else if (industry === 'utilities') stage = 'Utility';
   else if (temporaryDisruption && forward2 >= .10 && industry !== 'semiconductors-hardware') stage = 'Temporary Disruption';

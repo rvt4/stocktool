@@ -1,12 +1,16 @@
 'use strict';
 const clamp=(x,l,h)=>Math.max(l,Math.min(h,x));
 function inferIndustryModel(stock){
- const raw=String(stock.sector||'').toLowerCase();
+ const raw=[stock.sector, stock.industry].filter(Boolean).join(' ').toLowerCase();
  const s=raw.replace(/&/g,'and');
  const ys=stock.financials?.years||[], last=ys.at(-1)||{};
  const gm=last.grossMargin, ci=last.revenue>0&&last.capex!=null?Math.abs(last.capex)/last.revenue:null;
  let model='general';
- if(/financial|bank|insurance/.test(s)) model='financials';
+ // V56: healthcare insurers / managed-care operators are operating healthcare
+ // businesses, not banks. Match healthcare delivery and managed-care terms before
+ // the broad insurance token so UNH/ELV/CI/HUM do not inherit financial margin logic.
+ if(/managed care|health insurance|health plan|healthcare|health care|medical|pharma|biotech/.test(s)) model=gm>=.60?'healthcare-innovation':'healthcare-services';
+ else if(/financial|bank|insurance/.test(s)) model='financials';
  else if(/real estate|reit/.test(s)) model='reit';
  else if(/utilit/.test(s)) model='utilities';
  else if(/energy|oil|gas/.test(s)) model='energy';

@@ -62,6 +62,11 @@ const MODELS = {
 
 function resolveSectorModel(stock) {
   const text = [stock.sector, stock.industry, stock.valuation?.industryModel?.model, stock.valuation?.industryModel?.key].filter(Boolean).join(' ');
+  // V56: managed-care and healthcare-insurance companies must resolve to the
+  // healthcare model even though their descriptions contain the word insurance.
+  if (/managed care|health insurance|health plan|healthcare|health care|medical/i.test(text)) {
+    return { key: 'healthcare', ...MODELS.healthcare };
+  }
   for (const [key, model] of Object.entries(MODELS)) {
     if (key !== 'general' && model.match.test(text)) return { key, ...model };
   }

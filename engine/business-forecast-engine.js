@@ -560,7 +560,9 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
 
 function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
   const industry = stock.valuation?.industryModel?.model || 'general';
-  const isFinancial = industry === 'financials' || /financial|bank|credit|lending|fintech|broker|insurance/i.test(`${stock.sector || ''} ${stock.industry || ''}`);
+  const descriptor = `${stock.sector || ''} ${stock.industry || ''}`;
+  const isManagedCare = /managed care|health insurance|health plan|healthcare|health care/i.test(descriptor);
+  const isFinancial = !isManagedCare && (industry === 'financials' || /financial|bank|credit|lending|fintech|broker|insurance/i.test(descriptor));
   const ys = (stock.financials?.years || []).slice(-9);
   const state = growthModel?.assumptions?.state || deriveBusinessState(stock, lifecycle);
   const estimates = stock.analystEstimates || {};
@@ -686,8 +688,11 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
 
     if (deterioration) {
       target = Math.min(target, Math.max(worst, (longMedian ?? start) * 0.75 + start * 0.25));
-    } else if (state.regime === 'normalizing') {
-      target = Math.min(target, Math.max(start - 0.035, longMedian ?? start));
+    } else if (state.regime === 'normalizing' && recentTrend < -0.010 && latestMargin != null && recentMedian != null && latestMargin < recentMedian - 0.008) {
+      // Only compress margins for a genuinely observed normalization. A generic
+      // 'normalizing' regime is not enough when recent profitability is stable or
+      // analyst EPS implies improvement.
+      target = Math.min(target, Math.max(start - 0.020, longMedian ?? start));
     } else if (positiveOperatingSetup) {
       // Directional consistency invariant: broad-based compression is not a
       // valid central case when growth, pricing power, ROIC and gross-margin
@@ -710,9 +715,15 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
         { value: start, weight: 0.60 },
         { value: recentAnchor, weight: 0.40 },
       ]) ?? start;
-      const compressionAllowance = field === 'ebitda' ? 0.018 : field === 'fcf' ? 0.015 : 0.015;
+      // Central-case continuity is intentionally tight. Without deterioration,
+      // a growing business should not lose multiple margin points merely because
+      // old history contains a different business mix. Low-margin healthcare
+      // services receive an even tighter guardrail because a 1-2 point move is
+      // economically enormous.
+      const lowMarginBusiness = start >= 0 && start <= 0.08;
+      const compressionAllowance = lowMarginBusiness ? 0.004 : field === 'ebitda' ? 0.008 : 0.007;
       const proportionalFloor = start >= 0
-        ? start * (field === 'ebitda' ? 0.72 : 0.70)
+        ? start * (lowMarginBusiness ? 0.92 : 0.88)
         : start - compressionAllowance;
       const continuityFloor = Math.max(
         start - compressionAllowance,
@@ -826,6 +837,25 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
     };
   }
 
+  // V56 accounting-coherence invariant. For ordinary operating companies,
+  // EBITDA margin cannot persist below net margin. This previously allowed UBER
+  // to show falling EBITDA margins while analyst-anchored net margin and EPS rose.
+  // Raise EBITDA to a conservative buffer above net rather than lowering the
+  // analyst-backed net forecast.
+  if (!isFinancial) {
+    for (let t = 0; t < years; t++) {
+      const net = paths.net?.[t];
+      const ebitda = paths.ebitda?.[t];
+      if (finite(net) && finite(ebitda)) {
+        const requiredEbitda = clamp(net + 0.018, bounds.ebitda[0], bounds.ebitda[1]);
+        if (ebitda < requiredEbitda) paths.ebitda[t] = requiredEbitda;
+      }
+    }
+    if (finite(targets.net) && finite(targets.ebitda)) {
+      targets.ebitda = Math.max(targets.ebitda, clamp(targets.net + 0.018, bounds.ebitda[0], bounds.ebitda[1]));
+    }
+  }
+
   // Cross-margin integrity check. When all operating evidence is positive, do
   // not permit EBITDA, FCF and net margins to all finish below their starting
   // levels. This catches exactly the AMD/PLTR failure mode seen in V33.
@@ -848,7 +878,7 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
     targets,
     diagnostics,
     assumptions: {
-      version: '55.0',
+      version: '56.0',
       avgGrowth3,
       avgGrowth5,
       durableGrowth,
@@ -862,7 +892,7 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
       dilutionCap,
       highQualityGrowth,
     },
-    source: 'v55_profitability_continuity_margin_forecast',
+    source: 'v56_industry_and_margin_coherence_forecast',
   };
 }
 module.exports = {
