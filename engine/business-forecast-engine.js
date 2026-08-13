@@ -250,6 +250,61 @@ function deriveBusinessState(stock, lifecycle = null) {
   };
 }
 
+
+// V64 growth provenance: distinguish growth produced by the existing business
+// from growth that may have been purchased through acquisitions. SEC cash-flow
+// tags do not tell us acquired revenue directly, so this is deliberately an
+// evidence score rather than a fake "organic growth" estimate. Large recent
+// acquisition spend, especially when paired with debt/share expansion and a
+// forward growth step-up, reduces the amount of headline growth treated as
+// independently durable until the combined business proves it in history.
+function assessGrowthProvenance(stock, state) {
+  const years = (stock.financials?.years || []).slice(-6);
+  if (!years.length) return { score: 50, confidence: 0, acquisitionDependence: 0, organicEvidence: 0.5, flags: ['no_history'] };
+  const recent = years.slice(-3);
+  const latestRevenue = Math.max(1, Number(years.at(-1)?.revenue) || Number(state?.latestRevenue) || 1);
+  const acquisitionSpend = recent.reduce((sum, y) => sum + (finite(y.acquisitions) ? Math.abs(Number(y.acquisitions)) : 0), 0);
+  const positiveFcf = recent.reduce((sum, y) => sum + (Number(y.fcf) > 0 ? Number(y.fcf) : 0), 0);
+  const acquisitionToRevenue = acquisitionSpend / latestRevenue;
+  const acquisitionToFcf = positiveFcf > 0 ? acquisitionSpend / positiveFcf : (acquisitionSpend > 0 ? 4 : 0);
+
+  const shares = years.map(y => Number(y.sharesOutTTM)).filter(x => x > 0);
+  const shareGrowth = shares.length >= 2 ? cagr(shares[0], shares.at(-1), shares.length - 1) : 0;
+  const debt = years.map(y => finite(y.totalDebt) ? Number(y.totalDebt)
+    : (finite(y.longTermDebt) || finite(y.shortTermDebt)) ? Number(y.longTermDebt || 0) + Number(y.shortTermDebt || 0) : null)
+    .filter(finite);
+  const debtIncreaseToRevenue = debt.length >= 2 ? Math.max(0, debt.at(-1) - debt[0]) / latestRevenue : 0;
+
+  const acquisitionIntensity = clamp(
+    0.62 * clamp(acquisitionToRevenue / 0.75, 0, 1) +
+    0.23 * clamp(acquisitionToFcf / 3.0, 0, 1) +
+    0.10 * clamp(debtIncreaseToRevenue / 0.45, 0, 1) +
+    0.05 * clamp(Math.max(0, shareGrowth) / 0.06, 0, 1), 0, 1
+  );
+  const forwardStepUp = Math.max(0, Number(state?.forwardAverage || 0) - Number(state?.recentRate || state?.longRate || 0));
+  const stepUpRisk = clamp(forwardStepUp / 0.16, 0, 1);
+  const historyProof = clamp(
+    (state?.growth3 != null ? 0.30 : 0) +
+    (state?.growth5 != null ? 0.22 : 0) +
+    clamp(Number(state?.positiveFcfRate ?? .5), 0, 1) * 0.20 +
+    clamp(Number(state?.grossStability ?? .5), 0, 1) * 0.16 +
+    clamp(Number(state?.forecastAgreement ?? .5), 0, 1) * 0.12,
+    0, 1
+  );
+  const acquisitionDependence = clamp(acquisitionIntensity * (0.72 + stepUpRisk * 0.28) * (1 - historyProof * 0.28), 0, 1);
+  const organicEvidence = clamp(1 - acquisitionDependence, 0, 1);
+  const confidence = clamp((acquisitionSpend > 0 ? .72 : .45) + Math.min(recent.length, 3) * .06, 0, 1);
+  const score = Math.round(clamp(100 * (0.58 * organicEvidence + 0.24 * historyProof + 0.18 * (1 - stepUpRisk)), 0, 100));
+  const flags = [];
+  if (acquisitionToRevenue >= .20) flags.push('material_recent_acquisitions');
+  if (acquisitionToRevenue >= .50) flags.push('acquisition_spend_large_vs_revenue');
+  if (debtIncreaseToRevenue >= .15) flags.push('acquisition_funding_or_debt_step_up');
+  if (shareGrowth >= .025) flags.push('share_issuance_or_dilution');
+  if (stepUpRisk >= .35) flags.push('forward_growth_above_standalone_history');
+  return { score, confidence, acquisitionDependence, organicEvidence, historyProof, acquisitionIntensity,
+    acquisitionSpend, acquisitionToRevenue, acquisitionToFcf, debtIncreaseToRevenue, shareGrowth, forwardStepUp, flags };
+}
+
 function scaleAndRunway(stock, state) {
   const marketCap = Number(stock.valuation?.marketCap) || 0;
   const revenue = Number(state.years.at(-1)?.revenue) || 1;
@@ -291,6 +346,7 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
   const analystBias = Number(cal.analystBias) || 0;
   const historyBias = Number(cal.historyBias) || 0;
   const terminal = terminalAnchor(stock, state, scale);
+  const growthProvenance = assessGrowthProvenance(stock, state);
 
   // V38 evidence blend: consensus is useful, but it should not dominate the
   // forecast. Target roughly 40% analyst / 30% history / 30% current momentum and
@@ -366,6 +422,22 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
   y1 = shrinkOnlyIfOptimistic(y1);
   y2 = shrinkOnlyIfOptimistic(y2);
 
+  // When recent acquisitions are economically material, do not call all of the
+  // consolidated growth durable on day one. Keep most of consensus in the near
+  // term (the acquired revenue is real), but fade the unproven portion toward
+  // independently observed operating evidence. The haircut disappears as the
+  // combined company builds a multi-year record.
+  const provenanceHaircut = clamp(growthProvenance.acquisitionDependence * (1 - growthProvenance.historyProof * .35), 0, .38);
+  if (provenanceHaircut > .02) {
+    const provenanceAnchor = weightedMean([
+      { value: evidenceAnchor, weight: .55 },
+      { value: state.longRate, weight: state.longRate == null ? 0 : .25 },
+      { value: terminal, weight: .20 },
+    ]) ?? evidenceAnchor;
+    if (y1 > provenanceAnchor) y1 = provenanceAnchor + (y1 - provenanceAnchor) * (1 - provenanceHaircut * .42);
+    if (y2 > provenanceAnchor) y2 = provenanceAnchor + (y2 - provenanceAnchor) * (1 - provenanceHaircut * .62);
+  }
+
   if (['inflecting', 'accelerating'].includes(state.regime)) {
     y1 += clamp(state.inflection * 0.10, 0, 0.025);
     y2 += clamp(state.inflection * 0.07, 0, 0.018);
@@ -423,7 +495,8 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
     progressiveExcess - durabilityRelief - moatRelief - capitalRelief,
     0, 1
   );
-  const persistenceReduction = Math.round(fadeBurden * 2);
+  const provenancePersistenceReduction = Math.round(growthProvenance.acquisitionDependence * 1.5);
+  const persistenceReduction = Math.round(fadeBurden * 2) + provenancePersistenceReduction;
   persistenceYears = Math.max(2, persistenceYears - persistenceReduction);
 
   // The bridge anchor is an intermediate operating rate, not the terminal rate.
@@ -522,15 +595,15 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
   );
   const pathSmoothness = 1 - clamp(stdev(annualChanges) / 0.10, 0, 1);
   const plausibilityScore = Math.round(clamp(
-    100 * (0.36 * evidenceCompleteness + 0.31 * state.persistenceScore + 0.20 * pathSmoothness + 0.13 * scale.runway) - continuityBreaches * 20,
+    100 * (0.36 * evidenceCompleteness + 0.31 * state.persistenceScore + 0.20 * pathSmoothness + 0.13 * scale.runway) - continuityBreaches * 20 - growthProvenance.acquisitionDependence * 12,
     25, 98
   ));
 
   return {
     path,
-    source: 'v63_consensus_shrunk_evidence_disciplined_growth_forecast',
+    source: 'v64_growth_provenance_evidence_disciplined_forecast',
     assumptions: {
-      version: '63.0',
+      version: '64.0',
       regime: state.regime,
       analyst1: state.analyst1,
       analyst2: state.analyst2,
@@ -554,6 +627,9 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
       economicsFadeMultiplier,
       businessEconomicsScore: Number(economics?.overall ?? 50),
       persistenceReduction,
+      provenancePersistenceReduction,
+      provenanceHaircut,
+      growthProvenance,
       sustainableExcessRetention,
       rawBridgeOperatingAnchor: rawBridgeAnchor,
       bridgeOperatingAnchor: bridgeAnchor,
@@ -605,7 +681,12 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
   const growthPath = (growthModel?.path || []).slice(0, years);
   const avgGrowth3 = mean(growthPath.slice(0, Math.min(3, years))) ?? 0;
   const avgGrowth5 = mean(growthPath) ?? avgGrowth3;
-  const durableGrowth = clamp((avgGrowth3 - 0.05) / 0.25, 0, 1);
+  const growthProvenance = growthModel?.assumptions?.growthProvenance || assessGrowthProvenance(stock, state);
+  // Purchased growth is real revenue but weaker evidence of standalone operating
+  // leverage. Require the combined company to prove margin conversion before
+  // granting the same expansion credit as organic growth.
+  const provenanceLeverageFactor = clamp(1 - growthProvenance.acquisitionDependence * .45, .58, 1);
+  const durableGrowth = clamp((avgGrowth3 - 0.05) / 0.25, 0, 1) * provenanceLeverageFactor;
   const pricing = clamp(state.pricing ?? 0.5, 0, 1);
   const roicQuality = clamp(state.roicQuality ?? 0.5, 0, 1);
   const persistence = clamp(state.persistenceScore ?? 0.5, 0, 1);
@@ -916,6 +997,8 @@ function forecastMarginPaths(stock, growthModel, years = 5, lifecycle = null) {
       rawShareGrowth,
       dilutionCap,
       highQualityGrowth,
+      growthProvenance,
+      provenanceLeverageFactor,
     },
     source: 'v56_industry_and_margin_coherence_forecast',
   };
@@ -926,4 +1009,5 @@ module.exports = {
   deriveBusinessState,
   annualGrowthRates,
   quarterlyMomentum,
+  assessGrowthProvenance,
 };

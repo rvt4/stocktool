@@ -1,4 +1,5 @@
 'use strict';
+const { assessGrowthProvenance, deriveBusinessState } = require('./business-forecast-engine');
 function clamp(x,lo,hi){return Math.max(lo,Math.min(hi,x));}
 function mean(a){return a.length?a.reduce((s,x)=>s+x,0)/a.length:null;}
 function computeGrowthQuality(stock,cycle,capital,competition){
@@ -17,7 +18,9 @@ function computeGrowthQuality(stock,cycle,capital,competition){
    const lastMargin=last?.revenue>0?Number(last.fcf||0)/last.revenue:null;
    if(Number.isFinite(firstMargin)&&Number.isFinite(lastMargin)&&lastMargin>firstMargin+.02) inflectionCredit=6;
  }
- const score=Math.round(clamp(positive*15+cashEvidence*20+stability*18+pricing*17+(capital?.score??50)*.15+(competition?.score??50)*.15+inflectionCredit,0,100));
- return {score,grade:score>=85?'A':score>=75?'B+':score>=65?'B':score>=50?'C':'D',cashConversionQuality:cashEvidence,historicalCashPositiveRate:cash,profitabilityInflection:!!lifecycle.profitabilityInflection,inflectionCredit,marginStability:stability,pricingContribution:pricing,cycleQuality:cycle?.quality??50};
+ const provenance=assessGrowthProvenance(stock, deriveBusinessState(stock, lifecycle));
+ const provenancePenalty=clamp(provenance.acquisitionDependence*16,0,16);
+ const score=Math.round(clamp(positive*15+cashEvidence*20+stability*18+pricing*17+(capital?.score??50)*.15+(competition?.score??50)*.15+inflectionCredit-provenancePenalty,0,100));
+ return {score,grade:score>=85?'A':score>=75?'B+':score>=65?'B':score>=50?'C':'D',cashConversionQuality:cashEvidence,historicalCashPositiveRate:cash,profitabilityInflection:!!lifecycle.profitabilityInflection,inflectionCredit,marginStability:stability,pricingContribution:pricing,cycleQuality:cycle?.quality??50,growthProvenance:provenance,provenancePenalty};
 }
 module.exports={computeGrowthQuality};
