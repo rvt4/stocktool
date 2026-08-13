@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const { buildStockRecord, normalizeSecTicker } = require('./data-fetchers');
 const { computeSectorExitMultiples, valuateStock } = require('./valuation-methods');
-const { scoreUniverse } = require('./scoring-engine');
+const { scoreUniverse, expectedCAGR: computeFundamentalGrowth } = require('./scoring-engine');
 const { assessDataIntegrity } = require('./engine/data-integrity');
 const { buildScenarios } = require('./engine/scenario-engine');
 const { computeExpectedReturnProfile } = require('./engine/expected-return-engine');
@@ -352,6 +352,10 @@ async function run() {
       stock, pricingPowerV2, compounder, industryModel, result.moat, result.lifecycle
     );
     stock.valuation.businessEconomics = stock.valuation.economicQuality.businessEconomics;
+    // Compute forecast-sanity diagnostics before scenarios/return quality so clamps are
+    // decision inputs rather than a warning added only after the model has finished.
+    const preScenarioFundamental = computeFundamentalGrowth(stock, result.category || stock.valuation.category || 'Value');
+    stock.valuation.fundamentalGrowthDiagnostics = preScenarioFundamental?.breakdown ?? null;
     let scenarioAnalysis = buildScenarios(stock, result, dataIntegrity);
     scenarioAnalysis = applyInstitutionalSanity(stock, scenarioAnalysis, result.agreementScore);
     const rawExpectedReturnProfile = computeExpectedReturnProfile(stock, scenarioAnalysis, dataIntegrity);

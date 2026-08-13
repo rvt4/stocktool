@@ -341,8 +341,11 @@ ${s.ownerEarningsReturn ? `<div><strong>V20 primary model:</strong> ${s.ownerEar
 <div><strong>Method-blend diagnostic:</strong> ${s.primaryValuation?.methodBlendFairValueToday == null ? '—' : '$' + num(s.primaryValuation.methodBlendFairValueToday)}</div>
 <div><strong>Blend consistency gap:</strong> ${s.primaryValuation?.valuationConsistencyGap == null ? '—' : pct(s.primaryValuation.valuationConsistencyGap)}</div>
 <div><strong>Overall confidence:</strong> ${s.confidenceScore ?? '—'}/100</div>
+<div><strong>Data confidence:</strong> ${s.dataConfidenceScore ?? '—'}/100</div>
+<div><strong>Forecast confidence:</strong> ${s.forecastConfidenceScore ?? '—'}/100</div>
 <div><strong>Business confidence:</strong> ${s.businessConfidenceScore ?? '—'}/100</div>
 <div><strong>Valuation confidence:</strong> ${s.valuationConfidenceScore ?? '—'}/100</div>
+<div><strong>Rerating dependence:</strong> ${s.reratingDependence != null ? (s.reratingDependence * 100).toFixed(0) + '%' : '—'}</div>
 <div><strong>Calibration:</strong> ${s.calibrationActive ? 'Active' : 'Collecting history'} (${s.calibration?.observationCount ?? 0} observations)</div>
 <div><strong>Suggested max weight:</strong> ${pct(s.portfolioProfile?.suggestedMaxWeight)}</div>
 </div>

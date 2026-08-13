@@ -411,11 +411,12 @@ function expectedCAGR(s, category) {
 
   // Flag results built on noisy inputs so the frontend / you can treat them with
   // appropriately less confidence, rather than silently trusting a clamped-down number.
-  const clampedInputs = [
-    rawRevGrowth !== forwardRevGrowth,
-    rawMarginExpansion !== marginExpansionAnnualized,
-    (rawShareCountCagr != null ? -rawShareCountCagr : 0) !== shareCountReduction,
-  ].some(Boolean);
+  const clampFlags = {
+    revenueGrowth: rawRevGrowth !== forwardRevGrowth,
+    marginExpansion: rawMarginExpansion !== marginExpansionAnnualized,
+    shareCount: (rawShareCountCagr != null ? -rawShareCountCagr : 0) !== shareCountReduction,
+  };
+  const inputClampCount = Object.values(clampFlags).filter(Boolean).length;
 
   // Sustainable per-share value growth is not the simple sum of every favorable
   // input. Revenue growth carries most of the economics; margin expansion, buybacks,
@@ -460,10 +461,15 @@ function expectedCAGR(s, category) {
   const total = clamp(rawFundamentalGrowth, -0.35, sustainableCap);
   const sustainabilityCapped = rawFundamentalGrowth > sustainableCap + 1e-9;
 
-  return { fundamentalGrowthRate: total, lowConfidence: clampedInputs || sustainabilityCapped, revGrowthSources, revGrowthSourcesUsed, cagrDistortion, breakdown: {
+  const sanityClampCount = inputClampCount + (sustainabilityCapped ? 1 : 0);
+  // A single clamp is a caution flag, not an automatic thesis failure. Two or more
+  // independent clamps indicate that the forecast is leaning materially on bounded inputs.
+  const lowConfidence = sanityClampCount >= 2;
+  return { fundamentalGrowthRate: total, lowConfidence, revGrowthSources, revGrowthSourcesUsed, cagrDistortion, breakdown: {
     forwardRevGrowth, marginExpansionAnnualized, marginContribution,
     shareCountReduction, dividendYield, rawFundamentalGrowth,
-    sustainableCap, durabilitySignal, sustainabilityCapped
+    sustainableCap, durabilitySignal, sustainabilityCapped,
+    inputClampCount, sanityClampCount, clampFlags
   } };
 }
 
@@ -814,7 +820,7 @@ function scoreStock(stock) {
   const expectedReturn = v7Return?.expectedCAGR ?? stock.valuation.fiveYearPriceTarget?.cagr ?? null;
   const riskAdjustedReturn = v7Return?.riskAdjustedCAGR ?? expectedReturn;
   const lastRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
-  const requiredMOS = dynamicMOS(category, lastRoic);
+  const baseRequiredMOS = dynamicMOS(category, lastRoic);
 
   const currentPrice = stock.price.current;
   const fairValue = stock.valuation.fairValueEstimate; // computed upstream if available
@@ -828,6 +834,15 @@ function scoreStock(stock) {
   const marginOfSafety = rawMarginOfSafety != null ? clamp(rawMarginOfSafety, 0, 1.0) : null;
   const premiumToFairValue = rawMarginOfSafety != null && rawMarginOfSafety < 0 ? -rawMarginOfSafety : 0;
   const marginOfSafetyDistorted = rawMarginOfSafety != null && (rawMarginOfSafety > 1.0 || rawMarginOfSafety < -1.0);
+  const reratingDependence = clamp(Number(v7Return?.returnQualityDiagnostics?.reratingDependence ?? 0), 0, 1.5);
+  const sanityClampCount = Number(breakdown?.sanityClampCount ?? 0);
+  const agreement01ForMos = clamp(Number(stock.valuation.methodAgreementScore ?? 50) / 100, 0, 1);
+  // Forecast fragility and rerating-dependent theses need more price protection. This is
+  // deliberately a soft, system-wide adjustment rather than a ticker/category override.
+  const clampMosAdd = sanityClampCount <= 0 ? 0 : sanityClampCount === 1 ? .01 : sanityClampCount === 2 ? .025 : .04;
+  const reratingMosAdd = reratingDependence <= .35 ? 0 : clamp((reratingDependence - .35) * .045, 0, .035);
+  const disagreementMosAdd = agreement01ForMos >= .65 ? 0 : clamp((.65 - agreement01ForMos) * .05, 0, .025);
+  const requiredMOS = clamp(baseRequiredMOS + clampMosAdd + reratingMosAdd + disagreementMosAdd, .08, .35);
   const meetsRequiredMOS = marginOfSafety != null ? marginOfSafety >= requiredMOS : null;
 
   const marketImpliedGrowth = stock.valuation.marketImpliedGrowth ?? null;
@@ -853,8 +868,30 @@ function scoreStock(stock) {
   ));
   const agreementConfidence = clamp(Number(stock.valuation.methodAgreementScore ?? 35), 0, 100);
   const methodBreadth = clamp((Number(stock.valuation.methodCount ?? 0) / 4) * 100, 0, 100);
+  // Keep confidence dimensions separate. Data confidence asks whether the raw evidence is
+  // dependable; forecast confidence asks how extrapolative the operating model is; valuation
+  // confidence asks whether independent valuation methods corroborate one another.
+  const dataConfidenceScore = Math.round(clamp(
+    integrityConfidence * .60 + analystConfidence * .20 + clamp((revGrowthSources / 3) * 100, 0, 100) * .20, 0, 100
+  ));
+  const growthQualityConfidence = clamp(Number(stock.valuation.growthQuality?.score ?? 55), 0, 100);
+  const clampForecastPenalty = sanityClampCount <= 0 ? 0 : sanityClampCount === 1 ? 6 : sanityClampCount === 2 ? 14 : 22;
+  const forecastConfidenceScore = Math.round(clamp(
+    lifecycleConfidence * .25 + economicsConfidence * .30 + analystConfidence * .20 + growthQualityConfidence * .25 - clampForecastPenalty,
+    0, 100
+  ));
+  // Disagreement is intentionally nonlinear: 50/100 agreement should hurt materially more
+  // than half as much as perfect agreement, especially when only a few methods are usable.
+  const agreementEvidence = 100 * Math.pow(agreementConfidence / 100, 1.35);
   const valuationConfidenceScore = Math.round(clamp(
-    agreementConfidence * .55 + methodBreadth * .20 + analystConfidence * .10 + lifecycleConfidence * .15, 0, 100
+    agreementEvidence * .62 + methodBreadth * .18 + analystConfidence * .08 + lifecycleConfidence * .12, 0, 100
+  ));
+  const reratingConfidencePenalty = reratingDependence <= .30 ? 0 : clamp((reratingDependence - .30) * 24, 0, 22);
+  const jointFragilityPenalty = (reratingDependence > .50 && agreementConfidence < 65)
+    ? clamp((.65 - agreementConfidence / 100) * 18 + (reratingDependence - .50) * 10, 0, 12) : 0;
+  const componentConfidence = dataConfidenceScore * .34 + forecastConfidenceScore * .36 + valuationConfidenceScore * .30;
+  const finalConfidenceScore = Math.round(clamp(
+    Math.min(confidence.score, componentConfidence) - reratingConfidencePenalty - jointFragilityPenalty, 0, 100
   ));
 
   // Fall back to fundamentalGrowthRate only when a price target genuinely couldn't be
@@ -862,7 +899,7 @@ function scoreStock(stock) {
   // from qualifying — but this is the weaker, price-agnostic signal, so flag it.
   const usedFallbackForCAGRTarget = expectedReturn == null;
   const meetsCAGRTarget = (expectedReturn ?? fundamentalGrowthRate) >= 0.15;
-  const investment = computeInvestmentScore(stock, catResult.composite, pricingPower.score, confidence.score, riskAdjustedReturn ?? fundamentalGrowthRate, marginOfSafety);
+  const investment = computeInvestmentScore(stock, catResult.composite, pricingPower.score, finalConfidenceScore, riskAdjustedReturn ?? fundamentalGrowthRate, marginOfSafety);
 
   return {
     ticker: stock.ticker,
@@ -933,9 +970,13 @@ function scoreStock(stock) {
     investmentGrade: investment.score >= 88 ? 'A+' : investment.score >= 80 ? 'A' : investment.score >= 73 ? 'B+' : investment.score >= 65 ? 'B' : investment.score >= 55 ? 'C' : investment.score >= 42 ? 'D' : 'F',
     usedFallbackForCAGRTarget,
     lowConfidence,
-    confidenceScore: confidence.score,
+    confidenceScore: finalConfidenceScore,
+    dataConfidenceScore,
+    forecastConfidenceScore,
     businessConfidenceScore,
     valuationConfidenceScore,
+    reratingDependence,
+    confidencePenalties: { rerating: reratingConfidencePenalty, jointFragility: jointFragilityPenalty, clampForecast: clampForecastPenalty },
     confidenceDeductions: confidence.deductions,
     cagrBreakdown: breakdown,
     growthSource: stock.valuation.growthSource ?? null,
