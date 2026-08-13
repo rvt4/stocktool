@@ -52,14 +52,23 @@ function buildReturnAttribution(stock, primaryValuation, scenarioAnalysis) {
   const logDividend = Math.log1p(clamp(dividendYield, -0.80, 2));
   const logValuation = logExpected - logRevenue - logGrowthFade - logMargin - logBuybacks - logDividend;
 
-  const components = {
-    revenueGrowth: Math.expm1(logRevenue),
-    growthFade: Math.expm1(logGrowthFade),
-    marginChange: Math.expm1(logMargin),
-    shareCountChange: Math.expm1(logBuybacks),
-    dividends: Math.expm1(logDividend),
-    valuationChange: Math.expm1(logValuation),
+  // Dashboard contributions are arithmetic CAGR-point contributions that reconcile
+  // exactly to expectedCAGR.  We preserve the underlying multiplicative factor
+  // rates separately for audit, but do not display those rates as if they were
+  // additive percentages (the old presentation could appear not to sum).
+  const logParts = {
+    revenueGrowth: logRevenue, growthFade: logGrowthFade, marginChange: logMargin,
+    shareCountChange: logBuybacks, dividends: logDividend, valuationChange: logValuation,
   };
+  const logTotal = Object.values(logParts).reduce((a, b) => a + b, 0);
+  const components = {};
+  for (const [key, value] of Object.entries(logParts)) {
+    components[key] = Math.abs(logTotal) > 1e-12 ? expectedCAGR * value / logTotal : 0;
+  }
+  // Eliminate floating-point drift on the residual component.
+  const subtotal = Object.entries(components).filter(([k]) => k !== 'valuationChange').reduce((a, [,v]) => a + v, 0);
+  components.valuationChange = expectedCAGR - subtotal;
+  const factorRates = Object.fromEntries(Object.entries(logParts).map(([k,v]) => [k, Math.expm1(v)]));
 
   const operatingCAGR = Math.expm1(logRevenue + logGrowthFade + logMargin + logBuybacks);
   const reconstructedCAGR = Math.expm1(logRevenue + logGrowthFade + logMargin + logBuybacks + logDividend + logValuation);
@@ -67,12 +76,14 @@ function buildReturnAttribution(stock, primaryValuation, scenarioAnalysis) {
     ? Number(scenarioAnalysis.upsideCAGR) - Number(scenarioAnalysis.downsideCAGR) : null;
 
   return {
-    version: 'return-attribution-v57',
+    version: 'return-attribution-v63',
     available: true,
     expectedCAGR,
     reconstructedCAGR,
     operatingCAGR,
     components,
+    factorRates,
+    contributionSum: Object.values(components).reduce((a,b)=>a+b,0),
     audit: {
       currentPrice,
       projectionYears: years,
@@ -81,7 +92,7 @@ function buildReturnAttribution(stock, primaryValuation, scenarioAnalysis) {
       totalEndingValue,
       directCAGR: cagr(currentPrice, totalEndingValue, years),
       scenarioRange,
-      formula: 'Total return is multiplicative; log contributions are shown only because log factors add exactly.',
+      formula: 'Displayed contributions are allocated CAGR points from exact log-return factors and therefore sum to expected CAGR.',
       multiplicativeIdentity: '(1+CAGR)^years = ending value / starting price',
       firstGrowth: finite(firstGrowth) ? firstGrowth : null,
       terminalGrowth: finite(terminalGrowth) ? terminalGrowth : null,

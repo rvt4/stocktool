@@ -351,6 +351,21 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
   y1 -= analystOptimismPenalty * 0.70;
   y2 -= analystOptimismPenalty;
 
+  // V63 consensus shrinkage: analyst estimates are observations, not truth.
+  // Pull unusually optimistic estimates toward independently observed operating
+  // evidence, with less shrinkage when breadth, persistence and current momentum
+  // corroborate the forecast. This is deliberately generic and cross-sectional.
+  const consensusReliability = clamp(
+    0.34 + state.analystBreadth * 0.22 + state.persistenceScore * 0.24 +
+    (state.qMomentum ? 0.10 : 0) - volatilitySkepticism * 0.10,
+    0.32, 0.86
+  );
+  const shrinkOnlyIfOptimistic = value => value > evidenceAnchor
+    ? evidenceAnchor + (value - evidenceAnchor) * consensusReliability
+    : value;
+  y1 = shrinkOnlyIfOptimistic(y1);
+  y2 = shrinkOnlyIfOptimistic(y2);
+
   if (['inflecting', 'accelerating'].includes(state.regime)) {
     y1 += clamp(state.inflection * 0.10, 0, 0.025);
     y2 += clamp(state.inflection * 0.07, 0, 0.018);
@@ -472,6 +487,13 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
     // central forecast may drop dozens of percentage points in a single year.
     let next = clamp(desired, previous - maxAnnualDrop, previous + maxAnnualIncrease);
 
+    // A central case may reaccelerate only when current evidence says the business
+    // is actually inflecting/accelerating. Otherwise, once growth has begun to
+    // fade, later years cannot mechanically turn back upward toward a bridge.
+    const evidenceBackedReacceleration = ['inflecting', 'accelerating'].includes(state.regime) &&
+      state.persistenceScore >= 0.62 && (state.qMomentum?.trend ?? 0) >= -0.01;
+    if (!evidenceBackedReacceleration && t >= 3 && next > previous) next = previous;
+
     // Revenue-base discipline remains gradual and scale-aware.
     const maxGrowthAtScale = clamp(
       0.34 * scale.combined * scale.runway / Math.pow(Math.max(1, revenueMultiple), 0.18),
@@ -506,12 +528,15 @@ function generateBusinessForecast(stock, lifecycle = null, years = 5, calibratio
 
   return {
     path,
-    source: 'v41_progressive_evidence_disciplined_growth_forecast',
+    source: 'v63_consensus_shrunk_evidence_disciplined_growth_forecast',
     assumptions: {
-      version: '41.0',
+      version: '63.0',
       regime: state.regime,
       analyst1: state.analyst1,
       analyst2: state.analyst2,
+      consensusReliability,
+      analystOptimismGap,
+      analystOptimismPenalty,
       quarterlyMomentum: state.qMomentum,
       recentHistoricalGrowth: state.recentRate,
       longHistoricalGrowth: state.longRate,

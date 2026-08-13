@@ -53,7 +53,15 @@ function assignProbabilityRating(stock, components, probability) {
   // and margin-of-safety hurdle shown in the screener, not merely a sector-relative
   // composite. This prevents 14% names from becoming Strong Buy and prevents a Buy
   // when the displayed MOS is below that company's required MOS.
-  const requiredMos=n(stock.requiredMarginOfSafety, n(stock.valuation?.businessEconomics?.requiredMarginOfSafety, .15));
+  const statedRequiredMos=n(stock.requiredMOS, n(stock.requiredMarginOfSafety, n(stock.valuation?.businessEconomics?.requiredMarginOfSafety, .15)));
+  const returnQuality=n(stock.expectedReturnProfile?.returnQualityScore, n(stock.valuation?.expectedReturnProfile?.returnQualityScore,50));
+  const moat=n(stock.moat?.score, n(stock.valuation?.moat?.score,50));
+  // Elite, durable compounders deserve a smaller *discount* hurdle, not a lower
+  // return hurdle. This avoids systematically excluding premium businesses while
+  // still demanding strong return quality, evidence and valuation agreement.
+  const eliteCompounder=q>=88&&moat>=80&&returnQuality>=72&&agreement>=60&&expectationRisk<55;
+  const requiredMos=eliteCompounder?Math.max(.08,statedRequiredMos*.70):statedRequiredMos;
+  const lowGrowthYieldRisk=!!(stock.expectedReturnProfile?.returnQualityDiagnostics?.lowGrowthYieldRisk ?? stock.valuation?.expectedReturnProfile?.returnQualityDiagnostics?.lowGrowthYieldRisk);
   const exceptionalReturn=Math.max(.18,n(g.exceptionalCagr,.18));
   const strongReturn=Math.max(.15,n(g.strongCagr,.15));
   const buyReturn=.12;
@@ -62,8 +70,8 @@ function assignProbabilityRating(stock, components, probability) {
   let rating='Hold'; let reason='Expected return and evidence do not clear a higher-conviction threshold.';
   if(probability.pPermanentLoss>.52 || er<-.06 || mos<-.40){rating='Sell';reason='Downside or overvaluation risk dominates the modeled return.';}
   else if(q>=g.exceptionalQuality&&er>=exceptionalReturn&&exceptionalMosPass&&c>=78&&r<=g.maxRisk&&probability.pBeat15Cagr>=.72&&bear>=-.05&&exceptionalEvidence&&expectationRisk<55){rating='Exceptional Buy';reason='Exceptional quality, return, required margin of safety, valuation agreement and downside resilience clear every high-conviction gate.';}
-  else if(q>=g.strongQuality&&er>=strongReturn&&mosPass&&c>=68&&r<=g.maxRisk+8&&probability.pBeat15Cagr>=.62&&strongEvidence&&expectationRisk<68){rating='Strong Buy';reason='Quality, at least 15% expected return, required margin of safety and evidence clear the Strong Buy gates.';}
-  else if(er>=buyReturn&&mosPass&&q>=62&&c>=55&&probability.pPositiveReturn>=.58&&!fragileValuation){rating='Buy';reason='Expected return and required margin of safety are attractive, but one or more high-conviction gates remain below Strong Buy levels.';}
+  else if(q>=g.strongQuality&&er>=strongReturn&&mosPass&&c>=68&&r<=g.maxRisk+8&&probability.pBeat15Cagr>=.62&&strongEvidence&&expectationRisk<68&&returnQuality>=58&&!lowGrowthYieldRisk){rating='Strong Buy';reason='Quality, at least 15% expected return, required margin of safety and evidence clear the Strong Buy gates.';}
+  else if(er>=buyReturn&&mosPass&&q>=62&&c>=55&&probability.pPositiveReturn>=.58&&!fragileValuation&&returnQuality>=45&&!lowGrowthYieldRisk){rating='Buy';reason='Expected return and required margin of safety are attractive, but one or more high-conviction gates remain below Strong Buy levels.';}
   else if(fragileValuation&&er>=.075){rating='Hold';reason='The modeled return may be attractive, but valuation agreement or data integrity is too weak for a Buy rating.';}
   // Distinguish a poor business from an excellent business at an unattractive
   // price. High-quality companies with a non-negative modeled return remain Hold
@@ -71,6 +79,6 @@ function assignProbabilityRating(stock, components, probability) {
   else if(q>=80 && er>=0 && probability.pPermanentLoss<.30){rating='Hold';reason='High-quality business, but the current valuation does not offer enough expected return for new capital.';}
   else if(probability.pPermanentLoss>.36 || er<.04){rating='Avoid';reason='The risk-adjusted return is insufficient for new capital.';}
   else if(er>=.075&&probability.pPositiveReturn>=.50){rating='Hold';reason='The company may be investable, but the current price does not offer enough return or certainty.';}
-  return {rating,ratingReason:reason,sectorGates:g};
+  return {rating,ratingReason:reason,sectorGates:g,requiredMos:statedRequiredMos,effectiveRequiredMos:requiredMos,eliteCompounder,returnQuality};
 }
 module.exports={computeProbabilityProfile,assignProbabilityRating};

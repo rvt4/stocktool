@@ -60,14 +60,28 @@ function computeExpectedReturnProfile(stock, scenarioAnalysis, integrity) {
   const expectationRisk = stock?.valuation?.expectationRisk || {};
   const expectationRiskPenalty = clamp(Number(expectationRisk.cagrPenalty || 0), 0, .025);
   const riskAdjustedCAGR = expected - downsidePenalty - uncertaintyPenalty - instabilityPenalty - dataPenalty - qualityHaircut - expectationRiskPenalty;
+  const attribution = buildReturnAttribution(stock, primary, scenario);
+  const attr = attribution?.components || {};
+  const positiveReturn = Math.max(0.01, Number(expected) || 0.01);
+  const reratingDependence = clamp(Math.max(0, Number(attr.valuationChange) || 0) / positiveReturn, 0, 1.5);
+  const dividendDependence = clamp(Math.max(0, Number(attr.dividends) || 0) / positiveReturn, 0, 1.5);
+  const operatingContribution = (Number(attr.revenueGrowth) || 0) + (Number(attr.growthFade) || 0) +
+    (Number(attr.marginChange) || 0) + (Number(attr.shareCountChange) || 0);
+  const operatingSupport = clamp(operatingContribution / positiveReturn, -1, 1.5);
+  const revenueGrowth = stock?.valuation?.projectionAssumptions?.year1 ?? stock?.valuation?.projection?.[0]?.growth ?? null;
+  const lowGrowthYieldRisk = finite(revenueGrowth) && Number(revenueGrowth) < .035 && dividendDependence > .28;
+
+  // Return quality measures how robust the *source* of the return is, not merely
+  // how high the modeled CAGR is. Operating compounding and evidence are rewarded;
+  // dependence on rerating or yield in a stagnant business is penalized.
   const returnQualityScore = Math.round(clamp(
-    ((riskAdjustedCAGR - 0.04) / 0.22) * 66 +
-    evidenceConfidence * 24 +
-    ((integrity?.score ?? 50) / 100) * 10,
+    48 + evidenceConfidence * 24 + ((integrity?.score ?? 50) / 100) * 10 +
+    clamp(operatingSupport, -1, 1) * 18 - reratingDependence * 24 -
+    (lowGrowthYieldRisk ? 14 : 0),
     0, 100
   ));
-
-  const attribution = buildReturnAttribution(stock, primary, scenario);
+  const returnQualityLabel = returnQualityScore >= 80 ? 'Robust' : returnQualityScore >= 65 ? 'Good'
+    : returnQualityScore >= 50 ? 'Mixed' : returnQualityScore >= 35 ? 'Fragile' : 'Speculative';
 
   return {
     expectedCAGR: expected,
@@ -76,6 +90,8 @@ function computeExpectedReturnProfile(stock, scenarioAnalysis, integrity) {
     bullCAGR: bull,
     riskAdjustedCAGR,
     returnQualityScore,
+    returnQualityLabel,
+    returnQualityDiagnostics: { reratingDependence, dividendDependence, operatingSupport, lowGrowthYieldRisk },
     downsidePenalty,
     uncertaintyPenalty,
     instabilityPenalty,

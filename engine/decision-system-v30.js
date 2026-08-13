@@ -4,6 +4,7 @@ const { computeCapitalAllocationV2 } = require('./capital-allocation-v2');
 const { sectorAdjustedComposite } = require('./sector-model-engine');
 const { computeProbabilityProfile, assignProbabilityRating } = require('./probability-rating-engine');
 const { buildDecisionExplanation } = require('./explainability-engine');
+const { computePortfolioProfile } = require('./portfolio-engine');
 
 function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
 function n(v, d = null) { v = Number(v); return Number.isFinite(v) ? v : d; }
@@ -227,7 +228,10 @@ function applyDecisionSystemV30(stocks) {
     const negativeFcfRate = recentYears.length ? recentYears.filter(y => n(y.fcf, 0) <= 0).length / recentYears.length : .35;
     const dilution = n(capital.annualDilution, 0);
     const evidencePenalty = clamp((55 - n(capital.evidenceScore, 55)) * .08, 0, 4);
-    const fundamentalPenalty = negativeFcfRate * 8 + clamp((dilution - .02) * 120, 0, 7) + evidencePenalty;
+    const returnQuality = n(stock.expectedReturnProfile?.returnQualityScore, n(stock.valuation?.expectedReturnProfile?.returnQualityScore, 50));
+    const lowGrowthYieldRisk = !!(stock.expectedReturnProfile?.returnQualityDiagnostics?.lowGrowthYieldRisk ?? stock.valuation?.expectedReturnProfile?.returnQualityDiagnostics?.lowGrowthYieldRisk);
+    const returnFragilityPenalty = clamp((55 - returnQuality) * .10, 0, 5) + (lowGrowthYieldRisk ? 5 : 0);
+    const fundamentalPenalty = negativeFcfRate * 8 + clamp((dilution - .02) * 120, 0, 7) + evidencePenalty + returnFragilityPenalty;
     const pricingPower = clamp(n(economics?.pricingPower, n(stock.pricingPowerV2Score, 50)), 0, 100);
     const investmentRaw = durableReturn * .33 + quality * .22 + mosScore * .16 +
       components.confidence * .08 + moatScore * .07 + capital.score * .08 +
@@ -242,7 +246,7 @@ function applyDecisionSystemV30(stocks) {
       marginOfSafety: Math.round(mosScore), confidence: Math.round(components.confidence),
       moat: Math.round(moatScore), capitalAllocation: Math.round(capital.score),
       pricingPower: Math.round(pricingPower),
-      downsideProtection: Math.round(components.risk), fundamentalPenalty: Math.round(fundamentalPenalty * 10) / 10, raw: investmentRaw,
+      downsideProtection: Math.round(components.risk), returnQuality: Math.round(returnQuality), lowGrowthYieldRisk, fundamentalPenalty: Math.round(fundamentalPenalty * 10) / 10, raw: investmentRaw,
     };
 
     const probability = computeProbabilityProfile(stock, components);
@@ -322,6 +326,9 @@ function applyDecisionSystemV30(stocks) {
   }
 
   applyScarcityGuard(stocks);
+  // Portfolio sizing must use the FINAL rating after committee and scarcity gates.
+  // An Avoid/Sell/Hold can never leak through with a positive suggested weight.
+  for (const stock of stocks) stock.portfolioProfile = computePortfolioProfile(stock);
   const rank = { 'Exceptional Buy': 6, 'Strong Buy': 5, 'Buy': 4, 'Hold': 3, 'Avoid': 2, 'Sell': 1 };
   return [...stocks].sort((a, b) =>
     (rank[b.rating] - rank[a.rating]) ||
