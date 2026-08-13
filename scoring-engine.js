@@ -813,16 +813,24 @@ function scoreStock(stock) {
   // Requires `stock.valuation.fiveYearPriceTarget` to be populated upstream (same place
   // that already sets `fairValueEstimate` and `valuationMethods` below) — verify
   // run-screener.js maps the fiveYearPriceTarget object from valuateStock() through.
-  // V67 single source of truth: every price-aware decision consumes the canonical
-  // five-year target CAGR. expectedReturnProfile remains diagnostic only.
   const v7Return = stock.valuation.expectedReturnProfile ?? null;
+  // V67: fiveYearPriceTarget is the canonical investor-return object. Prefer its
+  // CAGR so the screener, detail dashboard and rating layer cannot drift apart.
   const canonicalTarget = stock.valuation.fiveYearPriceTarget ?? null;
-  const expectedReturn = canonicalTarget?.integrityInvalid ? null : (canonicalTarget?.cagr ?? null);
-  const riskAdjustedReturn = expectedReturn;
+  const expectedReturn = canonicalTarget?.cagr ?? v7Return?.expectedCAGR ?? null;
+  const riskAdjustedReturn = v7Return?.riskAdjustedCAGR ?? expectedReturn;
+  const currentPrice = stock.price.current;
+  const targetExit = Number(canonicalTarget?.exitPrice);
+  const targetDividends = Number(canonicalTarget?.dividendsReceived ?? 0);
+  const targetYears = Number(canonicalTarget?.years ?? 5);
+  const impliedTargetCAGR = currentPrice > 0 && targetExit > 0 && targetYears > 0
+    ? Math.pow((targetExit + targetDividends) / currentPrice, 1 / targetYears) - 1 : null;
+  const returnIntegrityGap = expectedReturn != null && impliedTargetCAGR != null
+    ? Math.abs(expectedReturn - impliedTargetCAGR) : 0;
+  const returnIntegrityError = !!canonicalTarget?.integrityInvalid || returnIntegrityGap > 0.005;
   const lastRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
   const baseRequiredMOS = dynamicMOS(category, lastRoic);
 
-  const currentPrice = stock.price.current;
   const fairValue = stock.valuation.fairValueEstimate; // computed upstream if available
   const rawMarginOfSafety = fairValue ? (fairValue - currentPrice) / fairValue : null;
   // Clamp the *displayed* number — when fair value is small relative to price (common
@@ -902,11 +910,8 @@ function scoreStock(stock) {
   // Fall back to fundamentalGrowthRate only when a price target genuinely couldn't be
   // computed (e.g. insufficient exit-multiple data), so stocks don't silently vanish
   // from qualifying — but this is the weaker, price-agnostic signal, so flag it.
-  // Never let price-agnostic fundamental growth qualify a stock for Buy. Missing or
-  // unreconciled canonical return is a hard non-qualifier, not a fallback.
-  const usedFallbackForCAGRTarget = false;
-  const returnIntegrityValid = expectedReturn != null && !canonicalTarget?.integrityInvalid;
-  const meetsCAGRTarget = returnIntegrityValid && expectedReturn >= 0.15;
+  const usedFallbackForCAGRTarget = expectedReturn == null;
+  const meetsCAGRTarget = !returnIntegrityError && expectedReturn != null && expectedReturn >= 0.15;
   const investment = computeInvestmentScore(stock, catResult.composite, pricingPower.score, finalConfidenceScore, riskAdjustedReturn ?? fundamentalGrowthRate, marginOfSafety);
 
   return {
@@ -950,6 +955,9 @@ function scoreStock(stock) {
     reverseDCFGap: stock.valuation.reverseDCFGap ?? null,
     fundamentalGrowthRate,
     expectedReturn,
+    returnIntegrityError,
+    returnIntegrityGap,
+    impliedTargetCAGR,
     // Expected excess return versus the model's long-run 10% equity hurdle.
     expectedAlpha: expectedReturn != null ? expectedReturn - 0.10 : null,
     riskAdjustedReturn,
@@ -998,9 +1006,7 @@ function scoreStock(stock) {
     marginOfSafetyDistorted,
     meetsRequiredMOS,
     meetsCAGRTarget,
-    returnIntegrityValid,
-    returnReconciliationError: canonicalTarget?.reconciliationError ?? null,
-    qualifiesForBuyList: !!(returnIntegrityValid && meetsCAGRTarget && meetsRequiredMOS),
+    qualifiesForBuyList: !!(meetsCAGRTarget && meetsRequiredMOS && !returnIntegrityError),
     valuationMethods: stock.valuation.valuationMethods ?? null,
     outlierFlags: stock.valuation.outlierFlags ?? [],
     methodAgreementScore: stock.valuation.methodAgreementScore ?? null,
@@ -1042,9 +1048,18 @@ function assignSelectiveRatings(scoredStocks) {
 
   sorted.forEach((stock, index) => {
     const percentile = (index + 1) / total;
-    const rawExpectedReturn = stock.returnIntegrityValid === false ? null : stock.expectedReturn;
-    const riskAdjustedReturn = rawExpectedReturn;
-    const expectedReturn = rawExpectedReturn;
+    // V67 canonical return contract: the price-derived five-year CAGR shown to the
+    // user is also the ONLY return allowed to drive alpha, qualification and ratings.
+    // This prevents a probability/risk-adjusted side channel from awarding Buy to a
+    // stock whose displayed investor CAGR is below the 15% hurdle.
+    const canonicalExpectedReturn = stock.fiveYearPriceTarget?.cagr ?? stock.expectedReturn ?? null;
+    const rawExpectedReturn = canonicalExpectedReturn;
+    const riskAdjustedReturn = stock.riskAdjustedReturn ?? canonicalExpectedReturn;
+    const expectedReturn = canonicalExpectedReturn;
+    stock.expectedReturn = canonicalExpectedReturn;
+    stock.expectedAlpha = canonicalExpectedReturn != null ? canonicalExpectedReturn - 0.10 : null;
+    stock.meetsCAGRTarget = canonicalExpectedReturn != null && canonicalExpectedReturn >= 0.15;
+    stock.qualifiesForBuyList = !!(stock.meetsCAGRTarget && stock.meetsRequiredMOS && !stock.returnIntegrityError);
     const confidence = stock.confidenceScore ?? 0;
     const quality = stock.businessQualityScore ?? 0;
     const downsideProtection = stock.downsideProtectionScore ?? 50;

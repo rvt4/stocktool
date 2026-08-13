@@ -1,7 +1,7 @@
 /**
  * StockTool V2 lifecycle/moat-aware valuation engine
  *
- * V39 / V67 canonical-return rebuild principles:
+ * V38.1 valuation rebuild principles:
  *  - one shared five-year operating projection for every valuation method
  *  - analyst estimates anchor years 1-2 when available
  *  - category-aware growth fade and margin normalization
@@ -1001,32 +1001,6 @@ function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
   };
 }
 
-function canonicalInvestorReturn(stock, model, exitPrice, dividendsReceived = 0) {
-  const currentPrice = Number(stock.price?.current);
-  const years = Number(model?.projection?.length || 5);
-  const exit = Number(exitPrice);
-  const dividends = Math.max(0, Number(dividendsReceived) || 0);
-  if (!(currentPrice > 0) || !(exit > 0) || !(years > 0)) {
-    return { expectedCAGR: null, exitPrice: exit > 0 ? exit : null, dividendsReceived: dividends, totalFutureValue: null, years, integrityInvalid: true, reconciliationError: null };
-  }
-  const totalFutureValue = exit + dividends;
-  const expectedCAGR = Math.pow(totalFutureValue / currentPrice, 1 / years) - 1;
-  const reconstructed = currentPrice * Math.pow(1 + expectedCAGR, years);
-  const reconciliationError = Math.abs(reconstructed - totalFutureValue) / Math.max(totalFutureValue, 1e-9);
-  return { expectedCAGR, exitPrice: exit, dividendsReceived: dividends, totalFutureValue, years, currentPrice, integrityInvalid: !Number.isFinite(expectedCAGR) || reconciliationError > 1e-8, reconciliationError };
-}
-
-function shrinkLowAgreementValuation(value, anchor, agreementScore) {
-  const v = Number(value), a = Number(anchor);
-  if (!(v > 0) || !(a > 0)) return v > 0 ? v : a > 0 ? a : null;
-  const agreement = clamp(Number(agreementScore ?? 50) / 100, 0, 1);
-  // Below 60/100 agreement, progressively distrust the blended tail and pull it
-  // toward the cash-flow/robust-center anchor. At 0 agreement only 15% of the
-  // original deviation survives; at >=60 the valuation is unchanged.
-  const trust = agreement >= .60 ? 1 : .15 + .85 * Math.pow(agreement / .60, 1.5);
-  return a + (v - a) * trust;
-}
-
 function robustDecisionBlend(stock, category, lifecycle, primaryValuation, consensus, combined, legacyPriceTarget, model) {
   const currentPrice = Number(stock.price?.current);
   const agreement = clamp((combined?.agreementScore ?? 50) / 100, 0, 1);
@@ -1052,15 +1026,12 @@ function robustDecisionBlend(stock, category, lifecycle, primaryValuation, conse
     if (a > 0 && b > 0) return a * primaryWeight + b * (1 - primaryWeight);
     return a > 0 ? a : b > 0 ? b : null;
   };
-  const unshrunkFairValue = blend(primaryFair, consensusFair);
-  const unshrunkExitValue = blend(primaryExit, consensusExit);
-  const fairAnchor = Number(combined?.cashFlowAnchor) > 0 ? Number(combined.cashFlowAnchor) : Number(consensus?.intrinsicValue);
-  const exitAnchor = primaryExit > 0 ? primaryExit : consensusExit;
-  const fairValueToday = shrinkLowAgreementValuation(unshrunkFairValue, fairAnchor, combined?.agreementScore);
-  const actionableExitValue = shrinkLowAgreementValuation(unshrunkExitValue, exitAnchor, combined?.agreementScore);
+  const fairValueToday = blend(primaryFair, consensusFair);
+  const actionableExitValue = blend(primaryExit, consensusExit);
   const dividends = Number(primaryValuation?.dividends ?? legacyPriceTarget?.dividendsReceived ?? 0);
-  const canonicalReturn = canonicalInvestorReturn(stock, model, actionableExitValue, dividends);
-  const expectedCAGR = canonicalReturn.expectedCAGR;
+  const expectedCAGR = currentPrice > 0 && actionableExitValue > 0 && years > 0
+    ? Math.pow((actionableExitValue + dividends) / currentPrice, 1 / years) - 1
+    : Number(primaryValuation?.expectedCAGR);
 
   return {
     fairValueToday, actionableExitValue, expectedCAGR, dividends, primaryWeight,
@@ -1070,9 +1041,7 @@ function robustDecisionBlend(stock, category, lifecycle, primaryValuation, conse
     primaryExitValue: primaryExit > 0 ? primaryExit : null,
     consensusExitValue: consensusExit > 0 ? consensusExit : null,
     agreementScore: combined?.agreementScore ?? null,
-    unshrunkFairValue, unshrunkExitValue, fairValueAnchor: fairAnchor, exitValueAnchor: exitAnchor,
-    canonicalReturn,
-    version: 'v39-canonical-return-and-consensus-shrink',
+    version: 'v38.1-robust-primary-consensus-blend',
   };
 }
 
@@ -1128,21 +1097,17 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   const legacyPriceTarget = fiveYearPriceTargetCAGR(stock, model, exitResults, combined.effectiveWeights);
   const decisionBlend = robustDecisionBlend(stock, category, lifecycle, primaryValuation, consensus, combined, legacyPriceTarget, model);
   const selectedExitPrice = decisionBlend.actionableExitValue ?? primaryValuation?.actionableExitValue ?? legacyPriceTarget.exitPrice;
-  const diagnosticReturnEngine = computeReturnEngineV2(stock, model, selectedExitPrice, consensus, lifecycle);
-  // V67: one authoritative price-aware return. Legacy/diagnostic engines may explain
-  // the return, but they may not overwrite the economic identity:
-  // current price -> canonical exit + dividends -> CAGR.
-  const canonicalReturn = canonicalInvestorReturn(stock, model, decisionBlend.actionableExitValue, decisionBlend.dividends);
-  const returnEngineV2 = {
-    ...diagnosticReturnEngine,
-    expectedCAGR: canonicalReturn.expectedCAGR, actionableCAGR: canonicalReturn.expectedCAGR,
-    actionableExitPrice: canonicalReturn.exitPrice, dividendsReceived: canonicalReturn.dividendsReceived,
-    totalFutureValue: canonicalReturn.totalFutureValue, years: canonicalReturn.years,
-    integrityInvalid: canonicalReturn.integrityInvalid, reconciliationError: canonicalReturn.reconciliationError,
-    rawMarketCAGR: primaryValuation?.rawCAGR ?? legacyPriceTarget.rawCagr,
-    rawMarketExitPrice: primaryValuation?.rawExitValue ?? legacyPriceTarget.exitPrice,
-    primaryValuation, decisionBlend, version: 'v67-canonical-investor-return'
-  };
+  const returnEngineV2 = computeReturnEngineV2(stock, model, selectedExitPrice, consensus, lifecycle);
+  if (Number.isFinite(decisionBlend.expectedCAGR)) {
+    returnEngineV2.expectedCAGR = decisionBlend.expectedCAGR;
+    returnEngineV2.actionableCAGR = decisionBlend.expectedCAGR;
+    returnEngineV2.rawMarketCAGR = primaryValuation?.rawCAGR ?? legacyPriceTarget.rawCagr;
+    returnEngineV2.actionableExitPrice = decisionBlend.actionableExitValue;
+    returnEngineV2.rawMarketExitPrice = primaryValuation?.rawExitValue ?? legacyPriceTarget.exitPrice;
+    returnEngineV2.totalFutureValue = decisionBlend.actionableExitValue + decisionBlend.dividends;
+    returnEngineV2.primaryValuation = primaryValuation;
+    returnEngineV2.decisionBlend = decisionBlend;
+  }
   const ownerEarningsReturn = buildOwnerEarningsReturn(stock, model, ownerEarnings, dcf, consensus, lifecycle, moat, businessProfile);
   const fiveYearPriceTarget = {
     ...legacyPriceTarget,
@@ -1155,11 +1120,20 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     rawCagr: returnEngineV2.rawMarketCAGR,
     cagrWasCapped: false,
     cagrCapApplied: null,
-    integrityInvalid: !!returnEngineV2.integrityInvalid,
+    integrityInvalid: (() => {
+      const px = Number(stock.price?.current);
+      const exit = Number(returnEngineV2.actionableExitPrice ?? legacyPriceTarget.exitPrice);
+      const divs = Number(returnEngineV2.dividendsReceived ?? legacyPriceTarget.dividendsReceived ?? 0);
+      const shown = Number(returnEngineV2.expectedCAGR);
+      if (!(px > 0) || !(exit > 0) || !Number.isFinite(shown)) return true;
+      const implied = Math.pow((exit + divs) / px, 1 / 5) - 1;
+      return Math.abs(implied - shown) > 0.005;
+    })(),
     dividendsReceived: returnEngineV2.dividendsReceived ?? legacyPriceTarget.dividendsReceived ?? 0,
     totalFutureValue: returnEngineV2.totalFutureValue ?? null,
+    years: 5,
     breakdown: returnEngineV2.breakdown,
-    returnEngineVersion: 'v67-canonical-investor-return',
+    returnEngineVersion: 'v38.1-robust-category-and-valuation-rebuild',
     primaryValuation,
     decisionBlend,
     ownerEarningsValidationCAGR: ownerEarningsReturn.expectedCAGR,
@@ -1236,7 +1210,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '39-canonical-return-consensus-shrink', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '38.1-canonical-category-robust-decision-blend', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
