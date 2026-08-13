@@ -822,12 +822,12 @@ function scoreStock(stock) {
   const currentPrice = stock.price.current;
   const targetExit = Number(canonicalTarget?.exitPrice);
   const targetDividends = Number(canonicalTarget?.dividendsReceived ?? 0);
-  const targetYears = Number(canonicalTarget?.years ?? 5);
+  const targetYears = Number(canonicalTarget?.years);
   const impliedTargetCAGR = currentPrice > 0 && targetExit > 0 && targetYears > 0
     ? Math.pow((targetExit + targetDividends) / currentPrice, 1 / targetYears) - 1 : null;
   const returnIntegrityGap = expectedReturn != null && impliedTargetCAGR != null
     ? Math.abs(expectedReturn - impliedTargetCAGR) : 0;
-  const returnIntegrityError = !!canonicalTarget?.integrityInvalid || returnIntegrityGap > 0.005;
+  const returnIntegrityError = !canonicalTarget || targetYears !== 5 || !!canonicalTarget?.integrityInvalid || returnIntegrityGap > 1e-6;
   const lastRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
   const baseRequiredMOS = dynamicMOS(category, lastRoic);
 

@@ -20,6 +20,13 @@ const {
   getDynamicTerminalGrowth,
 } = require('./dcf');
 const { applyExitMultipleDiscipline } = require('./engine/exit-multiple-engine');
+const {
+  INVESTMENT_HORIZON_YEARS,
+  projectionAtInvestmentHorizon,
+  convertTerminalValueToInvestmentHorizon,
+  cagrFromOutcome,
+  auditCanonicalReturn,
+} = require('./engine/return-contract');
 const { computePremiumPersistence } = require('./engine/premium-persistence-engine');
 const { buildValuationConsensus } = require('./engine/valuation-consensus');
 const { computeReturnEngineV2 } = require('./engine/return-engine');
@@ -959,23 +966,42 @@ function combineValuations(methods, category = 'Value', stock = null, businessPr
 }
 
 function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
-  const currentPrice = stock.price.current;
-  if (!(currentPrice > 0)) return { cagr: null, exitPrice: null, methodsUsed: 0 };
-  const future = Object.entries(exitResults)
-    .filter(([, r]) => r?.exitPricePerShare > 0)
-    .map(([key, r]) => ({ value: r.exitPricePerShare, weight: effectiveWeights[key] || 0 }));
-  const rawExitPrice = weightedAverage(future);
-  if (!(rawExitPrice > 0)) return { cagr: null, exitPrice: null, methodsUsed: 0 };
-  const years = model.projection.length;
-  const dividendsReceived = (stock.valuation.dividendYield || 0) * currentPrice * years;
-  const totalFutureValue = rawExitPrice + dividendsReceived;
-  const rawCagr = Math.pow(totalFutureValue / currentPrice, 1 / years) - 1;
+  const currentPrice = Number(stock.price?.current);
+  const fullForecastYears = Number(model?.projection?.length || 0);
+  const years = INVESTMENT_HORIZON_YEARS;
+  if (!(currentPrice > 0) || fullForecastYears < years) {
+    return {
+      cagr: null, rawCagr: null, exitPrice: null, dividendsReceived: null,
+      totalFutureValue: null, methodsUsed: 0, currentPrice, years,
+      integrityInvalid: true,
+      integrityReason: `At least ${years} forecast years are required for the canonical return contract.`,
+    };
+  }
 
-  // Data/split errors can otherwise create four-digit expected CAGRs. Preserve the raw
-  // value for audit, but cap the actionable screener signal at a generous 60% annually.
-  const cagrValue = clamp(rawCagr, -0.75, 0.60);
+  const future = Object.entries(exitResults)
+    .map(([key, r]) => {
+      const terminal = Number(r?.exitPricePerShare);
+      const present = Number(r?.fairValuePerShare);
+      const value = convertTerminalValueToInvestmentHorizon(present, terminal, fullForecastYears);
+      return { value, weight: effectiveWeights[key] || 0, key };
+    })
+    .filter(x => x.value > 0 && x.weight > 0);
+
+  const rawExitPrice = weightedAverage(future);
+  if (!(rawExitPrice > 0)) {
+    return {
+      cagr: null, rawCagr: null, exitPrice: null, dividendsReceived: null,
+      totalFutureValue: null, methodsUsed: 0, currentPrice, years,
+      integrityInvalid: true, integrityReason: 'No usable valuation method produced a five-year exit value.',
+    };
+  }
+
+  const dividendYield = clamp(Number(stock.valuation?.dividendYield || 0), 0, 0.20);
+  const dividendsReceived = dividendYield * currentPrice * years;
+  const totalFutureValue = rawExitPrice + dividendsReceived;
+  const rawCagr = cagrFromOutcome(currentPrice, rawExitPrice, dividendsReceived, years);
   const last = stock.financials.years.at(-1) || {};
-  const exit = model.projection.at(-1) || {};
+  const exit = projectionAtInvestmentHorizon(model) || {};
   const startRevenue = last.revenue;
   const startNetMargin = last.revenue > 0 ? last.netIncome / last.revenue : null;
   const startShares = last.sharesOutTTM;
@@ -984,16 +1010,26 @@ function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
     ? Math.pow(exit.netMargin / startNetMargin, 1 / years) - 1 : null;
   const shareCountEffect = startShares > 0 && exit.shares > 0
     ? Math.pow(startShares / exit.shares, 1 / years) - 1 : null;
-  const dividendContribution = clamp(stock.valuation.dividendYield || 0, 0, 0.20);
+  const dividendContribution = dividendYield;
   const operatingContribution = [revenueGrowth, marginExpansion, shareCountEffect]
     .filter(Number.isFinite).reduce((a, b) => a + b, 0);
-  const multipleRerating = Number.isFinite(operatingContribution)
-    ? cagrValue - operatingContribution - dividendContribution : null;
+  const multipleRerating = Number.isFinite(operatingContribution) && Number.isFinite(rawCagr)
+    ? rawCagr - operatingContribution - dividendContribution : null;
 
   return {
-    cagr: cagrValue, rawCagr, cagrWasCapped: rawCagr !== cagrValue,
-    exitPrice: rawExitPrice, dividendsReceived, totalFutureValue,
-    methodsUsed: future.length, currentPrice, years,
+    cagr: rawCagr,
+    rawCagr,
+    cagrWasCapped: false,
+    cagrCapApplied: null,
+    exitPrice: rawExitPrice,
+    dividendsReceived,
+    totalFutureValue,
+    methodsUsed: future.length,
+    currentPrice,
+    years,
+    fullForecastYears,
+    integrityInvalid: !Number.isFinite(rawCagr),
+    methodFiveYearExitValues: Object.fromEntries(future.map(x => [x.key, x.value])),
     breakdown: {
       revenueGrowth, marginExpansion, shareCountEffect,
       dividendContribution, multipleRerating,
@@ -1012,7 +1048,7 @@ function robustDecisionBlend(stock, category, lifecycle, primaryValuation, conse
   const consensusFair = Number(consensus?.actionableFairValue ?? combined?.blendedFairValue);
   const primaryExit = Number(primaryValuation?.actionableExitValue);
   const consensusExit = Number(legacyPriceTarget?.exitPrice);
-  const years = Number(model?.projection?.length || lifecycle?.forecastYears || 5);
+  const years = INVESTMENT_HORIZON_YEARS;
 
   // Low agreement should reduce confidence, not allow a single selected method to
   // completely erase the information in the other independently valid methods.
@@ -1030,7 +1066,7 @@ function robustDecisionBlend(stock, category, lifecycle, primaryValuation, conse
   const actionableExitValue = blend(primaryExit, consensusExit);
   const dividends = Number(primaryValuation?.dividends ?? legacyPriceTarget?.dividendsReceived ?? 0);
   const expectedCAGR = currentPrice > 0 && actionableExitValue > 0 && years > 0
-    ? Math.pow((actionableExitValue + dividends) / currentPrice, 1 / years) - 1
+    ? cagrFromOutcome(currentPrice, actionableExitValue, dividends, years)
     : Number(primaryValuation?.expectedCAGR);
 
   return {
@@ -1120,15 +1156,7 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     rawCagr: returnEngineV2.rawMarketCAGR,
     cagrWasCapped: false,
     cagrCapApplied: null,
-    integrityInvalid: (() => {
-      const px = Number(stock.price?.current);
-      const exit = Number(returnEngineV2.actionableExitPrice ?? legacyPriceTarget.exitPrice);
-      const divs = Number(returnEngineV2.dividendsReceived ?? legacyPriceTarget.dividendsReceived ?? 0);
-      const shown = Number(returnEngineV2.expectedCAGR);
-      if (!(px > 0) || !(exit > 0) || !Number.isFinite(shown)) return true;
-      const implied = Math.pow((exit + divs) / px, 1 / 5) - 1;
-      return Math.abs(implied - shown) > 0.005;
-    })(),
+    integrityInvalid: false,
     dividendsReceived: returnEngineV2.dividendsReceived ?? legacyPriceTarget.dividendsReceived ?? 0,
     totalFutureValue: returnEngineV2.totalFutureValue ?? null,
     years: 5,
@@ -1140,6 +1168,9 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     fundamentalBusinessCAGR: returnEngineV2.fundamentalCAGR,
     multipleDominated: returnEngineV2.multipleDominated,
   };
+  const canonicalAudit = auditCanonicalReturn(fiveYearPriceTarget, stock.price.current);
+  fiveYearPriceTarget.integrityAudit = canonicalAudit;
+  fiveYearPriceTarget.integrityInvalid = !canonicalAudit.valid;
   const currentPrice = stock.price.current;
   const finalFairValue = decisionBlend.fairValueToday ?? primaryValuation?.fairValueToday ?? consensus.actionableFairValue ?? combined.blendedFairValue ?? dcf.fairValuePerShare ?? ownerEarnings.fairValuePerShare;
   const marginOfSafety = finalFairValue && currentPrice

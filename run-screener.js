@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const { buildStockRecord, normalizeSecTicker } = require('./data-fetchers');
 const { computeSectorExitMultiples, valuateStock } = require('./valuation-methods');
-const { scoreUniverse, expectedCAGR: computeFundamentalGrowth } = require('./scoring-engine');
+const { scoreUniverse } = require('./scoring-engine');
 const { assessDataIntegrity } = require('./engine/data-integrity');
 const { buildScenarios } = require('./engine/scenario-engine');
 const { computeExpectedReturnProfile } = require('./engine/expected-return-engine');
@@ -171,6 +171,16 @@ async function loadAnalystEstimates() {
 function writeResults(records, partial) {
   const baseScored = scoreUniverse(records);
   const scored = applyDecisionSystemV30(baseScored);
+  let validation = null;
+  if (!partial) {
+    validation = validate(scored);
+    fs.writeFileSync(path.join(__dirname, 'data', 'validation-report.json'), JSON.stringify(validation, null, 2));
+    console.log(`Decision validation: ${validation.passed ? 'passed' : 'FAILED'} (${validation.issues.length} issue(s)).`);
+    if (!validation.passed) {
+      const sample = validation.issues.slice(0, 8).map(x => `${x.ticker}:${x.type}`).join(', ');
+      throw new Error(`Canonical return validation failed. Refusing to publish contradictory results. ${sample}`);
+    }
+  }
   const output = {
     generatedAt: new Date().toISOString(),
     count: scored.length,
@@ -199,11 +209,6 @@ function writeResults(records, partial) {
   fs.writeFileSync(tempResultsPath, compactJson);
   fs.renameSync(tempResultsPath, resultsPath);
   console.log(`Compact results size: ${(resultBytes / 1024 / 1024).toFixed(2)} MiB`);
-  if (!partial) {
-    const validation = validate(scored);
-    fs.writeFileSync(path.join(__dirname, 'data', 'validation-report.json'), JSON.stringify(validation, null, 2));
-    console.log(`Decision validation: ${validation.passed ? 'passed' : 'review required'} (${validation.issues.length} issue(s)).`);
-  }
   return scored;
 }
 
@@ -352,10 +357,6 @@ async function run() {
       stock, pricingPowerV2, compounder, industryModel, result.moat, result.lifecycle
     );
     stock.valuation.businessEconomics = stock.valuation.economicQuality.businessEconomics;
-    // Compute forecast-sanity diagnostics before scenarios/return quality so clamps are
-    // decision inputs rather than a warning added only after the model has finished.
-    const preScenarioFundamental = computeFundamentalGrowth(stock, result.category || stock.valuation.category || 'Value');
-    stock.valuation.fundamentalGrowthDiagnostics = preScenarioFundamental?.breakdown ?? null;
     let scenarioAnalysis = buildScenarios(stock, result, dataIntegrity);
     scenarioAnalysis = applyInstitutionalSanity(stock, scenarioAnalysis, result.agreementScore);
     const rawExpectedReturnProfile = computeExpectedReturnProfile(stock, scenarioAnalysis, dataIntegrity);
