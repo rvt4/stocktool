@@ -341,18 +341,15 @@ function blendedRevenueGrowth(s, yrs, last) {
   const cappedRoicForGrowth = avgRoic != null ? clamp(avgRoic, 0, 0.35) : null;
   const reinvestG = cappedRoicForGrowth != null ? clamp(cappedRoicForGrowth * reinvestRate, -0.10, 0.25) : null;
 
-  const marketImpliedG = s.valuation.marketImpliedGrowth ?? null;
-
-  // V41: forward-first blend. Historical growth remains a reality check, but no
-  // longer gets enough weight to bury high-quality businesses at an inflection.
-  // Market-implied growth is deliberately capped and treated as a constraint—not a
-  // forecast—so expensive stocks cannot justify themselves through their own price.
-  const cappedMarketImplied = marketImpliedG == null ? null : clamp(marketImpliedG, -0.10, 0.35);
+  // IMPORTANT: reverse-DCF market-implied growth is an FCF-growth diagnostic, not
+  // a revenue-growth forecast. Feeding it into the operating growth blend mixes two
+  // different quantities and lets today's price contaminate the price-agnostic
+  // fundamental-growth estimate. Keep market-implied growth strictly as an
+  // expectations/valuation diagnostic elsewhere in the engine.
   const components = [
-    { key: 'analyst', value: analystG, weight: 0.35 },
-    { key: 'historical', value: historicalG, weight: 0.20 },
-    { key: 'reinvestment', value: reinvestG, weight: 0.25 },
-    { key: 'marketImplied', value: cappedMarketImplied, weight: 0.20 },
+    { key: 'analyst', value: analystG, weight: 0.45 },
+    { key: 'historical', value: historicalG, weight: 0.25 },
+    { key: 'reinvestment', value: reinvestG, weight: 0.30 },
   ].filter(c => c.value != null);
 
   if (!components.length) return { blended: 0.05, sourcesUsed: 0, sourcesAvailable: [] };
@@ -846,7 +843,12 @@ function scoreStock(stock) {
   const meetsRequiredMOS = marginOfSafety != null ? marginOfSafety >= requiredMOS : null;
 
   const marketImpliedGrowth = stock.valuation.marketImpliedGrowth ?? null;
-  const growthGap = marketImpliedGrowth != null ? marketImpliedGrowth - breakdown.forwardRevGrowth : null;
+  // Reverse DCF solves for FCF growth, while breakdown.forwardRevGrowth is revenue
+  // growth. Do not compare them directly in Confidence; that apples-to-oranges gap
+  // was creating false confidence penalties on cash-generative businesses.
+  const growthGap = stock.valuation.marketImpliedGrowthMetric === 'revenue' && marketImpliedGrowth != null
+    ? marketImpliedGrowth - breakdown.forwardRevGrowth
+    : null;
 
   const confidence = computeConfidenceScore(
     stock, category, revGrowthSources,
@@ -981,6 +983,8 @@ function scoreStock(stock) {
     cagrBreakdown: breakdown,
     growthSource: stock.valuation.growthSource ?? null,
     marketImpliedGrowth,
+    marketImpliedGrowthMetric: stock.valuation.marketImpliedGrowthMetric ?? 'fcf',
+    marketImpliedGrowthBase: stock.valuation.marketImpliedGrowthBase ?? null,
     marketImpliedGrowthNote: stock.valuation.marketImpliedGrowthNote ?? null,
     growthGap,
     requiredMOS,
@@ -1030,38 +1034,50 @@ function assignSelectiveRatings(scoredStocks) {
 
   sorted.forEach((stock, index) => {
     const percentile = (index + 1) / total;
-    const expectedReturn = stock.riskAdjustedReturn ?? stock.expectedReturn ?? stock.fundamentalGrowthRate ?? null;
+    const rawExpectedReturn = stock.expectedReturn ?? stock.fundamentalGrowthRate ?? null;
+    const riskAdjustedReturn = stock.riskAdjustedReturn ?? rawExpectedReturn;
+    const expectedReturn = riskAdjustedReturn;
     const confidence = stock.confidenceScore ?? 0;
     const quality = stock.businessQualityScore ?? 0;
     const downsideProtection = stock.downsideProtectionScore ?? 50;
+    const returnQuality = stock.expectedReturnProfile?.returnQualityScore ?? 50;
     const qualifies = stock.qualifiesForBuyList === true;
 
-    // Ratings are selective by both rank and absolute underwriting quality.
-    // A stock cannot earn a top rating solely because it ranks well in a weak universe.
+    // V66 rating contract: a Buy badge means the security actually clears the
+    // strategy's 15% raw expected-return hurdle AND its required MOS. Ranking can
+    // distinguish the best qualifiers, but cannot rescue a sub-hurdle return.
+    // Risk-adjusted return, confidence and return robustness then determine how
+    // strong the badge may be.
     if (
       percentile <= 0.01 &&
       qualifies &&
-      expectedReturn != null && expectedReturn >= 0.15 &&
-      confidence >= 75 &&
-      quality >= 75 &&
-      (stock.futureQualityScore ?? 0) >= 72 &&
+      rawExpectedReturn != null && rawExpectedReturn >= 0.18 &&
+      riskAdjustedReturn != null && riskAdjustedReturn >= 0.15 &&
+      confidence >= 72 &&
+      quality >= 72 &&
+      returnQuality >= 72 &&
+      (stock.futureQualityScore ?? 0) >= 70 &&
       downsideProtection >= 55
     ) {
-      stock.rating = 'Exceptional';
+      stock.rating = 'Exceptional Buy';
     } else if (
       percentile <= 0.05 &&
       qualifies &&
-      expectedReturn != null && expectedReturn >= 0.13 &&
-      confidence >= 68 &&
-      quality >= 68 &&
-      (stock.futureQualityScore ?? 0) >= 65
+      rawExpectedReturn != null && rawExpectedReturn >= 0.15 &&
+      riskAdjustedReturn != null && riskAdjustedReturn >= 0.125 &&
+      confidence >= 65 &&
+      quality >= 65 &&
+      returnQuality >= 62 &&
+      (stock.futureQualityScore ?? 0) >= 62
     ) {
       stock.rating = 'Strong Buy';
     } else if (
       percentile <= 0.20 &&
       qualifies &&
-      expectedReturn != null && expectedReturn >= 0.10 &&
-      confidence >= 58
+      rawExpectedReturn != null && rawExpectedReturn >= 0.15 &&
+      riskAdjustedReturn != null && riskAdjustedReturn >= 0.10 &&
+      confidence >= 55 &&
+      returnQuality >= 50
     ) {
       stock.rating = 'Buy';
     } else if (

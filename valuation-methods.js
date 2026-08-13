@@ -1,13 +1,15 @@
 /**
  * StockTool V2 lifecycle/moat-aware valuation engine
  *
- * V3.0 principles:
+ * V38.1 valuation rebuild principles:
  *  - one shared five-year operating projection for every valuation method
  *  - analyst estimates anchor years 1-2 when available
  *  - category-aware growth fade and margin normalization
  *  - company-specific, risk-aware discount rates and terminal growth
  *  - exit multiples blend company, sector, quality, and growth persistence
  *  - no valuation method is deleted solely for disagreeing with DCF
+ *  - lifecycle labels cannot silently replace the canonical investment category
+ *  - high-quality growth businesses use a robust primary/consensus blend rather than one brittle method
  */
 
 const CategoryEngine = require('./engine/category-engine');
@@ -24,17 +26,14 @@ const { computeReturnEngineV2 } = require('./engine/return-engine');
 const { selectedValuation } = require('./engine/primary-valuation-engine');
 const { buildOwnerEarningsReturn } = require('./engine/owner-earnings-return-engine');
 const { buildMarketExpectations } = require('./engine/market-expectations');
-const { computeExpectationRisk } = require('./engine/expectation-risk-engine');
 const { simulateReturns } = require('./engine/monte-carlo-engine');
 const { selectValuationMethods } = require('./engine/method-selection-engine');
 const { generateForecast } = require('./engine/forecast-engine');
 const { forecastMarginPaths } = require('./engine/business-forecast-engine');
 const { classifyLifecycle } = require('./engine/lifecycle-engine');
-const { classifyBusinessArchetype } = require('./engine/business-archetype-engine');
 const { computeMoat } = require('./engine/moat-engine');
 const { deriveExitMultiple } = require('./engine/fade-engine');
 const { adaptiveMethodWeights } = require('./engine/adaptive-weight-engine');
-const { computeCapitalAllocationV2 } = require('./engine/capital-allocation-v2');
 
 function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
 function mean(arr) { return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
@@ -64,6 +63,47 @@ function historicalMedianGrowth(yrs) {
 // ---------- Shared category inference ----------
 function inferValuationCategory(stock) {
   return CategoryEngine.classifyCategory(stock);
+}
+
+function canonicalCategory(value) {
+  const v = String(value || '').trim();
+  if (['Hyper Growth', 'Growth', 'Compounder', 'Value', 'Dividend', 'Turnaround', 'Cyclical'].includes(v)) return v;
+  if (v === 'Elite Compounder') return 'Compounder';
+  if (v === 'Dividend Compounder') return 'Dividend';
+  if (v === 'Temporary Disruption') return 'Growth';
+  if (['Financial', 'Utility', 'Asset Heavy', 'Mature'].includes(v)) return 'Value';
+  return null;
+}
+
+function resolveValuationCategory(stock, lifecycle = null) {
+  const engineCategory = canonicalCategory(inferValuationCategory(stock));
+  const lifecycleCategory = canonicalCategory(lifecycle?.stage || lifecycle?.name || lifecycle?.type);
+  const yrs = stock.financials?.years || [];
+  const last = yrs.at(-1) || {};
+  const prior = yrs.at(-2) || {};
+  const revGrowth = prior.revenue > 0 && last.revenue > 0 ? last.revenue / prior.revenue - 1 : null;
+  const forwardGrowth = Number(stock.analystEstimates?.revenueGrowthNextYear ?? stock.analystEstimates?.revenueGrowthFwd);
+  const fcfMargin = last.revenue > 0 && Number.isFinite(last.fcf) ? last.fcf / last.revenue : null;
+  const profitable = Number(last.netIncome) > 0 || Number(last.operatingIncome) > 0 || Number(last.fcf) > 0;
+  const quality = Number(stock.valuation?.economicQuality?.score ?? stock.qualityScore ?? stock.quality?.score);
+  const genuineDistress =
+    (Number.isFinite(revGrowth) && revGrowth < -0.08) ||
+    (Number.isFinite(forwardGrowth) && forwardGrowth < -0.05) ||
+    (!profitable && Number.isFinite(fcfMargin) && fcfMargin < -0.05);
+
+  // A lifecycle model may call a cyclical growth reset a “turnaround.” That label is
+  // useful for forecast normalization, but it should not reclassify a profitable,
+  // still-growing business such as a semiconductor platform as a turnaround stock.
+  if (lifecycleCategory === 'Turnaround' && !genuineDistress) {
+    if (engineCategory && engineCategory !== 'Turnaround') return engineCategory;
+    if ((Number.isFinite(forwardGrowth) && forwardGrowth >= 0.18) || (Number.isFinite(revGrowth) && revGrowth >= 0.15)) return 'Growth';
+    if (profitable && (quality >= 70 || (fcfMargin ?? 0) >= 0.08)) return 'Compounder';
+    return 'Value';
+  }
+
+  // Prefer the dedicated category engine for the public screener label. Lifecycle
+  // remains available separately for fade speed, margin normalization and horizon.
+  return engineCategory || lifecycleCategory || 'Value';
 }
 
 // ---------- Dilution ----------
@@ -98,17 +138,12 @@ function estimateDilutionModel(stock, years = 5) {
   const sbcToRevenue = Number(last.sbc) > 0 && revenue > 0 ? Number(last.sbc) / revenue : null;
   const buybackSignal = recent != null && recent < -0.005;
 
-  // V59: this blend must allow negative values. The generic weightedAverage helper
-  // intentionally drops non-positive valuation values, which accidentally erased net
-  // buybacks and made repurchasers look dilutive.
-  const dilutionSignals = [
-    { value: recent, weight: recent == null ? 0 : 0.60 },
-    { value: long, weight: long == null ? 0 : 0.25 },
-    { value: sbcToMarketCap, weight: sbcToMarketCap == null ? 0 : 0.10 },
-    { value: sbcToRevenue == null ? null : sbcToRevenue * 0.35, weight: sbcToRevenue == null ? 0 : 0.05 },
-  ].filter(x => Number.isFinite(x.value) && x.weight > 0);
-  const dilutionWeight = dilutionSignals.reduce((a,x)=>a+x.weight,0);
-  let initial = dilutionWeight ? dilutionSignals.reduce((a,x)=>a+x.value*x.weight,0)/dilutionWeight : null;
+  let initial = weightedAverage([
+    { value: recent, weight: recent == null ? 0 : 0.52 },
+    { value: long, weight: long == null ? 0 : 0.23 },
+    { value: sbcToMarketCap, weight: sbcToMarketCap == null ? 0 : 0.15 },
+    { value: sbcToRevenue == null ? null : sbcToRevenue * 0.35, weight: sbcToRevenue == null ? 0 : 0.10 },
+  ]);
   if (!Number.isFinite(initial)) initial = buybackSignal ? -0.005 : 0.008;
 
   const highSbc = (sbcToRevenue ?? 0) >= 0.08 || (sbcToMarketCap ?? 0) >= 0.025;
@@ -484,8 +519,6 @@ function intelligentExitMultiple(stock, type, sectorMultiple, exitGrowth, busine
     sectorMultiple,
     industry: stock.valuation?.industryModel?.model || null,
     futureQuality: result.futureQuality,
-    businessArchetype: life.archetype || life.economicModel?.archetype || stock.valuation?.businessArchetype || null,
-    currentMultiple: current,
   });
   return { ...result, ...disciplined, multiple: disciplined.multiple, premiumModel };
 }
@@ -542,18 +575,27 @@ function analystReliability(stock) {
 }
 
 function capitalAllocationScore(stock) {
-  // V44: use the shared evidence-aware capital-allocation engine. The legacy
-  // implementation below this valuation layer only saw a narrow subset of fields,
-  // which caused almost every company to fall back to 55 (50 neutral + a dividend
-  // bonus). Keeping one canonical engine prevents the valuation result from
-  // overwriting the richer score later in the pipeline.
-  const result = computeCapitalAllocationV2(stock);
-  return {
-    ...result,
-    score: Math.round(clamp(Number(result?.score ?? 50), 0, 100)),
-    signals: Array.isArray(result?.signals) ? result.signals : [],
-    flags: Array.isArray(result?.flags) ? result.flags : [],
-  };
+  const yrs = stock.financials?.years || [];
+  if (yrs.length < 2) return { score: 50, signals: ['Limited capital-allocation history'] };
+  const last = yrs.at(-1) || {};
+  const prev = yrs.at(-2) || {};
+  const signals = [];
+  let score = 50;
+  const shares = yrs.slice(-4).map(y => y.sharesOutTTM).filter(x => x > 0);
+  const dilution = shares.length >= 2 ? cagr(shares[0], shares.at(-1), shares.length - 1) : null;
+  if (dilution != null && dilution <= -0.01) { score += 15; signals.push('Net share count declining'); }
+  else if (dilution != null && dilution >= 0.03) { score -= 18; signals.push('Meaningful shareholder dilution'); }
+  const debtChange = prev.longTermDebt > 0 ? (last.longTermDebt - prev.longTermDebt) / prev.longTermDebt : null;
+  if (debtChange != null && debtChange <= -0.10) { score += 10; signals.push('Debt declining'); }
+  else if (debtChange != null && debtChange >= 0.25) { score -= 10; signals.push('Debt rising quickly'); }
+  const avgRoic = mean(yrs.slice(-3).map(y => y.roic).filter(Number.isFinite));
+  if (avgRoic != null && avgRoic >= 0.20) { score += 15; signals.push('High returns on invested capital'); }
+  else if (avgRoic != null && avgRoic < 0.06) { score -= 12; signals.push('Low returns on invested capital'); }
+  const payout = stock.valuation?.dividendYield || 0;
+  if (payout > 0.02 && last.fcf > 0) { score += 5; signals.push('Dividend supported by free cash flow'); }
+  const sbcIntensity = last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : 0;
+  if (sbcIntensity > 0.12) { score -= 12; signals.push('Heavy stock-based compensation'); }
+  return { score: Math.round(clamp(score, 0, 100)), signals };
 }
 
 function ownerEarningsFromProjection(stock, model) {
@@ -607,62 +649,6 @@ function ownerEarningsFromProjection(stock, model) {
     enterpriseValue, netDebt, equityValue, terminalEquityValue, exitPricePerShare,
     currentDilutedShares: last.sharesOutTTM, sharesAtExit: exitShares, yearly,
   }};
-}
-
-// Normalize the starting FCF used only for reverse-DCF market-expectations checks.
-// When current capex is abnormally high and FCF margin is below its own history, raw
-// current FCF can imply absurd priced-in growth. The forward DCF itself still uses the
-// full explicit operating projection.
-function normalizedExpectationFcf(stock) {
-  const ys=(stock.financials?.years||[]).slice(-5), last=ys.at(-1)||{};
-  if (!(last.revenue>0) || !Number.isFinite(Number(last.fcf))) return Number(last.fcf);
-  const margins=ys.map(y=>y.revenue>0&&Number.isFinite(Number(y.fcf))?Number(y.fcf)/y.revenue:null).filter(Number.isFinite);
-  const capex=ys.map(y=>y.revenue>0&&Number.isFinite(Number(y.capex))?Math.abs(Number(y.capex))/y.revenue:null).filter(Number.isFinite);
-  if (margins.length<3 || capex.length<3) return Number(last.fcf);
-  const historicalMargin=median(margins), historicalCapex=median(capex);
-  const currentMargin=Number(last.fcf)/last.revenue, currentCapex=Math.abs(Number(last.capex||0))/last.revenue;
-  if (historicalMargin>currentMargin && currentCapex>historicalCapex*1.25) {
-    return last.revenue*(currentMargin*.55+historicalMargin*.45);
-  }
-  return Number(last.fcf);
-}
-
-
-// V61 reverse DCF: solve for revenue growth, not raw FCF growth. The old solver
-// compared an implied FCF-growth rate with modeled revenue growth, which becomes
-// unstable for businesses undergoing large margin transitions. This solver keeps
-// a normalized starting FCF margin and fades it toward the operating model's margin,
-// making the displayed expectation directly comparable with revenue forecasts.
-function solveImpliedRevenueGrowth({ revenueBase, startFcfMargin, targetFcfMargin, terminalGrowth, discountRate, years = 10, netDebt = 0, sharesOut, targetPricePerShare }) {
-  if (!(revenueBase > 0) || !(sharesOut > 0) || !(targetPricePerShare > 0) || !(discountRate > terminalGrowth)) {
-    return { impliedGrowth: null, reason: 'missing_inputs' };
-  }
-  const startMargin = clamp(Number(startFcfMargin) || 0, .005, .45);
-  const endMargin = clamp(Number(targetFcfMargin) || startMargin, .005, .45);
-  const valueAt = g1 => {
-    let revenue = revenueBase, pv = 0, finalFcf = null;
-    for (let t = 1; t <= years; t++) {
-      const p = (t - 1) / Math.max(1, years - 1);
-      const g = g1 + (terminalGrowth - g1) * p;
-      revenue *= 1 + g;
-      const marginP = Math.min(1, t / Math.min(5, years));
-      const margin = startMargin + (endMargin - startMargin) * marginP;
-      finalFcf = revenue * margin;
-      pv += finalFcf / Math.pow(1 + discountRate, t);
-    }
-    const terminalValue = finalFcf * (1 + terminalGrowth) / (discountRate - terminalGrowth);
-    const equity = pv + terminalValue / Math.pow(1 + discountRate, years) - netDebt;
-    return equity / sharesOut;
-  };
-  const LO = -.20, HI = .80;
-  if (valueAt(HI) < targetPricePerShare) return { impliedGrowth: null, reason: 'exceeds_search_range_high' };
-  if (valueAt(LO) > targetPricePerShare) return { impliedGrowth: null, reason: 'exceeds_search_range_low' };
-  let lo = LO, hi = HI;
-  for (let i = 0; i < 60; i++) {
-    const mid = (lo + hi) / 2;
-    if (valueAt(mid) < targetPricePerShare) lo = mid; else hi = mid;
-  }
-  return { impliedGrowth: (lo + hi) / 2, reason: 'converged', startFcfMargin: startMargin, targetFcfMargin: endMargin };
 }
 
 // ---------- DCF ----------
@@ -732,31 +718,7 @@ function exitMethod(stock, model, sectorMultiples, type, businessProfile = null,
   const years = model.projection.length;
   let sectorMultiple, metricValue;
   if (type === 'revenueExit') { sectorMultiple = sectorMultiples?.evRevenue; metricValue = exit.revenue; }
-  else if (type === 'epsExit') {
-    sectorMultiple = sectorMultiples?.pe; metricValue = exit.eps;
-    // Banks and funded financials should not inherit an explosive EPS path from a
-    // generic revenue × margin projection. Anchor terminal EPS to current diluted EPS
-    // plus analyst-supported growth, then fade that growth toward a mature ceiling.
-    // This is an archetype rule, not a ticker override.
-    const industry = stock.valuation?.industryModel?.model;
-    const stage = String(lifecycle?.stage || '').toLowerCase();
-    if (industry === 'financials' || stage === 'financial') {
-      const currentEps = Number(last.dilutedEPS) || (last.sharesOutTTM > 0 ? Number(last.netIncome) / last.sharesOutTTM : null);
-      const a = stock.analystEstimates || {};
-      const norm = v => Number.isFinite(Number(v)) ? (Math.abs(Number(v)) > 2 ? Number(v) / 100 : Number(v)) : null;
-      const analystGrowth = norm(a.epsGrowthNextYear ?? a.epsGrowthCurrentYear);
-      const startGrowth = clamp(analystGrowth ?? Number(lifecycle?.forwardGrowth) ?? .08, -.10, .30);
-      let epsAnchor = currentEps;
-      if (currentEps > 0) {
-        for (let t = 1; t <= years; t++) {
-          const fade = years <= 1 ? 1 : (t - 1) / (years - 1);
-          const g = startGrowth + (.06 - startGrowth) * fade;
-          epsAnchor *= 1 + g;
-        }
-        if (metricValue > epsAnchor * 1.20 || metricValue < epsAnchor * .55) metricValue = epsAnchor;
-      }
-    }
-  }
+  else if (type === 'epsExit') { sectorMultiple = sectorMultiples?.pe; metricValue = exit.eps; }
   else { sectorMultiple = sectorMultiples?.evEbitda; metricValue = exit.ebitda; }
   if (!(sectorMultiple > 0) || !Number.isFinite(metricValue) || (type === 'epsExit' && metricValue <= 0)) {
     return { fairValuePerShare: null, exitPricePerShare: null, audit: { reason: 'missing multiple or exit metric' } };
@@ -855,7 +817,6 @@ function methodSpecificReliability(stock, key, value, center, anchor = null) {
   const highGrowthTransition = forwardRate >= 0.18 && persistence >= 0.55 &&
     ['inflecting', 'accelerating', 'recovery'].includes(regime);
   const ratio = Math.max(value / center, center / value);
-  if (ratio > 4.5) return 0;
   let r = ratio <= 1.35 ? 1 : ratio <= 1.75 ? 0.82 : ratio <= 2.4 ? 0.55 : 0.25;
 
   if (key === 'epsExit') r *= analyst;
@@ -910,7 +871,7 @@ function methodSpecificReliability(stock, key, value, center, anchor = null) {
     r *= 0.35;
   }
 
-  return clamp(r, 0, 1);
+  return clamp(r, 0.05, 1);
 }
 
 function redistributeCaps(normalized, caps) {
@@ -945,12 +906,7 @@ function combineValuations(methods, category = 'Value', stock = null, businessPr
     : { effectiveStartingWeights: businessSpecificWeights(category, businessProfile, null) };
   const startingWeights = { ...methodSelection.effectiveStartingWeights };
   const industryKey = stock?.valuation?.industryModel?.model || 'general';
-  const allAvailable = Object.entries(methods).filter(([, v]) => Number.isFinite(v) && v > 0);
-  // V61: applicability is a gate. Methods rejected by the business-model selector
-  // are retained in the audit trail, but cannot influence the blend, agreement,
-  // method count, or downstream confidence. This prevents economically irrelevant
-  // outputs (for example revenue multiples on insurers) from poisoning consensus.
-  const available = allAvailable.filter(([key]) => (startingWeights[key] || 0) > 0);
+  const available = Object.entries(methods).filter(([, v]) => Number.isFinite(v) && v > 0);
   if (!available.length) return { blendedFairValue: null, agreementScore: null, methodCount: 0, effectiveWeights: {}, reliabilityFlags: [], methodSelection };
   const adaptive = adaptiveMethodWeights({
     industry: industryKey,
@@ -999,14 +955,7 @@ function combineValuations(methods, category = 'Value', stock = null, businessPr
     : [];
   const disagreement = Math.max(median(robustDeviations) || 0, (median(anchorDivergence) || 0) * 0.65);
   const agreementScore = Math.round(clamp(100 - disagreement * 150, 0, 100));
-  return {
-    blendedFairValue, agreementScore, methodCount: available.length, effectiveWeights, reliabilityFlags, cashFlowAnchor: anchor,
-    methodSelection: {
-      ...methodSelection, adaptiveWeights: adaptive,
-      eligibleMethods: available.map(([key]) => key),
-      auditOnlyMethods: allAvailable.filter(([key]) => !(startingWeights[key] > 0)).map(([key]) => key),
-    },
-  };
+  return { blendedFairValue, agreementScore, methodCount: available.length, effectiveWeights, reliabilityFlags, cashFlowAnchor: anchor, methodSelection: { ...methodSelection, adaptiveWeights: adaptive } };
 }
 
 function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
@@ -1052,20 +1001,59 @@ function fiveYearPriceTargetCAGR(stock, model, exitResults, effectiveWeights) {
   };
 }
 
+function robustDecisionBlend(stock, category, lifecycle, primaryValuation, consensus, combined, legacyPriceTarget, model) {
+  const currentPrice = Number(stock.price?.current);
+  const agreement = clamp((combined?.agreementScore ?? 50) / 100, 0, 1);
+  const profile = stock.valuation?.businessProfile || {};
+  const moat = clamp(Number(profile.moatScore ?? 0.5), 0, 1);
+  const forecastReliability = clamp(Number(profile.forecastReliability ?? 0.5), 0, 1);
+  const growthCategory = ['Hyper Growth', 'Growth', 'Compounder'].includes(category);
+  const primaryFair = Number(primaryValuation?.fairValueToday);
+  const consensusFair = Number(consensus?.actionableFairValue ?? combined?.blendedFairValue);
+  const primaryExit = Number(primaryValuation?.actionableExitValue);
+  const consensusExit = Number(legacyPriceTarget?.exitPrice);
+  const years = Number(model?.projection?.length || lifecycle?.forecastYears || 5);
+
+  // Low agreement should reduce confidence, not allow a single selected method to
+  // completely erase the information in the other independently valid methods.
+  let primaryWeight = growthCategory ? 0.58 : 0.72;
+  primaryWeight += (agreement - 0.5) * 0.20;
+  primaryWeight += (forecastReliability - 0.5) * 0.10;
+  primaryWeight -= growthCategory ? (moat - 0.5) * 0.08 : 0;
+  primaryWeight = clamp(primaryWeight, growthCategory ? 0.48 : 0.60, 0.84);
+
+  const blend = (a, b) => {
+    if (a > 0 && b > 0) return a * primaryWeight + b * (1 - primaryWeight);
+    return a > 0 ? a : b > 0 ? b : null;
+  };
+  const fairValueToday = blend(primaryFair, consensusFair);
+  const actionableExitValue = blend(primaryExit, consensusExit);
+  const dividends = Number(primaryValuation?.dividends ?? legacyPriceTarget?.dividendsReceived ?? 0);
+  const expectedCAGR = currentPrice > 0 && actionableExitValue > 0 && years > 0
+    ? Math.pow((actionableExitValue + dividends) / currentPrice, 1 / years) - 1
+    : Number(primaryValuation?.expectedCAGR);
+
+  return {
+    fairValueToday, actionableExitValue, expectedCAGR, dividends, primaryWeight,
+    consensusWeight: 1 - primaryWeight,
+    primaryFairValue: primaryFair > 0 ? primaryFair : null,
+    consensusFairValue: consensusFair > 0 ? consensusFair : null,
+    primaryExitValue: primaryExit > 0 ? primaryExit : null,
+    consensusExitValue: consensusExit > 0 ? consensusExit : null,
+    agreementScore: combined?.agreementScore ?? null,
+    version: 'v38.1-robust-primary-consensus-blend',
+  };
+}
+
 function valuateStock(stock, sectorExitMultiples, calibration = null) {
   const lifecycle = classifyLifecycle(stock);
-  const archetypeProfile = classifyBusinessArchetype(stock, { analystForward: stock?.analystEstimates?.revenueGrowthNextYear ?? stock?.analystEstimates?.revenueGrowthCurrentYear });
-  lifecycle.archetype = archetypeProfile.archetype;
-  lifecycle.economicModel = archetypeProfile;
-  if (!Number.isFinite(Number(lifecycle.forwardGrowth))) lifecycle.forwardGrowth = archetypeProfile.forwardGrowth;
-  const category = lifecycle.stage === 'Elite Compounder' ? 'Compounder'
-    : lifecycle.stage === 'Dividend Compounder' ? 'Dividend'
-    : lifecycle.stage === 'Temporary Disruption' ? 'Growth'
-    : ['Financial','Utility','Asset Heavy','Mature'].includes(lifecycle.stage) ? 'Value'
-    : lifecycle.stage;
-  const forecastCategory = lifecycle.stage;
+  const category = resolveValuationCategory(stock, lifecycle);
   const sectorMultiples = sectorExitMultiples[stock.sector] || sectorExitMultiples.Unknown || {};
-  const model = projectFinancials(stock, stock.growthYear1, lifecycle.forecastYears, calibration, forecastCategory, lifecycle);
+  // Keep the model category canonical. Passing lifecycle.stage here previously meant
+  // labels such as “Secular Compute Platform” or “Temporary Disruption” leaked into
+  // discount-rate, terminal-growth and method-weight lookups that only understand the
+  // seven canonical categories. Lifecycle is still supplied separately to the forecast.
+  const model = projectFinancials(stock, stock.growthYear1, lifecycle.forecastYears, calibration, category, lifecycle);
   const moat = computeMoat(stock, lifecycle);
   const baseBusinessProfile = { ...buildBusinessProfile(stock, category, model), moatScore: moat.score / 100, moatV2: moat, lifecycle };
   const premiumPersistenceModel = computePremiumPersistence(stock, baseBusinessProfile, lifecycle, moat);
@@ -1086,47 +1074,6 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   // based on today's normalized owner earnings must not dominate an inflecting
   // business whose forecast explicitly models a multi-year margin transition.
   stock.valuation.businessForecast = model.growthModel?.assumptions || null;
-  // V51 market-expectations calibration must be available before the primary
-  // valuation is selected. Reverse DCF is only a modest underwriting input, but
-  // it is useful for distinguishing genuine operating upside from growth that is
-  // already embedded in the current price.
-  const currentPrice = Number(stock.price?.current);
-  const lastForExpectations = stock.financials.years.at(-1) || {};
-  const expectationsDiscountRate = getDynamicDiscountRate(stock, category);
-  const expectationsTerminalGrowth = getDynamicTerminalGrowth(stock, category);
-  let preValuationMarketImpliedGrowth = null;
-  let preValuationMarketImpliedGrowthNote = null;
-  if (lastForExpectations.revenue > 0 && lastForExpectations.sharesOutTTM > 0 && currentPrice > 0) {
-    const normalizedFcf = normalizedExpectationFcf(stock);
-    const normalizedMargin = normalizedFcf > 0 ? normalizedFcf / lastForExpectations.revenue : null;
-    const fiveYearRow = model.projection?.[Math.min(4, Math.max(0, model.projection.length - 1))] || model.projection?.at(-1) || {};
-    const implied = solveImpliedRevenueGrowth({
-      revenueBase: lastForExpectations.revenue,
-      startFcfMargin: normalizedMargin,
-      targetFcfMargin: fiveYearRow.fcfMargin ?? normalizedMargin,
-      terminalGrowth: expectationsTerminalGrowth,
-      discountRate: expectationsDiscountRate,
-      years: 10,
-      netDebt: (lastForExpectations.longTermDebt || 0) - (lastForExpectations.cash || 0),
-      sharesOut: lastForExpectations.sharesOutTTM,
-      targetPricePerShare: currentPrice,
-    });
-    const rawImplied = implied.impliedGrowth;
-    const modeledAnchor = Number(model.growthModel?.assumptions?.year1 ?? lifecycle.forwardGrowth);
-    // Refuse to turn a numerically converged but economically nonsensical solution
-    // into a confidence penalty. Keep it unavailable and expose the reason instead.
-    const credibilityCeiling = clamp(Math.max(.28, Number.isFinite(modeledAnchor) ? modeledAnchor * 1.8 : .28), .28, .50);
-    if (Number.isFinite(rawImplied) && rawImplied <= credibilityCeiling) {
-      preValuationMarketImpliedGrowth = rawImplied;
-      preValuationMarketImpliedGrowthNote = null;
-    } else {
-      preValuationMarketImpliedGrowth = null;
-      preValuationMarketImpliedGrowthNote = implied.reason !== 'converged' ? implied.reason : 'implied_revenue_growth_outside_economic_range';
-    }
-  }
-  stock.valuation.marketImpliedGrowth = preValuationMarketImpliedGrowth;
-  stock.valuation.marketImpliedGrowthNote = preValuationMarketImpliedGrowthNote;
-
   const dcf = dcfFromProjection(stock, model, { sbcAdjusted: false });
   const dcfSBCAdjusted = dcfFromProjection(stock, model, { sbcAdjusted: true });
   const ownerEarnings = ownerEarningsFromProjection(stock, model);
@@ -1145,19 +1092,21 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
   // consensus remains available for audit, but only business-appropriate methods
   // drive fair value, future target, and expected return.
   const primaryValuation = selectedValuation({
-    stock, category, lifecycle, methodResults: exitResults, model, calibration,
+    stock, category, lifecycle, methodResults: exitResults, model,
   });
   const legacyPriceTarget = fiveYearPriceTargetCAGR(stock, model, exitResults, combined.effectiveWeights);
-  const selectedExitPrice = primaryValuation?.actionableExitValue ?? legacyPriceTarget.exitPrice;
+  const decisionBlend = robustDecisionBlend(stock, category, lifecycle, primaryValuation, consensus, combined, legacyPriceTarget, model);
+  const selectedExitPrice = decisionBlend.actionableExitValue ?? primaryValuation?.actionableExitValue ?? legacyPriceTarget.exitPrice;
   const returnEngineV2 = computeReturnEngineV2(stock, model, selectedExitPrice, consensus, lifecycle);
-  if (primaryValuation && Number.isFinite(primaryValuation.expectedCAGR)) {
-    returnEngineV2.expectedCAGR = primaryValuation.expectedCAGR;
-    returnEngineV2.actionableCAGR = primaryValuation.expectedCAGR;
-    returnEngineV2.rawMarketCAGR = primaryValuation.rawCAGR;
-    returnEngineV2.actionableExitPrice = primaryValuation.actionableExitValue;
-    returnEngineV2.rawMarketExitPrice = primaryValuation.rawExitValue;
-    returnEngineV2.totalFutureValue = primaryValuation.actionableExitValue + primaryValuation.dividends;
+  if (Number.isFinite(decisionBlend.expectedCAGR)) {
+    returnEngineV2.expectedCAGR = decisionBlend.expectedCAGR;
+    returnEngineV2.actionableCAGR = decisionBlend.expectedCAGR;
+    returnEngineV2.rawMarketCAGR = primaryValuation?.rawCAGR ?? legacyPriceTarget.rawCagr;
+    returnEngineV2.actionableExitPrice = decisionBlend.actionableExitValue;
+    returnEngineV2.rawMarketExitPrice = primaryValuation?.rawExitValue ?? legacyPriceTarget.exitPrice;
+    returnEngineV2.totalFutureValue = decisionBlend.actionableExitValue + decisionBlend.dividends;
     returnEngineV2.primaryValuation = primaryValuation;
+    returnEngineV2.decisionBlend = decisionBlend;
   }
   const ownerEarningsReturn = buildOwnerEarningsReturn(stock, model, ownerEarnings, dcf, consensus, lifecycle, moat, businessProfile);
   const fiveYearPriceTarget = {
@@ -1175,25 +1124,58 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     dividendsReceived: returnEngineV2.dividendsReceived ?? legacyPriceTarget.dividendsReceived ?? 0,
     totalFutureValue: returnEngineV2.totalFutureValue ?? null,
     breakdown: returnEngineV2.breakdown,
-    returnEngineVersion: 'expectations-calibrated-unified-valuation-v51',
+    returnEngineVersion: 'v38.1-robust-category-and-valuation-rebuild',
     primaryValuation,
+    decisionBlend,
     ownerEarningsValidationCAGR: ownerEarningsReturn.expectedCAGR,
     fundamentalBusinessCAGR: returnEngineV2.fundamentalCAGR,
     multipleDominated: returnEngineV2.multipleDominated,
   };
-  const finalFairValue = primaryValuation?.fairValueToday ?? consensus.actionableFairValue ?? combined.blendedFairValue ?? dcf.fairValuePerShare ?? ownerEarnings.fairValuePerShare;
+  const currentPrice = stock.price.current;
+  const finalFairValue = decisionBlend.fairValueToday ?? primaryValuation?.fairValueToday ?? consensus.actionableFairValue ?? combined.blendedFairValue ?? dcf.fairValuePerShare ?? ownerEarnings.fairValuePerShare;
   const marginOfSafety = finalFairValue && currentPrice
     ? (finalFairValue - currentPrice) / finalFairValue : null;
 
   const last = stock.financials.years.at(-1) || {};
-  const discountRate = expectationsDiscountRate;
-  const terminalGrowth = expectationsTerminalGrowth;
-  const marketImpliedGrowth = preValuationMarketImpliedGrowth;
-  const marketImpliedGrowthNote = preValuationMarketImpliedGrowthNote;
+  const discountRate = getDynamicDiscountRate(stock, category);
+  const terminalGrowth = getDynamicTerminalGrowth(stock, category);
+  let marketImpliedGrowth = null, marketImpliedGrowthNote = null, marketImpliedGrowthBase = null;
+
+  // Reverse DCF solves for the growth rate of FREE CASH FLOW, not revenue. Use a
+  // normalized starting FCF so one unusually strong/weak trailing year does not
+  // manufacture an absurd implied-growth result. The normalized base blends current
+  // FCF with a recent median FCF margin applied to current revenue, then caps the
+  // adjustment to a reasonable range around reported FCF.
+  if (last.fcf > 0 && last.sharesOutTTM > 0 && currentPrice > 0) {
+    const recentFcfMargins = stock.financials.years.slice(-5)
+      .map(y => y.revenue > 0 && Number.isFinite(Number(y.fcf)) ? Number(y.fcf) / Number(y.revenue) : null)
+      .filter(x => Number.isFinite(x) && x > 0);
+    const sortedMargins = [...recentFcfMargins].sort((a, b) => a - b);
+    const medianMargin = sortedMargins.length
+      ? (sortedMargins.length % 2
+        ? sortedMargins[Math.floor(sortedMargins.length / 2)]
+        : (sortedMargins[sortedMargins.length / 2 - 1] + sortedMargins[sortedMargins.length / 2]) / 2)
+      : null;
+    const marginNormalizedFcf = medianMargin != null && last.revenue > 0 ? last.revenue * medianMargin : null;
+    const blendedBase = marginNormalizedFcf != null ? last.fcf * 0.55 + marginNormalizedFcf * 0.45 : last.fcf;
+    const normalizedFcfBase = clamp(blendedBase, last.fcf * 0.65, last.fcf * 1.35);
+    marketImpliedGrowthBase = {
+      reportedFcf: last.fcf,
+      normalizedFcf: normalizedFcfBase,
+      recentMedianFcfMargin: medianMargin,
+      metric: 'fcf',
+    };
+
+    const implied = solveImpliedGrowth({
+      fcfBase: normalizedFcfBase, terminalGrowth, discountRate, years: 10,
+      netDebt: (last.longTermDebt || 0) - (last.cash || 0), sharesOut: last.sharesOutTTM,
+      targetPricePerShare: currentPrice,
+    });
+    marketImpliedGrowth = implied.impliedGrowth;
+    marketImpliedGrowthNote = implied.reason !== 'converged' ? implied.reason : null;
+  }
 
   const marketExpectations = buildMarketExpectations(stock, model, marketImpliedGrowth, returnEngineV2);
-  const expectationRisk = computeExpectationRisk(stock, model, marketExpectations, primaryValuation, lifecycle, businessProfile);
-  stock.valuation.expectationRisk = expectationRisk;
   const monteCarlo = simulateReturns(stock, returnEngineV2, combined.agreementScore, Math.round((businessProfile.forecastReliability || 0.5) * 100));
 
   return {
@@ -1202,21 +1184,24 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     marketValue: consensus.marketValue,
     valuationConsensus: consensus,
     primaryValuation,
+    decisionBlend,
     ownerEarningsReturn,
     returnEngineV2,
     marketExpectations,
-    expectationRisk,
     monteCarlo,
     agreementScore: combined.agreementScore, methodCount: combined.methodCount,
     effectiveWeights: combined.effectiveWeights, methodSelection: combined.methodSelection, reliabilityFlags: combined.reliabilityFlags,
     outlierFlags: combined.reliabilityFlags, marginOfSafety, fiveYearPriceTarget,
-    marketImpliedGrowth, marketImpliedGrowthNote, reverseDCFGap: marketImpliedGrowth != null ? model.growthModel.assumptions.year1 - marketImpliedGrowth : null,
+    marketImpliedGrowth, marketImpliedGrowthMetric: 'fcf', marketImpliedGrowthBase, marketImpliedGrowthNote,
+    // Kept for diagnostics only. This compares modeled revenue growth with implied FCF
+    // growth, so consumers must not use it as a like-for-like forecast error.
+    reverseDCFGap: marketImpliedGrowth != null ? model.growthModel.assumptions.year1 - marketImpliedGrowth : null,
     capitalAllocation: capitalAllocationScore(stock), analystReliability: analystReliability(stock),
     dilutionRate: model.dilutionRate,
     sbcIntensity: last.sbcIntensity ?? (last.sbc != null && last.revenue > 0 ? last.sbc / last.revenue : null),
     projection: model.projection,
     projectionAssumptions: {
-      version: '52.0-expectation-risk-calibrated-forecast', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
+      version: '38.1-canonical-category-robust-decision-blend', category, lifecycle, moat, forecastHorizon: lifecycle.forecastYears, businessProfile, discountRate, terminalGrowth, analystReliability: analystReliability(stock), capitalAllocation: capitalAllocationScore(stock),
       growthModel: model.growthModel, startingValues: model.startingValues, marginAssumptions: model.marginAssumptions,
     },
     methodAudits: {
@@ -1228,8 +1213,8 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
 
 const api = {
   computeSectorExitMultiples, valuateStock, projectFinancials, estimateDilutionRate,
-  combineValuations, meanRevertedMultiple, qualityPremiumWeight, fiveYearPriceTargetCAGR, normalizedExpectationFcf,
-  inferValuationCategory, buildGrowthPath, buildBusinessProfile, businessSpecificWeights, intelligentExitMultiple, analystReliability, capitalAllocationScore, ownerEarningsFromProjection,
+  combineValuations, meanRevertedMultiple, qualityPremiumWeight, fiveYearPriceTargetCAGR,
+  inferValuationCategory, resolveValuationCategory, buildGrowthPath, buildBusinessProfile, businessSpecificWeights, intelligentExitMultiple, analystReliability, capitalAllocationScore, ownerEarningsFromProjection,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 if (typeof window !== 'undefined') window.ValuationMethods = api;

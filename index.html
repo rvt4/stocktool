@@ -283,7 +283,7 @@ function buildDetailHtml(s) {
     Margin exp. ${pct(s.cagrBreakdown.marginExpansionAnnualized)} ·
     Buybacks ${pct(s.cagrBreakdown.shareCountReduction)} ·
     Div yield ${pct(s.cagrBreakdown.dividendYield)}
-    <br><strong>Market-implied growth</strong> (what the current price requires to be fair): ${impliedText}
+    <br><strong>Market-implied FCF growth</strong> (reverse DCF; valuation diagnostic, not a revenue forecast): ${impliedText}
     <br><strong>Valuation methods</strong> (blended = weighted average, agreement ${s.methodAgreementScore ?? '—'}/100 from ${s.methodCount} method${s.methodCount === 1 ? '' : 's'}):
     <br>${methodsText}
     <br><strong>Dilution:</strong> ${s.dilutionRate != null ? pct(s.dilutionRate) + '/yr est.' : '—'}
@@ -329,7 +329,7 @@ ${s.ownerEarningsReturn ? `<div><strong>V20 primary model:</strong> ${s.ownerEar
 <div><strong>Probability-weighted valuation contribution:</strong> ${s.primaryValuation?.probabilityWeightedValuationDrag != null ? pct(s.primaryValuation.probabilityWeightedValuationDrag) : '—'}</div>
 <div><strong>Operating return anchor:</strong> ${s.primaryValuation?.operatingAnchorForRerating != null ? pct(s.primaryValuation.operatingAnchorForRerating) : '—'}</div>
 <div><strong>Modeled growth anchor:</strong> ${s.primaryValuation?.modeledGrowthAnchor != null ? pct(s.primaryValuation.modeledGrowthAnchor) : '—'}</div>
-<div><strong>Market-implied growth:</strong> ${s.primaryValuation?.marketImpliedGrowth != null ? pct(s.primaryValuation.marketImpliedGrowth) : '—'}</div>
+<div><strong>Market-implied FCF growth:</strong> ${s.marketImpliedGrowth != null ? pct(s.marketImpliedGrowth) : (s.primaryValuation?.marketImpliedGrowth != null ? pct(s.primaryValuation.marketImpliedGrowth) : '—')}</div>
 <div><strong>Expectations gap:</strong> ${s.primaryValuation?.expectationsGap != null ? pct(s.primaryValuation.expectationsGap) : '—'}</div>
 <div><strong>Expectations adjustment:</strong> ${s.primaryValuation?.marketExpectationsAdjustment != null ? pct(s.primaryValuation.marketExpectationsAdjustment) : '—'}</div>
 <div><strong>Expectation risk:</strong> ${s.expectationRisk?.score ?? '—'}/100 (${s.expectationRisk?.level ?? '—'})</div>
@@ -349,7 +349,7 @@ ${s.ownerEarningsReturn ? `<div><strong>V20 primary model:</strong> ${s.ownerEar
 <div><strong>Calibration:</strong> ${s.calibrationActive ? 'Active' : 'Collecting history'} (${s.calibration?.observationCount ?? 0} observations)</div>
 <div><strong>Suggested max weight:</strong> ${pct(s.portfolioProfile?.suggestedMaxWeight)}</div>
 </div>
-<div style="margin-top:8px"><strong>Market expectations:</strong> ${s.marketExpectations?.summary ?? '—'}</div>
+<div style="margin-top:8px"><strong>Market expectations:</strong> ${s.marketImpliedGrowth != null ? `Reverse DCF implies roughly ${pct(s.marketImpliedGrowth)} annual FCF growth from a normalized cash-flow base, versus ${pct(s.cagrBreakdown?.forwardRevGrowth)} modeled near-term revenue growth. These are different metrics; use the gap only as a valuation/expectations diagnostic.` : (s.marketExpectations?.summary ?? '—')}</div>
 <div style="margin-top:8px"><strong>Expectation-risk warnings:</strong> ${(s.expectationRisk?.warnings || []).length ? s.expectationRisk.warnings.join(' · ') : 'None identified'}</div>
 <div style="margin-top:8px"><strong>Monte Carlo CAGR:</strong> ${s.monteCarlo ? `10th ${pct(s.monteCarlo.p10)} · Median ${pct(s.monteCarlo.median)} · 90th ${pct(s.monteCarlo.p90)}` : '—'}</div>
 </div>
