@@ -149,9 +149,11 @@ function buildScenarios(stock, v, integrity) {
     : .04;
   const debtToEbitda = Number(stock?.financials?.years?.at(-1)?.debtToEbitda);
   const leverageRisk = finite(debtToEbitda) ? clamp((debtToEbitda - 1.5) / 4.5, 0, 1) : .25;
+  const sanityClampCount = Number(stock?.valuation?.fundamentalGrowthDiagnostics?.sanityClampCount ?? 0);
+  const clampUncertainty = sanityClampCount <= 0 ? 0 : sanityClampCount === 1 ? .08 : sanityClampCount === 2 ? .20 : .32;
   const uncertaintyMultiplier = clamp(
-    .72 + (1 - p.confidence) * .95 + cycle.cyclicality * .45 + clamp(growthVol / .12, 0, 1) * .35 + leverageRisk * .20,
-    .70, 1.75
+    .72 + (1 - p.confidence) * .95 + cycle.cyclicality * .45 + clamp(growthVol / .12, 0, 1) * .35 + leverageRisk * .20 + clampUncertainty,
+    .70, 1.95
   );
   const spread = {
     g: clamp(baseSpread.g * uncertaintyMultiplier, .018, .16),
@@ -204,6 +206,8 @@ function buildScenarios(stock, v, integrity) {
     scenarioUncertaintyMultiplier: uncertaintyMultiplier,
     scenarioGrowthVolatility: growthVol,
     scenarioLeverageRisk: leverageRisk,
+    scenarioSanityClampCount: sanityClampCount,
+    scenarioClampUncertainty: clampUncertainty,
   };
 }
 

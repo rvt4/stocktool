@@ -70,14 +70,21 @@ function computeExpectedReturnProfile(stock, scenarioAnalysis, integrity) {
   const operatingSupport = clamp(operatingContribution / positiveReturn, -1, 1.5);
   const revenueGrowth = stock?.valuation?.projectionAssumptions?.year1 ?? stock?.valuation?.projection?.[0]?.growth ?? null;
   const lowGrowthYieldRisk = finite(revenueGrowth) && Number(revenueGrowth) < .035 && dividendDependence > .28;
+  const sanityClampCount = Number(stock?.valuation?.fundamentalGrowthDiagnostics?.sanityClampCount ?? stock?.fundamentalGrowthBreakdown?.sanityClampCount ?? stock?.cagrBreakdown?.sanityClampCount ?? 0);
+  const agreement01 = clamp(Number(stock?.valuation?.methodAgreementScore ?? 50) / 100, 0, 1);
+  // Rerating is a legitimate source of return, but it is less robust than operating
+  // compounding. Penalize dependence progressively, and more when valuation methods disagree.
+  const reratingFragility = reratingDependence <= .30 ? 0 : Math.pow(reratingDependence - .30, 1.25);
+  const disagreementInteraction = reratingDependence > .45 ? reratingDependence * (1 - agreement01) : 0;
+  const clampRobustnessPenalty = sanityClampCount <= 0 ? 0 : sanityClampCount === 1 ? 3 : sanityClampCount === 2 ? 8 : 14;
 
   // Return quality measures how robust the *source* of the return is, not merely
   // how high the modeled CAGR is. Operating compounding and evidence are rewarded;
   // dependence on rerating or yield in a stagnant business is penalized.
   const returnQualityScore = Math.round(clamp(
     48 + evidenceConfidence * 24 + ((integrity?.score ?? 50) / 100) * 10 +
-    clamp(operatingSupport, -1, 1) * 18 - reratingDependence * 24 -
-    (lowGrowthYieldRisk ? 14 : 0),
+    clamp(operatingSupport, -1, 1) * 18 - reratingDependence * 18 - reratingFragility * 24 -
+    disagreementInteraction * 18 - clampRobustnessPenalty - (lowGrowthYieldRisk ? 14 : 0),
     0, 100
   ));
   const returnQualityLabel = returnQualityScore >= 80 ? 'Robust' : returnQualityScore >= 65 ? 'Good'
@@ -91,7 +98,7 @@ function computeExpectedReturnProfile(stock, scenarioAnalysis, integrity) {
     riskAdjustedCAGR,
     returnQualityScore,
     returnQualityLabel,
-    returnQualityDiagnostics: { reratingDependence, dividendDependence, operatingSupport, lowGrowthYieldRisk },
+    returnQualityDiagnostics: { reratingDependence, dividendDependence, operatingSupport, lowGrowthYieldRisk, reratingFragility, disagreementInteraction, sanityClampCount, clampRobustnessPenalty },
     downsidePenalty,
     uncertaintyPenalty,
     instabilityPenalty,
