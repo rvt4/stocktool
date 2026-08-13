@@ -73,7 +73,7 @@
         <th data-key="ticker">Ticker</th>
         <th data-key="category">Category</th>
         <th data-key="rating">Rating</th>
-        <th data-key="probabilityWeightedCAGR">PW CAGR</th>
+        <th data-key="expectedReturn">Expected CAGR</th>
         <th data-key="expectedAlpha">Alpha</th>
         <th data-key="bearCAGR">Bear</th>
         <th data-key="baseCAGR">Base</th>
@@ -265,7 +265,7 @@ function buildDetailHtml(s) {
     ${decisionDashboardHtml(s)}
     ${s.lowConfidence ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Multiple growth inputs hit their sanity clamp for this stock — treat the fundamental growth figure with extra caution.</div>' : ''}
     ${s.marginOfSafetyDistorted ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Fair-value gap is extreme; MOS is floored at 0% and overvaluation is shown separately as premium to fair value.</div>' : ''}
-    ${s.usedFallbackForCAGRTarget ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ No price-aware return could be computed for this stock (missing exit-multiple data) — the qualify/rating decision fell back to fundamental growth rate alone, which does not account for today\'s entry price.</div>' : ''}
+    ${s.returnIntegrityValid === false ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Canonical investor return is unavailable or failed reconciliation; this stock cannot receive a Buy rating until the return identity is valid.</div>' : ''}
     ${s.ratingReturnMismatchReason ? `<div style="color:#e3d18a;margin-bottom:6px;">⚠️ ${s.ratingReturnMismatchReason}</div>` : ''}
     ${(s.returnQualityFlags || []).includes('Growth and valuation assumptions were normalized for internal consistency') ? '<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Growth and valuation assumptions were normalized so two incompatible extremes do not cancel each other.</div>' : ''}
     ${s.methodCount >= 2 && s.methodAgreementScore != null && s.methodAgreementScore < 40 ? `<div style="color:#e3d18a;margin-bottom:6px;">⚠️ Valuation methods disagree significantly (agreement score ${s.methodAgreementScore}/100) — the blended fair value rests on shaky consensus.</div>` : ''}
@@ -421,7 +421,7 @@ function render() {
       <td><strong>${s.ticker}</strong></td>
       <td>${s.category}</td>
       <td><span class="badge ${ratingClass(s.rating)}">${s.rating}</span></td>
-      <td>${s.probabilityWeightedCAGR == null ? returnDisplay : `<span class="${s.probabilityWeightedCAGR >= .15 ? 'pos' : 'neg'}">${pct(s.probabilityWeightedCAGR)}</span>`}</td>
+      <td>${returnDisplay}</td>
       <td class="${(s.expectedAlpha ?? ((s.probabilityWeightedCAGR ?? s.expectedReturn ?? 0) - .10)) >= 0 ? 'pos' : 'neg'}">${pct(s.expectedAlpha ?? ((s.probabilityWeightedCAGR ?? s.expectedReturn ?? 0) - .10))}</td>
       <td class="neg">${pct(s.bearCAGR)}</td>
       <td>${pct(s.baseCAGR)}</td>

@@ -813,9 +813,12 @@ function scoreStock(stock) {
   // Requires `stock.valuation.fiveYearPriceTarget` to be populated upstream (same place
   // that already sets `fairValueEstimate` and `valuationMethods` below) — verify
   // run-screener.js maps the fiveYearPriceTarget object from valuateStock() through.
+  // V67 single source of truth: every price-aware decision consumes the canonical
+  // five-year target CAGR. expectedReturnProfile remains diagnostic only.
   const v7Return = stock.valuation.expectedReturnProfile ?? null;
-  const expectedReturn = v7Return?.expectedCAGR ?? stock.valuation.fiveYearPriceTarget?.cagr ?? null;
-  const riskAdjustedReturn = v7Return?.riskAdjustedCAGR ?? expectedReturn;
+  const canonicalTarget = stock.valuation.fiveYearPriceTarget ?? null;
+  const expectedReturn = canonicalTarget?.integrityInvalid ? null : (canonicalTarget?.cagr ?? null);
+  const riskAdjustedReturn = expectedReturn;
   const lastRoic = mean(stock.financials.years.slice(-3).map(y => y.roic).filter(x => x != null));
   const baseRequiredMOS = dynamicMOS(category, lastRoic);
 
@@ -899,8 +902,11 @@ function scoreStock(stock) {
   // Fall back to fundamentalGrowthRate only when a price target genuinely couldn't be
   // computed (e.g. insufficient exit-multiple data), so stocks don't silently vanish
   // from qualifying — but this is the weaker, price-agnostic signal, so flag it.
-  const usedFallbackForCAGRTarget = expectedReturn == null;
-  const meetsCAGRTarget = (expectedReturn ?? fundamentalGrowthRate) >= 0.15;
+  // Never let price-agnostic fundamental growth qualify a stock for Buy. Missing or
+  // unreconciled canonical return is a hard non-qualifier, not a fallback.
+  const usedFallbackForCAGRTarget = false;
+  const returnIntegrityValid = expectedReturn != null && !canonicalTarget?.integrityInvalid;
+  const meetsCAGRTarget = returnIntegrityValid && expectedReturn >= 0.15;
   const investment = computeInvestmentScore(stock, catResult.composite, pricingPower.score, finalConfidenceScore, riskAdjustedReturn ?? fundamentalGrowthRate, marginOfSafety);
 
   return {
@@ -992,7 +998,9 @@ function scoreStock(stock) {
     marginOfSafetyDistorted,
     meetsRequiredMOS,
     meetsCAGRTarget,
-    qualifiesForBuyList: !!(meetsCAGRTarget && meetsRequiredMOS),
+    returnIntegrityValid,
+    returnReconciliationError: canonicalTarget?.reconciliationError ?? null,
+    qualifiesForBuyList: !!(returnIntegrityValid && meetsCAGRTarget && meetsRequiredMOS),
     valuationMethods: stock.valuation.valuationMethods ?? null,
     outlierFlags: stock.valuation.outlierFlags ?? [],
     methodAgreementScore: stock.valuation.methodAgreementScore ?? null,
@@ -1034,9 +1042,9 @@ function assignSelectiveRatings(scoredStocks) {
 
   sorted.forEach((stock, index) => {
     const percentile = (index + 1) / total;
-    const rawExpectedReturn = stock.expectedReturn ?? stock.fundamentalGrowthRate ?? null;
-    const riskAdjustedReturn = stock.riskAdjustedReturn ?? rawExpectedReturn;
-    const expectedReturn = riskAdjustedReturn;
+    const rawExpectedReturn = stock.returnIntegrityValid === false ? null : stock.expectedReturn;
+    const riskAdjustedReturn = rawExpectedReturn;
+    const expectedReturn = rawExpectedReturn;
     const confidence = stock.confidenceScore ?? 0;
     const quality = stock.businessQualityScore ?? 0;
     const downsideProtection = stock.downsideProtectionScore ?? 50;
