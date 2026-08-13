@@ -1,21 +1,7 @@
 {
-  "generatedAt": "2026-08-03T03:28:33.534Z",
+  "generatedAt": "2026-08-13T06:00:54.716Z",
   "status": "collecting-history",
   "minimumRecommendedObservations": 100,
-  "overall": {
-    "observations": 0,
-    "predictedMean": null,
-    "realizedMean": null,
-    "bias": null,
-    "medianError": null,
-    "mae": null,
-    "rmse": 0,
-    "correlation": null,
-    "hitRatePositive": null,
-    "hitRateBeatSPY": null
-  },
-  "byRating": {},
-  "byCategory": {},
-  "byIndustry": {},
-  "byEngineVersion": {}
+  "totalObservations": 0,
+  "byHorizon": {}
 }
