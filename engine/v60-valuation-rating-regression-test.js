@@ -4,15 +4,16 @@ const { buildActionableReturn } = require('./decision-system-v30');
 const { assignProbabilityRating } = require('./probability-rating-engine');
 const { selectedValuation } = require('./primary-valuation-engine');
 
-// 1) No category ceiling saturation: a 35% raw Value CAGR must be compressed,
-// not clipped back to exactly 35% or silently left untouched.
+// 1) V68 return contract: the decision layer must not compress or otherwise
+// rewrite the canonical five-year CAGR. Rerating sanity belongs upstream in valuation.
+const canonicalTarget={years:5,exitPrice:100*Math.pow(1.36,5),dividendsReceived:0,cagr:.36};
 const saturated = buildActionableReturn({
-  category:'Value', probabilityWeightedCAGR:.35, expectedReturn:.35,
-  baseCAGR:.34, fiveYearPriceTarget:{cagr:.36}, expectedReturnProfile:{riskAdjustedCAGR:.33},
-  confidenceScore:90, methodAgreementScore:85,
+  category:'Value', currentPrice:100, probabilityWeightedCAGR:.35, expectedReturn:.36,
+  baseCAGR:.34, fiveYearPriceTarget:canonicalTarget, expectedReturnProfile:{riskAdjustedCAGR:.33},
+  confidenceScore:90, methodAgreementScore:85, returnIntegrityError:false,
 });
-assert.ok(saturated.actionable < .35, `35% saturation should be compressed, got ${saturated.actionable}`);
-assert.ok(Math.abs(saturated.actionable - .35) > 1e-6, 'actionable CAGR must not pile up at 35%');
+assert.ok(Math.abs(saturated.actionable-.36)<1e-12, `canonical CAGR must remain unchanged, got ${saturated.actionable}`);
+assert.ok(!saturated.integrityInvalid, 'mathematically consistent canonical return should pass integrity');
 
 // 2) Strong Buy requires >=15% expected return AND the displayed required MOS.
 const components={quality:88,confidence:90,risk:25,growth:80,valuation:85};

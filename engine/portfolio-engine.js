@@ -7,8 +7,9 @@ function computePortfolioProfile(stock) {
   const protection = stock.valuation?.downside?.protectionScore ?? stock.downsideProtectionScore ?? 50;
   // V8: the institutional target return is the single canonical expected CAGR.
   const expected = stock.decisionExpectedReturn
-    ?? stock.probabilityWeightedCAGR
     ?? stock.expectedReturn
+    ?? stock.fiveYearPriceTarget?.cagr
+    ?? stock.probabilityWeightedCAGR
     ?? stock.valuation?.scenarioAnalysis?.probabilityWeightedCAGR
     ?? stock.valuation?.returnEngineV2?.expectedCAGR
     ?? stock.valuation?.fiveYearPriceTarget?.cagr

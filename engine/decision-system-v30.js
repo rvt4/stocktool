@@ -5,6 +5,7 @@ const { sectorAdjustedComposite } = require('./sector-model-engine');
 const { computeProbabilityProfile, assignProbabilityRating } = require('./probability-rating-engine');
 const { buildDecisionExplanation } = require('./explainability-engine');
 const { computePortfolioProfile } = require('./portfolio-engine');
+const { auditCanonicalReturn } = require('./return-contract');
 
 function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
 function n(v, d = null) { v = Number(v); return Number.isFinite(v) ? v : d; }
@@ -41,27 +42,30 @@ const MOS_CEILINGS = {
 };
 
 function buildActionableReturn(stock) {
-  const raw = n(stock.probabilityWeightedCAGR, n(stock.expectedReturn, null));
-  const base = n(stock.baseCAGR, null);
-  const canonical = n(stock.fiveYearPriceTarget?.cagr, null);
+  const canonicalTarget = stock.fiveYearPriceTarget || stock.valuation?.fiveYearPriceTarget || null;
+  const canonical = n(canonicalTarget?.cagr, n(stock.expectedReturn, null));
+  const audit = canonicalTarget ? auditCanonicalReturn(canonicalTarget, stock.currentPrice ?? stock.price?.current) : null;
+  const rawProbabilityWeighted = n(stock.probabilityWeightedCAGR, null);
   const riskAdjusted = n(stock.expectedReturnProfile?.riskAdjustedCAGR, null);
-  const anchor = median([raw, base, canonical, riskAdjusted]);
-  const confidence = clamp(n(stock.confidenceScore, 50), 0, 100);
-  const agreement = clamp(n(stock.methodAgreementScore, n(stock.valuation?.methodAgreementScore, 50)), 0, 100);
 
-  // Confidence-weighted shrinkage prevents a single optimistic method or malformed
-  // price/share input from driving the displayed return and rating.
-  const evidence = clamp(.30 + confidence / 250 + agreement / 500, .35, .90);
-  let actionable = raw == null ? anchor : (anchor == null ? raw : anchor + (raw - anchor) * evidence);
-  const ceiling = RETURN_CEILINGS[stock.category] ?? .26;
-  const extremeInput = [raw, base, canonical].some(v => Number.isFinite(v) && (v > .75 || v < -.75));
-  const aboveReference = Number.isFinite(actionable) && actionable > ceiling;
-  // Do not hard-cap to the reference band. Compress only the excess so ordering is
-  // preserved and the table cannot accumulate at a single artificial ceiling.
-  if (aboveReference) actionable = ceiling + (actionable - ceiling) * .30;
-  actionable = Number.isFinite(actionable) ? clamp(actionable, -.45, .55) : null;
-
-  return { raw, anchor, actionable, ceiling, wasCapped: aboveReference, extremeInput, evidence };
+  // V68 contract: the decision layer is not allowed to manufacture another return.
+  // Scenario-weighted and risk-adjusted CAGRs remain diagnostics only. Every badge,
+  // alpha number, ranking return input and portfolio decision uses the canonical
+  // five-year price-derived CAGR exactly as produced by valuation.
+  const integrityInvalid = !!stock.returnIntegrityError || (audit ? !audit.valid : !Number.isFinite(canonical));
+  return {
+    raw: rawProbabilityWeighted,
+    anchor: canonical,
+    actionable: canonical,
+    canonical,
+    riskAdjusted,
+    audit,
+    integrityInvalid,
+    ceiling: null,
+    wasCapped: false,
+    extremeInput: Number.isFinite(canonical) && (canonical > .75 || canonical < -.75),
+    evidence: 1,
+  };
 }
 
 function buildActionableMOS(stock) {
@@ -157,13 +161,20 @@ function applyDecisionSystemV30(stocks) {
     stock.rawProbabilityWeightedCAGR = stock.probabilityWeightedCAGR;
     stock.rawMarginOfSafety = stock.marginOfSafety;
     stock.decisionExpectedReturn = returnProfile.actionable;
-    stock.probabilityWeightedCAGR = returnProfile.actionable;
     stock.expectedReturn = returnProfile.actionable;
     stock.expectedAlpha = Number.isFinite(returnProfile.actionable) ? returnProfile.actionable - 0.10 : null;
-    stock.marginOfSafety = mosProfile.actionable;
+    // Preserve the canonical MOS shown by the scoring layer. A confidence haircut may
+    // be used inside ranking, but it must not silently redefine whether the stock is
+    // actually below fair value or whether it clears its stated MOS hurdle.
+    stock.decisionMarginOfSafety = mosProfile.actionable;
     stock.premiumToFairValue = Number.isFinite(stock.rawMarginOfSafety) && stock.rawMarginOfSafety < 0 ? -stock.rawMarginOfSafety : 0;
-    stock.returnPlausibilityAdjusted = returnProfile.wasCapped || returnProfile.extremeInput;
+    stock.returnPlausibilityAdjusted = returnProfile.extremeInput;
     stock.marginOfSafetyAdjusted = mosProfile.wasCapped;
+    stock.returnIntegrityError = !!stock.returnIntegrityError || returnProfile.integrityInvalid;
+    stock.meetsCAGRTarget = !stock.returnIntegrityError && Number.isFinite(returnProfile.actionable) && returnProfile.actionable >= 0.15;
+    stock.meetsRequiredMOS = stock.marginOfSafety != null && stock.requiredMOS != null
+      ? stock.marginOfSafety >= stock.requiredMOS : false;
+    stock.qualifiesForBuyList = !!(stock.meetsCAGRTarget && stock.meetsRequiredMOS && !stock.returnIntegrityError);
 
     if (returnProfile.extremeInput) {
       stock.confidenceScore = Math.min(n(stock.confidenceScore, 50), 55);
@@ -283,6 +294,14 @@ function applyDecisionSystemV30(stocks) {
     if (returnProfile.extremeInput && ['Exceptional Buy', 'Strong Buy', 'Buy'].includes(stock.rating)) {
       stock.rating = 'Hold';
       stock.ratingReason = 'Extreme return input requires price/share-count verification before a buy rating.';
+    }
+    if (['Exceptional Buy', 'Strong Buy', 'Buy'].includes(stock.rating) && !stock.qualifiesForBuyList) {
+      stock.rating = Number.isFinite(returnProfile.actionable) && returnProfile.actionable < 0.04 ? 'Avoid' : 'Hold';
+      stock.ratingReason = stock.returnIntegrityError
+        ? 'Canonical five-year return integrity failed; no Buy rating is permitted.'
+        : !stock.meetsCAGRTarget
+          ? 'Canonical five-year expected return is below the 15% strategy hurdle.'
+          : 'The stock does not clear its required margin of safety.';
     }
     stock.v27 = {
       version: 'v37-business-economics-quality-first', components,

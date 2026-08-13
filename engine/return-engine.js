@@ -1,6 +1,7 @@
 'use strict';
 
 const { assessReturnQuality } = require('./reality-check-engine');
+const { INVESTMENT_HORIZON_YEARS, projectionAtInvestmentHorizon, cagrFromOutcome } = require('./return-contract');
 
 function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
 function finite(x) { return Number.isFinite(Number(x)); }
@@ -15,22 +16,20 @@ function finite(x) { return Number.isFinite(Number(x)); }
  */
 function computeReturnEngineV2(stock, model, marketExitPrice, consensus, lifecycle = null) {
   const current = Number(stock.price?.current);
-  const years = Number(model.projection?.length) || 5;
-  if (!(current > 0) || !(years > 0) || !(Number(marketExitPrice) > 0)) {
+  const years = INVESTMENT_HORIZON_YEARS;
+  const exit = projectionAtInvestmentHorizon(model);
+  if (!(current > 0) || !exit || !(Number(marketExitPrice) > 0)) {
     return { expectedCAGR: null, actionableCAGR: null, rawMarketCAGR: null, actionableExitPrice: null };
   }
 
   const exitPrice = Number(marketExitPrice);
   const last = stock.financials?.years?.at(-1) || {};
-  const exit = model.projection?.at(-1) || {};
   const dividendYield = clamp(Number(stock.valuation?.dividendYield) || 0, 0, 0.12);
   // Simple cash-dividend convention. This is transparent and consistent with the
   // scenario engine. It can later be replaced with a projected dividend schedule.
   const dividendsReceived = current * dividendYield * years;
   const totalFutureValue = exitPrice + dividendsReceived;
-  const investorCAGR = totalFutureValue > 0
-    ? Math.pow(totalFutureValue / current, 1 / years) - 1
-    : null;
+  const investorCAGR = cagrFromOutcome(current, exitPrice, dividendsReceived, years);
 
   if (!finite(investorCAGR)) {
     return { expectedCAGR: null, actionableCAGR: null, rawMarketCAGR: null,
