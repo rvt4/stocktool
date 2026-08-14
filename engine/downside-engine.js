@@ -1,9 +1,0 @@
-'use strict';
-const clamp=(x,l,h)=>Math.max(l,Math.min(h,x)),mean=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:null;
-function sd(a){if(a.length<2)return null;const m=mean(a);return Math.sqrt(mean(a.map(x=>(x-m)**2)));}
-function computeDownsideRisk(stock,scenario,integrity,industry){
- const y=(stock.financials?.years||[]).slice(-5),last=y.at(-1)||{},g=[];for(let i=1;i<y.length;i++)if(y[i-1].revenue>0&&y[i].revenue>0)g.push(y[i].revenue/y[i-1].revenue-1);const m=y.map(x=>x.opMargin).filter(Number.isFinite),debt=last.debtToEbitda,vr=stock.marginOfSafety!=null?clamp(50-stock.marginOfSafety*90,0,100):55,lr=debt==null?45:clamp((debt-1)/4*100,0,100),ev=m.length>=3?clamp((sd(m)||0)/.10*100,0,100):50,cy=g.length>=3?clamp((sd(g)||0)/.20*100,0,100):50,sr=scenario?.downsideCAGR==null?55:clamp((-scenario.downsideCAGR+.05)/.35*100,0,100),dr=100-(integrity?.score??60),ir=clamp(((industry?.config?.riskModifier??1)-.85)/.45*100,0,100),dil=stock.valuation?.dilutionRate,dl=dil==null?45:clamp((dil+.01)/.09*100,0,100),score=Math.round(clamp(vr*.20+lr*.18+ev*.14+cy*.13+sr*.20+dr*.07+ir*.04+dl*.04,0,100)),pl=clamp(.03+score/100*.42+(scenario?.downsideCAGR<-.15?.08:0)+(debt>4?.07:0),.03,.65),risks=[];
- if(vr>=65)risks.push('Entry valuation offers limited protection'); if(lr>=65)risks.push('Leverage is elevated'); if(ev>=65)risks.push('Margins are volatile'); if(cy>=65)risks.push('Revenue is cyclical'); if(sr>=65)risks.push('Bear-case return is weak'); if(dl>=65)risks.push('Dilution risk is elevated');
- return {score,protectionScore:100-score,grade:score<=20?'Low':score<=38?'Moderate-Low':score<=55?'Moderate':score<=72?'High':'Very High',permanentLossProbability:pl,risks,components:{valuationRisk:Math.round(vr),leverageRisk:Math.round(lr),earningsVolatility:Math.round(ev),cyclicality:Math.round(cy),bearCaseRisk:Math.round(sr),dataRisk:Math.round(dr),dilutionRisk:Math.round(dl)}};
-}
-module.exports={computeDownsideRisk};
