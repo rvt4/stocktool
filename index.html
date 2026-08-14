@@ -1,7 +1,31 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=0.25,maximum-scale=5,user-scalable=yes"><title>FreeScreener</title>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=1440,initial-scale=0.28,minimum-scale=0.10,maximum-scale=5.0,user-scalable=yes,viewport-fit=cover"><title>FreeScreener</title>
 <style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0b0b0c;color:#eaeaea;margin:0;padding:18px}h1{font-size:1.35rem;margin:0 0 4px}.muted{color:#8d8d92}.meta{margin-bottom:16px}.controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}select,input{background:#1a1a1c;color:#eee;border:1px solid #36363a;border-radius:7px;padding:7px 10px;font-size:.92rem}.check{display:flex;align-items:center;gap:7px;color:#aaa;font-size:.88rem}.wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:.84rem}th,td{padding:8px 10px;border-bottom:1px solid #242426;white-space:nowrap;text-align:left}th{position:sticky;top:0;background:#0b0b0c;color:#aaa;z-index:2;cursor:pointer}tr.stock:hover{background:#151516}.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.75rem;font-weight:650}.ExceptionalBuy{background:#0b5d47;color:#b7ffe2}.StrongBuy{background:#0f5132;color:#86e2a6}.Buy{background:#12401f;color:#9fe89b}.Hold{background:#3d3a22;color:#e3d18a}.Avoid{background:#4d1f1f;color:#e89a9a}.Sell{background:#5a1717;color:#ffadad}.Unrated{background:#333;color:#bbb}.pos{color:#75d99a}.neg{color:#e89a9a}.mid{color:#e3d18a}.detail-row{display:none}.detail-row.open{display:table-row}.detail-cell{padding:12px!important;background:#121214;white-space:normal}.dashboard{background:#171719;border:1px solid #303034;border-radius:10px;padding:14px;white-space:normal;max-width:1100px;width:calc(100vw - 60px)}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:7px;margin-bottom:12px}.card{background:#121214;border:1px solid #29292c;border-radius:6px;padding:8px}.card small{display:block;color:#888;margin-bottom:3px}.card b{font-size:.92rem}.cols{display:grid;grid-template-columns:1fr 1fr;gap:22px}@media(max-width:700px){body{padding:12px}.cols{grid-template-columns:1fr}.dashboard{width:calc(100vw - 48px);padding:12px}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.card b{white-space:normal}.method-grid{grid-template-columns:1fr}.section{overflow-x:auto}.mini{min-width:650px}}.good{color:#75d99a}.risk{color:#e89a9a}.section{margin-top:14px;padding-top:10px;border-top:1px solid #2b2b2d}.section h3{margin:0 0 7px;font-size:.96rem}.mini{width:100%;font-size:.77rem}.mini th,.mini td{padding:5px 7px}.method{background:#18181a;border:1px solid #29292c;border-radius:7px;padding:9px;margin:6px 0}.method-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:6px 14px}.warning{color:#e3d18a;margin:8px 0}.core-note{color:#aaa;font-size:.78rem;margin-top:8px}.score{font-variant-numeric:tabular-nums}
+:root{color-scheme:dark}*{box-sizing:border-box}
+html{min-width:1440px;background:#0b0b0c}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0b0b0c;color:#eaeaea;margin:0;padding:18px;min-width:1440px;width:max-content}
+h1{font-size:1.35rem;margin:0 0 4px}.muted{color:#8d8d92}.meta{margin-bottom:16px}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;min-width:1100px}
+select,input{background:#1a1a1c;color:#eee;border:1px solid #36363a;border-radius:7px;padding:7px 10px;font-size:.92rem}
+.check{display:flex;align-items:center;gap:7px;color:#aaa;font-size:.88rem}
+/* IMPORTANT: the table is part of the page canvas, not a nested horizontal scroller.
+   iPhone can therefore pinch-zoom the entire screener down to a desktop overview. */
+.wrap{overflow:visible;width:max-content;min-width:1400px}
+table{width:max-content;min-width:1400px;border-collapse:collapse;font-size:.84rem}
+th,td{padding:8px 10px;border-bottom:1px solid #242426;white-space:nowrap;text-align:left}
+th{position:sticky;top:0;background:#0b0b0c;color:#aaa;z-index:2;cursor:pointer}
+tr.stock:hover{background:#151516}.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.75rem;font-weight:650}
+.ExceptionalBuy{background:#0b5d47;color:#b7ffe2}.StrongBuy{background:#0f5132;color:#86e2a6}.Buy{background:#12401f;color:#9fe89b}.Hold{background:#3d3a22;color:#e3d18a}.Avoid{background:#4d1f1f;color:#e89a9a}.Sell{background:#5a1717;color:#ffadad}.Unrated{background:#333;color:#bbb}
+.pos{color:#75d99a}.neg{color:#e89a9a}.mid{color:#e3d18a}
+.detail-row{display:table-row}.detail-cell{padding:12px!important;background:#121214;white-space:normal}
+.dashboard{background:#171719;border:1px solid #303034;border-radius:10px;padding:14px;white-space:normal;width:1380px;max-width:1380px}
+.cards{display:grid;grid-template-columns:repeat(8,minmax(145px,1fr));gap:7px;margin-bottom:12px}
+.card{background:#121214;border:1px solid #29292c;border-radius:6px;padding:8px;min-width:0}.card small{display:block;color:#888;margin-bottom:3px}.card b{font-size:.92rem;white-space:normal}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:22px}.good{color:#75d99a}.risk{color:#e89a9a}
+.section{margin-top:14px;padding-top:10px;border-top:1px solid #2b2b2d;overflow:visible}.section h3{margin:0 0 7px;font-size:.96rem}
+.mini{width:100%;min-width:0;font-size:.77rem}.mini th,.mini td{padding:5px 7px}
+.method{background:#18181a;border:1px solid #29292c;border-radius:7px;padding:9px;margin:6px 0}.method-grid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:6px 14px}
+.warning{color:#e3d18a;margin:8px 0}.core-note{color:#aaa;font-size:.78rem;margin-top:8px}.score{font-variant-numeric:tabular-nums}
 </style></head><body>
 <h1>FreeScreener</h1><div id="meta" class="meta muted">Loading…</div>
 <div class="controls"><select id="category"><option>All categories</option></select><select id="rating"><option>All ratings</option><option>Exceptional Buy</option><option>Strong Buy</option><option>Buy</option><option>Hold</option><option>Avoid</option><option>Sell</option><option>Unrated</option></select><input id="search" placeholder="Search ticker…"><label class="check"><input type="checkbox" id="strict">15% modeled return + MOS only</label></div>
@@ -9,9 +33,13 @@
 <th data-key="ticker">Ticker</th><th data-key="category">Category</th><th data-key="rating">Rating</th><th data-key="expectedReturn">Expected CAGR</th><th data-key="expectedAlpha">Alpha</th><th data-key="bearCAGR">Bear</th><th data-key="baseCAGR">Base</th><th data-key="bullCAGR">Bull</th><th data-key="confidenceScore">Confidence</th><th data-key="marginOfSafety">MOS</th><th data-key="requiredMOS">Req. MOS</th><th data-key="investmentScore">Investment</th><th data-key="qualityScore">Quality</th><th data-key="moatScore">Moat</th><th data-key="capitalAllocationScore">Capital Alloc.</th><th data-key="compounderScore">Compounder</th><th data-key="growthQualityScore">Growth Q.</th><th data-key="pricingPowerV2Score">Pricing</th><th data-key="downsideProtectionScore">Protection</th><th data-key="overallRank">Rank</th>
 </tr></thead><tbody id="body"></tbody></table></div>
 <script>
-let all=[], sortKey='investmentScore', sortDir=-1;
-const $=id=>document.getElementById(id); const pct=v=>Number.isFinite(v)?(v*100).toFixed(1)+'%':'—'; const money=v=>Number.isFinite(v)?'$'+v.toFixed(2):'—'; const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-function cls(v){return !Number.isFinite(v)?'':v>=0.10?'pos':v<0?'neg':'mid'} function badge(r){return `<span class="badge ${String(r).replace(/\s/g,'')}">${esc(r)}</span>`}
+let all=[], sortKey='investmentScore', sortDir=-1, openIndex=null;
+const $=id=>document.getElementById(id);
+const pct=v=>Number.isFinite(v)?(v*100).toFixed(1)+'%':'—';
+const money=v=>Number.isFinite(v)?'$'+v.toFixed(2):'—';
+const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+function cls(v){return !Number.isFinite(v)?'':v>=0.10?'pos':v<0?'neg':'mid'}
+function badge(r){return `<span class="badge ${String(r).replace(/\s/g,'')}">${esc(r)}</span>`}
 function detail(s){
  const d=s.decisionDashboard||{}, t=s.investmentThesis||{}, rows=s.valuationProjection||[], methods=s.valuationMethods||{}, audits=s.valuationMethodAudits||{}, a=s.projectionAssumptions||{};
  const meth=Object.entries(methods).map(([name,target])=>{const x=audits[name]||{};return `<div class="method"><b>${esc(name)} → ${money(target)} year-5 target</b><div class="method-grid muted"><span>Exit multiple: ${Number.isFinite(x.exitMultiple)?x.exitMultiple.toFixed(1)+'x':'—'}</span><span>Terminal share: ${Number.isFinite(x.terminalShare)?pct(x.terminalShare):'—'}</span><span>PV explicit: ${Number.isFinite(x.pvExplicit)?'$'+(x.pvExplicit/1e9).toFixed(1)+'B':'—'}</span><span>PV terminal: ${Number.isFinite(x.pvTerminal)?'$'+(x.pvTerminal/1e9).toFixed(1)+'B':'—'}</span></div></div>`}).join('');
@@ -22,13 +50,44 @@ function detail(s){
  <div class="section"><h3>Forecast assumptions</h3><div class="method-grid"><span>Revenue growth anchor: <b>${pct(a.revenueGrowthAnchor)}</b></span><span>Historical growth: <b>${pct(a.historicalGrowth)}</b></span><span>Terminal growth: <b>${pct(a.terminalGrowth)}</b></span><span>Dilution: <b>${pct(s.dilutionRate)}</b></span><span>Analysts: <b>${s.analystEstimates?.numAnalysts??'—'}</b></span><span>Agreement: <b>${s.methodAgreementScore??'—'}/100</b></span></div></div>
  <div class="section"><h3>Dynamic operating projection</h3>${proj}</div><div class="section"><h3>Valuation methods</h3>${meth||'<div class="warning">No valid valuation method.</div>'}</div></div>`
 }
-function stockRow(s,i){return `<tr class="stock" data-i="${i}"><td><b>${esc(s.ticker)}</b></td><td>${esc(s.category)}</td><td>${badge(s.rating)}</td><td class="${cls(s.expectedReturn)}">${pct(s.expectedReturn)}</td><td class="${cls(s.expectedAlpha)}">${pct(s.expectedAlpha)}</td><td class="${cls(s.bearCAGR)}">${pct(s.bearCAGR)}</td><td>${pct(s.baseCAGR)}</td><td class="${cls(s.bullCAGR)}">${pct(s.bullCAGR)}</td><td>${s.confidenceScore??'—'}</td><td class="${cls(s.marginOfSafety)}">${pct(s.marginOfSafety)}</td><td>${pct(s.requiredMOS)}</td><td>${s.investmentScore??'—'}</td><td>${s.qualityScore??'—'}</td><td>${s.moatScore??'—'}</td><td>${s.capitalAllocationScore??'—'}</td><td>${s.compounderScore??'—'}</td><td>${s.growthQualityScore??'—'}</td><td>${s.pricingPowerV2Score??'—'}</td><td>${s.downsideProtectionScore??'—'}</td><td>${s.overallRank??'—'}</td></tr><tr class="detail-row" id="d${i}"><td colspan="20" class="detail-cell"></td></tr>`}
-function render(){const cat=$('category').value,rat=$('rating').value,q=$('search').value.trim().toUpperCase(),strict=$('strict').checked;let xs=all.filter(s=>(cat==='All categories'||s.category===cat)&&(rat==='All ratings'||s.rating===rat)&&(!q||s._ticker.includes(q))&&(!strict||(s.expectedReturn>=.15&&s.marginOfSafety>=s.requiredMOS)));xs.sort((a,b)=>{let A=a[sortKey],B=b[sortKey];if(typeof A==='string')return sortDir*A.localeCompare(B);A=Number.isFinite(A)?A:-Infinity;B=Number.isFinite(B)?B:-Infinity;return sortDir*(A-B)});$('body').innerHTML=xs.map(s=>stockRow(s,s._i)).join('')}
-function toggleDetail(row){const i=Number(row.dataset.i),d=$('d'+i);if(!d)return;if(!d.dataset.loaded){d.querySelector('.detail-cell').innerHTML=detail(all[i]);d.dataset.loaded='1'}d.classList.toggle('open')}
-let searchTimer;
-fetch('data/results.json',{cache:'no-cache'}).then(r=>r.json()).then(d=>{all=(d.stocks||[]).map((s,i)=>Object.assign(s,{_i:i,_ticker:String(s.ticker||'').toUpperCase()}));$('meta').textContent=`${d.count||all.length} stocks · last updated ${new Date(d.generatedAt).toLocaleString()} · ${d.modelVersion||''}`;[...new Set(all.map(x=>x.category))].sort().forEach(x=>$('category').insertAdjacentHTML('beforeend',`<option>${esc(x)}</option>`));render()}).catch(e=>$('meta').textContent='Could not load results: '+e.message);
+function stockRow(s){return `<tr class="stock" data-i="${s._i}"><td><b>${esc(s.ticker)}</b></td><td>${esc(s.category)}</td><td>${badge(s.rating)}</td><td class="${cls(s.expectedReturn)}">${pct(s.expectedReturn)}</td><td class="${cls(s.expectedAlpha)}">${pct(s.expectedAlpha)}</td><td class="${cls(s.bearCAGR)}">${pct(s.bearCAGR)}</td><td>${pct(s.baseCAGR)}</td><td class="${cls(s.bullCAGR)}">${pct(s.bullCAGR)}</td><td>${s.confidenceScore??'—'}</td><td class="${cls(s.marginOfSafety)}">${pct(s.marginOfSafety)}</td><td>${pct(s.requiredMOS)}</td><td>${s.investmentScore??'—'}</td><td>${s.qualityScore??'—'}</td><td>${s.moatScore??'—'}</td><td>${s.capitalAllocationScore??'—'}</td><td>${s.compounderScore??'—'}</td><td>${s.growthQualityScore??'—'}</td><td>${s.pricingPowerV2Score??'—'}</td><td>${s.downsideProtectionScore??'—'}</td><td>${s.overallRank??'—'}</td></tr>`}
+function candidates(){
+ const cat=$('category').value,rat=$('rating').value,q=$('search').value.trim().toUpperCase(),strict=$('strict').checked;
+ let xs;
+ // Exact ticker lookup avoids scanning/rendering the universe while typing a symbol.
+ if(q && window.tickerMap && tickerMap.has(q)) xs=[tickerMap.get(q)];
+ else {
+   const base=(rat!=='All ratings'&&window.byRating?.get(rat))||all;
+   xs=base.filter(s=>(cat==='All categories'||s.category===cat)&&(rat==='All ratings'||s.rating===rat)&&(!q||s._ticker.includes(q))&&(!strict||(s.expectedReturn>=.15&&s.marginOfSafety>=s.requiredMOS)));
+ }
+ xs=xs.slice();
+ xs.sort((a,b)=>{let A=a[sortKey],B=b[sortKey];if(typeof A==='string')return sortDir*A.localeCompare(B);A=Number.isFinite(A)?A:-Infinity;B=Number.isFinite(B)?B:-Infinity;return sortDir*(A-B)});
+ return xs;
+}
+function render(){
+ openIndex=null;
+ const xs=candidates();
+ // Stock rows only. Detail DOM is inserted on demand for the one stock the user opens.
+ $('body').innerHTML=xs.map(s=>s._rowHTML).join('');
+}
+function toggleDetail(row){
+ const i=Number(row.dataset.i), s=all[i]; if(!s)return;
+ const next=row.nextElementSibling;
+ if(next && next.classList.contains('detail-row')){next.remove();openIndex=null;return}
+ const old=document.querySelector('tr.detail-row'); if(old)old.remove();
+ const d=document.createElement('tr');d.className='detail-row';d.innerHTML=`<td colspan="20" class="detail-cell">${detail(s)}</td>`;row.after(d);openIndex=i;
+}
+fetch('data/results.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+ all=(d.stocks||[]).map((s,i)=>{s._i=i;s._ticker=String(s.ticker||'').toUpperCase();return s});
+ window.tickerMap=new Map(all.map(s=>[s._ticker,s]));
+ window.byRating=new Map(); for(const s of all){if(!byRating.has(s.rating))byRating.set(s.rating,[]);byRating.get(s.rating).push(s)}
+ for(const s of all)s._rowHTML=stockRow(s);
+ $('meta').textContent=`${d.count||all.length} stocks · last updated ${new Date(d.generatedAt).toLocaleString()} · ${d.modelVersion||''}`;
+ [...new Set(all.map(x=>x.category))].sort().forEach(x=>$('category').insertAdjacentHTML('beforeend',`<option>${esc(x)}</option>`));
+ render();
+}).catch(e=>$('meta').textContent='Could not load results: '+e.message);
 ['category','rating','strict'].forEach(id=>$(id).addEventListener('change',render));
-$('search').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(render,100)});
+let raf=0;$('search').addEventListener('input',()=>{cancelAnimationFrame(raf);raf=requestAnimationFrame(render)});
 $('body').addEventListener('click',e=>{const row=e.target.closest('tr.stock');if(row)toggleDetail(row)});
 document.querySelectorAll('th[data-key]').forEach(th=>th.onclick=()=>{const k=th.dataset.key;if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=-1}render()});
 </script></body></html>
