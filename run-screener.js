@@ -31,6 +31,7 @@ const { applyInstitutionalSanity } = require('./engine/institutional-sanity-engi
 const { computeEconomicQuality } = require('./engine/economic-quality-engine');
 const { applyDecisionSystemV30 } = require('./engine/decision-system-v30');
 const { validate } = require('./engine/validation-suite');
+const { canonicalizePublishedReturn } = require('./engine/return-contract');
 const { persistCalibrationSnapshot } = require('./engine/calibration-store');
 
 const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'), 'utf8'));
@@ -170,7 +171,19 @@ async function loadAnalystEstimates() {
 
 function writeResults(records, partial) {
   const baseScored = scoreUniverse(records);
+
+  // V70: canonicalize at the actual publication boundary BEFORE ratings. This is
+  // later than valuation/scoring on purpose: fallback methods, compact-record
+  // transforms and dividend conventions can no longer leave a stale CAGR attached
+  // to the exact outcome that will be published.
+  for (const stock of baseScored) canonicalizePublishedReturn(stock);
+
   const scored = applyDecisionSystemV30(baseScored);
+
+  // Idempotent second pass protects the invariant even if a future decision-layer
+  // change accidentally touches a return alias. Validation then verifies the exact
+  // object that is about to be written.
+  for (const stock of scored) canonicalizePublishedReturn(stock);
   let validation = null;
   if (!partial) {
     validation = validate(scored);
