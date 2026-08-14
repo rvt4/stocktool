@@ -10,6 +10,10 @@ function rateStock(stock,forecast,quality,v){const c=v.expectedCAGR,mos=v.margin
   else if(c>=.15&&mos>=req&&q>=65&&conf>=55)rating='Strong Buy';
   else if(c>=.12&&mos>0&&q>=50&&conf>=50)rating='Buy';
   else rating='Hold';
+  // Very large positive modeled returns are published, but they cannot become a Buy
+  // solely because a fragile valuation method produced an extreme outcome. Negative
+  // extremes remain Sell: overvaluation is still actionable information.
+  if(v.extremeReturnFlag && Number.isFinite(c) && c>.35) rating='Hold';
   const investmentScore=Number.isFinite(c)?Math.round(clamp(.32*clamp((c+.02)/.24,0,1)*100+.18*clamp((mos+.05)/.40,0,1)*100+.27*q+.10*(quality.moatScore||50)+.13*conf,0,100)):0;
   return {rating,requiredMOS:req,investmentScore,qualifiesForBuyList:['Buy','Strong Buy','Exceptional Buy'].includes(rating),expectedAlpha:Number.isFinite(c)?c-.10:null};}
 module.exports={rateStock,requiredMOS};

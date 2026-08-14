@@ -15,6 +15,8 @@ function valuate(stock,forecast,quality){
   const ebitda0=Number(last.ebitda)>0?Number(last.ebitda):null;
   const currentPE=price>0&&eps0>0?price/eps0:null, currentPFCF=price>0&&fcf0>0?price/fcf0:null;
   const currentEVEBITDA=marketCap>0&&ebitda0>0?(marketCap+netDebt)/ebitda0:null;
+  const revenue0=Number(last.revenue)>0?Number(last.revenue):null;
+  const currentEVSales=marketCap>0&&revenue0>0?(marketCap+netDebt)/revenue0:null;
   const q=(quality.qualityScore||50)/100, growth=clamp(forecast.sustainableGrowth??forecast.revenueGrowthAnchor,0,.25);
   const methods=[];
 
@@ -27,18 +29,38 @@ function valuate(stock,forecast,quality){
     if(Number(f.eps)>0){const justified=cfg.basePE+growth*35+(q-.5)*7;const m=boundedExit(currentPE,justified,8,32);methods.push({name:'EPS exit',target:f.eps*m,weight:.35,audit:{exitMultiple:m,currentMultiple:currentPE,metric:f.eps}});}
     if(Number(f.ebitda)>0&&Number(f.shares)>0){const justified=cfg.baseEVEBITDA+growth*18+(q-.5)*4;const m=boundedExit(currentEVEBITDA,justified,6,20);const equity=f.ebitda*m-netDebt;if(equity>0)methods.push({name:'EV/EBITDA exit',target:equity/f.shares,weight:.15,audit:{exitMultiple:m,currentMultiple:currentEVEBITDA,metric:f.ebitda}});}
   }
+  // If earnings/FCF are not yet usable, do not give up on an otherwise modelable
+  // operating business. Use a conservative EV/Sales bridge based on the year-5
+  // revenue base, growth durability, projected EBITDA economics, and sector norms.
+  // This is a general fallback (not a ticker override) for firms whose current
+  // profitability makes P/E, P/FCF, and EV/EBITDA temporarily unusable.
+  if(!methods.length && stock.sector!=='Financials' && Number(f.revenue)>0 && Number(f.shares)>0){
+    const terminalEbitdaMargin=clamp(Number(f.ebitdaMargin)||0,0,.60);
+    const normalizedMargin=Math.max(.04,terminalEbitdaMargin);
+    const economicsMultiple=cfg.baseEVEBITDA*normalizedMargin;
+    const growthPremium=clamp(growth-.04,0,.21)*12;
+    const qualityPremium=(q-.5)*1.5;
+    const justified=clamp(economicsMultiple+growthPremium+qualityPremium,.5,12);
+    const m=boundedExit(currentEVSales,justified,.5,12);
+    const equity=Number(f.revenue)*m-netDebt;
+    if(equity>0)methods.push({name:'EV/Sales fallback',target:equity/Number(f.shares),weight:1,audit:{exitMultiple:m,currentMultiple:currentEVSales,metric:f.revenue,reason:'profitability_methods_unavailable'}});
+  }
+
   const dividends=rows.reduce((s,r)=>s+(Number(r.dividendPerShare)||0),0);
   for(const m of methods)m.outcome=Number.isFinite(m.target)?m.target+dividends:null;
   let total=blend(methods.map(m=>({value:m.outcome,weight:m.weight})));
   let expected=cagr(price,total);
-  // A base case outside this range is a data/model failure, not an investment insight.
-  // Publish it as unavailable so the screener cannot rank a broken denominator as a top idea.
-  const plausible=Number.isFinite(expected)&&expected>=-.30&&expected<=.35&&methods.length>0;
-  if(!plausible){total=null;expected=null;}
+  // Extreme returns are a reason to distrust the precision, not a reason to erase the
+  // valuation. Keeping the canonical outcome means expensive/high-optionality companies
+  // can still receive a Sell/Hold/etc. rating while diagnostics flag the result for review.
+  const hasValuation=Number.isFinite(expected)&&methods.length>0&&Number.isFinite(total)&&total>0;
+  const extremeReturn=hasValuation&&(expected<-.30||expected>.35);
+  const plausible=hasValuation&&!extremeReturn;
+  if(!hasValuation){total=null;expected=null;}
   const target=total!=null?Math.max(0,total-dividends):null, fair=total!=null?pv(total,req,HORIZON_YEARS):null, mos=fair>0&&price>0?1-price/fair:null, premium=fair>0&&price>0?price/fair-1:null;
   const returns=methods.map(m=>cagr(price,m.outcome)).filter(Number.isFinite), spread=returns.length>=2?Math.max(...returns)-Math.min(...returns):null;
   const agreement=returns.length>=2?Math.round(100*clamp(1-spread/.25,0,1)):(returns.length===1?55:0);
   const uncertainty=clamp((100-(quality.confidenceScore||50))/100,.10,.40), bear=total!=null?total*Math.pow(1-(.035+.04*uncertainty),HORIZON_YEARS):null, bull=total!=null?total*Math.pow(1+(.035+.035*uncertainty),HORIZON_YEARS):null;
-  return {requiredReturn:req,methods,fiveYearPriceTarget:target,cumulativeDividends:dividends,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,marginOfSafety:mos,premiumToFairValue:premium,methodAgreementScore:agreement,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!plausible};
+  return {requiredReturn:req,methods,fiveYearPriceTarget:target,cumulativeDividends:dividends,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,marginOfSafety:mos,premiumToFairValue:premium,methodAgreementScore:agreement,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_canonical_return':null};
 }
 module.exports={valuate};
