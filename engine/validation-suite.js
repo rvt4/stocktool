@@ -4,7 +4,7 @@ const path = require('path');
 const { auditCanonicalReturn } = require('./return-contract');
 
 const BUY_RATINGS = new Set(['Exceptional Buy', 'Strong Buy', 'Buy']);
-function finite(v) { return Number.isFinite(Number(v)); }
+function finite(v) { return v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v)); }
 
 function validate(stocks) {
   const issues = [];
@@ -14,15 +14,15 @@ function validate(stocks) {
     counts[s.rating] = (counts[s.rating] || 0) + 1;
     const target = s.fiveYearPriceTarget || s.valuation?.fiveYearPriceTarget || null;
     const audit = target ? auditCanonicalReturn(target, s.currentPrice ?? s.price?.current) : null;
-    const canonical = Number(target?.cagr);
-    const displayed = Number(s.expectedReturn);
-    const decision = Number(s.decisionExpectedReturn);
-    const alpha = Number(s.expectedAlpha);
+    const canonical = finite(target?.cagr) ? Number(target.cagr) : null;
+    const displayed = finite(s.expectedReturn) ? Number(s.expectedReturn) : null;
+    const decision = finite(s.decisionExpectedReturn) ? Number(s.decisionExpectedReturn) : null;
+    const alpha = finite(s.expectedAlpha) ? Number(s.expectedAlpha) : null;
     const buyRated = BUY_RATINGS.has(s.rating);
 
     // Hard architectural invariants. These are not subjective model-quality checks;
     // any failure means the published dashboard is internally contradictory.
-    if (target && !audit.valid) {
+    if (target && !audit.valid && !audit.unavailable && !target.integrityUnavailable) {
       issues.push({ ticker: s.ticker, type: 'canonical_return_math_mismatch', reasons: audit.reasons, audit });
     }
     if (target && finite(canonical) && (!finite(displayed) || Math.abs(displayed - canonical) > 1e-6)) {
@@ -50,7 +50,7 @@ function validate(stocks) {
 
   const total = stocks.length || 1;
   return {
-    version: 'validation-v68-canonical-return-contract',
+    version: 'validation-v71-canonical-return-quarantine',
     generatedAt: new Date().toISOString(),
     stocks: stocks.length,
     ratingDistribution: counts,

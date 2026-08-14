@@ -8,7 +8,7 @@ const { computePortfolioProfile } = require('./portfolio-engine');
 const { auditCanonicalReturn } = require('./return-contract');
 
 function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
-function n(v, d = null) { v = Number(v); return Number.isFinite(v) ? v : d; }
+function n(v, d = null) { if (v === null || v === undefined || v === '') return d; v = Number(v); return Number.isFinite(v) ? v : d; }
 function median(values) {
   const a = values.filter(Number.isFinite).sort((x, y) => x - y);
   if (!a.length) return null;

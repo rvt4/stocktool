@@ -10,7 +10,7 @@
 const INVESTMENT_HORIZON_YEARS = 5;
 const RETURN_INTEGRITY_TOLERANCE = 1e-6;
 
-function finite(v) { return Number.isFinite(Number(v)); }
+function finite(v) { return v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v)); }
 
 function projectionAtInvestmentHorizon(model) {
   const projection = Array.isArray(model?.projection) ? model.projection : [];
@@ -71,26 +71,50 @@ function auditCanonicalReturn(target, currentPrice, tolerance = RETURN_INTEGRITY
 function canonicalizePublishedReturn(stock) {
   if (!stock || typeof stock !== 'object') return stock;
   const target = stock.fiveYearPriceTarget || stock.valuation?.fiveYearPriceTarget || null;
-  if (!target || typeof target !== 'object') return stock;
+  if (!target || typeof target !== 'object') {
+    stock.expectedReturn = null;
+    stock.decisionExpectedReturn = null;
+    stock.expectedAlpha = null;
+    stock.returnIntegrityError = true;
+    stock.returnIntegrityUnavailable = true;
+    return stock;
+  }
 
-  const currentPrice = Number(stock.currentPrice ?? stock.price?.current);
-  const exitPrice = Number(target.exitPrice);
+  const currentPrice = finite(stock.currentPrice)
+    ? Number(stock.currentPrice)
+    : (finite(stock.price?.current) ? Number(stock.price.current) : null);
+  const exitPrice = finite(target.exitPrice) ? Number(target.exitPrice) : null;
   const dividendsReceived = finite(target.dividendsReceived) ? Number(target.dividendsReceived) : 0;
   const years = INVESTMENT_HORIZON_YEARS;
-  const cagr = cagrFromOutcome(currentPrice, exitPrice, dividendsReceived, years);
-  const totalFutureValue = exitPrice > 0 && finite(dividendsReceived)
-    ? exitPrice + dividendsReceived
+  const hasCanonicalOutcome = currentPrice > 0 && exitPrice > 0;
+  const cagr = hasCanonicalOutcome
+    ? cagrFromOutcome(currentPrice, exitPrice, dividendsReceived, years)
     : null;
+  const totalFutureValue = hasCanonicalOutcome ? exitPrice + dividendsReceived : null;
 
   // Final publication boundary: rebuild the canonical return from the exact
   // current price, exit price and dividend dollars that will be serialized.
-  // Upstream valuation layers may supply diagnostics, but no stale CAGR can cross
-  // this boundary into ratings or results.json.
+  // If an instrument cannot produce a valid five-year exit outcome, quarantine
+  // its return instead of manufacturing 0% or aborting the entire universe.
   target.years = years;
   target.dividendsReceived = dividendsReceived;
   target.totalFutureValue = totalFutureValue;
   target.cagr = cagr;
-  target.integrityAudit = auditCanonicalReturn(target, currentPrice);
+  target.integrityUnavailable = !hasCanonicalOutcome;
+  target.integrityAudit = hasCanonicalOutcome
+    ? auditCanonicalReturn(target, currentPrice)
+    : {
+        valid: false,
+        unavailable: true,
+        years,
+        shownCAGR: null,
+        impliedCAGR: null,
+        gap: null,
+        reasons: [
+          !(currentPrice > 0) ? 'current price is missing or invalid' : null,
+          !(exitPrice > 0) ? 'canonical five-year exit price is missing or invalid' : null,
+        ].filter(Boolean),
+      };
   target.integrityInvalid = !target.integrityAudit.valid;
   if (!String(target.returnEngineVersion || '').includes('publication-boundary')) {
     target.returnEngineVersion = `${target.returnEngineVersion || 'canonical'}+publication-boundary`;
@@ -104,6 +128,7 @@ function canonicalizePublishedReturn(stock) {
   stock.decisionExpectedReturn = cagr;
   stock.expectedAlpha = finite(cagr) ? cagr - 0.10 : null;
   stock.returnIntegrityError = !target.integrityAudit.valid;
+  stock.returnIntegrityUnavailable = !hasCanonicalOutcome;
   return stock;
 }
 module.exports = {
