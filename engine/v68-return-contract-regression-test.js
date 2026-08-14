@@ -93,3 +93,24 @@ assert.equal(mismatchReport.passed, false);
 assert.ok(mismatchReport.issues.some(x => x.type === 'canonical_return_math_mismatch'));
 
 console.log('V68 canonical return contract regression tests passed.');
+
+
+// V69 regression: a fallback path may internally use a different dividend
+// convention, but the published canonical target must always recompute CAGR from
+// the exact serialized exit price + serialized dividend dollars. This is the class
+// of bug that surfaced on MPT/LBTYA/LBTYK/LBRDA in the first V68 full-universe run.
+const highYieldCurrent = 100;
+const highYieldExit = 125;
+const publishedDividends = 60; // e.g. 12%/yr * 5 after canonical dividend discipline
+const staleUpstreamCagr = cagrFromOutcome(highYieldCurrent, highYieldExit, 90, 5); // deliberately different upstream convention
+const canonicalRecomputed = cagrFromOutcome(highYieldCurrent, highYieldExit, publishedDividends, 5);
+assert.ok(Math.abs(staleUpstreamCagr - canonicalRecomputed) > 1e-3);
+const canonicalHighYieldTarget = {
+  years: 5,
+  exitPrice: highYieldExit,
+  dividendsReceived: publishedDividends,
+  cagr: canonicalRecomputed,
+};
+assert.equal(auditCanonicalReturn(canonicalHighYieldTarget, highYieldCurrent).valid, true);
+
+console.log('V69 final canonicalization regression passed.');
