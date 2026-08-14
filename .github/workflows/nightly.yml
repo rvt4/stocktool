@@ -1,104 +1,43 @@
 name: Nightly Screener Run
-
 on:
   schedule:
-    - cron: '0 6 * * *'   # 6am UTC daily — adjust to taste
-  workflow_dispatch: {}    # lets you trigger manually from the Actions tab
-
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}
 permissions:
   contents: write
-
 jobs:
   fetch-analyst-estimates:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install dependencies
-        run: pip install yfinance requests
-
-      - name: Fetch analyst estimates from yfinance
+        with: { python-version: '3.12' }
+      - run: pip install yfinance requests
+      - name: Refresh analyst cache
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: python fetch_analyst_estimates.py
-
   run-screener:
     runs-on: ubuntu-latest
-    # Waits for analyst_estimates_cache to be refreshed first, so estimates.js reads
-    # tonight's numbers cache-first instead of last night's (or nothing, on a fresh repo).
-    # If this job fails, run-screener won't run either — that's intentional; a screener
-    # pass silently falling back to stale/missing estimates for the whole universe is a
-    # worse outcome than the nightly run skipping for a night.
     needs: fetch-analyst-estimates
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Verify canonical return contract
-        run: node engine/v68-return-contract-regression-test.js
-
-      - name: Run screener
+        with: { node-version: '20' }
+      - name: Verify model invariants
+        run: node model-smoke-test.js
+      - name: Run simplified screener
         env:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
         run: node run-screener.js
-
-      - name: Compact and verify generated JSON
-        run: |
-          node - <<'NODE'
-          const fs = require('fs');
-          const path = require('path');
-
-          const files = [
-            'data/results.json',
-            'data/forecast-history.json',
-            'data/calibration-report.json',
-            'data/validation-report.json',
-            'data/latest-prediction-snapshot.json',
-          ];
-
-          const hardLimit = 100 * 1024 * 1024;
-          const safetyLimit = 95 * 1024 * 1024;
-
-          for (const file of files) {
-            if (!fs.existsSync(file)) continue;
-
-            const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-            const compact = JSON.stringify(parsed);
-            const temp = `${file}.tmp`;
-            fs.writeFileSync(temp, compact);
-            fs.renameSync(temp, file);
-
-            const bytes = fs.statSync(file).size;
-            const mib = bytes / 1024 / 1024;
-            console.log(`${file}: ${mib.toFixed(2)} MiB`);
-
-            if (bytes >= hardLimit) {
-              throw new Error(`${file} exceeds GitHub's 100 MiB hard limit after compaction.`);
-            }
-            if (bytes >= safetyLimit) {
-              throw new Error(`${file} is above the 95 MiB safety limit and must be split before publishing.`);
-            }
-          }
-          NODE
-
-      - name: Commit updated results
+      - name: Commit results
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add data/results.json data/forecast-history.json data/calibration-report.json data/validation-report.json data/latest-prediction-snapshot.json
+          git add data/results.json data/validation-report.json data/screener-diagnostics.json
           git diff --staged --quiet || git commit -m "Nightly screener update $(date -u +%Y-%m-%d)"
           git push
-
-# V25 optional post-run validation command:
-# node engine/validation-suite.js
