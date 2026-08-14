@@ -1145,23 +1145,46 @@ function valuateStock(stock, sectorExitMultiples, calibration = null) {
     returnEngineV2.decisionBlend = decisionBlend;
   }
   const ownerEarningsReturn = buildOwnerEarningsReturn(stock, model, ownerEarnings, dcf, consensus, lifecycle, moat, businessProfile);
+  // V69 FINAL canonicalization point. Upstream valuation layers are allowed to
+  // propose an exit value and diagnostics, but they are NOT allowed to supply the
+  // published CAGR independently. Build the canonical outcome once, from the exact
+  // exit price and exact dividend dollars that will be serialized to results.json.
+  // This permanently eliminates drift when a fallback valuation path uses a
+  // different dividend convention (the V68 failures in MPT/LBTYA/LBTYK/LBRDA).
+  const canonicalExitPrice = returnEngineV2.actionableExitPrice ?? legacyPriceTarget.exitPrice ?? null;
+  const canonicalDividends = Number.isFinite(Number(returnEngineV2.dividendsReceived))
+    ? Number(returnEngineV2.dividendsReceived)
+    : Number(legacyPriceTarget.dividendsReceived || 0);
+  const canonicalCAGR = cagrFromOutcome(
+    stock.price.current,
+    canonicalExitPrice,
+    canonicalDividends,
+    INVESTMENT_HORIZON_YEARS,
+  );
+  const canonicalTotalFutureValue = Number(canonicalExitPrice) > 0 && Number.isFinite(canonicalDividends)
+    ? Number(canonicalExitPrice) + canonicalDividends
+    : null;
+
+  // Keep every downstream consumer on the exact same canonical number. Raw and
+  // probability-weighted returns remain diagnostics only.
+  returnEngineV2.expectedCAGR = canonicalCAGR;
+  returnEngineV2.actionableCAGR = canonicalCAGR;
+  returnEngineV2.totalFutureValue = canonicalTotalFutureValue;
+
   const fiveYearPriceTarget = {
     ...legacyPriceTarget,
-    // V22 canonical rule: exit price and investor CAGR must describe the same
-    // economic outcome. No operating-growth or plausibility cap may overwrite the
-    // price-derived return.
     rawExitPrice: legacyPriceTarget.exitPrice,
-    exitPrice: returnEngineV2.actionableExitPrice ?? legacyPriceTarget.exitPrice ?? null,
-    cagr: returnEngineV2.expectedCAGR,
+    exitPrice: canonicalExitPrice,
+    cagr: canonicalCAGR,
     rawCagr: returnEngineV2.rawMarketCAGR,
     cagrWasCapped: false,
     cagrCapApplied: null,
-    integrityInvalid: false,
-    dividendsReceived: returnEngineV2.dividendsReceived ?? legacyPriceTarget.dividendsReceived ?? 0,
-    totalFutureValue: returnEngineV2.totalFutureValue ?? null,
-    years: 5,
+    integrityInvalid: !Number.isFinite(canonicalCAGR),
+    dividendsReceived: canonicalDividends,
+    totalFutureValue: canonicalTotalFutureValue,
+    years: INVESTMENT_HORIZON_YEARS,
     breakdown: returnEngineV2.breakdown,
-    returnEngineVersion: 'v38.1-robust-category-and-valuation-rebuild',
+    returnEngineVersion: 'v69-single-final-canonicalization',
     primaryValuation,
     decisionBlend,
     ownerEarningsValidationCAGR: ownerEarningsReturn.expectedCAGR,
