@@ -28,3 +28,11 @@ Production is intentionally small. The nightly run follows exactly one path:
 - `index.html` — static UI
 
 The old Vxx engines are deliberately not part of this package.
+
+
+## Simple V2 valuation model
+
+The publication path is still one-way: data -> forecast -> quality -> valuation -> rating.
+V2 removes the old DCF from the ranking path and values each company from normalized year-5 per-share fundamentals and conservative exit multiples anchored to both business economics and the company's observable current multiple. Financials use EPS only. Implausible base-case CAGRs above 35% or below -30% are treated as model/data failures and published as Unrated rather than ranked as opportunities.
+
+`sanity-basket.json` contains 25 names to use for quick pre-production checks before running the full universe.
