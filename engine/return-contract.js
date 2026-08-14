@@ -67,6 +67,45 @@ function auditCanonicalReturn(target, currentPrice, tolerance = RETURN_INTEGRITY
   };
 }
 
+
+function canonicalizePublishedReturn(stock) {
+  if (!stock || typeof stock !== 'object') return stock;
+  const target = stock.fiveYearPriceTarget || stock.valuation?.fiveYearPriceTarget || null;
+  if (!target || typeof target !== 'object') return stock;
+
+  const currentPrice = Number(stock.currentPrice ?? stock.price?.current);
+  const exitPrice = Number(target.exitPrice);
+  const dividendsReceived = finite(target.dividendsReceived) ? Number(target.dividendsReceived) : 0;
+  const years = INVESTMENT_HORIZON_YEARS;
+  const cagr = cagrFromOutcome(currentPrice, exitPrice, dividendsReceived, years);
+  const totalFutureValue = exitPrice > 0 && finite(dividendsReceived)
+    ? exitPrice + dividendsReceived
+    : null;
+
+  // Final publication boundary: rebuild the canonical return from the exact
+  // current price, exit price and dividend dollars that will be serialized.
+  // Upstream valuation layers may supply diagnostics, but no stale CAGR can cross
+  // this boundary into ratings or results.json.
+  target.years = years;
+  target.dividendsReceived = dividendsReceived;
+  target.totalFutureValue = totalFutureValue;
+  target.cagr = cagr;
+  target.integrityAudit = auditCanonicalReturn(target, currentPrice);
+  target.integrityInvalid = !target.integrityAudit.valid;
+  if (!String(target.returnEngineVersion || '').includes('publication-boundary')) {
+    target.returnEngineVersion = `${target.returnEngineVersion || 'canonical'}+publication-boundary`;
+  }
+
+  stock.fiveYearPriceTarget = target;
+  if (stock.valuation && typeof stock.valuation === 'object') {
+    stock.valuation.fiveYearPriceTarget = target;
+  }
+  stock.expectedReturn = cagr;
+  stock.decisionExpectedReturn = cagr;
+  stock.expectedAlpha = finite(cagr) ? cagr - 0.10 : null;
+  stock.returnIntegrityError = !target.integrityAudit.valid;
+  return stock;
+}
 module.exports = {
   INVESTMENT_HORIZON_YEARS,
   RETURN_INTEGRITY_TOLERANCE,
@@ -74,4 +113,5 @@ module.exports = {
   convertTerminalValueToInvestmentHorizon,
   cagrFromOutcome,
   auditCanonicalReturn,
+  canonicalizePublishedReturn,
 };

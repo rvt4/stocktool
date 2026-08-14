@@ -6,6 +6,7 @@ const {
   convertTerminalValueToInvestmentHorizon,
   cagrFromOutcome,
   auditCanonicalReturn,
+  canonicalizePublishedReturn,
 } = require('./return-contract');
 const { buildActionableReturn } = require('./decision-system-v30');
 const { validate } = require('./validation-suite');
@@ -114,3 +115,23 @@ const canonicalHighYieldTarget = {
 assert.equal(auditCanonicalReturn(canonicalHighYieldTarget, highYieldCurrent).valid, true);
 
 console.log('V69 final canonicalization regression passed.');
+
+
+// V70 regression: reproduce the exact failure class from the full-universe run.
+// A stale upstream CAGR is attached to an otherwise valid exit/dividend outcome.
+// The publication boundary must repair every public alias before validation.
+const stalePublished = {
+  ticker: 'PUBFIX', currentPrice: 100, expectedReturn: .40, decisionExpectedReturn: .40, expectedAlpha: .30,
+  fiveYearPriceTarget: { years: 5, exitPrice: 125, dividendsReceived: 60, cagr: .40 },
+  valuation: {}, returnIntegrityError: true,
+};
+canonicalizePublishedReturn(stalePublished);
+const repaired = cagrFromOutcome(100, 125, 60, 5);
+near(stalePublished.fiveYearPriceTarget.cagr, repaired);
+near(stalePublished.expectedReturn, repaired);
+near(stalePublished.decisionExpectedReturn, repaired);
+near(stalePublished.expectedAlpha, repaired - .10);
+assert.equal(stalePublished.returnIntegrityError, false);
+assert.equal(auditCanonicalReturn(stalePublished.fiveYearPriceTarget, 100).valid, true);
+assert.strictEqual(stalePublished.valuation.fiveYearPriceTarget, stalePublished.fiveYearPriceTarget);
+console.log('V70 publication-boundary canonicalization regression passed.');
