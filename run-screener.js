@@ -93,7 +93,7 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
     valuationConfidenceScore:Math.round((quality.confidenceScore+valuation.methodAgreementScore)/2), dataConfidenceScore:quality.confidenceScore, businessConfidenceScore:quality.qualityScore, forecastConfidenceScore:quality.confidenceScore,
     businessQualityScore:quality.qualityScore, valuationAttractivenessScore:Math.round(Math.max(0,Math.min(100,50+(valuation.marginOfSafety||0)*100))),
     portfolioManagerScore:decision.investmentScore, investmentCommitteeScore:decision.investmentScore, investmentCommittee:{score:decision.investmentScore},
-    returnQualityFlags:valuation.plausibilityFailure?['valuation_plausibility_failure']:[], returnIntegrityError:valuation.plausibilityFailure?'Base-case return failed plausibility guard':null, lowConfidence:quality.confidenceScore<55,
+    returnQualityFlags:[...(valuation.plausibilityFailure?['valuation_plausibility_failure']:[]),...(valuation.extremeReturnFlag?['extreme_canonical_return_review']:[])], returnIntegrityError:valuation.plausibilityFailure?'No defensible canonical valuation could be constructed':null, lowConfidence:quality.confidenceScore<55, valuationReviewFlag:valuation.valuationReviewFlag||null,
     businessProfile:{category:forecast.category,terminalGrowth:forecast.terminalGrowth}, lifecycle:{label:forecast.category}, moat:{score:quality.moatScore},
     marketExpectations:{note:'Simplified model: no reverse-DCF narrative inference is used in ratings.'},
     scenarioAnalysis:{bearCAGR:valuation.bearCAGR,baseCAGR:valuation.baseCAGR,bullCAGR:valuation.bullCAGR}, scenarioProbabilities:{bear:0.25,base:0.50,bull:0.25},

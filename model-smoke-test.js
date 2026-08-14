@@ -39,4 +39,22 @@ for(let i=0;i<leverage.financials.years.length;i++){
 const levForecast=buildForecast(leverage);
 assert(levForecast.marginTargets.fcf>=levForecast.marginAssumptions.fcf,'supported operating leverage should not be forced back to historical margins');
 
-console.log('Model smoke test passed: canonical return, MOS, and scenario ordering are internally consistent.');
+
+// A very expensive but modelable company must remain rated rather than disappearing as
+// Unrated merely because its canonical downside exceeds the old plausibility band.
+const extreme=stock({ticker:'EXTREME',price:5000,growth:.12,margin:.18,roic:.22,dilution:.01});
+const extremeRun=run(extreme);
+assert(Number.isFinite(extremeRun.v.expectedCAGR),'extreme canonical return should still publish');
+assert.notStrictEqual(extremeRun.d.rating,'Unrated','modelable extreme valuation should still receive a rating');
+assert(extremeRun.v.extremeReturnFlag===true,'extreme return should be explicitly flagged for review');
+
+// A growth company with temporarily unusable earnings/FCF should fall back to an
+// EV/Sales bridge instead of becoming Unrated.
+const preProfit=stock({ticker:'PREPROFIT',price:100,growth:.22,margin:.10,roic:.05,dilution:.03});
+for(const y of preProfit.financials.years){y.fcf=-Math.abs(y.fcf);y.fcfSBCAdjusted=-Math.abs(y.fcfSBCAdjusted);y.netIncome=-Math.abs(y.netIncome);y.ebitda=-Math.abs(y.ebitda);}
+const ppF=buildForecast(preProfit), ppQ=computeQuality(preProfit,ppF), ppV=valuate(preProfit,ppF,ppQ), ppD=rateStock(preProfit,ppF,ppQ,ppV);
+assert(ppV.methods.some(m=>m.name==='EV/Sales fallback'),'pre-profit company should use EV/Sales fallback');
+assert(Number.isFinite(ppV.expectedCAGR),'fallback valuation should publish a canonical return');
+assert.notStrictEqual(ppD.rating,'Unrated','fallback-valued company should receive a rating');
+
+console.log('Model smoke test passed: canonical return, MOS, scenario ordering, extreme-return publication, and valuation fallback are internally consistent.');
