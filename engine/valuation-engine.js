@@ -7,7 +7,7 @@ function finite(v){const n=Number(v);return Number.isFinite(n)?n:null;}
 function requiredReturn(q,cat){let r=MARKET_RETURN;if(cat==='Hyper Growth')r+=.02;else if(cat==='Growth')r+=.01;if((q?.confidenceScore||50)<60)r+=.01;if((q?.protectionScore||50)<45)r+=.01;return clamp(r,.09,.14);}
 function blend(items){const v=items.filter(x=>Number.isFinite(x.value)&&x.value>0&&x.weight>0);if(!v.length)return null;const w=v.reduce((s,x)=>s+x.weight,0);return v.reduce((s,x)=>s+x.value*x.weight,0)/w;}
 function recentMedian(values,n=4){return median(values.slice(-n).filter(x=>Number.isFinite(x)&&x>0));}
-function safeMultiple(v,lo,hi){if(!(Number.isFinite(v)&&v>0))return null;return clamp(v,lo*.65,hi*2.0);}
+function safeMultiple(v,lo,hi){if(!(Number.isFinite(v)&&v>0))return null;return clamp(v,lo*.75,hi*1.50);}
 
 // Terminal multiples are allowed to move, but the model may not manufacture most of
 // the return through rerating. This is deliberately a multiple-ratio guardrail rather
@@ -16,8 +16,11 @@ function boundedExit(current,justified,lo,hi){
   let j=clamp(justified,lo,hi);
   if(Number.isFinite(current)&&current>0){
     const sane=clamp(current,lo*.65,hi*1.5);
-    j=.60*j+.40*sane;
-    j=clamp(j,Math.max(lo,sane*.55),Math.min(hi,sane*1.80));
+    j=.70*j+.30*sane;
+    // Five-year returns should primarily come from business performance, not heroic
+    // multiple expansion. Permit normalization, but cap expansion to 25% from today's
+    // sane observed multiple and contraction to 45%.
+    j=clamp(j,Math.max(lo,sane*.60),Math.min(hi,sane*1.10));
   }
   return j;
 }
@@ -64,7 +67,7 @@ function addMethod(methods,{name,target,weight,audit,price}){
   // A single method implying a >50% annualized return or >45% annualized loss is not
   // decision-grade in a five-year terminal-multiple model. Exclude it instead of
   // clipping the published return. Other independent methods can still value the stock.
-  if(!Number.isFinite(implied)||implied>.45)return;
+  if(!Number.isFinite(implied)||implied>.25)return;
   methods.push({name,target,weight,audit:{...audit,impliedCAGR:implied}});
 }
 
@@ -74,7 +77,7 @@ function valuate(stock,forecast,quality){
   const shares0=finite(last.sharesOutTTM), netDebt=(finite(last.totalDebt)||finite(last.longTermDebt)||0)-(finite(last.cash)||0);
   const marketCap=price>0&&shares0>0?price*shares0:null;
   const revenue0=finite(last.revenue)>0?finite(last.revenue):null;
-  const q=(quality.qualityScore||50)/100, growth=clamp(forecast.sustainableGrowth??forecast.revenueGrowthAnchor,0,.25);
+  const q=(quality.qualityScore||50)/100, growth=clamp(forecast.year5OperatingGrowth??forecast.rows?.at(-1)?.revenueGrowth??forecast.sustainableGrowth??forecast.revenueGrowthAnchor,0,.18);
   const methods=[];
   const base=normalizedOperatingBase(stock,forecast);
 
@@ -87,7 +90,7 @@ function valuate(stock,forecast,quality){
     const currentPE=safeMultiple(price>0&&epsBase>0?price/epsBase:null,6,24);
     if(epsBase>0&&currentPE){
       const buybackTailwind=clamp(-(forecast.dilutionRate||0),-.03,.04);
-      const epsGrowth=clamp((forecast.sustainableGrowth??growth)+buybackTailwind,-.04,.20);
+      const epsGrowth=clamp((.65*(forecast.forecastBridge?.revenue?.analystNext??growth)+.35*growth)+buybackTailwind,-.04,.16);
       const futureEPS=epsBase*Math.pow(1+epsGrowth,HORIZON_YEARS);
       const justified=cfg.basePE+epsGrowth*22+(q-.5)*5;
       const m=boundedExit(currentPE,justified,7,22);
@@ -134,7 +137,7 @@ function valuate(stock,forecast,quality){
   for(const m of methods)m.outcome=Number.isFinite(m.target)?m.target+dividends:null;
   let total=blend(methods.map(m=>({value:m.outcome,weight:m.weight})));
   let expected=cagr(price,total);
-  const hasValuation=Number.isFinite(expected)&&expected<=.45&&methods.length>0&&Number.isFinite(total)&&total>0;
+  const hasValuation=Number.isFinite(expected)&&expected<=.25&&methods.length>0&&Number.isFinite(total)&&total>0;
   if(!hasValuation){total=null;expected=null;}
 
   const target=total!=null?Math.max(0,total-dividends):null, fair=total!=null?pv(total,req,HORIZON_YEARS):null;
@@ -144,7 +147,7 @@ function valuate(stock,forecast,quality){
   const uncertainty=clamp((100-(quality.confidenceScore||50))/100,.10,.40);
   const bear=total!=null?total*Math.pow(1-(.035+.04*uncertainty),HORIZON_YEARS):null;
   const bull=total!=null?total*Math.pow(1+(.035+.035*uncertainty),HORIZON_YEARS):null;
-  const extremeReturn=hasValuation&&(expected<-.30||expected>.35);
+  const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
 
   return {requiredReturn:req,methods,fiveYearPriceTarget:target,cumulativeDividends:dividends,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,marginOfSafety:mos,premiumToFairValue:premium,methodAgreementScore:agreement,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':null};
 }
