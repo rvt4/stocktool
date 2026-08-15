@@ -7,6 +7,7 @@ function validateStock(s){
   if(Number.isFinite(s.bearCAGR)&&Number.isFinite(s.baseCAGR)&&s.bearCAGR>s.baseCAGR+1e-9)issues.push('bear_above_base');
   if(Number.isFinite(s.bullCAGR)&&Number.isFinite(s.baseCAGR)&&s.bullCAGR<s.baseCAGR-1e-9)issues.push('bull_below_base');
   if(Number.isFinite(s.fairValueEstimate)&&Number.isFinite(s.marginOfSafety)&&p>0){const calc=1-p/s.fairValueEstimate;if(!near(calc,s.marginOfSafety))issues.push('mos_math_mismatch');}
+  if(Number.isFinite(c)&&c>0.45)issues.push('implausible_base_case_return');
   if(['Buy','Strong Buy','Exceptional Buy'].includes(s.rating)&&(!Number.isFinite(c)||!Number.isFinite(s.marginOfSafety)))issues.push('buy_without_canonical_valuation');
   return issues;
 }
