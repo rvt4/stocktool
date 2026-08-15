@@ -3,9 +3,26 @@ const { HORIZON_YEARS, MARKET_RETURN, sectorConfig, clamp, median } = require('.
 
 function cagr(p,f){if(!(p>0)||!(f>0))return null;return Math.pow(f/p,1/HORIZON_YEARS)-1;}
 function pv(v,r,n){return v/Math.pow(1+r,n);}
-function finite(v){const n=Number(v);return Number.isFinite(n)?n:null;}
+function finite(v){if(v==null||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null;}
 function requiredReturn(q,cat){let r=MARKET_RETURN;if(cat==='Hyper Growth')r+=.02;else if(cat==='Growth')r+=.01;if((q?.confidenceScore||50)<60)r+=.01;if((q?.protectionScore||50)<45)r+=.01;return clamp(r,.09,.14);}
 function blend(items){const v=items.filter(x=>Number.isFinite(x.value)&&x.value>0&&x.weight>0);if(!v.length)return null;const w=v.reduce((s,x)=>s+x.weight,0);return v.reduce((s,x)=>s+x.value*x.weight,0)/w;}
+function robustOutcomeBlend(methods,price){
+  const valid=methods.filter(m=>Number.isFinite(m.outcome)&&m.outcome>0&&m.weight>0);
+  if(!valid.length)return null;
+  if(valid.length===1)return valid[0].outcome;
+  const rs=valid.map(m=>cagr(price,m.outcome)).filter(Number.isFinite).sort((a,b)=>a-b);
+  const mid=rs.length%2?rs[(rs.length-1)/2]:(rs[rs.length/2-1]+rs[rs.length/2])/2;
+  const adjusted=valid.map(m=>{
+    const r=cagr(price,m.outcome);
+    // Independent methods can disagree, but a method far away from the consensus
+    // should not dominate the canonical result. The penalty is smooth rather than a
+    // hard exclusion, preserving information while making the blend investor-like.
+    const gap=Math.abs(r-mid);
+    const consensusWeight=gap<=.05?1:gap<=.10?.65:gap<=.18?.35:.15;
+    return {value:m.outcome,weight:m.weight*consensusWeight};
+  });
+  return blend(adjusted);
+}
 function recentMedian(values,n=4){return median(values.slice(-n).filter(x=>Number.isFinite(x)&&x>0));}
 function safeMultiple(v,lo,hi){if(!(Number.isFinite(v)&&v>0))return null;return clamp(v,lo*.75,hi*1.50);}
 
@@ -135,7 +152,7 @@ function valuate(stock,forecast,quality){
 
   const dividends=rows.reduce((s,r)=>s+(finite(r.dividendPerShare)||0),0);
   for(const m of methods)m.outcome=Number.isFinite(m.target)?m.target+dividends:null;
-  let total=blend(methods.map(m=>({value:m.outcome,weight:m.weight})));
+  let total=robustOutcomeBlend(methods,price);
   let expected=cagr(price,total);
   const hasValuation=Number.isFinite(expected)&&expected<=.25&&methods.length>0&&Number.isFinite(total)&&total>0;
   if(!hasValuation){total=null;expected=null;}
@@ -143,7 +160,7 @@ function valuate(stock,forecast,quality){
   const target=total!=null?Math.max(0,total-dividends):null, fair=total!=null?pv(total,req,HORIZON_YEARS):null;
   const mos=fair>0&&price>0?1-price/fair:null, premium=fair>0&&price>0?price/fair-1:null;
   const returns=methods.map(m=>cagr(price,m.outcome)).filter(Number.isFinite), spread=returns.length>=2?Math.max(...returns)-Math.min(...returns):null;
-  const agreement=returns.length>=2?Math.round(100*clamp(1-spread/.25,0,1)):(returns.length===1?55:0);
+  const agreement=returns.length>=2?Math.round(100*clamp(1-spread/.22,0,1)):(returns.length===1?55:0);
   const uncertainty=clamp((100-(quality.confidenceScore||50))/100,.10,.40);
   const bear=total!=null?total*Math.pow(1-(.035+.04*uncertainty),HORIZON_YEARS):null;
   const bull=total!=null?total*Math.pow(1+(.035+.035*uncertainty),HORIZON_YEARS):null;

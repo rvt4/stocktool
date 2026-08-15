@@ -18,7 +18,7 @@ function computeQuality(stock, forecast) {
   const revenueGrowth = yoy(years.slice(-5),'revenue').filter(x=>x>-0.8&&x<2);
   const shareGrowth = yoy(years.slice(-4),'sharesOutTTM').filter(x=>x>-0.5&&x<0.5);
   const roic = median(years.slice(-3).map(y=>Number(y.roic)).filter(Number.isFinite));
-  const fcfMargins = years.slice(-4).map(y=>Number(y.revenue)>0&&Number.isFinite(Number(y.fcfSBCAdjusted??y.fcf))?Number(y.fcfSBCAdjusted??y.fcf)/Number(y.revenue):null).filter(Number.isFinite);
+  const fcfMargins = years.slice(-4).map(y=>Number(y.revenue)>0&&Number.isFinite(Number(y.fcf))?Number(y.fcf)/Number(y.revenue):null).filter(Number.isFinite);
   const opMargins = years.slice(-4).map(y=>Number(y.opMargin)).filter(Number.isFinite);
   const positiveFCF = years.length ? years.filter(y=>Number(y.fcf)>0).length/years.length : 0;
   const growthMed = median(revenueGrowth) ?? 0;
@@ -30,9 +30,13 @@ function computeQuality(stock, forecast) {
   const ebitda = Number(last.ebitda);
   const netDebtToEbitda = ebitda>0 ? (debt-cash)/ebitda : null;
 
-  const profitability = Math.round(0.55*scoreBand(roic,-0.02,0.25)+0.45*scoreBand(median(fcfMargins)??-0.05,-0.05,0.20));
+  const isFinancial=stock.sector==='Financials';
+  const netMargins=years.slice(-4).map(y=>Number(y.revenue)>0&&Number.isFinite(Number(y.netIncome))?Number(y.netIncome)/Number(y.revenue):null).filter(Number.isFinite);
+  const profitability = isFinancial
+    ? Math.round(0.55*scoreBand(median(netMargins)??0,0,.25)+0.45*scoreBand(growthMed,-.05,.15))
+    : Math.round(0.55*scoreBand(roic,-0.02,0.25)+0.45*scoreBand(median(fcfMargins)??-0.05,-0.05,0.20));
   const growthQuality = Math.round(0.60*scoreBand(growthMed,-0.05,0.18)+0.40*reverseBand(growthVol,0.05,0.35));
-  const cashQuality = Math.round(70*positiveFCF + 0.30*scoreBand(median(fcfMargins)??-0.05,-0.05,0.15));
+  const cashQuality = isFinancial ? 55 : Math.round(70*positiveFCF + 0.30*scoreBand(median(fcfMargins)??-0.05,-0.05,0.15));
   const balanceSheet = Math.round(netDebtToEbitda==null?55:reverseBand(netDebtToEbitda,-1,4));
   const dilutionScore = Math.round(0.65*reverseBand(dilution,-0.03,0.08)+0.35*reverseBand(Number.isFinite(sbc)?sbc:0.03,0.00,0.15));
   const marginStability = reverseBand(stdev(opMargins),0.01,0.15);

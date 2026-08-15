@@ -4,9 +4,9 @@ const { HORIZON_YEARS, sectorConfig, clamp, rate, median, avg } = require('./con
 function cagr(a,b,n){ if(!(a>0)||!(b>0)||!(n>0))return null; return Math.pow(b/a,1/n)-1; }
 function yoySeries(years,field){const out=[];for(let i=1;i<years.length;i++){const a=Number(years[i-1]?.[field]),b=Number(years[i]?.[field]);if(a>0&&Number.isFinite(b))out.push(b/a-1);}return out;}
 function safeAnalystGrowth(v){const x=rate(v); return Number.isFinite(x)&&x>-0.40&&x<1.00?x:null;}
-function finite(v){const n=Number(v);return Number.isFinite(n)?n:null;}
+function finite(v){if(v==null||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null;}
 function pctMargin(y, numerator){const r=finite(y?.revenue),n=finite(y?.[numerator]);return r>0&&n!=null?n/r:null;}
-function fcfMargin(y){const r=finite(y?.revenue),f=finite(y?.fcfSBCAdjusted??y?.fcf);return r>0&&f!=null?f/r:null;}
+function fcfMargin(y){const r=finite(y?.revenue),f=finite(y?.fcf);return r>0&&f!=null?f/r:null;}
 function medianRecent(values,n=4){return median(values.slice(-n).filter(Number.isFinite));}
 function trendSlope(values){const v=values.filter(Number.isFinite);if(v.length<2)return 0;const diffs=[];for(let i=1;i<v.length;i++)diffs.push(v[i]-v[i-1]);return median(diffs)??0;}
 function latestQuarterYoY(quarters){
@@ -102,27 +102,45 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   // CFO/capex and revenue margins are not economically comparable for banks, brokers,
   // insurers and other Financials. Do not publish fake FCF/EBITDA margin paths for them.
   if(stock.sector==='Financials') return {rawFCF:null,rawEBITDA:null,rawNet:null,currentFCF:null,currentEBITDA:null,currentNet:null,targetFCF:null,targetEBITDA:null,targetNet:null,leverageSignal:0,fcfTrend:null,opTrend:null,grossTrend:null,incrementalFCFMargin:null,incrementalOperatingMargin:null};
+  // Normalize operating economics from several years of reported facts. SBC is NOT
+  // subtracted from FCF here because dilution is modeled separately in the share-count
+  // path; subtracting SBC and then also diluting the denominator double-counts the same
+  // shareholder cost. We still keep SBC intensity in quality scoring.
   const fcfSeries=years.map(fcfMargin), ebitdaSeries=years.map(y=>pctMargin(y,'ebitda')), netSeries=years.map(y=>pctMargin(y,'netIncome'));
+  const cfoSeries=years.map(y=>pctMargin(y,'cfo'));
+  const capexSeries=years.map(y=>{const r=finite(y?.revenue),c=finite(y?.capex);return r>0&&c!=null?Math.abs(c)/r:null;});
   const opSeries=years.map(y=>Number.isFinite(finite(y?.opMargin))?finite(y.opMargin):pctMargin(y,'operatingIncome'));
   const grossSeries=years.map(y=>Number.isFinite(finite(y?.grossMargin))?finite(y.grossMargin):pctMargin(y,'grossProfit'));
-  const rawFCF=medianRecent(fcfSeries)??0.05, rawEBITDA=medianRecent(ebitdaSeries)??0.10, rawNet=medianRecent(netSeries)??0.06, rawOp=medianRecent(opSeries)??rawEBITDA;
+
+  const rawCFO=medianRecent(cfoSeries), rawCapex=medianRecent(capexSeries);
+  const directFCF=medianRecent(fcfSeries);
+  const reconstructedFCF=Number.isFinite(rawCFO)&&Number.isFinite(rawCapex)?rawCFO-rawCapex:null;
+  let rawFCF=weightedAverage([[directFCF,.70],[reconstructedFCF,.30]]);
+  const rawEBITDA=medianRecent(ebitdaSeries)??null, rawNet=medianRecent(netSeries)??0.06, rawOp=medianRecent(opSeries)??rawEBITDA??rawNet;
+
+  // If cash-flow facts are incomplete, do not invent a generic 5% FCF margin. A null
+  // FCF path is preferable; EPS/EV-EBITDA (or the controlled sales fallback) can still
+  // value the company. This removes a major source of false precision.
+  if(!Number.isFinite(rawFCF)) rawFCF=null;
   const latestFCF=fcfSeries.filter(Number.isFinite).at(-1), latestEBITDA=ebitdaSeries.filter(Number.isFinite).at(-1), latestNet=netSeries.filter(Number.isFinite).at(-1);
   // A single distorted filing must not become the starting economics for all five forecast
   // years. Winsorize latest margins around their recent normalized level.
   const saneStart=(latest,norm,lo,hi,band)=>clamp(Number.isFinite(latest)?latest:norm,Math.max(lo,norm-band),Math.min(hi,norm+band));
-  const currentFCF=saneStart(latestFCF,rawFCF,-.08,cfg.maxFCFMargin,.12), currentEBITDA=saneStart(latestEBITDA,rawEBITDA,-.05,Math.min(.65,cfg.maxFCFMargin+.18),.15), currentNet=saneStart(latestNet,rawNet,-.08,Math.min(.50,cfg.maxFCFMargin+.08),.12);
+  const currentFCF=Number.isFinite(rawFCF)?saneStart(latestFCF,rawFCF,-.08,cfg.maxFCFMargin,.10):null;
+  const currentEBITDA=Number.isFinite(rawEBITDA)?saneStart(latestEBITDA,rawEBITDA,-.05,Math.min(.65,cfg.maxFCFMargin+.18),.12):null;
+  const currentNet=saneStart(latestNet,rawNet,-.08,Math.min(.50,cfg.maxFCFMargin+.08),.10);
 
   const fcfTrend=clamp(trendSlope(fcfSeries.slice(-4)),-.04,.04)||0;
   const opTrend=clamp(trendSlope(opSeries.slice(-4)),-.04,.04)||0;
   const grossTrend=clamp(trendSlope(grossSeries.slice(-4)),-.03,.03)||0;
-  const incFCF=incrementalMargin(years,'fcfSBCAdjusted')??incrementalMargin(years,'fcf');
+  const incFCF=incrementalMargin(years,'fcf');
   const incOp=incrementalMargin(years,'operatingIncome');
   const revGrowth=growthInfo.y2;
 
   // Evidence-based operating leverage. Margin expansion is allowed when incremental
   // economics and/or recent margins support it; history is a guardrail, not a hard cap.
   let leverageSignal=0;
-  if(Number.isFinite(incFCF)) leverageSignal += clamp((incFCF-rawFCF)*.18,-.018,.025);
+  if(Number.isFinite(incFCF)&&Number.isFinite(rawFCF)) leverageSignal += clamp((incFCF-rawFCF)*.18,-.018,.025);
   if(Number.isFinite(incOp)) leverageSignal += clamp((incOp-rawOp)*.12,-.012,.018);
   leverageSignal += clamp(fcfTrend*.55,-.015,.018);
   leverageSignal += clamp(opTrend*.25,-.010,.012);
@@ -134,14 +152,14 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   const fcfCeiling=cfg.maxFCFMargin;
   const ebitdaCeiling=Math.min(.65,cfg.maxFCFMargin+.18);
   const netCeiling=Math.min(.50,cfg.maxFCFMargin+.08);
-  let targetFCF=clamp(rawFCF+leverageSignal,-.08,fcfCeiling);
-  let targetEBITDA=clamp(rawEBITDA+leverageSignal*.80,-.05,ebitdaCeiling);
+  let targetFCF=Number.isFinite(rawFCF)?clamp(rawFCF+leverageSignal,-.08,fcfCeiling):null;
+  let targetEBITDA=Number.isFinite(rawEBITDA)?clamp(rawEBITDA+leverageSignal*.80,-.05,ebitdaCeiling):null;
   let targetNet=clamp(rawNet+leverageSignal*.65,-.08,netCeiling);
 
   // Do not mechanically snap a business back to the median when the latest economics
   // have clearly improved. Conversely, a one-year spike gets only partial credit.
-  targetFCF=clamp(.60*targetFCF+.40*currentFCF,-.08,fcfCeiling);
-  targetEBITDA=clamp(.60*targetEBITDA+.40*currentEBITDA,-.05,ebitdaCeiling);
+  if(Number.isFinite(targetFCF)&&Number.isFinite(currentFCF))targetFCF=clamp(.60*targetFCF+.40*currentFCF,-.08,fcfCeiling);
+  if(Number.isFinite(targetEBITDA)&&Number.isFinite(currentEBITDA))targetEBITDA=clamp(.60*targetEBITDA+.40*currentEBITDA,-.05,ebitdaCeiling);
   targetNet=clamp(.60*targetNet+.40*currentNet,-.08,netCeiling);
 
   return {rawFCF,rawEBITDA,rawNet,currentFCF,currentEBITDA,currentNet,targetFCF,targetEBITDA,targetNet,leverageSignal,fcfTrend,opTrend,grossTrend,incrementalFCFMargin:incFCF,incrementalOperatingMargin:incOp};
