@@ -63,7 +63,7 @@ assert.notStrictEqual(ppD.rating,'Unrated','fallback-valued company should recei
 // non-decision-grade instead of clipping the return to an arbitrary number.
 const pathological=stock({ticker:'PATHOLOGICAL',price:5,growth:.30,margin:.35,roic:.35,dilution:-.04});
 const pathF=buildForecast(pathological), pathQ=computeQuality(pathological,pathF), pathV=valuate(pathological,pathF,pathQ);
-assert(pathV.expectedCAGR==null || pathV.expectedCAGR<=.45,'pathological upside leaked into published CAGR');
+assert(pathV.expectedCAGR==null || pathV.expectedCAGR<=.25,'pathological upside leaked into published CAGR');
 
 // Financials are valued from normalized EPS, not revenue × margin. This protects
 // banks/insurers/multi-class investment companies from accounting-base explosions.
@@ -71,6 +71,6 @@ const financial=stock({ticker:'FIN',sector:'Financials',price:100,growth:.18,mar
 for(const y of financial.financials.years){ y.dilutedEPS=y.netIncome/y.sharesOutTTM; }
 const finF=buildForecast(financial), finQ=computeQuality(financial,finF), finV=valuate(financial,finF,finQ);
 assert(finV.methods.every(m=>m.name==='Normalized EPS exit'),'financial valuation should use normalized EPS only');
-assert(finV.expectedCAGR==null || finV.expectedCAGR<=.45,'financial base-case CAGR exceeded plausibility ceiling');
+assert(finV.expectedCAGR==null || finV.expectedCAGR<=.25,'financial base-case CAGR exceeded plausibility ceiling');
 
 console.log('Model smoke test passed: canonical math, normalized valuation anchors, financial EPS handling, and pathological-upside rejection are internally consistent.');
