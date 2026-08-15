@@ -74,3 +74,21 @@ assert(finV.methods.every(m=>m.name==='Normalized EPS exit'),'financial valuatio
 assert(finV.expectedCAGR==null || finV.expectedCAGR<=.25,'financial base-case CAGR exceeded plausibility ceiling');
 
 console.log('Model smoke test passed: canonical math, normalized valuation anchors, financial EPS handling, and pathological-upside rejection are internally consistent.');
+
+// Missing capex must not masquerade as free cash flow. The model should keep the FCF
+// path unavailable and value the company from other defensible methods instead.
+const missingCapex=stock({ticker:'NO_CAPEX',price:100,growth:.10,margin:.18,roic:.20});
+for(const y of missingCapex.financials.years){y.cfo=y.fcf;y.capex=null;y.fcf=null;y.fcfSBCAdjusted=null;}
+const noCapF=buildForecast(missingCapex), noCapQ=computeQuality(missingCapex,noCapF), noCapV=valuate(missingCapex,noCapF,noCapQ);
+assert.strictEqual(noCapF.marginAssumptions.fcf,null,'missing capex should not create a synthetic FCF margin');
+assert(!noCapV.methods.some(m=>m.name==='FCF exit'),'missing capex should not feed an FCF valuation method');
+assert(Number.isFinite(noCapV.expectedCAGR),'other valuation methods should keep a modelable company rated');
+
+// SBC is reflected through dilution/quality, not subtracted a second time from the FCF
+// margin used for valuation. This prevents double-counting the same shareholder cost.
+const sbcHeavy=stock({ticker:'SBC',price:100,growth:.14,margin:.20,roic:.20,dilution:.04});
+for(const y of sbcHeavy.financials.years){y.fcfSBCAdjusted=y.fcf-y.revenue*.12;y.sbcIntensity=.12;}
+const sbcF=buildForecast(sbcHeavy);
+assert(sbcF.marginAssumptions.fcf>0.15,'SBC-adjusted FCF was incorrectly used as the operating cash margin');
+
+console.log('Normalization smoke tests passed: missing-capex FCF is suppressed and SBC is not double-counted.');

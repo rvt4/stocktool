@@ -448,9 +448,13 @@ function parseAnnualFinancials(facts, maxYears = 10) {
           y.revenueSource = y.revenueSource || 'operating_scale_proxy';
         }
       }
-      const fcf = (y.cfo != null && y.capex != null) ? y.cfo - y.capex
-        : (y.cfo != null ? y.cfo : null);
-      const fcfIsProxy = y.cfo != null && y.capex == null;
+      // Free cash flow requires BOTH operating cash flow and capital expenditures.
+      // Treating CFO by itself as FCF made capex-heavy or incompletely tagged companies
+      // look far more cash-generative than they really are. If capex is unavailable we
+      // leave FCF null and let the valuation engine use other methods instead.
+      const fcf = (y.cfo != null && y.capex != null) ? y.cfo - Math.abs(y.capex) : null;
+      const fcfIsProxy = false;
+      const fcfUnavailableReason = y.cfo != null && y.capex == null ? 'missing_capex' : null;
       const grossMargin = (y.grossProfit != null && y.revenue) ? y.grossProfit / y.revenue
         : (y.cogs != null && y.revenue) ? (y.revenue - y.cogs) / y.revenue : null;
       const opMargin = (y.operatingIncome != null && y.revenue) ? y.operatingIncome / y.revenue : null;
@@ -472,7 +476,12 @@ function parseAnnualFinancials(facts, maxYears = 10) {
         ? nopat / investedCapital
         : null;
       const inventoryTurnover = (y.cogs != null && y.inventory) ? y.cogs / y.inventory : null;
-      const ebitda = (y.operatingIncome != null) ? y.operatingIncome + (y.da || 0) : null;
+      // EBITDA is only published when D&A is actually available. Previously a missing
+      // D&A fact silently turned operating income into "EBITDA", understating the
+      // denominator and corrupting EV/EBITDA valuation multiples.
+      const ebitda = (y.operatingIncome != null && Number.isFinite(Number(y.da)) && Number(y.da) >= 0)
+        ? y.operatingIncome + Number(y.da)
+        : null;
       // SBC-adjusted FCF: standard FCF (CFO - capex) treats SBC as a non-cash add-back,
       // but economically it's a real cost — it dilutes existing shareholders just like a
       // cash expense would. Subtracting it gives a more conservative "true" FCF for
@@ -480,7 +489,7 @@ function parseAnnualFinancials(facts, maxYears = 10) {
       // healthier than the economic reality once dilution is accounted for.
       const fcfSBCAdjusted = fcf != null ? fcf - (y.sbc || 0) : null;
       const sbcIntensity = (y.sbc != null && y.revenue) ? y.sbc / y.revenue : null;
-      return { ...y, fcf, fcfIsProxy, fcfSBCAdjusted, sbcIntensity, grossMargin, opMargin,
+      return { ...y, fcf, fcfIsProxy, fcfUnavailableReason, fcfSBCAdjusted, sbcIntensity, grossMargin, opMargin,
         totalDebt, investedCapital, nopat, roic, inventoryTurnover, ebitda };
     });
 
@@ -637,7 +646,12 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   const stockShell = {
     ticker,
     sector: sector || 'Unknown',
-    financials: { years, dataQuality: { revenueProxyYears: years.filter(y => y.revenueIsProxy).length, fcfProxyYears: years.filter(y => y.fcfIsProxy).length } },
+    financials: { years, dataQuality: {
+      revenueProxyYears: years.filter(y => y.revenueIsProxy).length,
+      fcfProxyYears: years.filter(y => y.fcfIsProxy).length,
+      missingCapexYears: years.filter(y => y.fcfUnavailableReason === 'missing_capex').length,
+      missingEbitdaYears: years.filter(y => y.operatingIncome != null && y.ebitda == null).length,
+    } },
     valuation: {
       pe, forwardPe: pe, evEbitda, fcfYield, marketCap,
       ev: marketCap ? marketCap + (last.longTermDebt || 0) - (last.cash || 0) : null,
