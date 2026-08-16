@@ -86,8 +86,21 @@ function buildGrowthForecast(stock,years,cfg){
   // simultaneously making terminal multiples inconsistent with the operating forecast.
   // Fade consensus toward an evidence-based year-5 operating rate; terminalGrowth is
   // kept separate for true terminal-value logic.
-  const evidenceGrowth=weightedAverage([[Math.max(y2,-.05),.55],[historicalAnchor,.30],[matureGrowth,.15]])??matureGrowth;
-  const maxYear5=Math.max(matureGrowth+.025, Math.min(.18, Math.max(y2,matureGrowth)*.90));
+  // Years 1-2 can be consensus-led, but a near-term inflection must not permanently
+  // reset the five-year growth regime. As the forecast moves beyond explicit analyst
+  // coverage, progressively anchor back to normalized company history and maturity.
+  // This is deliberately generic: the size of the fade is determined by the gap between
+  // near-term consensus and the company's own normalized growth, not by ticker.
+  const inflectionGap=Math.max(0,(y2??historicalAnchor)-historicalAnchor);
+  const inflectionSeverity=clamp((inflectionGap-.04)/.16,0,1);
+  const y2Weight=.32-.17*inflectionSeverity;
+  const historyWeight=.43+.07*inflectionSeverity;
+  const matureWeight=1-y2Weight-historyWeight;
+  let evidenceGrowth=weightedAverage([[Math.max(y2,-.05),y2Weight],[historicalAnchor,historyWeight],[matureGrowth,matureWeight]])??matureGrowth;
+  // Very large businesses need stronger evidence to carry an exceptional growth burst
+  // deep into the forecast. This is a smooth scale adjustment, not a hard company rule.
+  if(scale>50e9 && inflectionSeverity>0) evidenceGrowth-=Math.min(.018,inflectionSeverity*(scale>150e9?.018:.012));
+  const maxYear5=Math.max(matureGrowth+.025, Math.min(.18, historicalAnchor+.025+Math.max(0,inflectionGap)*.38));
   const year5Growth=clamp(evidenceGrowth,matureGrowth,maxYear5);
   const growthPath=[y1,y2];
   for(let i=2;i<HORIZON_YEARS;i++){
@@ -101,7 +114,7 @@ function buildGrowthForecast(stock,years,cfg){
 function buildMarginForecast(stock,years,cfg,growthInfo){
   // CFO/capex and revenue margins are not economically comparable for banks, brokers,
   // insurers and other Financials. Do not publish fake FCF/EBITDA margin paths for them.
-  if(stock.sector==='Financials') return {rawFCF:null,rawEBITDA:null,rawNet:null,currentFCF:null,currentEBITDA:null,currentNet:null,targetFCF:null,targetEBITDA:null,targetNet:null,leverageSignal:0,fcfTrend:null,opTrend:null,grossTrend:null,incrementalFCFMargin:null,incrementalOperatingMargin:null};
+  if(stock.sector==='Financials') return {rawFCF:null,rawEBITDA:null,rawNet:null,currentFCF:null,currentEBITDA:null,currentNet:null,targetFCF:null,targetEBITDA:null,targetNet:null,leverageSignal:0,fcfTrend:null,opTrend:null,grossTrend:null,incrementalFCFMargin:null,incrementalOperatingMargin:null,abnormalCapexCycle:false,reportedFCFMargin:null,normalizedCapexMargin:null,cycleNormalizedFCFMargin:null};
   // Normalize operating economics from several years of reported facts. SBC is NOT
   // subtracted from FCF here because dilution is modeled separately in the share-count
   // path; subtracting SBC and then also diluting the denominator double-counts the same
@@ -112,17 +125,46 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   const opSeries=years.map(y=>Number.isFinite(finite(y?.opMargin))?finite(y.opMargin):pctMargin(y,'operatingIncome'));
   const grossSeries=years.map(y=>Number.isFinite(finite(y?.grossMargin))?finite(y.grossMargin):pctMargin(y,'grossProfit'));
 
+  const latestFCF=fcfSeries.filter(Number.isFinite).at(-1);
   const rawCFO=medianRecent(cfoSeries), rawCapex=medianRecent(capexSeries);
   const directFCF=medianRecent(fcfSeries);
   const reconstructedFCF=Number.isFinite(rawCFO)&&Number.isFinite(rawCapex)?rawCFO-rawCapex:null;
-  let rawFCF=weightedAverage([[directFCF,.70],[reconstructedFCF,.30]]);
+
+  // Detect an abnormal investment cycle before normalizing FCF. A temporary capex surge
+  // can make reported FCF look structurally impaired even when CFO and operating
+  // economics remain healthy. In that case, estimate sustainable FCF using a normalized
+  // capex burden anchored to the company's own pre-surge history. We do NOT erase capex:
+  // maintenance/reinvestment remains in the model, and the adjustment only activates
+  // when several independent signals agree.
+  const recentCapex=capexSeries.filter(Number.isFinite).at(-1);
+  const priorCapex=median(capexSeries.filter(Number.isFinite).slice(-6,-1));
+  const recentCFO=cfoSeries.filter(Number.isFinite).at(-1);
+  const priorCFO=median(cfoSeries.filter(Number.isFinite).slice(-6,-1));
+  const priorFCF=median(fcfSeries.filter(Number.isFinite).slice(-6,-1));
+  const recentOp=opSeries.filter(Number.isFinite).at(-1);
+  const priorOp=median(opSeries.filter(Number.isFinite).slice(-6,-1));
+  const capexSurge=Number.isFinite(recentCapex)&&Number.isFinite(priorCapex)&&priorCapex>=0&&
+    recentCapex>Math.max(priorCapex*1.45,priorCapex+.025);
+  const fcfDislocation=Number.isFinite(latestFCF)&&Number.isFinite(priorFCF)&&latestFCF<priorFCF-.035;
+  const cfoIntact=Number.isFinite(recentCFO)&&Number.isFinite(priorCFO)&&recentCFO>=priorCFO-.035;
+  const operationsIntact=Number.isFinite(recentOp)&&Number.isFinite(priorOp)?recentOp>=priorOp-.035:true;
+  const abnormalCapexCycle=Boolean(capexSurge&&fcfDislocation&&cfoIntact&&operationsIntact);
+  const normalizedCapex=abnormalCapexCycle&&Number.isFinite(priorCapex)
+    ? clamp(priorCapex*1.12,priorCapex,Math.max(priorCapex,recentCapex*.72))
+    : rawCapex;
+  const cycleNormalizedFCF=abnormalCapexCycle&&Number.isFinite(rawCFO)&&Number.isFinite(normalizedCapex)
+    ? rawCFO-normalizedCapex
+    : null;
+  let rawFCF=abnormalCapexCycle
+    ? weightedAverage([[directFCF,.25],[reconstructedFCF,.20],[cycleNormalizedFCF,.55]])
+    : weightedAverage([[directFCF,.70],[reconstructedFCF,.30]]);
   const rawEBITDA=medianRecent(ebitdaSeries)??null, rawNet=medianRecent(netSeries)??0.06, rawOp=medianRecent(opSeries)??rawEBITDA??rawNet;
 
   // If cash-flow facts are incomplete, do not invent a generic 5% FCF margin. A null
   // FCF path is preferable; EPS/EV-EBITDA (or the controlled sales fallback) can still
   // value the company. This removes a major source of false precision.
   if(!Number.isFinite(rawFCF)) rawFCF=null;
-  const latestFCF=fcfSeries.filter(Number.isFinite).at(-1), latestEBITDA=ebitdaSeries.filter(Number.isFinite).at(-1), latestNet=netSeries.filter(Number.isFinite).at(-1);
+  const latestEBITDA=ebitdaSeries.filter(Number.isFinite).at(-1), latestNet=netSeries.filter(Number.isFinite).at(-1);
   // A single distorted filing must not become the starting economics for all five forecast
   // years. Winsorize latest margins around their recent normalized level.
   const saneStart=(latest,norm,lo,hi,band)=>clamp(Number.isFinite(latest)?latest:norm,Math.max(lo,norm-band),Math.min(hi,norm+band));
@@ -162,7 +204,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   if(Number.isFinite(targetEBITDA)&&Number.isFinite(currentEBITDA))targetEBITDA=clamp(.60*targetEBITDA+.40*currentEBITDA,-.05,ebitdaCeiling);
   targetNet=clamp(.60*targetNet+.40*currentNet,-.08,netCeiling);
 
-  return {rawFCF,rawEBITDA,rawNet,currentFCF,currentEBITDA,currentNet,targetFCF,targetEBITDA,targetNet,leverageSignal,fcfTrend,opTrend,grossTrend,incrementalFCFMargin:incFCF,incrementalOperatingMargin:incOp};
+  return {rawFCF,rawEBITDA,rawNet,currentFCF,currentEBITDA,currentNet,targetFCF,targetEBITDA,targetNet,leverageSignal,fcfTrend,opTrend,grossTrend,incrementalFCFMargin:incFCF,incrementalOperatingMargin:incOp,abnormalCapexCycle,reportedFCFMargin:latestFCF,normalizedCapexMargin:normalizedCapex,cycleNormalizedFCFMargin:cycleNormalizedFCF};
 }
 
 function buildForecast(stock){
@@ -192,12 +234,13 @@ function buildForecast(stock){
   const category=classifyCategory(stock,sustainableGrowth,growth.qualityHint,Number(stock.valuation?.dividendYield)||0);
   const forecastBridge={
     revenue:{model:growth.y1,analystCurrent:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthCurrentYear??stock.analystEstimates?.revenueGrowthFwd),analystNext:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthNextYear),recentQuarter:growth.recentQuarter,recentAnnual:growth.recentAnnual,historicalNormalized:growth.historicalAnchor,terminalOperatingGrowth:growth.year5Growth,analystWeight:growth.analystWeight,structuralStepUp:growth.structuralStepUp,structuralStepDown:growth.structuralStepDown},
-    margins:{fcfStart:margins.currentFCF,fcfNormalized:margins.rawFCF,fcfTarget:margins.targetFCF,ebitdaStart:margins.currentEBITDA,ebitdaNormalized:margins.rawEBITDA,ebitdaTarget:margins.targetEBITDA,netStart:margins.currentNet,netNormalized:margins.rawNet,netTarget:margins.targetNet,incrementalFCFMargin:margins.incrementalFCFMargin,incrementalOperatingMargin:margins.incrementalOperatingMargin,fcfTrend:margins.fcfTrend,operatingTrend:margins.opTrend,grossMarginTrend:margins.grossTrend,operatingLeverageAdjustment:margins.leverageSignal},
+    margins:{fcfStart:margins.currentFCF,fcfNormalized:margins.rawFCF,fcfTarget:margins.targetFCF,ebitdaStart:margins.currentEBITDA,ebitdaNormalized:margins.rawEBITDA,ebitdaTarget:margins.targetEBITDA,netStart:margins.currentNet,netNormalized:margins.rawNet,netTarget:margins.targetNet,incrementalFCFMargin:margins.incrementalFCFMargin,incrementalOperatingMargin:margins.incrementalOperatingMargin,fcfTrend:margins.fcfTrend,operatingTrend:margins.opTrend,grossMarginTrend:margins.grossTrend,operatingLeverageAdjustment:margins.leverageSignal,abnormalCapexCycle:margins.abnormalCapexCycle,reportedFCFMargin:margins.reportedFCFMargin,normalizedCapexMargin:margins.normalizedCapexMargin,cycleNormalizedFCFMargin:margins.cycleNormalizedFCFMargin},
     shares:{recent:recentShareGrowth,normalized:medianShareGrowth,model:dilutionRate},
   };
   const forecastFlags=[];
   if(growth.structuralStepUp)forecastFlags.push('structural_revenue_step_up_detected');
   if(growth.structuralStepDown)forecastFlags.push('structural_revenue_step_down_detected');
+  if(margins.abnormalCapexCycle)forecastFlags.push('abnormal_capex_cycle_normalized');
   if(margins.leverageSignal>.008)forecastFlags.push('evidence_supports_margin_expansion');
   if(margins.leverageSignal<-.008)forecastFlags.push('evidence_supports_margin_compression');
   if(growth.recentQuarter!=null&&Math.abs(growth.recentQuarter-growth.historicalAnchor)>.12)forecastFlags.push('recent_growth_inflection');
