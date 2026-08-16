@@ -122,6 +122,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   const fcfSeries=years.map(fcfMargin), ebitdaSeries=years.map(y=>pctMargin(y,'ebitda')), netSeries=years.map(y=>pctMargin(y,'netIncome'));
   const cfoSeries=years.map(y=>pctMargin(y,'cfo'));
   const capexSeries=years.map(y=>{const r=finite(y?.revenue),c=finite(y?.capex);return r>0&&c!=null?Math.abs(c)/r:null;});
+  const daSeries=years.map(y=>{const r=finite(y?.revenue),d=finite(y?.da);return r>0&&d!=null&&d>=0?d/r:null;});
   const opSeries=years.map(y=>Number.isFinite(finite(y?.opMargin))?finite(y.opMargin):pctMargin(y,'operatingIncome'));
   const grossSeries=years.map(y=>Number.isFinite(finite(y?.grossMargin))?finite(y.grossMargin):pctMargin(y,'grossProfit'));
 
@@ -149,14 +150,29 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   const cfoIntact=Number.isFinite(recentCFO)&&Number.isFinite(priorCFO)&&recentCFO>=priorCFO-.035;
   const operationsIntact=Number.isFinite(recentOp)&&Number.isFinite(priorOp)?recentOp>=priorOp-.035:true;
   const abnormalCapexCycle=Boolean(capexSurge&&fcfDislocation&&cfoIntact&&operationsIntact);
-  const normalizedCapex=abnormalCapexCycle&&Number.isFinite(priorCapex)
-    ? clamp(priorCapex*1.12,priorCapex,Math.max(priorCapex,recentCapex*.72))
+  // Split a detected capex spike into a maintenance-like burden and a growth burden.
+  // D&A is useful evidence for the installed asset base, while pre-surge capex tells us
+  // what the company actually had to spend before the current buildout. Neither is used
+  // alone. We then keep part of the excess spend as required growth reinvestment, with
+  // the retained share increasing as the forward growth rate rises. This prevents the
+  // normalization from pretending that growth capex is free while also preventing one
+  // temporary build cycle from permanently crushing FCF.
+  const rawDA=medianRecent(daSeries);
+  const priorDA=median(daSeries.filter(Number.isFinite).slice(-6,-1));
+  const maintenanceAnchor=weightedAverage([[priorCapex,.55],[priorDA,.30],[rawDA,.15]]);
+  const growthReinvestmentShare=clamp(.20+Math.max(0,growthInfo.y2-.04)*1.35,.20,.55);
+  const excessCapex=abnormalCapexCycle&&Number.isFinite(recentCapex)&&Number.isFinite(maintenanceAnchor)
+    ? Math.max(0,recentCapex-maintenanceAnchor)
+    : 0;
+  const normalizedCapex=abnormalCapexCycle&&Number.isFinite(maintenanceAnchor)
+    ? clamp(maintenanceAnchor+excessCapex*growthReinvestmentShare,
+        Math.max(0,maintenanceAnchor),recentCapex)
     : rawCapex;
   const cycleNormalizedFCF=abnormalCapexCycle&&Number.isFinite(rawCFO)&&Number.isFinite(normalizedCapex)
     ? rawCFO-normalizedCapex
     : null;
   let rawFCF=abnormalCapexCycle
-    ? weightedAverage([[directFCF,.25],[reconstructedFCF,.20],[cycleNormalizedFCF,.55]])
+    ? weightedAverage([[directFCF,.15],[reconstructedFCF,.15],[cycleNormalizedFCF,.70]])
     : weightedAverage([[directFCF,.70],[reconstructedFCF,.30]]);
   const rawEBITDA=medianRecent(ebitdaSeries)??null, rawNet=medianRecent(netSeries)??0.06, rawOp=medianRecent(opSeries)??rawEBITDA??rawNet;
 
@@ -204,7 +220,25 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   if(Number.isFinite(targetEBITDA)&&Number.isFinite(currentEBITDA))targetEBITDA=clamp(.60*targetEBITDA+.40*currentEBITDA,-.05,ebitdaCeiling);
   targetNet=clamp(.60*targetNet+.40*currentNet,-.08,netCeiling);
 
-  return {rawFCF,rawEBITDA,rawNet,currentFCF,currentEBITDA,currentNet,targetFCF,targetEBITDA,targetNet,leverageSignal,fcfTrend,opTrend,grossTrend,incrementalFCFMargin:incFCF,incrementalOperatingMargin:incOp,abnormalCapexCycle,reportedFCFMargin:latestFCF,normalizedCapexMargin:normalizedCapex,cycleNormalizedFCFMargin:cycleNormalizedFCF};
+  // Profitability/growth consistency. Sustained double-digit growth does not guarantee
+  // margin expansion, but a model should not forecast material margin compression when
+  // the company's own operating evidence is stable/improving. Only apply this guardrail
+  // when at least two independent operating signals support it; otherwise compression is
+  // allowed to flow through normally.
+  const highGrowth=(growthInfo.year5Growth??growthInfo.y2)>.10;
+  const opSupport=(Number.isFinite(incOp)&&Number.isFinite(rawOp)&&incOp>=rawOp-.015)?1:0;
+  const opTrendSupport=opTrend>=-.002?1:0;
+  const grossSupport=grossTrend>=-.002?1:0;
+  const profitabilitySupport=opSupport+opTrendSupport+grossSupport;
+  let profitabilityConsistencyApplied=false;
+  if(highGrowth&&profitabilitySupport>=2){
+    profitabilityConsistencyApplied=true;
+    if(Number.isFinite(targetNet)&&Number.isFinite(currentNet)) targetNet=Math.max(targetNet,currentNet-.0075);
+    if(Number.isFinite(targetEBITDA)&&Number.isFinite(currentEBITDA)) targetEBITDA=Math.max(targetEBITDA,currentEBITDA-.0075);
+    if(Number.isFinite(targetFCF)&&Number.isFinite(currentFCF)&&!abnormalCapexCycle) targetFCF=Math.max(targetFCF,currentFCF-.0125);
+  }
+
+  return {rawFCF,rawEBITDA,rawNet,currentFCF,currentEBITDA,currentNet,targetFCF,targetEBITDA,targetNet,leverageSignal,fcfTrend,opTrend,grossTrend,incrementalFCFMargin:incFCF,incrementalOperatingMargin:incOp,abnormalCapexCycle,reportedFCFMargin:latestFCF,normalizedCapexMargin:normalizedCapex,cycleNormalizedFCFMargin:cycleNormalizedFCF,maintenanceCapexMargin:maintenanceAnchor,growthReinvestmentShare,profitabilityConsistencyApplied};
 }
 
 function buildForecast(stock){
@@ -234,7 +268,7 @@ function buildForecast(stock){
   const category=classifyCategory(stock,sustainableGrowth,growth.qualityHint,Number(stock.valuation?.dividendYield)||0);
   const forecastBridge={
     revenue:{model:growth.y1,analystCurrent:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthCurrentYear??stock.analystEstimates?.revenueGrowthFwd),analystNext:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthNextYear),recentQuarter:growth.recentQuarter,recentAnnual:growth.recentAnnual,historicalNormalized:growth.historicalAnchor,terminalOperatingGrowth:growth.year5Growth,analystWeight:growth.analystWeight,structuralStepUp:growth.structuralStepUp,structuralStepDown:growth.structuralStepDown},
-    margins:{fcfStart:margins.currentFCF,fcfNormalized:margins.rawFCF,fcfTarget:margins.targetFCF,ebitdaStart:margins.currentEBITDA,ebitdaNormalized:margins.rawEBITDA,ebitdaTarget:margins.targetEBITDA,netStart:margins.currentNet,netNormalized:margins.rawNet,netTarget:margins.targetNet,incrementalFCFMargin:margins.incrementalFCFMargin,incrementalOperatingMargin:margins.incrementalOperatingMargin,fcfTrend:margins.fcfTrend,operatingTrend:margins.opTrend,grossMarginTrend:margins.grossTrend,operatingLeverageAdjustment:margins.leverageSignal,abnormalCapexCycle:margins.abnormalCapexCycle,reportedFCFMargin:margins.reportedFCFMargin,normalizedCapexMargin:margins.normalizedCapexMargin,cycleNormalizedFCFMargin:margins.cycleNormalizedFCFMargin},
+    margins:{fcfStart:margins.currentFCF,fcfNormalized:margins.rawFCF,fcfTarget:margins.targetFCF,ebitdaStart:margins.currentEBITDA,ebitdaNormalized:margins.rawEBITDA,ebitdaTarget:margins.targetEBITDA,netStart:margins.currentNet,netNormalized:margins.rawNet,netTarget:margins.targetNet,incrementalFCFMargin:margins.incrementalFCFMargin,incrementalOperatingMargin:margins.incrementalOperatingMargin,fcfTrend:margins.fcfTrend,operatingTrend:margins.opTrend,grossMarginTrend:margins.grossTrend,operatingLeverageAdjustment:margins.leverageSignal,abnormalCapexCycle:margins.abnormalCapexCycle,reportedFCFMargin:margins.reportedFCFMargin,normalizedCapexMargin:margins.normalizedCapexMargin,cycleNormalizedFCFMargin:margins.cycleNormalizedFCFMargin,maintenanceCapexMargin:margins.maintenanceCapexMargin,growthReinvestmentShare:margins.growthReinvestmentShare,profitabilityConsistencyApplied:margins.profitabilityConsistencyApplied},
     shares:{recent:recentShareGrowth,normalized:medianShareGrowth,model:dilutionRate},
   };
   const forecastFlags=[];
@@ -243,6 +277,7 @@ function buildForecast(stock){
   if(margins.abnormalCapexCycle)forecastFlags.push('abnormal_capex_cycle_normalized');
   if(margins.leverageSignal>.008)forecastFlags.push('evidence_supports_margin_expansion');
   if(margins.leverageSignal<-.008)forecastFlags.push('evidence_supports_margin_compression');
+  if(margins.profitabilityConsistencyApplied)forecastFlags.push('growth_profitability_consistency_guardrail');
   if(growth.recentQuarter!=null&&Math.abs(growth.recentQuarter-growth.historicalAnchor)>.12)forecastFlags.push('recent_growth_inflection');
 
   return {horizonYears:HORIZON_YEARS,category,rows,terminalGrowth:growth.matureGrowth,year5OperatingGrowth:growth.year5Growth,revenueGrowthAnchor:growth.y1,sustainableGrowth,historicalGrowth:growth.historicalAnchor,dilutionRate,startRevenue:finite(last.revenue),startShares:finite(last.sharesOutTTM),marginAssumptions:{fcf:margins.currentFCF,ebitda:margins.currentEBITDA,net:margins.currentNet},marginTargets:{fcf:margins.targetFCF,ebitda:margins.targetEBITDA,net:margins.targetNet},analystUsed:growth.analystUsed,forecastBridge,forecastFlags};
