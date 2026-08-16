@@ -92,3 +92,33 @@ const sbcF=buildForecast(sbcHeavy);
 assert(sbcF.marginAssumptions.fcf>0.15,'SBC-adjusted FCF was incorrectly used as the operating cash margin');
 
 console.log('Normalization smoke tests passed: missing-capex FCF is suppressed and SBC is not double-counted.');
+
+// Temporary investment-cycle capex should not permanently destroy normalized FCF when
+// CFO and operating economics remain intact. The model must retain a real reinvestment
+// burden, but fade an abnormal capex spike instead of extrapolating it forever.
+const capexCycle=stock({ticker:'CAPEX_CYCLE',price:100,growth:.10,margin:.20,roic:.22});
+for(let i=0;i<capexCycle.financials.years.length;i++){
+  const y=capexCycle.financials.years[i];
+  y.cfo=y.revenue*.28;
+  y.capex=y.revenue*(i===capexCycle.financials.years.length-1?.24:.08);
+  y.fcf=y.cfo-y.capex;
+  y.operatingIncome=y.revenue*.23;
+  y.opMargin=.23;
+}
+const capexF=buildForecast(capexCycle);
+assert(capexF.forecastFlags.includes('abnormal_capex_cycle_normalized'),'abnormal capex cycle was not detected');
+assert(capexF.forecastBridge.margins.cycleNormalizedFCFMargin>capexF.forecastBridge.margins.reportedFCFMargin+.05,'capex normalization did not restore sustainable FCF economics');
+assert(capexF.marginTargets.fcf>capexF.forecastBridge.margins.reportedFCFMargin,'temporary capex spike leaked into year-5 FCF margin');
+
+// Near-term analyst inflections may anchor years 1-2, but years 4-5 must increasingly
+// revert toward normalized company growth rather than treating a temporary burst as a
+// permanent new regime.
+const inflection=stock({ticker:'INFLECTION_FADE',price:100,growth:.09,margin:.20,roic:.22});
+inflection.analystEstimates.revenueGrowthCurrentYear=.34;
+inflection.analystEstimates.revenueGrowthNextYear=.38;
+inflection.analystEstimates.numAnalysts=35;
+const inflectionF=buildForecast(inflection);
+assert(inflectionF.forecastBridge.revenue.terminalOperatingGrowth<.16,'near-term analyst inflection was carried too aggressively into year 5');
+assert(inflectionF.rows[4].revenueGrowth<inflectionF.rows[1].revenueGrowth-.08,'post-inflection growth path did not fade materially after explicit analyst years');
+
+console.log('Cycle-normalization smoke tests passed: abnormal capex is normalized and post-inflection growth fades after explicit consensus years.');
