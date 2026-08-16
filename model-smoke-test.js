@@ -122,3 +122,32 @@ assert(inflectionF.forecastBridge.revenue.terminalOperatingGrowth<.16,'near-term
 assert(inflectionF.rows[4].revenueGrowth<inflectionF.rows[1].revenueGrowth-.08,'post-inflection growth path did not fade materially after explicit analyst years');
 
 console.log('Cycle-normalization smoke tests passed: abnormal capex is normalized and post-inflection growth fades after explicit consensus years.');
+
+// The capex-cycle normalizer must preserve a larger reinvestment burden for faster
+// growers. This is the key guardrail against simply re-labeling all excess capex as free.
+const fastCapex=stock({ticker:'FAST_CAPEX',price:100,growth:.22,margin:.20,roic:.24});
+for(let i=0;i<fastCapex.financials.years.length;i++){
+  const y=fastCapex.financials.years[i];
+  y.cfo=y.revenue*.30; y.da=y.revenue*.07;
+  y.capex=y.revenue*(i===fastCapex.financials.years.length-1?.25:.09);
+  y.fcf=y.cfo-y.capex; y.operatingIncome=y.revenue*.24; y.opMargin=.24;
+}
+const fastCapexF=buildForecast(fastCapex);
+assert(fastCapexF.forecastBridge.margins.growthReinvestmentShare>.30,'high-growth capex cycle did not retain enough growth reinvestment');
+assert(fastCapexF.forecastBridge.margins.normalizedCapexMargin>fastCapexF.forecastBridge.margins.maintenanceCapexMargin,'growth capex was incorrectly normalized all the way to maintenance');
+
+// High growth plus stable/improving operating evidence should not mechanically produce
+// material margin contraction just because the historical median is lower than today.
+const growthProfit=stock({ticker:'GROWTH_PROFIT',price:100,growth:.20,margin:.16,roic:.25});
+for(let i=0;i<growthProfit.financials.years.length;i++){
+  const y=growthProfit.financials.years[i], nm=.08+i*.012;
+  y.netIncome=y.revenue*nm; y.operatingIncome=y.revenue*(nm+.08); y.opMargin=nm+.08;
+  y.grossMargin=.48+i*.006;
+}
+growthProfit.analystEstimates.revenueGrowthCurrentYear=.24;
+growthProfit.analystEstimates.revenueGrowthNextYear=.21;
+const gpF=buildForecast(growthProfit);
+assert(gpF.forecastFlags.includes('growth_profitability_consistency_guardrail'),'profitability consistency guardrail did not activate');
+assert(gpF.marginTargets.net>=gpF.marginAssumptions.net-.0076,'high-growth forecast compressed supported net margins too aggressively');
+
+console.log('Reinvestment and profitability-consistency smoke tests passed.');
