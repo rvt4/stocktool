@@ -127,23 +127,48 @@ function addMethod(methods,{name,target,weight,reliability=1,audit,price}){
   methods.push({name,target,weight:effectiveWeight,baseWeight:weight,reliability:rel,audit:{...audit,impliedCAGR:implied,extremityWeight,effectiveWeight}});
 }
 
-function robustOutcomeBlend(methods,price){
-  const valid=methods.filter(m=>Number.isFinite(m.outcome)&&m.outcome>0&&m.weight>0);
+function valuationConsensus(methods,price){
+  const valid=methods.map((m,index)=>({m,index,ret:cagr(price,m.outcome)})).filter(x=>Number.isFinite(x.ret)&&x.m.weight>0);
+  if(valid.length<3)return {clusterIndexes:valid.map(x=>x.index),outlierIndexes:[],pairSpread:null,outlierGap:null,hasConsensusOutlier:false};
+
+  // Find the tightest pair in CAGR space. With three methods, two independently agreeing
+  // while the third is far away is evidence of an anomalous method, not blanket disagreement.
+  let best=null;
+  for(let i=0;i<valid.length;i++)for(let j=i+1;j<valid.length;j++){
+    const gap=Math.abs(valid[i].ret-valid[j].ret);
+    if(!best||gap<best.gap)best={a:valid[i],b:valid[j],gap};
+  }
+  if(!best)return {clusterIndexes:valid.map(x=>x.index),outlierIndexes:[],pairSpread:null,outlierGap:null,hasConsensusOutlier:false};
+  const center=(best.a.ret+best.b.ret)/2;
+  const outsiders=valid.filter(x=>x.index!==best.a.index&&x.index!==best.b.index);
+  const nearestOutlierGap=outsiders.length?Math.min(...outsiders.map(x=>Math.abs(x.ret-center))):null;
+  // Require a genuinely tight pair and a clearly separated third method. This deliberately
+  // avoids declaring an outlier when all methods are simply spread across a wide range.
+  const separated=best.gap<=.08&&Number.isFinite(nearestOutlierGap)&&nearestOutlierGap>=Math.max(.10,best.gap*2.25);
+  if(!separated)return {clusterIndexes:valid.map(x=>x.index),outlierIndexes:[],pairSpread:best.gap,outlierGap:nearestOutlierGap,hasConsensusOutlier:false};
+  return {clusterIndexes:[best.a.index,best.b.index],outlierIndexes:outsiders.map(x=>x.index),pairSpread:best.gap,outlierGap:nearestOutlierGap,hasConsensusOutlier:true};
+}
+
+function robustOutcomeBlend(methods,price,consensus=null){
+  const valid=methods.map((m,index)=>({...m,index})).filter(m=>Number.isFinite(m.outcome)&&m.outcome>0&&m.weight>0);
   if(!valid.length)return null;
   if(valid.length===1)return valid[0].outcome;
-  const returnItems=valid.map(m=>({value:cagr(price,m.outcome),weight:m.weight})).filter(x=>Number.isFinite(x.value));
-  const center=weightedMedian(returnItems);
+  const info=consensus||valuationConsensus(methods,price);
+  const cluster=new Set(info.clusterIndexes||[]), outliers=new Set(info.outlierIndexes||[]);
+  const returnItems=valid.map(m=>({value:cagr(price,m.outcome),weight:m.weight,index:m.index})).filter(x=>Number.isFinite(x.value));
+  const center=weightedMedian(returnItems.map(x=>({value:x.value,weight:x.weight*(outliers.has(x.index)?.08:1)})));
   const adjusted=returnItems.map(x=>{
     const gap=Math.abs(x.value-center);
-    const consensusWeight=gap<=.04?1:gap<=.08?.72:gap<=.14?.42:.18;
+    let consensusWeight=gap<=.04?1:gap<=.08?.72:gap<=.14?.42:.18;
+    // When two methods form a clear cluster, keep the third visible for auditability but
+    // prevent it from dragging the canonical value away from the independent consensus.
+    if(info.hasConsensusOutlier&&outliers.has(x.index))consensusWeight*=.08;
+    else if(info.hasConsensusOutlier&&cluster.has(x.index))consensusWeight=Math.max(consensusWeight,.90);
     return {value:x.value,weight:x.weight*consensusWeight};
   });
-  // Blend in CAGR space rather than dollar-target space. Arithmetic averaging of distant
-  // future prices systematically lets the highest target pull the canonical return upward.
   const blendedReturn=weightedAverage(adjusted);
   return Number.isFinite(blendedReturn)&&blendedReturn>-1?price*Math.pow(1+blendedReturn,HORIZON_YEARS):null;
 }
-
 function valuate(stock,forecast,quality){
   const rows=forecast.rows||[], f=rows.at(-1)||{}, years=stock.financials?.years||[], last=years.at(-1)||{};
   const price=finite(stock.price?.current), cfg=sectorConfig(stock.sector), req=requiredReturn(quality,forecast.category);
@@ -208,16 +233,28 @@ function valuate(stock,forecast,quality){
 
   const dividends=rows.reduce((s,r)=>s+(finite(r.dividendPerShare)||0),0);
   for(const m of methods)m.outcome=Number.isFinite(m.target)?m.target+dividends:null;
-  let total=robustOutcomeBlend(methods,price), expected=cagr(price,total);
+  const consensus=valuationConsensus(methods,price);
+  let total=robustOutcomeBlend(methods,price,consensus), expected=cagr(price,total);
   const hasValuation=Number.isFinite(expected)&&expected<=.25&&methods.length>0&&Number.isFinite(total)&&total>0;
   if(!hasValuation){total=null;expected=null;}
 
   const target=total!=null?Math.max(0,total-dividends):null, fair=total!=null?pv(total,req,HORIZON_YEARS):null;
   const mos=fair>0&&price>0?1-price/fair:null, premium=fair>0&&price>0?price/fair-1:null;
-  const reliable=methods.filter(m=>(m.reliability??1)>=.35);
-  const agreementPool=reliable.length>=2?reliable:methods;
-  const returns=agreementPool.map(m=>cagr(price,m.outcome)).filter(Number.isFinite), spread=returns.length>=2?Math.max(...returns)-Math.min(...returns):null;
-  const agreement=returns.length>=2?Math.round(100*clamp(1-spread/.22,0,1)):(returns.length===1?45:0);
+  const reliable=methods.map((m,index)=>({m,index})).filter(x=>(x.m.reliability??1)>=.35);
+  const agreementEntries=reliable.length>=2?reliable:methods.map((m,index)=>({m,index}));
+  const agreementReturns=agreementEntries.map(x=>({index:x.index,ret:cagr(price,x.m.outcome)})).filter(x=>Number.isFinite(x.ret));
+  let spread=agreementReturns.length>=2?Math.max(...agreementReturns.map(x=>x.ret))-Math.min(...agreementReturns.map(x=>x.ret)):null;
+  let agreement;
+  if(consensus.hasConsensusOutlier){
+    const clusterReturns=agreementReturns.filter(x=>consensus.clusterIndexes.includes(x.index)).map(x=>x.ret);
+    const clusterSpread=clusterReturns.length>=2?Math.max(...clusterReturns)-Math.min(...clusterReturns):consensus.pairSpread;
+    // A 2-of-3 consensus is strong evidence, but not identical to three-way agreement.
+    // Cap it below perfect agreement while avoiding a misleading 0/100 score.
+    agreement=Math.round(85*clamp(1-(clusterSpread??0)/.22,0,1));
+    spread=clusterSpread;
+  } else {
+    agreement=agreementReturns.length>=2?Math.round(100*clamp(1-spread/.22,0,1)):(agreementReturns.length===1?45:0);
+  }
   // Business/data confidence and valuation-method agreement answer different questions.
   // Publish both and combine them for decision confidence so a 4/100 method agreement can
   // never masquerade as a 90-confidence investment conclusion.
@@ -227,6 +264,6 @@ function valuate(stock,forecast,quality){
   const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
   const lowReliability=methods.length>0&&Math.max(...methods.map(m=>m.reliability??0))<.40;
 
-  return {requiredReturn:req,methods,fiveYearPriceTarget:target,cumulativeDividends:dividends,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,marginOfSafety:mos,premiumToFairValue:premium,methodAgreementScore:agreement,valuationConfidenceScore:valuationConfidence,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null))};
+  return {requiredReturn:req,methods,fiveYearPriceTarget:target,cumulativeDividends:dividends,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,marginOfSafety:mos,premiumToFairValue:premium,methodAgreementScore:agreement,valuationConfidenceScore:valuationConfidence,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(consensus.hasConsensusOutlier?'isolated_method_outlier':(agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))};
 }
 module.exports={valuate};
