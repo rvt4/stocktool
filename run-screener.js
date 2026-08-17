@@ -1,395 +1,143 @@
+'use strict';
 /**
- * Nightly screener run. Fetches free data for the watchlist, scores it,
- * and writes data/results.json for the static frontend to read.
+ * FreeScreener simplified production pipeline.
  *
- * Run with: node run-screener.js
- * Requires Node 18+ (built-in fetch).
+ * ONE path only:
+ *   data -> forecast -> quality -> valuation -> rating -> validation -> results.json
  *
- * At full Russell 1000 scale (~1000 tickers) this takes roughly 20-30 minutes,
- * mostly spent in the delay between tickers (see RATE_LIMIT_DELAY_MS below) —
- * that's normal, not a bug. GitHub Actions on a public repo has no minutes cap,
- * so a long-running job costs nothing.
+ * There are deliberately no Vxx decision systems, calibration layers, return aliases,
+ * Monte Carlo overrides, or competing fair-value engines in the publication path.
  */
 const fs = require('fs');
 const path = require('path');
-const { buildStockRecord, normalizeSecTicker } = require('./data-fetchers');
-const { computeSectorExitMultiples, valuateStock } = require('./valuation-methods');
-const { scoreUniverse } = require('./scoring-engine');
-const { assessDataIntegrity } = require('./engine/data-integrity');
-const { buildScenarios } = require('./engine/scenario-engine');
-const { computeExpectedReturnProfile } = require('./engine/expected-return-engine');
-const { buildInvestmentThesis } = require('./engine/thesis-engine');
-const { inferIndustryModel } = require('./engine/industry-engine');
-const { computePricingPowerV2 } = require('./engine/pricing-power-engine');
-const { computeCompounderScore } = require('./engine/compounder-engine');
-const { computeDownsideRisk } = require('./engine/downside-engine');
-const { buildLearningModel, applyLearnedReturnCalibration } = require('./engine/learning-engine');
-const { updateForecastHistory } = require('./engine/forecast-tracker');
-const { computePortfolioProfile } = require('./engine/portfolio-engine');
-const { computeInvestmentCommitteeScore } = require('./engine/investment-committee-engine');
-const { applyInstitutionalSanity } = require('./engine/institutional-sanity-engine');
-const { computeEconomicQuality } = require('./engine/economic-quality-engine');
-const { applyDecisionSystemV27 } = require('./engine/decision-system-v27');
-const { validate } = require('./engine/validation-suite');
+const { buildStockRecord } = require('./data-fetchers');
+const { buildForecast } = require('./engine/forecast-engine');
+const { computeQuality } = require('./engine/quality-engine');
+const { valuate } = require('./engine/valuation-engine');
+const { rateStock } = require('./engine/rating-engine');
+const { validateUniverse } = require('./engine/validation');
 
-const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'), 'utf8'));
+const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'),'utf8'));
+const RATE_LIMIT_DELAY_MS = Number(process.env.RATE_LIMIT_DELAY_MS || 1100);
+const CHECKPOINT_EVERY = 100;
 
-// Finnhub free tier = 60 calls/min, 1 call/ticker (quote only) here.
-// 1100ms keeps us at ~54 calls/min, comfortably under the cap even with jitter.
-const RATE_LIMIT_DELAY_MS = 1100;
-const CHECKPOINT_EVERY = 100; // write partial progress periodically so a mid-run failure isn't a total loss
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+function normalizeTicker(t){return String(t||'').trim().toUpperCase().replace(/\./g,'-');}
 
-const diagnostics = {
-  startedAt: new Date().toISOString(),
-  total: watchlist.length,
-  scored: 0,
-  limitedHistoryIncluded: 0,
-  skipped: [],
-  failed: [],
-};
-
-function classifyFailure(message = '') {
-  const text = String(message);
-  if (/No CIK found/i.test(text)) return 'ticker_mapping';
-  if (/timed out/i.test(text)) return 'timeout';
-  if (/HTTP 429|rate/i.test(text)) return 'rate_limit';
-  if (/SEC EDGAR/i.test(text)) return 'sec_fetch';
-  return 'other_error';
+async function loadAnalystEstimates(){
+  const raw=String(process.env.SUPABASE_URL||'').trim();
+  const base=raw.replace(/\/+$/,'').replace(/\/rest\/v1$/,'');
+  const key=String(process.env.SUPABASE_SERVICE_KEY||process.env.SUPABASE_ANON_KEY||'').trim();
+  if(!base||!key) throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_KEY.');
+  console.log(`Reading analyst estimates from ${base}/rest/v1/analyst_estimates_cache`);
+  const rows=[]; const pageSize=1000;
+  for(let offset=0;;offset+=pageSize){
+    const params=new URLSearchParams({select:'*',order:'ticker.asc',offset:String(offset),limit:String(pageSize)});
+    const res=await fetch(`${base}/rest/v1/analyst_estimates_cache?${params}`,{headers:{apikey:key,Authorization:`Bearer ${key}`,Accept:'application/json'}});
+    if(!res.ok) throw new Error(`Analyst cache HTTP ${res.status}: ${(await res.text()).slice(0,400)}`);
+    const page=await res.json(); rows.push(...page); console.log(`Analyst cache page: offset ${offset}, received ${page.length}, total ${rows.length}`); if(page.length<pageSize)break;
+  }
+  const map=new Map();
+  for(const r of rows){const t=normalizeTicker(r.ticker);if(!t)continue;map.set(t,{
+    revenueGrowthFwd:r.revenue_growth_fwd??null,revenueGrowthCurrentYear:r.revenue_growth_current_year??r.revenue_growth_fwd??null,revenueGrowthNextYear:r.revenue_growth_next_year??null,
+    revenueCurrentYear:r.revenue_current_year??null,revenueNextYear:r.revenue_next_year??null,epsGrowthFwd:r.eps_growth_fwd??null,epsGrowthCurrentYear:r.eps_growth_current_year??r.eps_growth_fwd??null,epsGrowthNextYear:r.eps_growth_next_year??null,
+    epsCurrentYear:r.eps_current_year??null,epsNextYear:r.eps_next_year??null,analystTargetMean:r.analyst_target_mean??null,analystTargetLow:r.analyst_target_low??null,analystTargetHigh:r.analyst_target_high??null,numAnalysts:r.num_analysts??null,source:r.source??null,updatedAt:r.updated_at??null
+  });}
+  console.log(`Mapped ${map.size} analyst records.`); return map;
 }
 
-function writeDiagnostics() {
-  diagnostics.finishedAt = new Date().toISOString();
-  diagnostics.scored = diagnostics.scored || 0;
-  const outPath = path.join(__dirname, 'data', 'screener-diagnostics.json');
-  fs.writeFileSync(outPath, JSON.stringify(diagnostics, null, 2));
-}
+function pct(v){return Number.isFinite(v)?v:null;}
+function flattenRecord(stock, forecast, quality, valuation, decision){
+  const v=stock.valuation||{};
+  const methodMap={}; const methodAudits={};
+  for(const m of valuation.methods||[]){methodMap[m.name]=m.target;methodAudits[m.name]=m.audit||{};}
+  const strengths=[]; const risks=[];
+  if(quality.moatScore>=75)strengths.push('Durable competitive advantages');
+  if(quality.pricingPowerScore>=70)strengths.push('Strong pricing power');
+  if(quality.capitalAllocationScore>=70)strengths.push('Disciplined capital allocation');
+  if(quality.compounderScore>=75)strengths.push('High-quality long-term compounding profile');
+  if(quality.growthQualityScore>=70)strengths.push('Revenue growth is a meaningful return driver');
+  if(quality.protectionScore>=70)strengths.push('Above-average downside protection');
+  if(quality.confidenceScore<55)risks.push('Forecast reliability is below average');
+  if(valuation.methodAgreementScore<55)risks.push('Valuation methods disagree materially');
+  if(valuation.bearCAGR<0)risks.push(`Bear-case CAGR is ${(valuation.bearCAGR*100).toFixed(1)}%`);
+  if((quality.diagnostics?.dilutionRate||0)>0.03)risks.push('Share dilution is elevated');
+  if((quality.diagnostics?.netDebtToEbitda||0)>3)risks.push('Leverage is elevated');
 
-function normalizeTicker(ticker) {
-  return String(ticker || '')
-    .trim()
-    .toUpperCase()
-    .replace(/\./g, '-');
-}
-
-async function loadAnalystEstimates() {
-  const rawUrl = String(process.env.SUPABASE_URL || '').trim();
-  const baseUrl = rawUrl.replace(/\/+$/, '').replace(/\/rest\/v1$/, '');
-  const key = String(
-    process.env.SUPABASE_SERVICE_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
-    ''
-  ).trim();
-
-  if (!baseUrl || !key) {
-    throw new Error(
-      'Supabase credentials are missing in the run-screener job. ' +
-      'Add SUPABASE_URL and SUPABASE_SERVICE_KEY to the Run screener step in nightly.yml.'
-    );
-  }
-
-  console.log(`Reading analyst estimates from ${baseUrl}/rest/v1/analyst_estimates_cache`);
-
-  const pageSize = 1000;
-  const rows = [];
-
-  for (let offset = 0; ; offset += pageSize) {
-    const params = new URLSearchParams({
-      select: '*',
-      order: 'ticker.asc',
-      offset: String(offset),
-      limit: String(pageSize),
-    });
-    const url = `${baseUrl}/rest/v1/analyst_estimates_cache?${params}`;
-    const res = await fetch(url, {
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        Accept: 'application/json',
-        Prefer: 'count=exact',
-      },
-    });
-
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(
-        `Analyst-estimate cache fetch failed: HTTP ${res.status}. ` +
-        `${body.slice(0, 800)}`
-      );
-    }
-
-    const page = await res.json();
-    if (!Array.isArray(page)) {
-      throw new Error('Supabase analyst-estimate response was not a JSON array.');
-    }
-
-    rows.push(...page);
-    console.log(`Analyst cache page: offset ${offset}, received ${page.length}, total ${rows.length}`);
-    if (page.length < pageSize) break;
-  }
-
-  if (rows.length === 0) {
-    throw new Error(
-      'Supabase returned zero analyst-estimate rows. The screener was stopped rather ' +
-      'than silently generating another results file without analyst data.'
-    );
-  }
-
-  const estimates = new Map();
-  for (const row of rows) {
-    const ticker = normalizeTicker(row.ticker);
-    if (!ticker) continue;
-
-    estimates.set(ticker, {
-      revenueGrowthFwd: row.revenue_growth_fwd ?? null,
-      revenueGrowthCurrentYear: row.revenue_growth_current_year ?? row.revenue_growth_fwd ?? null,
-      revenueGrowthNextYear: row.revenue_growth_next_year ?? null,
-      revenueCurrentYear: row.revenue_current_year ?? null,
-      revenueNextYear: row.revenue_next_year ?? null,
-      epsGrowthFwd: row.eps_growth_fwd ?? null,
-      epsGrowthCurrentYear: row.eps_growth_current_year ?? row.eps_growth_fwd ?? null,
-      epsGrowthNextYear: row.eps_growth_next_year ?? null,
-      epsCurrentYear: row.eps_current_year ?? null,
-      epsNextYear: row.eps_next_year ?? null,
-      analystTargetMean: row.analyst_target_mean ?? null,
-      analystTargetLow: row.analyst_target_low ?? null,
-      analystTargetHigh: row.analyst_target_high ?? null,
-      numAnalysts: row.num_analysts ?? null,
-      source: row.source ?? null,
-      updatedAt: row.updated_at ?? null,
-    });
-  }
-
-  const examples = ['AMD', 'META', 'CRM', 'CELH']
-    .map(ticker => `${ticker}:${estimates.has(ticker) ? 'yes' : 'no'}`)
-    .join(', ');
-  console.log(`Mapped ${estimates.size} analyst records. Spot check — ${examples}`);
-
-  return estimates;
-}
-
-function writeResults(records, partial) {
-  const baseScored = scoreUniverse(records);
-  const scored = applyDecisionSystemV27(baseScored);
-  const output = {
-    generatedAt: new Date().toISOString(),
-    modelVersion: 'v41-economics-aware-valuation',
-    version: 'v41-economics-aware-valuation',
-    count: scored.length,
-    partial: !!partial,
-    stocks: scored,
+  const cagrBreakdown={
+    revenueContribution:forecast.revenueGrowthAnchor,
+    marginContribution:(forecast.rows.at(-1)?.fcfMargin??0)-(forecast.marginAssumptions?.fcf??0),
+    shareCountContribution:-(forecast.dilutionRate||0),
+    dividendContribution:stock.valuation?.dividendYield||0,
+    multipleReratingContribution:null,
   };
-  // Keep the nightly artifact compact. GitHub rejects any individual file over
-  // 100 MiB, and pretty-printing this large payload previously pushed
-  // data/results.json above that hard limit. Write atomically so the frontend
-  // never sees a half-written file, and fail early with a useful message if the
-  // compact payload ever approaches the limit again.
-  const resultsPath = path.join(__dirname, 'data', 'results.json');
-  const tempResultsPath = `${resultsPath}.tmp`;
-  const compactJson = JSON.stringify(output);
-  const resultBytes = Buffer.byteLength(compactJson, 'utf8');
-  const githubHardLimit = 100 * 1024 * 1024;
-  const safetyLimit = 95 * 1024 * 1024;
 
-  if (resultBytes >= safetyLimit) {
-    throw new Error(
-      `Compact data/results.json would be ${(resultBytes / 1024 / 1024).toFixed(2)} MiB. ` +
-      `This is too close to GitHub's 100 MiB per-file limit; split the result payload before publishing.`
-    );
-  }
-
-  fs.writeFileSync(tempResultsPath, compactJson);
-  fs.renameSync(tempResultsPath, resultsPath);
-  console.log(`Compact results size: ${(resultBytes / 1024 / 1024).toFixed(2)} MiB`);
-  if (!partial) {
-    const validation = validate(scored);
-    fs.writeFileSync(path.join(__dirname, 'data', 'validation-report.json'), JSON.stringify(validation, null, 2));
-    console.log(`Decision validation: ${validation.passed ? 'passed' : 'review required'} (${validation.issues.length} issue(s)).`);
-  }
-  return scored;
+  return {
+    ticker:stock.ticker, sector:stock.sector, category:forecast.category, rating:decision.rating,
+    currentPrice:stock.price?.current??null,
+    expectedReturn:valuation.expectedCAGR, expectedCAGR:valuation.expectedCAGR, expectedAlpha:decision.expectedAlpha,
+    bearCAGR:valuation.bearCAGR, baseCAGR:valuation.baseCAGR, bullCAGR:valuation.bullCAGR,
+    confidenceScore:quality.confidenceScore, marginOfSafety:valuation.marginOfSafety, premiumToFairValue:valuation.premiumToFairValue, requiredMOS:decision.requiredMOS,
+    investmentScore:decision.investmentScore, qualityScore:quality.qualityScore, moatScore:quality.moatScore, capitalAllocationScore:quality.capitalAllocationScore,
+    compounderScore:quality.compounderScore, growthQuality:quality.growthQualityScore, growthQualityScore:quality.growthQualityScore, pricingPowerV2Score:quality.pricingPowerScore, downsideProtectionScore:quality.protectionScore,
+    qualifiesForBuyList:decision.qualifiesForBuyList,
+    fairValueEstimate:valuation.fairValueEstimate, fiveYearPriceTarget:valuation.fiveYearPriceTarget, totalShareholderValue:valuation.totalShareholderValue, cumulativeDividends:valuation.cumulativeDividends,
+    fundamentalGrowthRate:forecast.revenueGrowthAnchor, growthSource:v.growthSource, dilutionRate:forecast.dilutionRate, sbcIntensity:stock.financials?.years?.at(-1)?.sbcIntensity??null,
+    valuationMethods:methodMap, valuationMethodAudits:methodAudits, methodAgreementScore:valuation.methodAgreementScore, methodCount:(valuation.methods||[]).length,
+    valuationProjection:forecast.rows, projectionAssumptions:{terminalGrowth:forecast.terminalGrowth,requiredReturn:valuation.requiredReturn,revenueGrowthAnchor:forecast.revenueGrowthAnchor,historicalGrowth:forecast.historicalGrowth,marginAssumptions:forecast.marginAssumptions,marginTargets:forecast.marginTargets,forecastBridge:forecast.forecastBridge,forecastFlags:forecast.forecastFlags},
+    analystEstimates:stock.analystEstimates,
+    investmentThesis:{strengths,risks}, pricingPowerSignals: strengths.filter(x=>/pricing/i.test(x)), capitalAllocationSignals: strengths.filter(x=>/capital|dilution|leverage/i.test(x)),
+    qualityBreakdown:quality.diagnostics, cagrBreakdown,
+    decisionDashboard:{grade:decision.investmentScore>=80?'A':decision.investmentScore>=70?'B+':decision.investmentScore>=60?'B':decision.investmentScore>=50?'C':'D',positionTier:decision.qualifiesForBuyList?'Core':'Unrated',suggestedWeight:decision.rating==='Exceptional Buy'?'8–10%':decision.rating==='Strong Buy'?'6–8%':decision.rating==='Buy'?'4–6%':'Unrated'},
+    returnAttribution:cagrBreakdown,
+    valuationConfidenceScore:Math.round((quality.confidenceScore+valuation.methodAgreementScore)/2), dataConfidenceScore:quality.confidenceScore, businessConfidenceScore:quality.qualityScore, forecastConfidenceScore:quality.confidenceScore,
+    businessQualityScore:quality.qualityScore, valuationAttractivenessScore:Math.round(Math.max(0,Math.min(100,50+(valuation.marginOfSafety||0)*100))),
+    portfolioManagerScore:decision.investmentScore, investmentCommitteeScore:decision.investmentScore, investmentCommittee:{score:decision.investmentScore},
+    returnQualityFlags:[...(valuation.plausibilityFailure?['valuation_plausibility_failure']:[]),...(valuation.extremeReturnFlag?['extreme_canonical_return_review']:[])], returnIntegrityError:valuation.plausibilityFailure?'No defensible canonical valuation could be constructed':null, lowConfidence:quality.confidenceScore<55, valuationReviewFlag:valuation.valuationReviewFlag||null,
+    businessProfile:{category:forecast.category,terminalGrowth:forecast.terminalGrowth}, lifecycle:{label:forecast.category}, moat:{score:quality.moatScore},
+    marketExpectations:{note:'Simplified model: no reverse-DCF narrative inference is used in ratings.'},
+    scenarioAnalysis:{bearCAGR:valuation.bearCAGR,baseCAGR:valuation.baseCAGR,bullCAGR:valuation.bullCAGR}, scenarioProbabilities:{bear:0.25,base:0.50,bull:0.25},
+    expectedReturnProfile:{expectedCAGR:valuation.expectedCAGR,bearCAGR:valuation.bearCAGR,baseCAGR:valuation.baseCAGR,bullCAGR:valuation.bullCAGR},
+    analystReliability:quality.confidenceScore, outlierFlags:[], reliabilityFlags:[], effectiveWeights:Object.fromEntries((valuation.methods||[]).map(m=>[m.name,m.weight])),
+    primaryValuation:{method:'Blended year-5 shareholder outcome',target:valuation.fiveYearPriceTarget,totalOutcome:valuation.totalShareholderValue,requiredReturn:valuation.requiredReturn},
+    ownerEarningsReturn:null, marketImpliedGrowth:null, marketImpliedGrowthNote:null, reverseDCFGap:null, expectationRisk:null, monteCarlo:null,
+  };
 }
 
-async function run() {
-  const records = [];
-  const analystEstimates = await loadAnalystEstimates();
-  console.log(`Loaded analyst estimates for ${analystEstimates.size} tickers from Supabase.`);
-  const startTime = Date.now();
-  const forecastHistoryPath = path.join(__dirname, 'data', 'forecast-history.json');
-  let forecastHistory = { version: 1, snapshots: [] };
-  try {
-    forecastHistory = JSON.parse(fs.readFileSync(forecastHistoryPath, 'utf8'));
-  } catch (_) {
-    // First calibration run starts a new local history file.
-  }
-  for (let i = 0; i < watchlist.length; i++) {
-    const { ticker, sector } = watchlist[i];
-    try {
-      const record = await buildStockRecord(ticker, sector, analystEstimates.get(normalizeTicker(ticker)) || analystEstimates.get(normalizeTicker(normalizeSecTicker(ticker))) || null);
-      const years = record.financials?.years || [];
-      const latest = years[years.length - 1] || {};
-      const hasCoreFinancial = [latest.revenue, latest.netIncome, latest.cfo, latest.operatingIncome]
-        .some(v => Number.isFinite(Number(v)) && Number(v) !== 0);
-      const hasPrice = Number(record.price?.current) > 0;
-
-      if (years.length >= 3 && hasCoreFinancial && hasPrice) {
-        records.push(record);
-      } else if (years.length === 2 && hasCoreFinancial && hasPrice) {
-        // Graceful degradation for recent IPOs/spinoffs and imperfect SEC histories.
-        // Keep the company, but flag it so confidence/rating logic can be conservative.
-        record.financials.limitedHistory = true;
-        record.financials.historyYears = 2;
-        record.financials.dataQuality = {
-          ...(record.financials.dataQuality || {}),
-          limitedHistoryPenalty: 20,
-        };
-        records.push(record);
-        diagnostics.limitedHistoryIncluded += 1;
-        console.warn(`[${i + 1}/${watchlist.length}] Including ${ticker} with limited 2-year history (confidence penalty applied)`);
-      } else {
-        const missing = [];
-        if (years.length < 2) missing.push(`only ${years.length} usable annual years`);
-        if (!hasCoreFinancial) missing.push('no core financial facts');
-        if (!hasPrice) missing.push('no current price');
-        const reason = missing.join(', ') || 'insufficient financial history';
-        diagnostics.skipped.push({ ticker, sector, reason, usableYears: years.length });
-        console.warn(`[${i + 1}/${watchlist.length}] Skipping ${ticker}: ${reason}`);
-      }
-    } catch (err) {
-      const message = err?.message || String(err);
-      diagnostics.failed.push({ ticker, sector, category: classifyFailure(message), message });
-      console.error(`[${i + 1}/${watchlist.length}] Failed ${ticker}: ${message}`);
-    }
-
-    if ((i + 1) % 25 === 0) {
-      const elapsedMin = ((Date.now() - startTime) / 60000).toFixed(1);
-      console.log(`Progress: ${i + 1}/${watchlist.length} (${elapsedMin} min elapsed, ${records.length} scored so far)`);
-    }
-    if ((i + 1) % CHECKPOINT_EVERY === 0) {
-      writeResults(records, true); // checkpoint save in case the job gets interrupted
-      diagnostics.scored = records.length;
-      writeDiagnostics();
-    }
-
-    if (i < watchlist.length - 1) {
-      await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY_MS));
-    }
-  }
-
-  // --- Second pass: multi-method valuation, now that we have the whole universe ---
-  // Exit-multiple methods need sector median multiples across ALL fetched stocks, which
-  // only exists once the fetch loop above is done. This is why valuation can't happen
-  // per-ticker during the fetch loop anymore.
-  diagnostics.scored = records.length;
-  writeDiagnostics();
-  console.log(`Coverage: ${records.length}/${watchlist.length} (${(records.length / watchlist.length * 100).toFixed(1)}%), including ${diagnostics.limitedHistoryIncluded} limited-history companies.`);
-  console.log(`Valuating ${records.length} stocks (DCF + revenue/EPS/EBITDA exit multiples)...`);
-  const sectorExitMultiples = computeSectorExitMultiples(records);
-  const currentByTicker = new Map(records.map(stock => [stock.ticker, stock]));
-  const calibration = buildLearningModel(forecastHistory, currentByTicker);
-  console.log(`Learning model: ${calibration.matureReturnObservations} mature observations${calibration.learningActive ? ' (active)' : ' (collecting history; formulas remain frozen)'}.`);
-  fs.writeFileSync(path.join(__dirname, 'data', 'calibration-report.json'), JSON.stringify(calibration, null, 2));
-  for (const stock of records) {
-    // Industry must be known before valuation so method suitability can influence
-    // the reliability-weighted blend (for example, cash-flow methods dominate for
-    // semiconductors while revenue multiples receive more room for software).
-    const industryModel = inferIndustryModel(stock);
-    stock.valuation.industryModel = industryModel;
-    const result = valuateStock(stock, sectorExitMultiples, calibration);
-    stock.valuation.fairValueEstimate = result.blendedFairValue;
-    stock.valuation.valuationMethods = result.methods;
-    stock.valuation.outlierFlags = result.outlierFlags;
-    stock.valuation.effectiveWeights = result.effectiveWeights;
-    stock.valuation.reliabilityFlags = result.reliabilityFlags;
-    stock.valuation.projection = result.projection;
-    stock.valuation.projectionAssumptions = result.projectionAssumptions;
-    stock.valuation.methodAudits = result.methodAudits;
-    stock.valuation.methodAgreementScore = result.agreementScore;
-    stock.valuation.methodCount = result.methodCount;
-    stock.valuation.marketImpliedGrowth = result.marketImpliedGrowth;
-    stock.valuation.marketImpliedGrowthNote = result.marketImpliedGrowthNote;
-    stock.valuation.dilutionRate = result.dilutionRate;
-    stock.valuation.sbcIntensity = result.sbcIntensity;
-    stock.valuation.capitalAllocation = result.capitalAllocation;
-    stock.valuation.analystReliability = result.analystReliability;
-    stock.valuation.reverseDCFGap = result.reverseDCFGap;
-    stock.valuation.businessProfile = result.businessProfile;
-    stock.valuation.category = result.category;
-    stock.valuation.lifecycle = result.lifecycle;
-    stock.valuation.moat = result.moat;
-    // Powers the price-aware `expectedReturn` field in scoring-engine.js — without this,
-    // every stock falls back to the price-agnostic fundamentalGrowthRate for the buy-list
-    // gate, silently losing the "is this a buy at today's price" signal.
-    stock.valuation.fiveYearPriceTarget = result.fiveYearPriceTarget;
-    stock.valuation.intrinsicValue = result.intrinsicValue;
-    stock.valuation.marketValue = result.marketValue;
-    stock.valuation.valuationConsensus = result.valuationConsensus;
-    stock.valuation.ownerEarningsReturn = result.ownerEarningsReturn;
-    stock.valuation.returnEngineV2 = result.returnEngineV2;
-    stock.valuation.marketExpectations = result.marketExpectations;
-    stock.valuation.monteCarlo = result.monteCarlo;
-
-    // Build quality inputs before scenarios so probabilities and premium persistence
-    // use the same complete information shown in the dashboard.
-    const dataIntegrity = assessDataIntegrity(stock);
-    const pricingPowerV2 = computePricingPowerV2(stock, industryModel);
-    const compounder = computeCompounderScore(stock, pricingPowerV2, industryModel);
-    stock.valuation.pricingPowerV2 = pricingPowerV2;
-    stock.valuation.compounder = compounder;
-    stock.valuation.economicQuality = computeEconomicQuality(stock, pricingPowerV2, compounder, industryModel);
-    let scenarioAnalysis = buildScenarios(stock, result, dataIntegrity);
-    scenarioAnalysis = applyInstitutionalSanity(stock, scenarioAnalysis, result.agreementScore);
-    const rawExpectedReturnProfile = computeExpectedReturnProfile(stock, scenarioAnalysis, dataIntegrity);
-    let expectedReturnProfile = applyLearnedReturnCalibration(rawExpectedReturnProfile, stock, calibration);
-
-    // V16: the central valuation remains the base scenario, while the canonical
-    // expected return is probability-weighted across bear/base/bull outcomes.
-    const institutionalCAGR = result.returnEngineV2?.expectedCAGR ?? result.ownerEarningsReturn?.expectedCAGR;
-    const probabilityWeightedCAGR = scenarioAnalysis?.probabilityWeightedCAGR;
-    if (Number.isFinite(institutionalCAGR)) {
-      // V32: the lifecycle/reality-checked institutional return is authoritative.
-      // Scenario analysis expresses uncertainty around that anchor; it must never
-      // replace the anchor and reintroduce 30%+ mature-company CAGRs.
-      const canonicalCAGR = institutionalCAGR;
-      const downsidePenalty = Number(expectedReturnProfile?.downsidePenalty) || 0;
-      const uncertaintyPenalty = Number(expectedReturnProfile?.uncertaintyPenalty) || 0;
-      const dataPenalty = Number(expectedReturnProfile?.dataPenalty) || 0;
-      const calibratedAdjustment = Number(expectedReturnProfile?.calibrationAdjustment) || 0;
-      const totalPenalty = Math.max(0, downsidePenalty + uncertaintyPenalty + dataPenalty);
-      const anchoredRiskAdjusted = Math.max(-0.35, Math.min(0.35,
-        canonicalCAGR - totalPenalty + calibratedAdjustment
-      ));
-      expectedReturnProfile = {
-        ...expectedReturnProfile,
-        expectedCAGR: canonicalCAGR,
-        baseCAGR: institutionalCAGR,
-        bearCAGR: scenarioAnalysis?.downsideCAGR ?? null,
-        bullCAGR: scenarioAnalysis?.upsideCAGR ?? null,
-        riskAdjustedCAGR: anchoredRiskAdjusted,
-        institutionalBaseCAGR: institutionalCAGR,
-        probabilityWeighted: Number.isFinite(probabilityWeightedCAGR),
-        rawScenarioWeightedCAGR: Number.isFinite(probabilityWeightedCAGR) ? probabilityWeightedCAGR : null,
-      };
-    }
-    stock.dataIntegrity = dataIntegrity;
-    stock.valuation.scenarioAnalysis = scenarioAnalysis;
-    stock.valuation.cycleNormalization = scenarioAnalysis?.cycleNormalization ?? null;
-    stock.valuation.capitalIntensity = scenarioAnalysis?.capitalIntensity ?? null;
-    stock.valuation.competitivePressure = scenarioAnalysis?.competitivePressure ?? null;
-    stock.valuation.growthQuality = scenarioAnalysis?.growthQuality ?? null;
-    stock.valuation.expectedReturnProfile = expectedReturnProfile;
-    stock.valuation.calibration = calibration;
-    const downside = computeDownsideRisk(stock, scenarioAnalysis, dataIntegrity, industryModel);
-    stock.valuation.downside = downside;
-    // V8 builds the thesis only after all quality, pricing-power and downside
-    // modules have run so the decision dashboard can surface real strengths/risks.
-    stock.valuation.investmentCommittee = computeInvestmentCommitteeScore(stock, scenarioAnalysis, scenarioAnalysis?.growthQuality, scenarioAnalysis?.capitalIntensity, scenarioAnalysis?.competitivePressure);
-    stock.valuation.investmentThesis = buildInvestmentThesis(stock, expectedReturnProfile);
-    stock.valuation.portfolioProfile = computePortfolioProfile(stock);
-  }
-
-  const scored = writeResults(records, false);
-  const updatedHistory = updateForecastHistory(forecastHistory, scored);
-  fs.writeFileSync(forecastHistoryPath, JSON.stringify(updatedHistory, null, 2));
-  console.log(`Done. Wrote ${records.length} scored stocks to data/results.json`);
+function rank(stocks){
+  const sorted=[...stocks].sort((a,b)=>(b.investmentScore||0)-(a.investmentScore||0)); sorted.forEach((s,i)=>s.overallRank=i+1);
+  const q=[...stocks].sort((a,b)=>(b.qualityScore||0)-(a.qualityScore||0)); q.forEach((s,i)=>s.qualityRank=i+1);
+  const o=[...stocks].sort((a,b)=>(b.expectedReturn||-99)-(a.expectedReturn||-99)); o.forEach((s,i)=>s.opportunityRank=i+1);
+  const groups={}; for(const s of stocks)(groups[s.category]??=[]).push(s);
+  for(const g of Object.values(groups)){g.sort((a,b)=>(b.investmentScore||0)-(a.investmentScore||0));g.forEach((s,i)=>{s.categoryRank=i+1;s.categoryUniverseSize=g.length;});}
+  stocks.forEach(s=>s.globalUniverseSize=stocks.length);
 }
 
-run().catch(err => { console.error(err); process.exit(1); });
+function writeJson(file,obj){const p=path.join(__dirname,'data',file);const tmp=p+'.tmp';fs.writeFileSync(tmp,JSON.stringify(obj));fs.renameSync(tmp,p);}
+
+async function run(){
+  fs.mkdirSync(path.join(__dirname,'data'),{recursive:true});
+  const analyst=await loadAnalystEstimates(); const records=[]; const diag={startedAt:new Date().toISOString(),total:watchlist.length,skipped:[],failed:[],limitedHistoryIncluded:0}; const start=Date.now();
+  for(let i=0;i<watchlist.length;i++){
+    const {ticker,sector}=watchlist[i];
+    try{
+      const r=await buildStockRecord(ticker,sector,analyst.get(normalizeTicker(ticker))||null); const n=r.financials?.years?.length||0;
+      if(n<2){diag.skipped.push({ticker,reason:`only ${n} usable annual years`});console.log(`[${i+1}/${watchlist.length}] Skipping ${ticker}: only ${n} usable annual years`);} else {if(n===2){diag.limitedHistoryIncluded++;console.log(`[${i+1}/${watchlist.length}] Including ${ticker} with limited 2-year history`);} if(!(r.price?.current>0)){diag.skipped.push({ticker,reason:'no current price'});console.log(`[${i+1}/${watchlist.length}] Skipping ${ticker}: no current price`);} else records.push(r);}
+    }catch(e){diag.failed.push({ticker,error:e.message});console.log(`[${i+1}/${watchlist.length}] Failed ${ticker}: ${e.message}`);}
+    if((i+1)%25===0)console.log(`Progress: ${i+1}/${watchlist.length} (${((Date.now()-start)/60000).toFixed(1)} min elapsed, ${records.length} usable so far)`);
+    if(RATE_LIMIT_DELAY_MS>0)await sleep(RATE_LIMIT_DELAY_MS);
+  }
+  console.log(`Coverage: ${records.length}/${watchlist.length} (${(records.length/watchlist.length*100).toFixed(1)}%).`);
+
+  const stocks=[];
+  for(const stock of records){
+    const forecast=buildForecast(stock); const quality=computeQuality(stock,forecast); const valuation=valuate(stock,forecast,quality); const decision=rateStock(stock,forecast,quality,valuation); stocks.push(flattenRecord(stock,forecast,quality,valuation,decision));
+  }
+  rank(stocks);
+  const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
+  if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v6-growth-reinvestment-normalized',stocks}; writeJson('results.json',output);
+  diag.finishedAt=new Date().toISOString();diag.scored=stocks.length;writeJson('screener-diagnostics.json',diag);
+  console.log(`Done. Wrote ${stocks.length} stocks using the simplified one-path model.`);
+}
+run().catch(e=>{console.error(e);process.exit(1);});
