@@ -60,6 +60,7 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
   if(quality.protectionScore>=70)strengths.push('Above-average downside protection');
   if(quality.confidenceScore<55)risks.push('Forecast reliability is below average');
   if(valuation.methodAgreementScore<55)risks.push('Valuation methods disagree materially');
+  if((valuation.methods||[]).length===1)risks.push('Valuation rests on a single usable method');
   if(valuation.bearCAGR<0)risks.push(`Bear-case CAGR is ${(valuation.bearCAGR*100).toFixed(1)}%`);
   if((quality.diagnostics?.dilutionRate||0)>0.03)risks.push('Share dilution is elevated');
   if((quality.diagnostics?.netDebtToEbitda||0)>3)risks.push('Leverage is elevated');
@@ -77,7 +78,7 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
     currentPrice:stock.price?.current??null,
     expectedReturn:valuation.expectedCAGR, expectedCAGR:valuation.expectedCAGR, expectedAlpha:decision.expectedAlpha,
     bearCAGR:valuation.bearCAGR, baseCAGR:valuation.baseCAGR, bullCAGR:valuation.bullCAGR,
-    confidenceScore:quality.confidenceScore, marginOfSafety:valuation.marginOfSafety, premiumToFairValue:valuation.premiumToFairValue, requiredMOS:decision.requiredMOS,
+    confidenceScore:valuation.valuationConfidenceScore??quality.confidenceScore, businessDataConfidenceScore:quality.confidenceScore, marginOfSafety:valuation.marginOfSafety, premiumToFairValue:valuation.premiumToFairValue, requiredMOS:decision.requiredMOS,
     investmentScore:decision.investmentScore, qualityScore:quality.qualityScore, moatScore:quality.moatScore, capitalAllocationScore:quality.capitalAllocationScore,
     compounderScore:quality.compounderScore, growthQuality:quality.growthQualityScore, growthQualityScore:quality.growthQualityScore, pricingPowerV2Score:quality.pricingPowerScore, downsideProtectionScore:quality.protectionScore,
     qualifiesForBuyList:decision.qualifiesForBuyList,
@@ -90,7 +91,7 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
     qualityBreakdown:quality.diagnostics, cagrBreakdown,
     decisionDashboard:{grade:decision.investmentScore>=80?'A':decision.investmentScore>=70?'B+':decision.investmentScore>=60?'B':decision.investmentScore>=50?'C':'D',positionTier:decision.qualifiesForBuyList?'Core':'Unrated',suggestedWeight:decision.rating==='Exceptional Buy'?'8–10%':decision.rating==='Strong Buy'?'6–8%':decision.rating==='Buy'?'4–6%':'Unrated'},
     returnAttribution:cagrBreakdown,
-    valuationConfidenceScore:Math.round((quality.confidenceScore+valuation.methodAgreementScore)/2), dataConfidenceScore:quality.confidenceScore, businessConfidenceScore:quality.qualityScore, forecastConfidenceScore:quality.confidenceScore,
+    valuationConfidenceScore:valuation.valuationConfidenceScore??Math.round((quality.confidenceScore+valuation.methodAgreementScore)/2), dataConfidenceScore:quality.confidenceScore, businessConfidenceScore:quality.qualityScore, forecastConfidenceScore:quality.confidenceScore,
     businessQualityScore:quality.qualityScore, valuationAttractivenessScore:Math.round(Math.max(0,Math.min(100,50+(valuation.marginOfSafety||0)*100))),
     portfolioManagerScore:decision.investmentScore, investmentCommitteeScore:decision.investmentScore, investmentCommittee:{score:decision.investmentScore},
     returnQualityFlags:[...(valuation.plausibilityFailure?['valuation_plausibility_failure']:[]),...(valuation.extremeReturnFlag?['extreme_canonical_return_review']:[])], returnIntegrityError:valuation.plausibilityFailure?'No defensible canonical valuation could be constructed':null, lowConfidence:quality.confidenceScore<55, valuationReviewFlag:valuation.valuationReviewFlag||null,
@@ -136,7 +137,7 @@ async function run(){
   rank(stocks);
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v7-economic-method-reliability',stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v8-canonical-valuation-confidence',stocks}; writeJson('results.json',output);
   diag.finishedAt=new Date().toISOString();diag.scored=stocks.length;writeJson('screener-diagnostics.json',diag);
   console.log(`Done. Wrote ${stocks.length} stocks using the simplified one-path model.`);
 }
