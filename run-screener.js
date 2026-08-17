@@ -86,9 +86,9 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
     compounderScore:quality.compounderScore, growthQuality:quality.growthQualityScore, growthQualityScore:quality.growthQualityScore, pricingPowerV2Score:quality.pricingPowerScore, downsideProtectionScore:quality.protectionScore,
     qualifiesForBuyList:decision.qualifiesForBuyList,
     fairValueEstimate:valuation.fairValueEstimate, fiveYearPriceTarget:valuation.fiveYearPriceTarget, tenYearPriceTarget:valuation.tenYearPriceTarget, horizonYears:valuation.horizonYears, totalShareholderValue:valuation.totalShareholderValue, cumulativeDividends:valuation.cumulativeDividends,
-    fundamentalGrowthRate:forecast.revenueGrowthAnchor, growthSource:v.growthSource, dilutionRate:forecast.dilutionRate, sbcIntensity:stock.financials?.years?.at(-1)?.sbcIntensity??null,
+    fundamentalGrowthRate:forecast.revenueGrowthAnchor, growthSource:v.growthSource, dilutionRate:forecast.dilutionRate, matureDilutionRate:forecast.matureDilutionRate, dilutionPath:forecast.dilutionPath, sbcIntensity:stock.financials?.years?.at(-1)?.sbcIntensity??null,
     valuationMethods:methodMap, valuationMethodAudits:methodAudits, methodAgreementScore:valuation.methodAgreementScore, methodCount:(valuation.methods||[]).length, valuationConsensus:valuation.valuationConsensus||null,
-    valuationProjection:forecast.rows, projectionAssumptions:{terminalGrowth:forecast.terminalGrowth,requiredReturn:valuation.requiredReturn,revenueGrowthAnchor:forecast.revenueGrowthAnchor,historicalGrowth:forecast.historicalGrowth,marginAssumptions:forecast.marginAssumptions,marginTargets:forecast.marginTargets,forecastBridge:forecast.forecastBridge,forecastFlags:forecast.forecastFlags},
+    valuationProjection:forecast.rows, projectionAssumptions:{terminalGrowth:forecast.terminalGrowth,requiredReturn:valuation.requiredReturn,revenueGrowthAnchor:forecast.revenueGrowthAnchor,historicalGrowth:forecast.historicalGrowth,marginAssumptions:forecast.marginAssumptions,marginTargets:forecast.marginTargets,forecastBridge:forecast.forecastBridge,forecastFlags:forecast.forecastFlags,dilutionPath:forecast.dilutionPath,matureDilutionRate:forecast.matureDilutionRate},
     analystEstimates:stock.analystEstimates,
     investmentThesis:{strengths,risks}, pricingPowerSignals: strengths.filter(x=>/pricing/i.test(x)), capitalAllocationSignals: strengths.filter(x=>/capital|dilution|leverage/i.test(x)),
     qualityBreakdown:quality.diagnostics, cagrBreakdown,
@@ -102,7 +102,7 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
     marketExpectations:{note:'Simplified model: no reverse-DCF narrative inference is used in ratings.'},
     scenarioAnalysis:{bearCAGR:valuation.bearCAGR,baseCAGR:valuation.baseCAGR,bullCAGR:valuation.bullCAGR}, scenarioProbabilities:{bear:0.25,base:0.50,bull:0.25},
     expectedReturnProfile:{expectedCAGR:valuation.expectedCAGR,bearCAGR:valuation.bearCAGR,baseCAGR:valuation.baseCAGR,bullCAGR:valuation.bullCAGR},
-    analystReliability:quality.confidenceScore, outlierFlags:valuation.valuationConsensus?.hasConsensusOutlier?(valuation.valuationConsensus.outlierMethods||[]):[], reliabilityFlags:[], effectiveWeights:Object.fromEntries((valuation.methods||[]).map(m=>[m.name,m.weight])),
+    analystReliability:quality.confidenceScore, outlierFlags:valuation.valuationConsensus?.hasConsensusOutlier?(valuation.valuationConsensus.outlierMethods||[]):[], reliabilityFlags:[], effectiveWeights:valuation.canonicalMethodWeights||Object.fromEntries((valuation.methods||[]).map(m=>[m.name,m.weight])),
     primaryValuation:{method:'Blended 10-year shareholder outcome',target:valuation.tenYearPriceTarget??valuation.fiveYearPriceTarget,totalOutcome:valuation.totalShareholderValue,requiredReturn:valuation.requiredReturn},
     ownerEarningsReturn:null, marketImpliedGrowth:null, marketImpliedGrowthNote:null, reverseDCFGap:null, expectationRisk:null, monteCarlo:null,
   };
@@ -140,7 +140,7 @@ async function run(){
   rank(stocks);
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v9-10y-fade-dcf-consensus',stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v9.1-traceable-valuation-dilution-fade',stocks}; writeJson('results.json',output);
   diag.finishedAt=new Date().toISOString();diag.scored=stocks.length;writeJson('screener-diagnostics.json',diag);
   console.log(`Done. Wrote ${stocks.length} stocks using the simplified one-path model.`);
 }
