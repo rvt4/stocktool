@@ -1,7 +1,7 @@
 'use strict';
 const { clamp }=require('./config');
 function requiredMOS(category,q){let m=category==='Hyper Growth'?.225:category==='Growth'?.175:category==='Dividend'?.15:category==='Compounder'?.12:.20;if((q.qualityScore||50)>=85&&(q.moatScore||50)>=80)m-=.02;if((q.confidenceScore||50)<60)m+=.025;return clamp(m,.10,.30);}
-function rateStock(stock,forecast,quality,v){const c=v.expectedCAGR,mos=v.marginOfSafety,req=requiredMOS(forecast.category,quality),q=quality.qualityScore||0,conf=quality.confidenceScore||0,agreement=v.methodAgreementScore||0,methodCount=(v.methods||[]).length;let rating='Unrated';
+function rateStock(stock,forecast,quality,v){const c=v.expectedCAGR,mos=v.marginOfSafety,req=requiredMOS(forecast.category,quality),q=quality.qualityScore||0,rawConf=quality.confidenceScore||0,agreement=v.methodAgreementScore||0,conf=v.valuationConfidenceScore??rawConf,methodCount=(v.methods||[]).length;let rating='Unrated';
   if(!Number.isFinite(c)||!Number.isFinite(mos))rating='Unrated';
   else if(c<0)rating='Sell';
   else if(c<.08)rating='Avoid';
@@ -18,6 +18,10 @@ function rateStock(stock,forecast,quality,v){const c=v.expectedCAGR,mos=v.margin
   // not strong enough evidence for a top-tier buy label. Financials are intentionally
   // single-method because normalized EPS is their primary valuation framework.
   if(stock.sector!=='Financials'&&methodCount===1&&['Strong Buy','Exceptional Buy'].includes(rating))rating='Buy';
+  // Material method disagreement is uncertainty, not merely a footnote. It can never
+  // support the two highest conviction labels, regardless of business-quality confidence.
+  if(agreement<35&&['Strong Buy','Exceptional Buy'].includes(rating))rating='Buy';
+  if(agreement<20&&rating==='Buy')rating='Hold';
   const agreementFactor=clamp(agreement/100,.35,1);
   const investmentScore=Number.isFinite(c)?Math.round(clamp((.32*clamp((c+.02)/.24,0,1)*100+.18*clamp((mos+.05)/.40,0,1)*100+.27*q+.10*(quality.moatScore||50)+.13*conf)*(.88+.12*agreementFactor),0,100)):0;
   return {rating,requiredMOS:req,investmentScore,qualifiesForBuyList:['Buy','Strong Buy','Exceptional Buy'].includes(rating),expectedAlpha:Number.isFinite(c)?c-.10:null};}

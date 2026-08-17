@@ -6,6 +6,7 @@ function pv(v,r,n){return v/Math.pow(1+r,n);}
 function finite(v){if(v==null||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null;}
 function requiredReturn(q,cat){let r=MARKET_RETURN;if(cat==='Hyper Growth')r+=.02;else if(cat==='Growth')r+=.01;if((q?.confidenceScore||50)<60)r+=.01;if((q?.protectionScore||50)<45)r+=.01;return clamp(r,.09,.14);}
 function blend(items){const v=items.filter(x=>Number.isFinite(x.value)&&x.value>0&&x.weight>0);if(!v.length)return null;const w=v.reduce((s,x)=>s+x.weight,0);return v.reduce((s,x)=>s+x.value*x.weight,0)/w;}
+function weightedAverage(items){const v=items.filter(x=>Number.isFinite(x.value)&&x.weight>0);if(!v.length)return null;const w=v.reduce((s,x)=>s+x.weight,0);return w>0?v.reduce((s,x)=>s+x.value*x.weight,0)/w:null;}
 function recentMedian(values,n=4){return median(values.slice(-n).filter(x=>Number.isFinite(x)&&x>0));}
 function safeMultiple(v,lo,hi){if(!(Number.isFinite(v)&&v>0))return null;return clamp(v,lo*.75,hi*1.50);}
 function weightedMedian(items){
@@ -111,9 +112,19 @@ function methodReliability(stock,forecast,kind,base,future,quality){
 function addMethod(methods,{name,target,weight,reliability=1,audit,price}){
   if(!(Number.isFinite(target)&&target>0&&Number.isFinite(price)&&price>0))return;
   const implied=cagr(price,target);
-  if(!Number.isFinite(implied)||implied>.25)return;
-  const effectiveWeight=weight*clamp(reliability,.05,1);
-  methods.push({name,target,weight:effectiveWeight,baseWeight:weight,reliability:clamp(reliability,.05,1),audit:{...audit,impliedCAGR:implied,effectiveWeight}});
+  if(!Number.isFinite(implied))return;
+  // Do not silently delete an otherwise valid method just because it implies >25% CAGR.
+  // That created a directional bias: upside methods vanished while downside methods stayed.
+  // Keep the evidence, but progressively reduce its influence when the implied return is
+  // unusually extreme. Only truly pathological outcomes are excluded.
+  if(implied>1.00)return;
+  let extremityWeight=1;
+  if(implied>.45||implied<-.35)extremityWeight=.20;
+  else if(implied>.35||implied<-.25)extremityWeight=.40;
+  else if(implied>.25||implied<-.18)extremityWeight=.70;
+  const rel=clamp(reliability,.05,1);
+  const effectiveWeight=weight*rel*extremityWeight;
+  methods.push({name,target,weight:effectiveWeight,baseWeight:weight,reliability:rel,audit:{...audit,impliedCAGR:implied,extremityWeight,effectiveWeight}});
 }
 
 function robustOutcomeBlend(methods,price){
@@ -122,12 +133,15 @@ function robustOutcomeBlend(methods,price){
   if(valid.length===1)return valid[0].outcome;
   const returnItems=valid.map(m=>({value:cagr(price,m.outcome),weight:m.weight})).filter(x=>Number.isFinite(x.value));
   const center=weightedMedian(returnItems);
-  const adjusted=valid.map(m=>{
-    const r=cagr(price,m.outcome), gap=Math.abs(r-center);
+  const adjusted=returnItems.map(x=>{
+    const gap=Math.abs(x.value-center);
     const consensusWeight=gap<=.04?1:gap<=.08?.72:gap<=.14?.42:.18;
-    return {value:m.outcome,weight:m.weight*consensusWeight};
+    return {value:x.value,weight:x.weight*consensusWeight};
   });
-  return blend(adjusted);
+  // Blend in CAGR space rather than dollar-target space. Arithmetic averaging of distant
+  // future prices systematically lets the highest target pull the canonical return upward.
+  const blendedReturn=weightedAverage(adjusted);
+  return Number.isFinite(blendedReturn)&&blendedReturn>-1?price*Math.pow(1+blendedReturn,HORIZON_YEARS):null;
 }
 
 function valuate(stock,forecast,quality){
@@ -203,12 +217,16 @@ function valuate(stock,forecast,quality){
   const reliable=methods.filter(m=>(m.reliability??1)>=.35);
   const agreementPool=reliable.length>=2?reliable:methods;
   const returns=agreementPool.map(m=>cagr(price,m.outcome)).filter(Number.isFinite), spread=returns.length>=2?Math.max(...returns)-Math.min(...returns):null;
-  const agreement=returns.length>=2?Math.round(100*clamp(1-spread/.22,0,1)):(returns.length===1?55:0);
-  const uncertainty=clamp((100-(quality.confidenceScore||50))/100,.10,.40);
+  const agreement=returns.length>=2?Math.round(100*clamp(1-spread/.22,0,1)):(returns.length===1?45:0);
+  // Business/data confidence and valuation-method agreement answer different questions.
+  // Publish both and combine them for decision confidence so a 4/100 method agreement can
+  // never masquerade as a 90-confidence investment conclusion.
+  const valuationConfidence=Math.round(clamp(.65*(quality.confidenceScore||50)+.35*agreement,0,100));
+  const uncertainty=clamp((100-valuationConfidence)/100,.10,.45);
   const bear=total!=null?total*Math.pow(1-(.035+.04*uncertainty),HORIZON_YEARS):null, bull=total!=null?total*Math.pow(1+(.035+.035*uncertainty),HORIZON_YEARS):null;
   const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
   const lowReliability=methods.length>0&&Math.max(...methods.map(m=>m.reliability??0))<.40;
 
-  return {requiredReturn:req,methods,fiveYearPriceTarget:target,cumulativeDividends:dividends,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,marginOfSafety:mos,premiumToFairValue:premium,methodAgreementScore:agreement,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(lowReliability?'low_method_reliability':null)};
+  return {requiredReturn:req,methods,fiveYearPriceTarget:target,cumulativeDividends:dividends,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,marginOfSafety:mos,premiumToFairValue:premium,methodAgreementScore:agreement,valuationConfidenceScore:valuationConfidence,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null))};
 }
 module.exports={valuate};
