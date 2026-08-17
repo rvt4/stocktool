@@ -258,13 +258,22 @@ function buildForecast(stock){
 
   const shareGrowth=yoySeries(years.slice(-5),'sharesOutTTM').filter(x=>x>-.25&&x<.30);
   const recentShareGrowth=shareGrowth.at(-1), medianShareGrowth=median(shareGrowth)??0;
-  // Give recent buyback/SBC behavior more weight without extrapolating an extreme one-off.
+  // Share-count behavior gets its own fade. A recent SBC spike or aggressive buyback
+  // program should not be compounded unchanged for a decade. Positive dilution fades
+  // toward a modest mature-company rate; buybacks fade toward a sustainable tailwind.
   const dilutionRate=clamp(weightedAverage([[recentShareGrowth,.55],[medianShareGrowth,.45]])??0,-.05,.07);
+  const matureDilutionRate=dilutionRate>0
+    ? clamp(.004 + .18*dilutionRate, .004, .015)
+    : clamp(.25*dilutionRate, -.012, 0);
+  const dilutionPath=Array.from({length:HORIZON_YEARS},(_,i)=>{
+    const t=Math.min(1,(i+1)/HORIZON_YEARS), curved=t*t*(3-2*t);
+    return dilutionRate+(matureDilutionRate-dilutionRate)*curved;
+  });
 
   let revenue=finite(last.revenue)>0?finite(last.revenue):null, shares=finite(last.sharesOutTTM)>0?finite(last.sharesOutTTM):null, dividend=Math.max(0,finite(last.dividendPerShare)||0);
   const dividendGrowth=clamp(Math.min(Math.max(growth.y2,0),.07),0,.07), rows=[];
   for(let i=0;i<HORIZON_YEARS;i++){
-    if(revenue!=null)revenue*=1+growth.growthPath[i]; if(shares!=null)shares*=1+dilutionRate; dividend*=1+dividendGrowth;
+    if(revenue!=null)revenue*=1+growth.growthPath[i]; if(shares!=null)shares*=1+dilutionPath[i]; dividend*=1+dividendGrowth;
     // Operating margins reach the evidence-based target by year 5. The second five-year
     // phase holds that normalized economics rather than delaying the target until year 10.
     const t=Math.min(1,(i+1)/EXPLICIT_FORECAST_YEARS), curved=t*t*(3-2*t);
@@ -281,7 +290,7 @@ function buildForecast(stock){
   const forecastBridge={
     revenue:{model:growth.y1,analystCurrent:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthCurrentYear??stock.analystEstimates?.revenueGrowthFwd),analystNext:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthNextYear),recentQuarter:growth.recentQuarter,recentAnnual:growth.recentAnnual,historicalNormalized:growth.historicalAnchor,terminalOperatingGrowth:growth.year5Growth,analystWeight:growth.analystWeight,structuralStepUp:growth.structuralStepUp,structuralStepDown:growth.structuralStepDown},
     margins:{fcfStart:margins.currentFCF,fcfNormalized:margins.rawFCF,fcfTarget:margins.targetFCF,ebitdaStart:margins.currentEBITDA,ebitdaNormalized:margins.rawEBITDA,ebitdaTarget:margins.targetEBITDA,netStart:margins.currentNet,netNormalized:margins.rawNet,netTarget:margins.targetNet,incrementalFCFMargin:margins.incrementalFCFMargin,incrementalOperatingMargin:margins.incrementalOperatingMargin,fcfTrend:margins.fcfTrend,operatingTrend:margins.opTrend,grossMarginTrend:margins.grossTrend,operatingLeverageAdjustment:margins.leverageSignal,abnormalCapexCycle:margins.abnormalCapexCycle,reportedFCFMargin:margins.reportedFCFMargin,normalizedCapexMargin:margins.normalizedCapexMargin,cycleNormalizedFCFMargin:margins.cycleNormalizedFCFMargin,maintenanceCapexMargin:margins.maintenanceCapexMargin,growthReinvestmentShare:margins.growthReinvestmentShare,profitabilityConsistencyApplied:margins.profitabilityConsistencyApplied},
-    shares:{recent:recentShareGrowth,normalized:medianShareGrowth,model:dilutionRate},
+    shares:{recent:recentShareGrowth,normalized:medianShareGrowth,model:dilutionRate,mature:matureDilutionRate,path:dilutionPath},
   };
   const forecastFlags=[];
   if(growth.structuralStepUp)forecastFlags.push('structural_revenue_step_up_detected');
@@ -292,6 +301,6 @@ function buildForecast(stock){
   if(margins.profitabilityConsistencyApplied)forecastFlags.push('growth_profitability_consistency_guardrail');
   if(growth.recentQuarter!=null&&Math.abs(growth.recentQuarter-growth.historicalAnchor)>.12)forecastFlags.push('recent_growth_inflection');
 
-  return {horizonYears:HORIZON_YEARS,category,rows,terminalGrowth:growth.matureGrowth,year5OperatingGrowth:growth.year5Growth,revenueGrowthAnchor:growth.y1,sustainableGrowth,historicalGrowth:growth.historicalAnchor,dilutionRate,startRevenue:finite(last.revenue),startShares:finite(last.sharesOutTTM),marginAssumptions:{fcf:margins.currentFCF,ebitda:margins.currentEBITDA,net:margins.currentNet},marginTargets:{fcf:margins.targetFCF,ebitda:margins.targetEBITDA,net:margins.targetNet},analystUsed:growth.analystUsed,forecastBridge,forecastFlags};
+  return {horizonYears:HORIZON_YEARS,category,rows,terminalGrowth:growth.matureGrowth,year5OperatingGrowth:growth.year5Growth,revenueGrowthAnchor:growth.y1,sustainableGrowth,historicalGrowth:growth.historicalAnchor,dilutionRate,matureDilutionRate,dilutionPath,startRevenue:finite(last.revenue),startShares:finite(last.sharesOutTTM),marginAssumptions:{fcf:margins.currentFCF,ebitda:margins.currentEBITDA,net:margins.currentNet},marginTargets:{fcf:margins.targetFCF,ebitda:margins.targetEBITDA,net:margins.targetNet},analystUsed:growth.analystUsed,forecastBridge,forecastFlags};
 }
 module.exports={buildForecast};

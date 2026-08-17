@@ -151,23 +151,24 @@ function valuationConsensus(methods,price){
 
 function robustOutcomeBlend(methods,price,consensus=null){
   const valid=methods.map((m,index)=>({...m,index})).filter(m=>Number.isFinite(m.outcome)&&m.outcome>0&&m.weight>0);
-  if(!valid.length)return null;
-  if(valid.length===1)return valid[0].outcome;
+  if(!valid.length)return {outcome:null,weights:{}};
+  if(valid.length===1)return {outcome:valid[0].outcome,weights:{[valid[0].name]:1}};
   const info=consensus||valuationConsensus(methods,price);
   const cluster=new Set(info.clusterIndexes||[]), outliers=new Set(info.outlierIndexes||[]);
-  const returnItems=valid.map(m=>({value:cagr(price,m.outcome),weight:m.weight,index:m.index})).filter(x=>Number.isFinite(x.value));
+  const returnItems=valid.map(m=>({value:cagr(price,m.outcome),weight:m.weight,index:m.index,name:m.name})).filter(x=>Number.isFinite(x.value));
   const center=weightedMedian(returnItems.map(x=>({value:x.value,weight:x.weight*(outliers.has(x.index)?.08:1)})));
   const adjusted=returnItems.map(x=>{
     const gap=Math.abs(x.value-center);
     let consensusWeight=gap<=.04?1:gap<=.08?.72:gap<=.14?.42:.18;
-    // When two methods form a clear cluster, keep the third visible for auditability but
-    // prevent it from dragging the canonical value away from the independent consensus.
     if(info.hasConsensusOutlier&&outliers.has(x.index))consensusWeight*=.08;
     else if(info.hasConsensusOutlier&&cluster.has(x.index))consensusWeight=Math.max(consensusWeight,.90);
-    return {value:x.value,weight:x.weight*consensusWeight};
+    return {...x,weight:x.weight*consensusWeight};
   });
+  const totalWeight=adjusted.reduce((sum,x)=>sum+x.weight,0);
+  const weights=Object.fromEntries(adjusted.map(x=>[x.name,totalWeight>0?x.weight/totalWeight:0]));
   const blendedReturn=weightedAverage(adjusted);
-  return Number.isFinite(blendedReturn)&&blendedReturn>-1?price*Math.pow(1+blendedReturn,HORIZON_YEARS):null;
+  const outcome=Number.isFinite(blendedReturn)&&blendedReturn>-1?price*Math.pow(1+blendedReturn,HORIZON_YEARS):null;
+  return {outcome,weights};
 }
 // Independent 10-year per-share DCF. Forecast FCF/share already incorporates the
 // modeled share-count path, so this is an equity-cash-flow cross-check and does not
@@ -264,14 +265,19 @@ function valuate(stock,forecast,quality){
   }
 
   const dividends=rows.reduce((s,r)=>s+(finite(r.dividendPerShare)||0),0);
-  for(const m of methods)m.outcome=Number.isFinite(m.target)?m.target+dividends:null;
+  for(const m of methods){
+    m.outcome=Number.isFinite(m.target)?m.target+dividends:null;
+    m.audit={...(m.audit||{}),year10Outcome:m.target,fairValueToday:Number.isFinite(m.target)?pv(m.target,req,HORIZON_YEARS):null};
+  }
   const consensus=valuationConsensus(methods,price);
-  let total=robustOutcomeBlend(methods,price,consensus), expected=cagr(price,total);
+  const canonical=robustOutcomeBlend(methods,price,consensus);
+  let total=canonical.outcome, expected=cagr(price,total);
   const hasValuation=Number.isFinite(expected)&&expected<=.25&&methods.length>0&&Number.isFinite(total)&&total>0;
   if(!hasValuation){total=null;expected=null;}
 
   const target=total!=null?Math.max(0,total-dividends):null, fair=total!=null?pv(total,req,HORIZON_YEARS):null;
-  const mos=fair>0&&price>0?1-price/fair:null, premium=fair>0&&price>0?price/fair-1:null;
+  // MOS is expressed as upside/downside to fair value from today's price. This is bounded at -100% as fair value approaches zero.
+  const mos=fair>0&&price>0?fair/price-1:null, premium=fair>0&&price>0?price/fair-1:null;
   const reliable=methods.map((m,index)=>({m,index})).filter(x=>(x.m.reliability??1)>=.35);
   const agreementEntries=reliable.length>=2?reliable:methods.map((m,index)=>({m,index}));
   const agreementReturns=agreementEntries.map(x=>({index:x.index,ret:cagr(price,x.m.outcome)})).filter(x=>Number.isFinite(x.ret));
@@ -296,6 +302,6 @@ function valuate(stock,forecast,quality){
   const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
   const lowReliability=methods.length>0&&Math.max(...methods.map(m=>m.reliability??0))<.40;
 
-  return {requiredReturn:req,methods,fiveYearPriceTarget:target,tenYearPriceTarget:target,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,marginOfSafety:mos,premiumToFairValue:premium,methodAgreementScore:agreement,valuationConfidenceScore:valuationConfidence,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(consensus.hasConsensusOutlier?'isolated_method_outlier':(agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))};
+  return {requiredReturn:req,methods,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget:target,tenYearPriceTarget:target,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,marginOfSafety:mos,premiumToFairValue:premium,methodAgreementScore:agreement,valuationConfidenceScore:valuationConfidence,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(consensus.hasConsensusOutlier?'isolated_method_outlier':(agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))};
 }
 module.exports={valuate};
