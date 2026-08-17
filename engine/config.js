@@ -15,7 +15,8 @@ const SECTOR = {
   Unknown:                 { terminalGrowth: 0.025, basePE: 15, baseEVEBITDA: 10, maxFCFMargin: 0.30 },
 };
 
-const HORIZON_YEARS = 5;
+const HORIZON_YEARS = 10;
+const EXPLICIT_FORECAST_YEARS = 5;
 const MARKET_RETURN = 0.10;
 
 function sectorConfig(sector) {
@@ -45,4 +46,4 @@ function avg(values) {
   return a.length ? a.reduce((s, v) => s + v, 0) / a.length : null;
 }
 
-module.exports = { SECTOR, HORIZON_YEARS, MARKET_RETURN, sectorConfig, clamp, rate, median, avg };
+module.exports = { SECTOR, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, MARKET_RETURN, sectorConfig, clamp, rate, median, avg };

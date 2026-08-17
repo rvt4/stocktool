@@ -1,5 +1,5 @@
 'use strict';
-const { HORIZON_YEARS, sectorConfig, clamp, rate, median, avg } = require('./config');
+const { HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, sectorConfig, clamp, rate, median, avg } = require('./config');
 
 function cagr(a,b,n){ if(!(a>0)||!(b>0)||!(n>0))return null; return Math.pow(b/a,1/n)-1; }
 function yoySeries(years,field){const out=[];for(let i=1;i<years.length;i++){const a=Number(years[i-1]?.[field]),b=Number(years[i]?.[field]);if(a>0&&Number.isFinite(b))out.push(b/a-1);}return out;}
@@ -102,11 +102,21 @@ function buildGrowthForecast(stock,years,cfg){
   if(scale>50e9 && inflectionSeverity>0) evidenceGrowth-=Math.min(.018,inflectionSeverity*(scale>150e9?.018:.012));
   const maxYear5=Math.max(matureGrowth+.025, Math.min(.18, historicalAnchor+.025+Math.max(0,inflectionGap)*.38));
   const year5Growth=clamp(evidenceGrowth,matureGrowth,maxYear5);
+  // 5+5 architecture: years 1-5 are the decision-grade operating forecast. Years
+  // 6-10 are a transition period that fades the business toward mature economics before
+  // a terminal valuation is applied. This avoids pretending we can forecast year 10 with
+  // the same precision as year 2, while also avoiding a cliff from year-5 growth straight
+  // to a perpetual-growth assumption.
   const growthPath=[y1,y2];
-  for(let i=2;i<HORIZON_YEARS;i++){
-    const t=(i-1)/(HORIZON_YEARS-2);
+  for(let i=2;i<EXPLICIT_FORECAST_YEARS;i++){
+    const t=(i-1)/(EXPLICIT_FORECAST_YEARS-2);
     const curved=t*t*(3-2*t);
     growthPath.push(clamp(y2*(1-curved)+year5Growth*curved,-.10,.28));
+  }
+  for(let i=EXPLICIT_FORECAST_YEARS;i<HORIZON_YEARS;i++){
+    const t=(i-EXPLICIT_FORECAST_YEARS+1)/(HORIZON_YEARS-EXPLICIT_FORECAST_YEARS);
+    const curved=t*t*(3-2*t);
+    growthPath.push(clamp(year5Growth*(1-curved)+matureGrowth*curved,-.06,.18));
   }
   return {growthPath,y1,y2,matureGrowth,year5Growth,historicalAnchor,recentAnnual,recentQuarter,qualityHint,analystWeight,structuralStepUp,structuralStepDown,analystUsed:a1!=null||a2!=null};
 }
@@ -255,7 +265,9 @@ function buildForecast(stock){
   const dividendGrowth=clamp(Math.min(Math.max(growth.y2,0),.07),0,.07), rows=[];
   for(let i=0;i<HORIZON_YEARS;i++){
     if(revenue!=null)revenue*=1+growth.growthPath[i]; if(shares!=null)shares*=1+dilutionRate; dividend*=1+dividendGrowth;
-    const t=(i+1)/HORIZON_YEARS, curved=t*t*(3-2*t);
+    // Operating margins reach the evidence-based target by year 5. The second five-year
+    // phase holds that normalized economics rather than delaying the target until year 10.
+    const t=Math.min(1,(i+1)/EXPLICIT_FORECAST_YEARS), curved=t*t*(3-2*t);
     const interp=(a,b)=>Number.isFinite(a)&&Number.isFinite(b)?a+(b-a)*curved:null;
     const fcfMargin=interp(margins.currentFCF,margins.targetFCF);
     const ebitdaMargin=interp(margins.currentEBITDA,margins.targetEBITDA);
