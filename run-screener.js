@@ -59,7 +59,10 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
   if(quality.growthQualityScore>=70)strengths.push('Revenue growth is a meaningful return driver');
   if(quality.protectionScore>=70)strengths.push('Above-average downside protection');
   if(quality.confidenceScore<55)risks.push('Forecast reliability is below average');
-  if(valuation.methodAgreementScore<55)risks.push('Valuation methods disagree materially');
+  if(valuation.valuationConsensus?.hasConsensusOutlier){
+    const names=(valuation.valuationConsensus.outlierMethods||[]).join(', ');
+    risks.push(names?`Valuation outlier detected: ${names}`:'One valuation method is an outlier versus the consensus');
+  } else if(valuation.methodAgreementScore<55)risks.push('Valuation methods disagree materially');
   if((valuation.methods||[]).length===1)risks.push('Valuation rests on a single usable method');
   if(valuation.bearCAGR<0)risks.push(`Bear-case CAGR is ${(valuation.bearCAGR*100).toFixed(1)}%`);
   if((quality.diagnostics?.dilutionRate||0)>0.03)risks.push('Share dilution is elevated');
@@ -84,7 +87,7 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
     qualifiesForBuyList:decision.qualifiesForBuyList,
     fairValueEstimate:valuation.fairValueEstimate, fiveYearPriceTarget:valuation.fiveYearPriceTarget, totalShareholderValue:valuation.totalShareholderValue, cumulativeDividends:valuation.cumulativeDividends,
     fundamentalGrowthRate:forecast.revenueGrowthAnchor, growthSource:v.growthSource, dilutionRate:forecast.dilutionRate, sbcIntensity:stock.financials?.years?.at(-1)?.sbcIntensity??null,
-    valuationMethods:methodMap, valuationMethodAudits:methodAudits, methodAgreementScore:valuation.methodAgreementScore, methodCount:(valuation.methods||[]).length,
+    valuationMethods:methodMap, valuationMethodAudits:methodAudits, methodAgreementScore:valuation.methodAgreementScore, methodCount:(valuation.methods||[]).length, valuationConsensus:valuation.valuationConsensus||null,
     valuationProjection:forecast.rows, projectionAssumptions:{terminalGrowth:forecast.terminalGrowth,requiredReturn:valuation.requiredReturn,revenueGrowthAnchor:forecast.revenueGrowthAnchor,historicalGrowth:forecast.historicalGrowth,marginAssumptions:forecast.marginAssumptions,marginTargets:forecast.marginTargets,forecastBridge:forecast.forecastBridge,forecastFlags:forecast.forecastFlags},
     analystEstimates:stock.analystEstimates,
     investmentThesis:{strengths,risks}, pricingPowerSignals: strengths.filter(x=>/pricing/i.test(x)), capitalAllocationSignals: strengths.filter(x=>/capital|dilution|leverage/i.test(x)),
@@ -99,7 +102,7 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
     marketExpectations:{note:'Simplified model: no reverse-DCF narrative inference is used in ratings.'},
     scenarioAnalysis:{bearCAGR:valuation.bearCAGR,baseCAGR:valuation.baseCAGR,bullCAGR:valuation.bullCAGR}, scenarioProbabilities:{bear:0.25,base:0.50,bull:0.25},
     expectedReturnProfile:{expectedCAGR:valuation.expectedCAGR,bearCAGR:valuation.bearCAGR,baseCAGR:valuation.baseCAGR,bullCAGR:valuation.bullCAGR},
-    analystReliability:quality.confidenceScore, outlierFlags:[], reliabilityFlags:[], effectiveWeights:Object.fromEntries((valuation.methods||[]).map(m=>[m.name,m.weight])),
+    analystReliability:quality.confidenceScore, outlierFlags:valuation.valuationConsensus?.hasConsensusOutlier?(valuation.valuationConsensus.outlierMethods||[]):[], reliabilityFlags:[], effectiveWeights:Object.fromEntries((valuation.methods||[]).map(m=>[m.name,m.weight])),
     primaryValuation:{method:'Blended year-5 shareholder outcome',target:valuation.fiveYearPriceTarget,totalOutcome:valuation.totalShareholderValue,requiredReturn:valuation.requiredReturn},
     ownerEarningsReturn:null, marketImpliedGrowth:null, marketImpliedGrowthNote:null, reverseDCFGap:null, expectationRisk:null, monteCarlo:null,
   };
