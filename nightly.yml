@@ -1,0 +1,71 @@
+name: Nightly Screener Run
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-screener
+  cancel-in-progress: false
+
+jobs:
+  fetch-analyst-estimates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install yfinance requests
+      - name: Refresh analyst cache
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python fetch_analyst_estimates.py
+
+  run-screener:
+    runs-on: ubuntu-latest
+    needs: fetch-analyst-estimates
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Verify model invariants
+        run: node model-smoke-test.js
+      - name: Run simplified screener
+        env:
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: node run-screener.js
+      - name: Commit and publish results
+        run: |
+          set -e
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+
+          git add data/results.json
+          git add data/validation-report.json
+          git add data/screener-diagnostics.json
+
+          echo "Generated results timestamp:"
+          node -e "const r=require('./data/results.json'); console.log(r.generatedAt, r.count, r.modelVersion)"
+
+          if git diff --staged --quiet; then
+            echo "ERROR: screener completed but generated files produced no git diff."
+            git status --short
+            exit 1
+          fi
+
+          git commit -m "Nightly screener update $(date -u +%Y-%m-%d)"
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
