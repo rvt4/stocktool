@@ -151,3 +151,25 @@ assert(gpF.forecastFlags.includes('growth_profitability_consistency_guardrail'),
 assert(gpF.marginTargets.net>=gpF.marginAssumptions.net-.0076,'high-growth forecast compressed supported net margins too aggressively');
 
 console.log('Reinvestment and profitability-consistency smoke tests passed.');
+
+// V7 method-selection tests. GAAP EPS should lose influence when cash economics are
+// materially stronger, without any ticker-specific rule.
+const cashVsEarnings=stock({ticker:'CASH_VS_EARNINGS',price:100,growth:.18,margin:.24,roic:.25});
+for(const y of cashVsEarnings.financials.years){
+  y.fcf=y.revenue*.24; y.fcfSBCAdjusted=y.fcf; y.netIncome=y.revenue*.08; y.ebitda=y.revenue*.28;
+}
+const cveF=buildForecast(cashVsEarnings), cveQ=computeQuality(cashVsEarnings,cveF), cveV=valuate(cashVsEarnings,cveF,cveQ);
+const cveFcf=cveV.methods.find(m=>m.name==='FCF exit'), cveEps=cveV.methods.find(m=>m.name==='EPS exit');
+assert(cveFcf&&cveEps,'cash/earnings divergence test needs both FCF and EPS methods');
+assert(cveEps.reliability<cveFcf.reliability,'EPS should be downweighted when cash earnings materially exceed accounting earnings');
+
+// Fast-growing financials still use a financial-specific EPS framework, but the generic
+// growth-financial path may compound earnings faster than a mature bank/insurer path.
+const growthFin=stock({ticker:'GROWTH_FIN',sector:'Financials',price:40,growth:.22,margin:.15,roic:.16,dilution:.02});
+for(const y of growthFin.financials.years){y.dilutedEPS=Math.max(.35,y.netIncome/y.sharesOutTTM);}
+growthFin.analystEstimates.revenueGrowthCurrentYear=.25; growthFin.analystEstimates.revenueGrowthNextYear=.22;
+const gfF=buildForecast(growthFin), gfQ=computeQuality(growthFin,gfF), gfV=valuate(growthFin,gfF,gfQ);
+assert(gfV.methods.every(m=>m.name==='Normalized EPS exit'),'growth financial should remain on the financial-specific valuation path');
+assert(gfV.methods[0]?.audit?.epsGrowth<=.20,'growth-financial EPS convergence exceeded generic cap');
+
+console.log('V7 method-reliability smoke tests passed.');
