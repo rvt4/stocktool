@@ -174,3 +174,47 @@ assert(gfV.methods.every(m=>m.name==='Normalized EPS exit'),'growth financial sh
 assert(gfV.methods[0]?.audit?.epsGrowth<=.20,'growth-financial EPS convergence exceeded generic cap');
 
 console.log('V7 method-reliability smoke tests passed.');
+
+// V10 trust invariants -------------------------------------------------------
+// 1) Intrinsic value cannot follow the quote. Repricing the exact same business must
+// change expected return, not the modeled fair value.
+const priceA=stock({ticker:'PRICE_INVARIANT',price:100,growth:.12,margin:.22,roic:.24,dilution:.00});
+const priceB=JSON.parse(JSON.stringify(priceA)); priceB.price.current=200;
+const pAF=buildForecast(priceA), pAQ=computeQuality(priceA,pAF), pAV=valuate(priceA,pAF,pAQ);
+const pBF=buildForecast(priceB), pBQ=computeQuality(priceB,pBF), pBV=valuate(priceB,pBF,pBQ);
+assert(Number.isFinite(pAV.fairValueEstimate)&&Number.isFinite(pBV.fairValueEstimate),'price-invariance test requires fair values');
+assert(Math.abs(pAV.fairValueEstimate/pBV.fairValueEstimate-1)<1e-10,'intrinsic fair value changed when only current price changed');
+assert(pBV.expectedCAGR<pAV.expectedCAGR,'higher current price did not reduce expected CAGR');
+
+// 2) More dilution cannot improve per-share value for otherwise identical economics.
+const lowDil=stock({ticker:'LOW_DIL',price:100,growth:.14,margin:.20,roic:.22,dilution:0});
+const highDil=stock({ticker:'HIGH_DIL',price:100,growth:.14,margin:.20,roic:.22,dilution:.05});
+const ldF=buildForecast(lowDil),ldQ=computeQuality(lowDil,ldF),ldV=valuate(lowDil,ldF,ldQ);
+const hdF=buildForecast(highDil),hdQ=computeQuality(highDil,hdF),hdV=valuate(highDil,hdF,hdQ);
+assert(hdV.fairValueEstimate<ldV.fairValueEstimate,'higher dilution increased intrinsic per-share value');
+
+// 3) Weak/short historical growth cannot overpower clear forward consensus slowdown.
+const weakHistory=stock({ticker:'WEAK_HISTORY',price:100,growth:.30,margin:.16,roic:.18});
+weakHistory.financials.years=weakHistory.financials.years.slice(-3);
+weakHistory.analystEstimates.revenueGrowthCurrentYear=.01;
+weakHistory.analystEstimates.revenueGrowthNextYear=.04;
+weakHistory.analystEstimates.numAnalysts=12;
+const whF=buildForecast(weakHistory);
+assert(whF.historyReliability<.65,'short volatile history received excessive reliability');
+assert(whF.year5OperatingGrowth<=.09,'weak history overrode clear forward slowdown');
+
+// 4) A business type that needs specialized metrics we do not collect must not receive a
+// buy recommendation from a generic model.
+const realEstate=stock({ticker:'REAL_ESTATE_LIMIT',sector:'Real Estate',price:100,growth:.08,margin:.25,roic:.12,dilution:.01});
+const reF=buildForecast(realEstate),reQ=computeQuality(realEstate,reF),reV=valuate(realEstate,reF,reQ),reD=rateStock(realEstate,reF,reQ,reV);
+assert.strictEqual(reV.modelSupport,'limited','real-estate model support was not flagged limited');
+assert(!['Buy','Strong Buy','Exceptional Buy'].includes(reD.rating),'limited-support business received a buy rating');
+
+// 5) Evidence count constrains confidence. Correlated FCF and DCF are one evidence family,
+// not two independent confirmations.
+const evidence=stock({ticker:'EVIDENCE',price:100,growth:.12,margin:.20,roic:.22});
+const evF=buildForecast(evidence),evQ=computeQuality(evidence,evF),evV=valuate(evidence,evF,evQ);
+assert(evV.independentMethodCount<=evV.methods.length,'independent evidence count exceeded method count');
+if(evV.independentMethodCount===1)assert(evV.valuationConfidenceScore<=68,'single evidence family received excessive valuation confidence');
+
+console.log('V10 trust invariants passed: price independence, dilution monotonicity, weak-history fade, specialized-model guardrails, and evidence-count confidence are enforced.');
