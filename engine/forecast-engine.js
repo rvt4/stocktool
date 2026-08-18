@@ -42,6 +42,10 @@ function buildGrowthForecast(stock,years,cfg){
   const last=years.at(-1)||{};
   const histMed=median(hist), histCagr=years.length>=4?cagr(finite(years.at(-4)?.revenue),finite(last.revenue),3):null;
   const historicalAnchor=clamp(median([histMed,histCagr].filter(Number.isFinite))??0.04,-0.10,0.30);
+  const histDispersion=hist.length>=2?(median(hist.map(x=>Math.abs(x-(histMed??historicalAnchor))))??.20):.20;
+  // Historical growth is useful only when it is representative. Short histories, spin-offs,
+  // acquisition resets and highly erratic series receive less weight in the long-range fade.
+  const historyReliability=clamp((hist.length/5)*clamp(1-histDispersion/.22,.20,1),.15,1);
   const recentAnnual=hist.at(-1)??historicalAnchor, recentQuarter=latestQuarterYoY(stock.quarterly);
   const a1=safeAnalystGrowth(a.revenueGrowthCurrentYear??a.revenueGrowthFwd), a2=safeAnalystGrowth(a.revenueGrowthNextYear);
   const analysts=Math.max(0,finite(a.numAnalysts)||0);
@@ -96,11 +100,21 @@ function buildGrowthForecast(stock,years,cfg){
   const y2Weight=.32-.17*inflectionSeverity;
   const historyWeight=.43+.07*inflectionSeverity;
   const matureWeight=1-y2Weight-historyWeight;
-  let evidenceGrowth=weightedAverage([[Math.max(y2,-.05),y2Weight],[historicalAnchor,historyWeight],[matureGrowth,matureWeight]])??matureGrowth;
+  // Scale the historical weight by its reliability and reallocate the difference to mature
+  // economics. This prevents a two-year or acquisition-distorted history from dictating
+  // years 5-10.
+  const effectiveHistoryWeight=historyWeight*historyReliability;
+  const historyWeightGap=historyWeight-effectiveHistoryWeight;
+  let evidenceGrowth=weightedAverage([[Math.max(y2,-.05),y2Weight],[historicalAnchor,effectiveHistoryWeight],[matureGrowth,matureWeight+historyWeightGap]])??matureGrowth;
   // Very large businesses need stronger evidence to carry an exceptional growth burst
   // deep into the forecast. This is a smooth scale adjustment, not a hard company rule.
   if(scale>50e9 && inflectionSeverity>0) evidenceGrowth-=Math.min(.018,inflectionSeverity*(scale>150e9?.018:.012));
-  const maxYear5=Math.max(matureGrowth+.025, Math.min(.18, historicalAnchor+.025+Math.max(0,inflectionGap)*.38));
+  let maxYear5=Math.max(matureGrowth+.025, Math.min(.18, historicalAnchor+.025+Math.max(0,inflectionGap)*.38));
+  // When current and next-year consensus both sit materially below a weak historical
+  // anchor, do not invent a re-acceleration back toward that stale history.
+  if(a1!=null&&a2!=null&&historyReliability<.65&&historicalAnchor>Math.max(a1,a2)+.08){
+    maxYear5=Math.min(maxYear5,Math.max(matureGrowth+.02,Math.max(a1,a2)+.04));
+  }
   const year5Growth=clamp(evidenceGrowth,matureGrowth,maxYear5);
   // 5+5 architecture: years 1-5 are the decision-grade operating forecast. Years
   // 6-10 are a transition period that fades the business toward mature economics before
@@ -118,7 +132,9 @@ function buildGrowthForecast(stock,years,cfg){
     const curved=t*t*(3-2*t);
     growthPath.push(clamp(year5Growth*(1-curved)+matureGrowth*curved,-.06,.18));
   }
-  return {growthPath,y1,y2,matureGrowth,year5Growth,historicalAnchor,recentAnnual,recentQuarter,qualityHint,analystWeight,structuralStepUp,structuralStepDown,analystUsed:a1!=null||a2!=null};
+  const analystCoverage=(a1!=null?1:0)+(a2!=null?1:0);
+  const forecastReliabilityScore=Math.round(100*clamp(.20+.35*historyReliability+.25*(analystCoverage/2)+.20*clamp(analysts/20,0,1)-((structuralStepUp||structuralStepDown)?.10:0),.20,.95));
+  return {growthPath,y1,y2,matureGrowth,year5Growth,historicalAnchor,recentAnnual,recentQuarter,qualityHint,analystWeight,structuralStepUp,structuralStepDown,analystUsed:a1!=null||a2!=null,historyReliability,histDispersion,forecastReliabilityScore};
 }
 
 function buildMarginForecast(stock,years,cfg,growthInfo){
@@ -301,6 +317,6 @@ function buildForecast(stock){
   if(margins.profitabilityConsistencyApplied)forecastFlags.push('growth_profitability_consistency_guardrail');
   if(growth.recentQuarter!=null&&Math.abs(growth.recentQuarter-growth.historicalAnchor)>.12)forecastFlags.push('recent_growth_inflection');
 
-  return {horizonYears:HORIZON_YEARS,category,rows,terminalGrowth:growth.matureGrowth,year5OperatingGrowth:growth.year5Growth,revenueGrowthAnchor:growth.y1,sustainableGrowth,historicalGrowth:growth.historicalAnchor,dilutionRate,matureDilutionRate,dilutionPath,startRevenue:finite(last.revenue),startShares:finite(last.sharesOutTTM),marginAssumptions:{fcf:margins.currentFCF,ebitda:margins.currentEBITDA,net:margins.currentNet},marginTargets:{fcf:margins.targetFCF,ebitda:margins.targetEBITDA,net:margins.targetNet},analystUsed:growth.analystUsed,forecastBridge,forecastFlags};
+  return {horizonYears:HORIZON_YEARS,category,rows,terminalGrowth:growth.matureGrowth,year5OperatingGrowth:growth.year5Growth,revenueGrowthAnchor:growth.y1,sustainableGrowth,historicalGrowth:growth.historicalAnchor,dilutionRate,matureDilutionRate,dilutionPath,startRevenue:finite(last.revenue),startShares:finite(last.sharesOutTTM),marginAssumptions:{fcf:margins.currentFCF,ebitda:margins.currentEBITDA,net:margins.currentNet},marginTargets:{fcf:margins.targetFCF,ebitda:margins.targetEBITDA,net:margins.targetNet},analystUsed:growth.analystUsed,forecastReliabilityScore:growth.forecastReliabilityScore,historyReliability:growth.historyReliability,historyGrowthDispersion:growth.histDispersion,forecastBridge,forecastFlags};
 }
 module.exports={buildForecast};

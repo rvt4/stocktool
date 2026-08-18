@@ -1,28 +1,37 @@
 'use strict';
 const { clamp }=require('./config');
 function requiredMOS(category,q){let m=category==='Hyper Growth'?.225:category==='Growth'?.175:category==='Dividend'?.15:category==='Compounder'?.12:.20;if((q.qualityScore||50)>=85&&(q.moatScore||50)>=80)m-=.02;if((q.confidenceScore||50)<60)m+=.025;return clamp(m,.10,.30);}
-function rateStock(stock,forecast,quality,v){const c=v.expectedCAGR,mos=v.marginOfSafety,req=requiredMOS(forecast.category,quality),q=quality.qualityScore||0,rawConf=quality.confidenceScore||0,agreement=v.methodAgreementScore||0,conf=v.valuationConfidenceScore??rawConf,methodCount=(v.methods||[]).length;let rating='Unrated';
+function rateStock(stock,forecast,quality,v){
+  const c=v.expectedCAGR,mos=v.marginOfSafety,req=requiredMOS(forecast.category,quality),q=quality.qualityScore||0;
+  const rawConf=quality.confidenceScore||0,agreement=v.methodAgreementScore||0,conf=v.valuationConfidenceScore??rawConf;
+  const methodCount=(v.methods||[]).length, independent=v.independentMethodCount??methodCount;
+  const forecastConf=forecast.forecastReliabilityScore??rawConf;
+  let rating='Unrated';
   if(!Number.isFinite(c)||!Number.isFinite(mos))rating='Unrated';
   else if(c<0)rating='Sell';
   else if(c<.08)rating='Avoid';
   else if(c<.12||mos<=0)rating='Hold';
-  else if(c>=.18&&mos>=.20&&q>=75&&conf>=65&&agreement>=60)rating='Exceptional Buy';
-  else if(c>=.15&&mos>=req&&q>=65&&conf>=55&&agreement>=50)rating='Strong Buy';
-  else if(c>=.12&&mos>0&&q>=50&&conf>=50)rating='Buy';
+  else if(c>=.18&&mos>=.20&&q>=78&&conf>=72&&agreement>=65&&independent>=3&&forecastConf>=65)rating='Exceptional Buy';
+  else if(c>=.15&&mos>=req&&q>=68&&conf>=62&&agreement>=52&&independent>=2&&forecastConf>=58)rating='Strong Buy';
+  else if(c>=.12&&mos>0&&q>=52&&conf>=52&&forecastConf>=48)rating='Buy';
   else rating='Hold';
-  // Very large positive modeled returns are published, but they cannot become a Buy
-  // solely because a fragile valuation method produced an extreme outcome. Negative
-  // extremes remain Sell: overvaluation is still actionable information.
-  if(v.extremeReturnFlag && Number.isFinite(c) && c>.35) rating='Hold';
-  // A lone non-financial fallback method is useful enough to keep a stock rated, but
-  // not strong enough evidence for a top-tier buy label. Financials are intentionally
-  // single-method because normalized EPS is their primary valuation framework.
-  if(stock.sector!=='Financials'&&methodCount===1&&['Strong Buy','Exceptional Buy'].includes(rating))rating='Buy';
-  // Material method disagreement is uncertainty, not merely a footnote. It can never
-  // support the two highest conviction labels, regardless of business-quality confidence.
+
+  // Trust guardrails: weak valuation architecture may publish an estimate, but it cannot
+  // receive a high-conviction recommendation.
+  if(v.modelSupport==='unsupported') rating='Unrated';
+  if(v.modelSupport==='limited'&&['Buy','Strong Buy','Exceptional Buy'].includes(rating))rating='Hold';
+  if(forecastConf<45&&['Buy','Strong Buy','Exceptional Buy'].includes(rating))rating='Hold';
+  if(v.extremeReturnFlag&&Number.isFinite(c)&&c>.35)rating='Hold';
+  if(stock.sector!=='Financials'&&methodCount===1){
+    const only=v.methods?.[0]?.name||'';
+    if(/fallback|sales/i.test(only)&&['Buy','Strong Buy','Exceptional Buy'].includes(rating))rating='Hold';
+    else if(['Strong Buy','Exceptional Buy'].includes(rating))rating='Buy';
+  }
   if(agreement<35&&['Strong Buy','Exceptional Buy'].includes(rating))rating='Buy';
   if(agreement<20&&rating==='Buy')rating='Hold';
-  const agreementFactor=clamp(agreement/100,.35,1);
-  const investmentScore=Number.isFinite(c)?Math.round(clamp((.32*clamp((c+.02)/.24,0,1)*100+.18*clamp((mos+.05)/.40,0,1)*100+.27*q+.10*(quality.moatScore||50)+.13*conf)*(.88+.12*agreementFactor),0,100)):0;
-  return {rating,requiredMOS:req,investmentScore,qualifiesForBuyList:['Buy','Strong Buy','Exceptional Buy'].includes(rating),expectedAlpha:Number.isFinite(c)?c-.10:null};}
+
+  const agreementFactor=clamp(agreement/100,.30,1), evidenceFactor=clamp((conf/100)*(.80+.20*clamp(independent/3,0,1)),.35,1);
+  const investmentScore=Number.isFinite(c)?Math.round(clamp((.30*clamp((c+.02)/.24,0,1)*100+.16*clamp((mos+.05)/.40,0,1)*100+.27*q+.10*(quality.moatScore||50)+.17*conf)*(.84+.08*agreementFactor+.08*evidenceFactor),0,100)):0;
+  return {rating,requiredMOS:req,investmentScore,qualifiesForBuyList:['Buy','Strong Buy','Exceptional Buy'].includes(rating),expectedAlpha:Number.isFinite(c)?c-.10:null};
+}
 module.exports={rateStock,requiredMOS};

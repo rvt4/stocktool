@@ -15,16 +15,14 @@ function weightedMedian(items){
   let acc=0; for(const x of v){acc+=x.weight;if(acc>=total/2)return x.value;} return v.at(-1)?.value??null;
 }
 
-// Terminal multiples may normalize, but most of a five-year return must come from the
+// Terminal multiples may normalize, but most of a ten-year return must come from the
 // business rather than a heroic re-rating. The guardrail is generic and sector-aware.
 function boundedExit(current,justified,lo,hi){
-  let j=clamp(justified,lo,hi);
-  if(Number.isFinite(current)&&current>0){
-    const sane=clamp(current,lo*.65,hi*1.5);
-    j=.70*j+.30*sane;
-    j=clamp(j,Math.max(lo,sane*.60),Math.min(hi,sane*1.10));
-  }
-  return j;
+  // Intrinsic value must not be mechanically anchored to today's market multiple.
+  // Current multiples remain audit context only. Terminal multiples are determined from
+  // modeled mature economics, growth and quality; changing only today's stock price must
+  // not change the modeled business value.
+  return clamp(justified,lo,hi);
 }
 
 function normalizedOperatingBase(stock,forecast){
@@ -109,42 +107,30 @@ function methodReliability(stock,forecast,kind,base,future,quality){
   return {score:clamp(reliability,.12,1),reasons};
 }
 
-function addMethod(methods,{name,target,weight,reliability=1,audit,price}){
+function addMethod(methods,{name,target,weight,reliability=1,audit,price,family=null}){
   if(!(Number.isFinite(target)&&target>0&&Number.isFinite(price)&&price>0))return;
   const implied=cagr(price,target);
   if(!Number.isFinite(implied))return;
-  // Do not silently delete an otherwise valid method just because it implies >25% CAGR.
-  // That created a directional bias: upside methods vanished while downside methods stayed.
-  // Keep the evidence, but progressively reduce its influence when the implied return is
-  // unusually extreme. Only truly pathological outcomes are excluded.
-  if(implied>1.00)return;
-  let extremityWeight=1;
-  if(implied>.45||implied<-.35)extremityWeight=.20;
-  else if(implied>.35||implied<-.25)extremityWeight=.40;
-  else if(implied>.25||implied<-.18)extremityWeight=.70;
   const rel=clamp(reliability,.05,1);
-  const effectiveWeight=weight*rel*extremityWeight;
-  methods.push({name,target,weight:effectiveWeight,baseWeight:weight,reliability:rel,audit:{...audit,impliedCAGR:implied,extremityWeight,effectiveWeight}});
+  const effectiveWeight=weight*rel;
+  methods.push({name,target,weight:effectiveWeight,baseWeight:weight,reliability:rel,family:family||name,audit:{...audit,impliedCAGR:implied,effectiveWeight}});
 }
 
 function valuationConsensus(methods,price){
-  const valid=methods.map((m,index)=>({m,index,ret:cagr(price,m.outcome)})).filter(x=>Number.isFinite(x.ret)&&x.m.weight>0);
+  // Consensus is measured in intrinsic-outcome space, not return-from-current-price space.
+  // That keeps the canonical fair value independent of today's quote.
+  const valid=methods.map((m,index)=>({m,index,x:Number.isFinite(m.outcome)&&m.outcome>0?Math.log(m.outcome):null})).filter(v=>Number.isFinite(v.x)&&v.m.weight>0);
   if(valid.length<3)return {clusterIndexes:valid.map(x=>x.index),outlierIndexes:[],pairSpread:null,outlierGap:null,hasConsensusOutlier:false};
-
-  // Find the tightest pair in CAGR space. With three methods, two independently agreeing
-  // while the third is far away is evidence of an anomalous method, not blanket disagreement.
   let best=null;
   for(let i=0;i<valid.length;i++)for(let j=i+1;j<valid.length;j++){
-    const gap=Math.abs(valid[i].ret-valid[j].ret);
+    const gap=Math.abs(valid[i].x-valid[j].x);
     if(!best||gap<best.gap)best={a:valid[i],b:valid[j],gap};
   }
   if(!best)return {clusterIndexes:valid.map(x=>x.index),outlierIndexes:[],pairSpread:null,outlierGap:null,hasConsensusOutlier:false};
-  const center=(best.a.ret+best.b.ret)/2;
+  const center=(best.a.x+best.b.x)/2;
   const outsiders=valid.filter(x=>x.index!==best.a.index&&x.index!==best.b.index);
-  const nearestOutlierGap=outsiders.length?Math.min(...outsiders.map(x=>Math.abs(x.ret-center))):null;
-  // Require a genuinely tight pair and a clearly separated third method. This deliberately
-  // avoids declaring an outlier when all methods are simply spread across a wide range.
-  const separated=best.gap<=.08&&Number.isFinite(nearestOutlierGap)&&nearestOutlierGap>=Math.max(.10,best.gap*2.25);
+  const nearestOutlierGap=outsiders.length?Math.min(...outsiders.map(x=>Math.abs(x.x-center))):null;
+  const separated=best.gap<=Math.log(1.22)&&Number.isFinite(nearestOutlierGap)&&nearestOutlierGap>=Math.max(Math.log(1.35),best.gap*2.25);
   if(!separated)return {clusterIndexes:valid.map(x=>x.index),outlierIndexes:[],pairSpread:best.gap,outlierGap:nearestOutlierGap,hasConsensusOutlier:false};
   return {clusterIndexes:[best.a.index,best.b.index],outlierIndexes:outsiders.map(x=>x.index),pairSpread:best.gap,outlierGap:nearestOutlierGap,hasConsensusOutlier:true};
 }
@@ -154,26 +140,21 @@ function robustOutcomeBlend(methods,price,consensus=null){
   if(!valid.length)return {outcome:null,weights:{}};
   if(valid.length===1)return {outcome:valid[0].outcome,weights:{[valid[0].name]:1}};
   const info=consensus||valuationConsensus(methods,price);
-  const cluster=new Set(info.clusterIndexes||[]), outliers=new Set(info.outlierIndexes||[]);
-  const returnItems=valid.map(m=>({value:cagr(price,m.outcome),weight:m.weight,index:m.index,name:m.name})).filter(x=>Number.isFinite(x.value));
-  const center=weightedMedian(returnItems.map(x=>({value:x.value,weight:x.weight*(outliers.has(x.index)?.08:1)})));
-  const adjusted=returnItems.map(x=>{
+  const outliers=new Set(info.outlierIndexes||[]);
+  const items=valid.map(m=>({value:Math.log(m.outcome),weight:m.weight,index:m.index,name:m.name,outcome:m.outcome}));
+  const center=weightedMedian(items.map(x=>({value:x.value,weight:x.weight*(outliers.has(x.index)?.08:1)})));
+  const adjusted=items.map(x=>{
     const gap=Math.abs(x.value-center);
-    let consensusWeight=gap<=.04?1:gap<=.08?.72:gap<=.14?.42:.18;
-    if(info.hasConsensusOutlier&&outliers.has(x.index))consensusWeight*=.08;
-    else if(info.hasConsensusOutlier&&cluster.has(x.index))consensusWeight=Math.max(consensusWeight,.90);
-    return {...x,weight:x.weight*consensusWeight};
+    let consensusWeight=gap<=Math.log(1.15)?1:gap<=Math.log(1.30)?.72:gap<=Math.log(1.60)?.42:.18;
+    if(info.hasConsensusOutlier&&outliers.has(x.index))consensusWeight=Math.min(consensusWeight,.10);
+    return {...x,adjustedWeight:x.weight*consensusWeight};
   });
-  const totalWeight=adjusted.reduce((sum,x)=>sum+x.weight,0);
-  const weights=Object.fromEntries(adjusted.map(x=>[x.name,totalWeight>0?x.weight/totalWeight:0]));
-  const blendedReturn=weightedAverage(adjusted);
-  const outcome=Number.isFinite(blendedReturn)&&blendedReturn>-1?price*Math.pow(1+blendedReturn,HORIZON_YEARS):null;
-  return {outcome,weights};
+  const totalW=adjusted.reduce((s,x)=>s+x.adjustedWeight,0);
+  if(!(totalW>0))return {outcome:null,weights:{}};
+  const outcome=adjusted.reduce((s,x)=>s+x.outcome*x.adjustedWeight,0)/totalW;
+  return {outcome,weights:Object.fromEntries(adjusted.map(x=>[x.name,x.adjustedWeight/totalW]))};
 }
-// Independent 10-year per-share DCF. Forecast FCF/share already incorporates the
-// modeled share-count path, so this is an equity-cash-flow cross-check and does not
-// subtract net debt a second time. The DCF produces a fair value today; for the canonical
-// future-outcome framework we carry that fair value forward at the required return.
+
 function dcfFairValue(forecast,req){
   const rows=forecast.rows||[];
   if(rows.length!==HORIZON_YEARS||!(req>0))return null;
@@ -202,7 +183,7 @@ function valuate(stock,forecast,quality){
 
   if(stock.sector==='Financials'){
     const epsBase=normalizedFinancialEPS(years,last), currentPE=safeMultiple(price>0&&epsBase>0?price/epsBase:null,6,28);
-    if(epsBase>0&&currentPE){
+    if(epsBase>0){
       const buybackTailwind=clamp(-(forecast.dilutionRate||0),-.03,.04);
       const analystGrowth=forecast.forecastBridge?.revenue?.analystNext??forecast.forecastBridge?.revenue?.analystCurrent??growth;
       // Growth financials deserve more room for earnings convergence, while mature
@@ -211,10 +192,14 @@ function valuate(stock,forecast,quality){
       const growthFinancial=forecast.category==='Growth'||forecast.category==='Hyper Growth';
       const epsGrowth=clamp((growthFinancial?.72:.60)*analystGrowth+(growthFinancial?.28:.40)*growth+buybackTailwind,-.04,growthFinancial?.20:.16);
       const futureEPS=epsBase*Math.pow(1+epsGrowth,HORIZON_YEARS);
-      const justified=cfg.basePE+epsGrowth*(growthFinancial?28:22)+(q-.5)*5;
-      const m=boundedExit(currentPE,justified,7,growthFinancial?26:22);
+      const stableG=clamp(forecast.terminalGrowth,.01,Math.min(.045,req-.03));
+      const stableROE=clamp(.10+.10*q,.10,.20);
+      const payout=clamp(1-stableG/stableROE,.35,.85);
+      const fundamentalPE=payout*(1+stableG)/Math.max(.035,req-stableG);
+      const justified=.70*fundamentalPE+.30*(cfg.basePE+epsGrowth*(growthFinancial?12:8)+(q-.5)*4);
+      const m=boundedExit(currentPE,justified,7,growthFinancial?24:21);
       const rel=methodReliability(stock,forecast,'FINANCIAL_EPS',epsBase,futureEPS,quality);
-      addMethod(methods,{name:'Normalized EPS exit',target:futureEPS*m,weight:1,reliability:rel.score,price,audit:{exitMultiple:m,currentMultiple:currentPE,metric:futureEPS,normalizedEPSBase:epsBase,epsGrowth,reliabilityReasons:rel.reasons}});
+      addMethod(methods,{name:'Normalized EPS exit',target:futureEPS*m,weight:1,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:futureEPS,normalizedEPSBase:epsBase,epsGrowth,reliabilityReasons:rel.reasons}});
     }
   } else {
     const normFCF=base.fcfPerShare, normEPS=base.eps, normEBITDA=base.ebitda;
@@ -222,21 +207,27 @@ function valuate(stock,forecast,quality){
     const currentPE=safeMultiple(price>0&&normEPS>0?price/normEPS:null,6,38);
     const currentEVEBITDA=safeMultiple(marketCap>0&&normEBITDA>0?(marketCap+netDebt)/normEBITDA:null,4,24);
 
-    if(Number(f.fcfPerShare)>0&&currentPFCF){
-      const justified=14+growth*38+(q-.5)*8, m=boundedExit(currentPFCF,justified,9,30);
+    if(Number(f.fcfPerShare)>0&&normFCF>0){
+      const stableG=clamp(forecast.terminalGrowth,.01,Math.min(.045,req-.03));
+      const fundamental=(1+stableG)/Math.max(.035,req-stableG);
+      const justified=.75*fundamental+.25*(13+growth*18+(q-.5)*6), m=boundedExit(currentPFCF,justified,8,26);
       const rel=methodReliability(stock,forecast,'FCF',normFCF,f.fcfPerShare,quality);
-      addMethod(methods,{name:'FCF exit',target:f.fcfPerShare*m,weight:.35,reliability:rel.score,price,audit:{exitMultiple:m,currentMultiple:currentPFCF,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,reliabilityReasons:rel.reasons}});
+      addMethod(methods,{name:'FCF exit',target:f.fcfPerShare*m,weight:.30,reliability:rel.score,price,family:'cashflow',audit:{exitMultiple:m,currentMultiple:currentPFCF,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,reliabilityReasons:rel.reasons}});
     }
-    if(Number(f.eps)>0&&currentPE){
-      const justified=cfg.basePE+growth*35+(q-.5)*7, m=boundedExit(currentPE,justified,8,32);
+    if(Number(f.eps)>0&&normEPS>0){
+      const stableG=clamp(forecast.terminalGrowth,.01,Math.min(.045,req-.03));
+      const stableROE=clamp(.10+.11*q,.10,.21);
+      const payout=clamp(1-stableG/stableROE,.30,.85);
+      const fundamental=payout*(1+stableG)/Math.max(.035,req-stableG);
+      const justified=.65*fundamental+.35*(cfg.basePE+growth*14+(q-.5)*5), m=boundedExit(currentPE,justified,7,28);
       const rel=methodReliability(stock,forecast,'EPS',normEPS,f.eps,quality);
-      addMethod(methods,{name:'EPS exit',target:f.eps*m,weight:.22,reliability:rel.score,price,audit:{exitMultiple:m,currentMultiple:currentPE,metric:f.eps,normalizedCurrentMetric:normEPS,reliabilityReasons:rel.reasons}});
+      addMethod(methods,{name:'EPS exit',target:f.eps*m,weight:.20,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:f.eps,normalizedCurrentMetric:normEPS,reliabilityReasons:rel.reasons}});
     }
-    if(Number(f.ebitda)>0&&Number(f.shares)>0&&currentEVEBITDA){
-      const justified=cfg.baseEVEBITDA+growth*18+(q-.5)*4, m=boundedExit(currentEVEBITDA,justified,6,20), equity=f.ebitda*m-netDebt;
+    if(Number(f.ebitda)>0&&Number(f.shares)>0&&normEBITDA>0){
+      const justified=cfg.baseEVEBITDA+growth*10+(q-.5)*3, m=boundedExit(currentEVEBITDA,justified,5,18), equity=f.ebitda*m-netDebt;
       if(equity>0){
         const rel=methodReliability(stock,forecast,'EBITDA',normEBITDA,f.ebitda,quality);
-        addMethod(methods,{name:'EV/EBITDA exit',target:equity/f.shares,weight:.13,reliability:rel.score,price,audit:{exitMultiple:m,currentMultiple:currentEVEBITDA,metric:f.ebitda,normalizedCurrentMetric:normEBITDA,reliabilityReasons:rel.reasons}});
+        addMethod(methods,{name:'EV/EBITDA exit',target:equity/f.shares,weight:.10,reliability:rel.score,price,family:'enterprise',audit:{exitMultiple:m,currentMultiple:currentEVEBITDA,metric:f.ebitda,normalizedCurrentMetric:normEBITDA,reliabilityReasons:rel.reasons}});
       }
     }
 
@@ -247,18 +238,18 @@ function valuate(stock,forecast,quality){
       // Terminal-value-heavy DCFs are still useful, but receive less reliability when
       // most of the present value depends on the perpetuity rather than explicit cash flow.
       const terminalPenalty=dcf.terminalShare>.80?.70:(dcf.terminalShare>.70?.85:1);
-      addMethod(methods,{name:'10Y DCF',target:terminalOutcome,weight:.30,reliability:rel.score*terminalPenalty,price,audit:{fairValueToday:dcf.fairValue,pvExplicit:dcf.pvExplicit,pvTerminal:dcf.pvTerminal,terminalGrowth:dcf.terminalGrowth,terminalShare:dcf.terminalShare,reliabilityReasons:[...rel.reasons,...(terminalPenalty<1?['terminal_value_concentration']:[])]}});
+      addMethod(methods,{name:'10Y DCF',target:terminalOutcome,weight:.40,reliability:rel.score*terminalPenalty,price,family:'cashflow',audit:{fairValueToday:dcf.fairValue,pvExplicit:dcf.pvExplicit,pvTerminal:dcf.pvTerminal,terminalGrowth:dcf.terminalGrowth,terminalShare:dcf.terminalShare,reliabilityReasons:[...rel.reasons,...(terminalPenalty<1?['terminal_value_concentration']:[])]}});
     }
 
-    if(!methods.length&&Number(f.revenue)>0&&Number(f.shares)>0&&marketCap>0&&revenue0>0){
-      const currentEVSales=safeMultiple((marketCap+netDebt)/revenue0,.25,12);
-      if(currentEVSales){
+    if(!methods.length&&Number(f.revenue)>0&&Number(f.shares)>0&&revenue0>0){
+      const currentEVSales=marketCap>0?safeMultiple((marketCap+netDebt)/revenue0,.25,12):null;
+      {
         const terminalEbitdaMargin=clamp(Number(f.ebitdaMargin)||0,0,.60), normalizedMargin=Math.max(.04,terminalEbitdaMargin);
         const economicsMultiple=cfg.baseEVEBITDA*normalizedMargin, growthPremium=clamp(growth-.04,0,.21)*10, qualityPremium=(q-.5)*1.25;
         const justified=clamp(economicsMultiple+growthPremium+qualityPremium,.5,10), m=boundedExit(currentEVSales,justified,.5,10), equity=Number(f.revenue)*m-netDebt;
         if(equity>0){
           const rel=methodReliability(stock,forecast,'SALES',revenue0,f.revenue,quality);
-          addMethod(methods,{name:'EV/Sales fallback',target:equity/Number(f.shares),weight:1,reliability:rel.score,price,audit:{exitMultiple:m,currentMultiple:currentEVSales,metric:f.revenue,reason:'profitability_methods_unavailable',reliabilityReasons:rel.reasons}});
+          addMethod(methods,{name:'EV/Sales fallback',target:equity/Number(f.shares),weight:1,reliability:rel.score,price,family:'sales',audit:{exitMultiple:m,currentMultiple:currentEVSales,metric:f.revenue,reason:'profitability_methods_unavailable',reliabilityReasons:rel.reasons}});
         }
       }
     }
@@ -280,28 +271,32 @@ function valuate(stock,forecast,quality){
   const mos=fair>0&&price>0?fair/price-1:null, premium=fair>0&&price>0?price/fair-1:null;
   const reliable=methods.map((m,index)=>({m,index})).filter(x=>(x.m.reliability??1)>=.35);
   const agreementEntries=reliable.length>=2?reliable:methods.map((m,index)=>({m,index}));
-  const agreementReturns=agreementEntries.map(x=>({index:x.index,ret:cagr(price,x.m.outcome)})).filter(x=>Number.isFinite(x.ret));
-  let spread=agreementReturns.length>=2?Math.max(...agreementReturns.map(x=>x.ret))-Math.min(...agreementReturns.map(x=>x.ret)):null;
+  const agreementValues=agreementEntries.map(x=>({index:x.index,v:Number.isFinite(x.m.outcome)&&x.m.outcome>0?Math.log(x.m.outcome):null})).filter(x=>Number.isFinite(x.v));
+  let spread=agreementValues.length>=2?Math.max(...agreementValues.map(x=>x.v))-Math.min(...agreementValues.map(x=>x.v)):null;
   let agreement;
   if(consensus.hasConsensusOutlier){
-    const clusterReturns=agreementReturns.filter(x=>consensus.clusterIndexes.includes(x.index)).map(x=>x.ret);
-    const clusterSpread=clusterReturns.length>=2?Math.max(...clusterReturns)-Math.min(...clusterReturns):consensus.pairSpread;
-    // A 2-of-3 consensus is strong evidence, but not identical to three-way agreement.
-    // Cap it below perfect agreement while avoiding a misleading 0/100 score.
-    agreement=Math.round(85*clamp(1-(clusterSpread??0)/.22,0,1));
+    const clusterValues=agreementValues.filter(x=>consensus.clusterIndexes.includes(x.index)).map(x=>x.v);
+    const clusterSpread=clusterValues.length>=2?Math.max(...clusterValues)-Math.min(...clusterValues):consensus.pairSpread;
+    agreement=Math.round(85*clamp(1-(clusterSpread??0)/Math.log(1.45),0,1));
     spread=clusterSpread;
   } else {
-    agreement=agreementReturns.length>=2?Math.round(100*clamp(1-spread/.22,0,1)):(agreementReturns.length===1?45:0);
+    agreement=agreementValues.length>=2?Math.round(100*clamp(1-spread/Math.log(1.45),0,1)):(agreementValues.length===1?45:0);
   }
-  // Business/data confidence and valuation-method agreement answer different questions.
-  // Publish both and combine them for decision confidence so a 4/100 method agreement can
-  // never masquerade as a 90-confidence investment conclusion.
-  const valuationConfidence=Math.round(clamp(.65*(quality.confidenceScore||50)+.35*agreement,0,100));
+  const families=new Set(methods.filter(m=>(m.reliability??0)>=.25).map(m=>m.family||m.name));
+  const independentMethodCount=families.size;
+  const forecastRel=clamp((forecast.forecastReliabilityScore??quality.confidenceScore??50)/100,.20,.95);
+  let valuationConfidence=Math.round(clamp(.45*(quality.confidenceScore||50)+.25*(forecastRel*100)+.30*agreement,0,100));
+  if(methods.length===1) valuationConfidence=Math.min(valuationConfidence,55);
+  else if(independentMethodCount===1) valuationConfidence=Math.min(valuationConfidence,68);
+  else if(independentMethodCount===2) valuationConfidence=Math.min(valuationConfidence,82);
+  let modelSupport='standard', modelSupportReason=null;
+  if(stock.sector==='Real Estate'){modelSupport='limited';modelSupportReason='REIT/real-estate specialized FFO-NAV metrics are not available in the free-data model';valuationConfidence=Math.min(valuationConfidence,50);}
+  if(stock.sector==='Financials'&&methods.length===0){modelSupport='unsupported';modelSupportReason='No reliable normalized EPS basis for financial-company valuation';valuationConfidence=Math.min(valuationConfidence,35);}
   const uncertainty=clamp((100-valuationConfidence)/100,.10,.45);
   const bear=total!=null?total*Math.pow(1-(.035+.04*uncertainty),HORIZON_YEARS):null, bull=total!=null?total*Math.pow(1+(.035+.035*uncertainty),HORIZON_YEARS):null;
   const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
   const lowReliability=methods.length>0&&Math.max(...methods.map(m=>m.reliability??0))<.40;
 
-  return {requiredReturn:req,methods,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget:target,tenYearPriceTarget:target,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,marginOfSafety:mos,premiumToFairValue:premium,methodAgreementScore:agreement,valuationConfidenceScore:valuationConfidence,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(consensus.hasConsensusOutlier?'isolated_method_outlier':(agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))};
+  return {requiredReturn:req,methods,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget:target,tenYearPriceTarget:target,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,marginOfSafety:mos,premiumToFairValue:premium,methodAgreementScore:agreement,valuationConfidenceScore:valuationConfidence,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(consensus.hasConsensusOutlier?'isolated_method_outlier':(agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))};
 }
 module.exports={valuate};
