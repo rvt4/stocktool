@@ -305,3 +305,11 @@ const ncF=buildForecast(nciCo),ncQ=computeQuality(nciCo,ncF),ncV=valuate(nciCo,n
 assert(!ncV.methods.some(m=>['FCF exit','EV/EBITDA exit','10Y DCF'].includes(m.name)),'material NCI allowed whole-enterprise economics to be divided by parent shares');
 
 console.log('V11.2 trust tests passed: SEC comparative-year mapping, financial-like valuation scope, and NCI ownership scope are enforced.');
+
+// V11.3 return-integrity invariant: a slow-growth value/dividend business may not publish
+// a heroic CAGR that depends primarily on re-rating rather than modeled economics.
+const slowValue=stock({ticker:'SLOW_VALUE_RETURN_GATE',sector:'Industrials',price:8,growth:.025,margin:.18,roic:.15,dividend:.10});
+slowValue.analystEstimates.revenueGrowthCurrentYear=.025; slowValue.analystEstimates.revenueGrowthNextYear=.03;
+const svF=buildForecast(slowValue),svQ=computeQuality(slowValue,svF),svV=valuate(slowValue,svF,svQ);
+if(svV.returnDecompositionFailure){assert.strictEqual(svV.expectedCAGR,null,'unsupported slow-growth return leaked into published CAGR');assert.strictEqual(svV.modelSupport,'unsupported','return-integrity failure was not marked unsupported');}
+console.log('V11.3 return-integrity gate passed.');

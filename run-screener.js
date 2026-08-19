@@ -98,7 +98,7 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
     valuationConfidenceScore:valuation.valuationConfidenceScore??Math.round((quality.confidenceScore+valuation.methodAgreementScore)/2), dataConfidenceScore:quality.confidenceScore, businessConfidenceScore:quality.qualityScore, forecastConfidenceScore:forecast.forecastReliabilityScore??quality.confidenceScore, forecastReliabilityScore:forecast.forecastReliabilityScore??quality.confidenceScore,
     businessQualityScore:quality.qualityScore, valuationAttractivenessScore:Math.round(Math.max(0,Math.min(100,50+(valuation.marginOfSafety||0)*100))),
     portfolioManagerScore:decision.investmentScore, investmentCommitteeScore:decision.investmentScore, investmentCommittee:{score:decision.investmentScore},
-    returnQualityFlags:[...(valuation.plausibilityFailure?['valuation_plausibility_failure']:[]),...(valuation.extremeReturnFlag?['extreme_canonical_return_review']:[])], returnIntegrityError:valuation.plausibilityFailure?'No defensible canonical valuation could be constructed':null, lowConfidence:quality.confidenceScore<55, valuationReviewFlag:valuation.valuationReviewFlag||null,
+    returnQualityFlags:[...(valuation.plausibilityFailure?['valuation_plausibility_failure']:[]),...(valuation.returnDecompositionFailure?['return_decomposition_failure']:[]),...(valuation.extremeReturnFlag?['extreme_canonical_return_review']:[])], returnIntegrityError:valuation.plausibilityFailure?'No defensible canonical valuation could be constructed':null, lowConfidence:quality.confidenceScore<55, valuationReviewFlag:valuation.valuationReviewFlag||null,
     businessProfile:{category:forecast.category,terminalGrowth:forecast.terminalGrowth}, lifecycle:{label:forecast.category}, moat:{score:quality.moatScore},
     marketExpectations:{note:'Simplified model: no reverse-DCF narrative inference is used in ratings.'},
     scenarioAnalysis:{bearCAGR:valuation.bearCAGR,baseCAGR:valuation.baseCAGR,bullCAGR:valuation.bullCAGR}, scenarioProbabilities:{bear:0.25,base:0.50,bull:0.25},
@@ -141,7 +141,7 @@ async function run(){
   rank(stocks);
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v11.2-trust-scope-reconciliation',stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v11.3-fail-closed-return-integrity',stocks}; writeJson('results.json',output);
   diag.finishedAt=new Date().toISOString();diag.scored=stocks.length;writeJson('screener-diagnostics.json',diag);
   console.log(`Done. Wrote ${stocks.length} stocks using the simplified one-path model.`);
 }

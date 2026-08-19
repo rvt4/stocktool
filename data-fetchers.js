@@ -753,7 +753,7 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   // Net income / diluted EPS gives an independent diluted-share denominator. When it
   // differs by a corporate-action-sized factor, prefer that internally consistent
   // denominator rather than allowing every per-share valuation to be off by 10-20x.
-  if (Number(last.netIncome) !== 0 && Number.isFinite(Number(last.dilutedEPS)) && Math.abs(Number(last.dilutedEPS)) > 1e-6) {
+  if (!shareCountReconciliation.applied && Number(last.netIncome) !== 0 && Number.isFinite(Number(last.dilutedEPS)) && Math.abs(Number(last.dilutedEPS)) > 1e-6) {
     const epsImpliedShares = Math.abs(Number(last.netIncome) / Number(last.dilutedEPS));
     const reportedShares = Number(last.sharesOutTTM);
     const ratio = reportedShares > 0 && epsImpliedShares > 0
@@ -769,10 +769,17 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   // If the denominator still looks suspicious after the independent audit, do not
   // permit it to flow into per-share valuation. A missing valuation is safer than a
   // fabricated 50%-100% CAGR caused by a bad denominator.
-  if (shareDenominatorLooksSuspicious(years, currentPrice) && !shareCountReconciliation.reliable) {
+  // Re-run the audit AFTER every repair. A later EPS-based corporate-action repair must
+  // never silently undo a stronger live market-cap reconciliation. If the final
+  // denominator is still economically implausible, fail closed regardless of what an
+  // earlier intermediate audit reported.
+  const finalShareDenominatorSuspicious = shareDenominatorLooksSuspicious(years, currentPrice);
+  const finalShareDenominatorReliable = !finalShareDenominatorSuspicious;
+  if (!finalShareDenominatorReliable) {
     last.unreliableSharesOutTTM = last.sharesOutTTM ?? null;
     last.sharesOutTTM = null;
     last.sharesSource = 'unreconciled_share_denominator';
+    shareCountReconciliation = { ...shareCountReconciliation, reliable:false, reason:'final_denominator_failed_reconciliation' };
   }
 
 
@@ -827,7 +834,7 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
       fcfProxyYears: years.filter(y => y.fcfIsProxy).length,
       missingCapexYears: years.filter(y => y.fcfUnavailableReason === 'missing_capex').length,
       missingEbitdaYears: years.filter(y => y.operatingIncome != null && y.ebitda == null).length,
-      shareDenominatorReliable: shareCountReconciliation.reliable !== false,
+      shareDenominatorReliable: finalShareDenominatorReliable,
       shareDenominatorReason: shareCountReconciliation.reason || null,
       financialLikeRevenue,
       materialNoncontrollingInterest,
