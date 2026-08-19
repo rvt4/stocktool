@@ -49,14 +49,15 @@ assert.notStrictEqual(extremeRun.d.rating,'Unrated','modelable extreme valuation
 assert(Number.isFinite(extremeRun.v.expectedCAGR),'10-year horizon should normalize extreme nominal outcomes into an annualized decision return');
 if(extremeRun.v.expectedCAGR>.22||extremeRun.v.expectedCAGR<-.30) assert(extremeRun.v.extremeReturnFlag===true,'extreme annualized return should be explicitly flagged for review');
 
-// A growth company with temporarily unusable earnings/FCF should fall back to an
-// EV/Sales bridge instead of becoming Unrated.
+// Trust-first policy: if a company has no observable positive profitability anchor,
+// sales alone may not manufacture a fair value. Coverage is less important than avoiding
+// false precision and 30%-100% CAGRs from arbitrary EV/Sales assumptions.
 const preProfit=stock({ticker:'PREPROFIT',price:100,growth:.22,margin:.10,roic:.05,dilution:.03});
 for(const y of preProfit.financials.years){y.fcf=-Math.abs(y.fcf);y.fcfSBCAdjusted=-Math.abs(y.fcfSBCAdjusted);y.netIncome=-Math.abs(y.netIncome);y.ebitda=-Math.abs(y.ebitda);}
 const ppF=buildForecast(preProfit), ppQ=computeQuality(preProfit,ppF), ppV=valuate(preProfit,ppF,ppQ), ppD=rateStock(preProfit,ppF,ppQ,ppV);
-assert(ppV.methods.some(m=>m.name==='EV/Sales fallback'),'pre-profit company should use EV/Sales fallback');
-assert(Number.isFinite(ppV.expectedCAGR),'fallback valuation should publish a canonical return');
-assert.notStrictEqual(ppD.rating,'Unrated','fallback-valued company should receive a rating');
+assert(!ppV.methods.some(m=>m.name==='EV/Sales fallback'),'unprofitable company received a sales-only valuation');
+assert.strictEqual(ppV.expectedCAGR,null,'unanchored sales-only valuation should fail closed');
+assert.strictEqual(ppD.rating,'Unrated','unanchored sales-only valuation should not receive a recommendation');
 
 
 // Pathological upside must never be published as a triple-digit base-case CAGR.
@@ -259,3 +260,48 @@ assert.strictEqual(bdV.methods.length,0,'unreconciled share denominator was allo
 assert.strictEqual(bdV.modelSupport,'unsupported','unreconciled share denominator should fail closed');
 assert.strictEqual(bdV.expectedCAGR,null,'unreconciled share denominator published an expected CAGR');
 console.log('Share-denominator reconciliation tests passed: scale errors are repaired and unreconciled cases fail closed.');
+
+
+// V11.2 SEC period-year and economic-scope invariants ------------------------
+const { parseAnnualFinancials } = require('./data-fetchers');
+// Companyfacts `fy` is the filing fiscal year and is repeated on comparative facts.
+// The parser must key annual history by each fact's period end, otherwise a 2025 10-K
+// can overwrite 2025 economics with the 2024 comparative column.
+const fakeFacts={facts:{'us-gaap':{
+  RevenueFromContractWithCustomerExcludingAssessedTax:{units:{USD:[
+    {form:'10-K',fy:2025,fp:'FY',start:'2024-01-01',end:'2024-12-31',filed:'2026-02-15',val:900},
+    {form:'10-K',fy:2025,fp:'FY',start:'2025-01-01',end:'2025-12-31',filed:'2026-02-15',val:1000},
+  ]}},
+  NetIncomeLoss:{units:{USD:[
+    {form:'10-K',fy:2025,fp:'FY',start:'2024-01-01',end:'2024-12-31',filed:'2026-02-15',val:90},
+    {form:'10-K',fy:2025,fp:'FY',start:'2025-01-01',end:'2025-12-31',filed:'2026-02-15',val:120},
+  ]}},
+  WeightedAverageNumberOfDilutedSharesOutstanding:{units:{shares:[
+    {form:'10-K',fy:2025,fp:'FY',start:'2024-01-01',end:'2024-12-31',filed:'2026-02-15',val:90e6},
+    {form:'10-K',fy:2025,fp:'FY',start:'2025-01-01',end:'2025-12-31',filed:'2026-02-15',val:100e6},
+  ]}},
+  EarningsPerShareDiluted:{units:{'USD/shares':[
+    {form:'10-K',fy:2025,fp:'FY',start:'2024-01-01',end:'2024-12-31',filed:'2026-02-15',val:1},
+    {form:'10-K',fy:2025,fp:'FY',start:'2025-01-01',end:'2025-12-31',filed:'2026-02-15',val:1.2},
+  ]}},
+},dei:{}}};
+const parsedYears=parseAnnualFinancials(fakeFacts,10);
+assert(parsedYears.some(y=>y.year===2024&&y.revenue===900),'comparative 2024 fact was assigned to filing FY instead of period year');
+assert(parsedYears.some(y=>y.year===2025&&y.revenue===1000),'current 2025 fact was lost to comparative overwrite');
+
+// Healthcare insurers / premium businesses use financial-like EPS valuation rather than
+// treating reserve-driven CFO as ordinary industrial free cash flow.
+const insurerLike=stock({ticker:'INSURER_LIKE',sector:'Healthcare',price:100,growth:.08,margin:.12,roic:.16});
+insurerLike.financials.dataQuality={financialLikeRevenue:true};
+for(const y of insurerLike.financials.years){y.dilutedEPS=Math.max(.5,y.netIncome/y.sharesOutTTM);}
+const ilF=buildForecast(insurerLike),ilQ=computeQuality(insurerLike,ilF),ilV=valuate(insurerLike,ilF,ilQ);
+assert(ilV.methods.length>0&&ilV.methods.every(m=>m.name==='Normalized EPS exit'),'financial-like non-financial-sector company leaked into FCF/DCF valuation');
+
+// A material NCI ownership mismatch must suppress whole-enterprise FCF/EBITDA methods.
+const nciCo=stock({ticker:'NCI_SCOPE',sector:'Industrials',price:50,growth:.10,margin:.20,roic:.18});
+nciCo.financials.dataQuality={materialNoncontrollingInterest:true};
+for(const y of nciCo.financials.years){y.dilutedEPS=Math.max(.5,y.netIncome/y.sharesOutTTM);}
+const ncF=buildForecast(nciCo),ncQ=computeQuality(nciCo,ncF),ncV=valuate(nciCo,ncF,ncQ);
+assert(!ncV.methods.some(m=>['FCF exit','EV/EBITDA exit','10Y DCF'].includes(m.name)),'material NCI allowed whole-enterprise economics to be divided by parent shares');
+
+console.log('V11.2 trust tests passed: SEC comparative-year mapping, financial-like valuation scope, and NCI ownership scope are enforced.');

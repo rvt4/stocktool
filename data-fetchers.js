@@ -175,7 +175,7 @@ function parseAnnualFinancials(facts, maxYears = 10) {
       .sort((a, b) => String(a.filed || '').localeCompare(String(b.filed || '')));
 
     for (const x of candidates) {
-      const year = Number(x.fy) || (x.end ? new Date(x.end).getUTCFullYear() : null);
+      const year = x.end ? new Date(x.end).getUTCFullYear() : Number(x.fy); // period year, not filing fiscal-year label
       if (!year || !Number.isFinite(Number(x.val))) continue;
       byYear[year] = byYear[year] || { year };
       if (additive) {
@@ -203,7 +203,7 @@ function parseAnnualFinancials(facts, maxYears = 10) {
     const arr = units.shares || Object.values(units)[0];
     if (!arr) return;
     arr.filter(x => x.form === '10-K').forEach(x => {
-      const year = x.fy || (x.end ? new Date(x.end).getUTCFullYear() : null);
+      const year = x.end ? new Date(x.end).getUTCFullYear() : x.fy; // period year, not filing fiscal-year label
       if (!year || !Number.isFinite(Number(x.val))) return;
       byYear[year] = byYear[year] || { year };
       const key = `${field}Candidates`;
@@ -225,6 +225,13 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   pullAnnual('Revenues', 'revenue', { preferLargest: true });
   pullAnnual('RevenueFromContractWithCustomerExcludingAssessedTax', 'revenue', { preferLargest: true }); // preferred modern tag
   pullAnnual('NetIncomeLoss', 'netIncome');
+  // Ownership-scope facts. Consolidated net income can include large non-controlling
+  // interests (UP-C / holding-company structures, insurers, partnerships). Keep the
+  // parent/common-holder earnings separately so per-share valuation does not divide
+  // whole-enterprise economics by only the public Class A denominator.
+  pullAnnual('NetIncomeLossAttributableToParent', 'netIncomeAttributableToParent');
+  pullAnnual('NetIncomeLossAvailableToCommonStockholdersBasic', 'netIncomeAttributableToCommon');
+  pullAnnual('NetIncomeLossAttributableToNoncontrollingInterest', 'netIncomeAttributableToNCI');
   pullAnnual('GrossProfit', 'grossProfit');
   pullAnnual('OperatingIncomeLoss', 'operatingIncome');
   pullAnnual('NetCashProvidedByUsedInOperatingActivities', 'cfo');
@@ -265,7 +272,8 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   pullAnnual('ShortTermBorrowings', 'shortTermDebt');
   pullAnnual('LongTermDebtCurrent', 'shortTermDebt');
   pullAnnual('LongTermDebtAndFinanceLeaseObligationsCurrent', 'shortTermDebt');
-  pullAnnual('StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest', 'stockholdersEquity');
+  pullAnnual('StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest', 'stockholdersEquityIncludingNCI');
+  pullAnnual('NoncontrollingInterestInConsolidatedEntity', 'noncontrollingInterest');
   pullAnnual('StockholdersEquity', 'stockholdersEquity');
   pullAnnual('CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', 'cash');
   pullAnnual('CashAndCashEquivalentsAtCarryingValue', 'cash');
@@ -492,6 +500,23 @@ function parseAnnualFinancials(facts, maxYears = 10) {
       return { ...y, fcf, fcfIsProxy, fcfUnavailableReason, fcfSBCAdjusted, sbcIntensity, grossMargin, opMargin,
         totalDebt, investedCapital, nopat, roic, inventoryTurnover, ebitda };
     });
+
+  // Mark ownership-scope mismatches generically. If a large share of consolidated
+  // earnings belongs to non-controlling owners, consolidated FCF/EBITDA should not be
+  // valued against only the listed parent-company share denominator.
+  for (const y of years) {
+    const consolidated = Number(y.netIncome);
+    const parentCandidate = y.netIncomeAttributableToParent ?? y.netIncomeAttributableToCommon;
+    const parent = Number(parentCandidate);
+    const nci = Number(y.netIncomeAttributableToNCI);
+    if (Number.isFinite(consolidated) && parentCandidate != null && Number.isFinite(parent)) {
+      y.consolidatedNetIncome = consolidated;
+      y.parentNetIncome = parent;
+      y.netIncome = parent;
+    }
+    const denom = Math.max(Math.abs(consolidated || 0), Math.abs(parent || 0) + Math.abs(nci || 0));
+    y.noncontrollingIncomeShare = denom > 0 && y.netIncomeAttributableToNCI != null && Number.isFinite(nci) ? Math.abs(nci) / denom : null;
+  }
 
   return years;
 }
@@ -785,6 +810,15 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
     growthYear1 = blendedForwardGrowth(trailingCagr, recentQoQ);
   }
 
+  const latestRevenueSource = String(last.revenueSource || '');
+  const financialLikeRevenue = /PremiumsEarnedNet|InvestmentIncomeInterestAndDividend|InterestAndDividendIncomeOperating|InterestIncomeExpenseNonoperatingNet|RevenuesNetOfInterestExpense/i.test(latestRevenueSource);
+  const nciIncomeShare = Number(last.noncontrollingIncomeShare);
+  const nciBalance = Number(last.noncontrollingInterest);
+  const parentEquity = Number(last.stockholdersEquity);
+  const nciBalanceShare = Number.isFinite(nciBalance) && Number.isFinite(parentEquity) && Math.abs(parentEquity) + Math.abs(nciBalance) > 0
+    ? Math.abs(nciBalance) / (Math.abs(parentEquity) + Math.abs(nciBalance)) : null;
+  const materialNoncontrollingInterest = (Number.isFinite(nciIncomeShare) && nciIncomeShare >= 0.20) || (Number.isFinite(nciBalanceShare) && nciBalanceShare >= 0.20);
+
   const stockShell = {
     ticker,
     sector: sector || 'Unknown',
@@ -795,6 +829,11 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
       missingEbitdaYears: years.filter(y => y.operatingIncome != null && y.ebitda == null).length,
       shareDenominatorReliable: shareCountReconciliation.reliable !== false,
       shareDenominatorReason: shareCountReconciliation.reason || null,
+      financialLikeRevenue,
+      materialNoncontrollingInterest,
+      noncontrollingIncomeShare: Number.isFinite(nciIncomeShare) ? nciIncomeShare : null,
+      noncontrollingBalanceShare: Number.isFinite(nciBalanceShare) ? nciBalanceShare : null,
+      latestRevenueSource: latestRevenueSource || null,
     } },
     valuation: {
       pe, forwardPe: pe, evEbitda, fcfYield, marketCap,
