@@ -180,8 +180,12 @@ function valuate(stock,forecast,quality){
   const marketCap=price>0&&shares0>0?price*shares0:null, revenue0=finite(last.revenue)>0?finite(last.revenue):null;
   const q=(quality.qualityScore||50)/100, growth=clamp(forecast.year5OperatingGrowth??forecast.rows?.at(-1)?.revenueGrowth??forecast.sustainableGrowth??forecast.revenueGrowthAnchor,0,.18);
   const methods=[], base=normalizedOperatingBase(stock,forecast);
+  const shareDenominatorReliable=stock.financials?.dataQuality?.shareDenominatorReliable !== false;
 
-  if(stock.sector==='Financials'){
+  if(!shareDenominatorReliable){
+    // Fail closed. A corrupted share denominator can turn an ordinary enterprise value
+    // into a triple-digit per-share CAGR. Do not value until the denominator is reconciled.
+  } else if(stock.sector==='Financials'){
     const epsBase=normalizedFinancialEPS(years,last), currentPE=safeMultiple(price>0&&epsBase>0?price/epsBase:null,6,28);
     if(epsBase>0){
       const buybackTailwind=clamp(-(forecast.dilutionRate||0),-.03,.04);
@@ -307,7 +311,8 @@ function valuate(stock,forecast,quality){
   else if(independentMethodCount===2) valuationConfidence=Math.min(valuationConfidence,82);
   let modelSupport='standard', modelSupportReason=null;
   if(stock.sector==='Real Estate'){modelSupport='limited';modelSupportReason='REIT/real-estate specialized FFO-NAV metrics are not available in the free-data model';valuationConfidence=Math.min(valuationConfidence,50);}
-  if(stock.sector==='Financials'&&methods.length===0){modelSupport='unsupported';modelSupportReason='No reliable normalized EPS basis for financial-company valuation';valuationConfidence=Math.min(valuationConfidence,35);}
+  if(!shareDenominatorReliable){modelSupport='unsupported';modelSupportReason='Share-count denominator failed independent reconciliation';valuationConfidence=Math.min(valuationConfidence,20);}
+  else if(stock.sector==='Financials'&&methods.length===0){modelSupport='unsupported';modelSupportReason='No reliable normalized EPS basis for financial-company valuation';valuationConfidence=Math.min(valuationConfidence,35);}
   const uncertainty=clamp((100-valuationConfidence)/100,.10,.45);
   const bear=total!=null?total*Math.pow(1-(.035+.04*uncertainty),HORIZON_YEARS):null, bull=total!=null?total*Math.pow(1+(.035+.035*uncertainty),HORIZON_YEARS):null;
   const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
