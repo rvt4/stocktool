@@ -155,20 +155,34 @@ function robustOutcomeBlend(methods,price,consensus=null){
   return {outcome,weights:Object.fromEntries(adjusted.map(x=>[x.name,x.adjustedWeight/totalW]))};
 }
 
-function dcfFairValue(forecast,req){
+function dcfFairValue(forecast,req,currentShares){
   const rows=forecast.rows||[];
-  if(rows.length!==HORIZON_YEARS||!(req>0))return null;
-  const cashflows=rows.map(r=>finite(r.fcfPerShare));
+  if(rows.length!==HORIZON_YEARS||!(req>0)||!(currentShares>0))return null;
+
+  // V11.4: value aggregate owner cash flow, then divide by TODAY'S ownership base.
+  // Discounting forecast FCF/share while the forecast also shrinks the share count counts
+  // buyback-funded FCF twice: once as cash flow and again through a smaller denominator.
+  // Aggregate FCF is invariant to whether excess cash is retained, paid as dividends, or
+  // used for repurchases, which is the correct starting point for an intrinsic DCF.
+  const cashflows=rows.map(r=>{
+    const fcfps=finite(r.fcfPerShare), shares=finite(r.shares);
+    return fcfps>0&&shares>0?fcfps*shares:null;
+  });
   if(cashflows.filter(x=>Number.isFinite(x)&&x>0).length<Math.max(6,HORIZON_YEARS-2))return null;
-  let explicit=0;
+  let explicitTotal=0;
   for(let i=0;i<cashflows.length;i++){
     if(!(cashflows[i]>0))return null;
-    explicit+=pv(cashflows[i],req,i+1);
+    explicitTotal+=pv(cashflows[i],req,i+1);
   }
-  const g=clamp(finite(forecast.terminalGrowth)??.025,.01,Math.min(.05,req-.025));
+
+  // Mature perpetual growth is deliberately conservative. The explicit forecast already
+  // gives the business ten years to compound; the terminal period should resemble a
+  // mature economy, not extend a premium growth regime indefinitely.
+  const g=clamp(finite(forecast.terminalGrowth)??.02,.005,Math.min(.025,req-.04));
   if(!(req>g))return null;
-  const terminal=cashflows.at(-1)*(1+g)/(req-g);
-  const pvTerminal=pv(terminal,req,HORIZON_YEARS);
+  const terminalTotal=cashflows.at(-1)*(1+g)/(req-g);
+  const pvTerminalTotal=pv(terminalTotal,req,HORIZON_YEARS);
+  const explicit=explicitTotal/currentShares, pvTerminal=pvTerminalTotal/currentShares;
   const fair=explicit+pvTerminal;
   return fair>0?{fairValue:fair,pvExplicit:explicit,pvTerminal,terminalGrowth:g,terminalShare:pvTerminal/fair}:null;
 }
@@ -223,15 +237,13 @@ function valuate(stock,forecast,quality){
       const fundamental=(1+stableG)/Math.max(.035,req-stableG);
       const justified=.75*fundamental+.25*(13+growth*18+(q-.5)*6), m=boundedExit(currentPFCF,justified,8,26);
       const rel=methodReliability(stock,forecast,'FCF',normFCF,f.fcfPerShare,quality);
-      // A terminal FCF multiple by itself discards the first ten years of owner cash flow.
-      // Value the explicit FCF stream plus the year-10 exit value, then express that PV
-      // as a year-10 equivalent so it can be blended consistently with other methods.
-      const explicitFCFPV=rows.reduce((sum,r,i)=>sum+(Number(r.fcfPerShare)>0?pv(Number(r.fcfPerShare),req,i+1):0),0);
+      // V11.4: an exit-multiple method values the business at the exit date. Do not also
+      // add every interim dollar of FCF here. The forecast share path already reflects
+      // repurchases/capital allocation, so adding explicit FCF on top was systematically
+      // double-counting owner cash and made FCF-exit values track the (also inflated) DCF.
+      // Dividends are added later because this is now an exit-only method.
       const terminalFCFValue=f.fcfPerShare*m;
-      const terminalFCFPV=pv(terminalFCFValue,req,HORIZON_YEARS);
-      const fcfExitFair=explicitFCFPV+terminalFCFPV;
-      const fcfExitOutcome=fcfExitFair*Math.pow(1+req,HORIZON_YEARS);
-      addMethod(methods,{name:'FCF exit',target:fcfExitOutcome,weight:.30,reliability:rel.score,price,family:'cashflow',cashFlowInclusive:true,audit:{exitMultiple:m,currentMultiple:currentPFCF,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,pvExplicit:explicitFCFPV,pvTerminalExit:terminalFCFPV,terminalExitValue:terminalFCFValue,reliabilityReasons:rel.reasons}});
+      addMethod(methods,{name:'FCF exit',target:terminalFCFValue,weight:.30,reliability:rel.score,price,family:'cashflow_exit',cashFlowInclusive:false,audit:{exitMultiple:m,currentMultiple:currentPFCF,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,terminalExitValue:terminalFCFValue,reliabilityReasons:rel.reasons}});
     }
     if(Number(f.eps)>0&&normEPS>0){
       const stableG=clamp(forecast.terminalGrowth,.01,Math.min(.045,req-.03));
@@ -250,13 +262,13 @@ function valuate(stock,forecast,quality){
       }
     }
 
-    const dcf=allowEnterpriseScopeMethods?dcfFairValue(forecast,req):null;
+    const dcf=allowEnterpriseScopeMethods?dcfFairValue(forecast,req,shares0):null;
     if(dcf){
       const terminalOutcome=dcf.fairValue*Math.pow(1+req,HORIZON_YEARS);
       const rel=methodReliability(stock,forecast,'FCF',normFCF,f.fcfPerShare,quality);
       // Terminal-value-heavy DCFs are still useful, but receive less reliability when
       // most of the present value depends on the perpetuity rather than explicit cash flow.
-      const terminalPenalty=dcf.terminalShare>.80?.70:(dcf.terminalShare>.70?.85:1);
+      const terminalPenalty=dcf.terminalShare>.75?.55:(dcf.terminalShare>.65?.72:(dcf.terminalShare>.55?.88:1));
       addMethod(methods,{name:'10Y DCF',target:terminalOutcome,weight:.40,reliability:rel.score*terminalPenalty,price,family:'cashflow',cashFlowInclusive:true,audit:{fairValueToday:dcf.fairValue,pvExplicit:dcf.pvExplicit,pvTerminal:dcf.pvTerminal,terminalGrowth:dcf.terminalGrowth,terminalShare:dcf.terminalShare,reliabilityReasons:[...rel.reasons,...(terminalPenalty<1?['terminal_value_concentration']:[])]}});
     }
 
@@ -345,6 +357,15 @@ function valuate(stock,forecast,quality){
   else if(independentMethodCount===1) valuationConfidence=Math.min(valuationConfidence,68);
   else if(independentMethodCount===2) valuationConfidence=Math.min(valuationConfidence,82);
   let modelSupport='standard', modelSupportReason=null;
+  if(financialLike&&methods.length>0){
+    // Banks, insurers and mortgage REITs need book value/ROTCE, capital, reserve or
+    // distributable-earnings inputs that the free generic dataset does not reliably
+    // provide. A lone normalized-EPS exit can remain visible as a reference valuation,
+    // but it must not masquerade as decision-grade multi-method evidence.
+    modelSupport='limited';
+    modelSupportReason='Financial-style business is supported by normalized EPS only; specialized book-value/capital/ROTCE or distributable-earnings evidence is unavailable';
+    valuationConfidence=Math.min(valuationConfidence,50);
+  }
   if(stock.sector==='Real Estate'){modelSupport='limited';modelSupportReason='REIT/real-estate specialized FFO-NAV metrics are not available in the free-data model';valuationConfidence=Math.min(valuationConfidence,50);}
   if(!shareDenominatorReliable){modelSupport='unsupported';modelSupportReason='Share-count denominator failed independent reconciliation';valuationConfidence=Math.min(valuationConfidence,20);}
   else if(financialLike&&methods.length===0){modelSupport='unsupported';modelSupportReason='Financial/insurance-like economics require a reliable normalized EPS basis; cash-flow and sales fallbacks are intentionally disabled';valuationConfidence=Math.min(valuationConfidence,35);}
