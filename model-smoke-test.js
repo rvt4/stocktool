@@ -11,7 +11,7 @@ function stock({ticker='TEST',sector='Technology',price=100,growth=.10,margin=.2
   for(let i=0;i<5;i++){revenue*=1+growth;shares*=1+dilution;years.push({year:2021+i,revenue,fcf:revenue*margin,fcfSBCAdjusted:revenue*(margin-.01),ebitda:revenue*(margin+.08),netIncome:revenue*(margin-.03),operatingIncome:revenue*(margin+.05),sharesOutTTM:shares,roic,opMargin:margin+.05,totalDebt:1e9,cash:1.5e9,dividendPerShare:dividend,sbcIntensity:.02});}
   return{ticker,sector,financials:{years,dataQuality:{}},analystEstimates:{revenueGrowthCurrentYear:growth,revenueGrowthNextYear:growth*.9,numAnalysts:25},growthYear1:growth,price:{current:price},valuation:{dividendYield:dividend/price,growthSource:'test'}};
 }
-function run(s){const f=buildForecast(s),q=computeQuality(s,f),v=valuate(s,f,q),d=rateStock(s,f,q,v);const pub={ticker:s.ticker,currentPrice:s.price.current,totalShareholderValue:v.totalShareholderValue,expectedReturn:v.expectedCAGR,bearCAGR:v.bearCAGR,baseCAGR:v.baseCAGR,bullCAGR:v.bullCAGR,fairValueEstimate:v.fairValueEstimate,marginOfSafety:v.marginOfSafety,rating:d.rating};assert.deepStrictEqual(validateStock(pub),[]);assert(v.bearCAGR<=v.baseCAGR&&v.baseCAGR<=v.bullCAGR);assert(Math.abs((v.fairValueEstimate/s.price.current-1)-v.marginOfSafety)<1e-10);return{f,q,v,d};}
+function run(s){const f=buildForecast(s),q=computeQuality(s,f),v=valuate(s,f,q),d=rateStock(s,f,q,v);const pub={ticker:s.ticker,currentPrice:s.price.current,totalShareholderValue:v.totalShareholderValue,expectedReturn:v.expectedCAGR,bearCAGR:v.bearCAGR,baseCAGR:v.baseCAGR,bullCAGR:v.bullCAGR,fairValueEstimate:v.fairValueEstimate,marginOfSafety:v.marginOfSafety,rating:d.rating,methodAgreementScore:v.methodAgreementScore,methodCount:v.methods.length,independentMethodCount:v.independentMethodCount,valuationConfidenceScore:v.valuationConfidenceScore,forecastReliabilityScore:v.forecastReliabilityScore,modelSupport:v.modelSupport};assert.deepStrictEqual(validateStock(pub),[]);assert(v.bearCAGR<=v.baseCAGR&&v.baseCAGR<=v.bullCAGR);assert(Math.abs((1-s.price.current/v.fairValueEstimate)-v.marginOfSafety)<1e-10);return{f,q,v,d};}
 const compounder=run(stock({ticker:'COMPOUNDER',price:180,growth:.11,margin:.30,roic:.30,dilution:-.01}));
 const expensive=run(stock({ticker:'EXPENSIVE',price:1000,growth:.25,margin:.20,roic:.24,dilution:.02}));
 const dividend=run(stock({ticker:'DIVIDEND',sector:'Consumer Staples',price:80,growth:.04,margin:.14,roic:.18,dividend:3}));
@@ -64,7 +64,8 @@ assert.notStrictEqual(ppD.rating,'Unrated','fallback-valued company should recei
 // non-decision-grade instead of clipping the return to an arbitrary number.
 const pathological=stock({ticker:'PATHOLOGICAL',price:5,growth:.30,margin:.35,roic:.35,dilution:-.04});
 const pathF=buildForecast(pathological), pathQ=computeQuality(pathological,pathF), pathV=valuate(pathological,pathF,pathQ);
-assert(pathV.expectedCAGR==null || pathV.expectedCAGR<=.25,'pathological upside leaked into published CAGR');
+assert(Number.isFinite(pathV.expectedCAGR),'modelable pathological upside should remain visible rather than be silently nulled');
+assert(pathV.extremeReturnFlag===true,'pathological upside must be flagged for review');
 
 // Financials are valued from normalized EPS, not revenue × margin. This protects
 // banks/insurers/multi-class investment companies from accounting-base explosions.
@@ -72,9 +73,9 @@ const financial=stock({ticker:'FIN',sector:'Financials',price:100,growth:.18,mar
 for(const y of financial.financials.years){ y.dilutedEPS=y.netIncome/y.sharesOutTTM; }
 const finF=buildForecast(financial), finQ=computeQuality(financial,finF), finV=valuate(financial,finF,finQ);
 assert(finV.methods.every(m=>m.name==='Normalized EPS exit'),'financial valuation should use normalized EPS only');
-assert(finV.expectedCAGR==null || finV.expectedCAGR<=.25,'financial base-case CAGR exceeded plausibility ceiling');
+assert(Number.isFinite(finV.expectedCAGR),'modelable financial valuation should remain visible rather than be silently nulled');
 
-console.log('Model smoke test passed: canonical math, normalized valuation anchors, financial EPS handling, and pathological-upside rejection are internally consistent.');
+console.log('Model smoke test passed: canonical math, normalized valuation anchors, financial EPS handling, and extreme-upside review flags are internally consistent.');
 
 // Missing capex must not masquerade as free cash flow. The model should keep the FCF
 // path unavailable and value the company from other defensible methods instead.
@@ -218,3 +219,16 @@ assert(evV.independentMethodCount<=evV.methods.length,'independent evidence coun
 if(evV.independentMethodCount===1)assert(evV.valuationConfidenceScore<=68,'single evidence family received excessive valuation confidence');
 
 console.log('V10 trust invariants passed: price independence, dilution monotonicity, weak-history fade, specialized-model guardrails, and evidence-count confidence are enforced.');
+
+
+// V11 cash-flow reconciliation invariants -----------------------------------
+// FCF-exit valuation must include the explicit owner-cash-flow stream rather than only
+// the year-10 terminal multiple. DCF/FCF methods must not add dividends a second time.
+const cashRecon=stock({ticker:'CASH_RECON',price:100,growth:.10,margin:.20,roic:.22,dividend:3});
+const crF=buildForecast(cashRecon),crQ=computeQuality(cashRecon,crF),crV=valuate(cashRecon,crF,crQ);
+const crExit=crV.methods.find(m=>m.name==='FCF exit'), crDCF=crV.methods.find(m=>m.name==='10Y DCF');
+assert(crExit?.audit?.pvExplicit>0,'FCF exit omitted explicit owner cash flows');
+assert(crExit?.cashFlowInclusive===true&&crDCF?.cashFlowInclusive===true,'cash-flow methods not marked cash-flow inclusive');
+assert(crExit?.audit?.dividendOutcomeAdded===0&&crDCF?.audit?.dividendOutcomeAdded===0,'dividends were double-counted inside a cash-flow method');
+assert(crV.presentValueDividends>0&&crV.terminalDividendValue>crV.cumulativeDividends,'interim dividends were not time-valued consistently');
+console.log('V11 cash-flow reconciliation invariants passed: explicit FCF is preserved and dividends are not double-counted.');
