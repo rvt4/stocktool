@@ -623,6 +623,70 @@ function normalizeHistoryForCorporateAction(years, currentShareFact) {
   return { applied:true, factor, source:currentShareFact };
 }
 
+
+
+// Generic live share-count reconciliation. SEC Company Facts is authoritative for
+// accounting totals, but share-denominator facts can occasionally be stale, pre-split,
+// or reported on an unexpected scale. Use an independent live market-cap/price implied
+// denominator only when the SEC value is economically implausible. If it cannot be
+// reconciled, fail closed instead of publishing a distorted per-share valuation.
+function shareDenominatorLooksSuspicious(years, currentPrice) {
+  const last = Array.isArray(years) ? years.at(-1) : null;
+  const shares = Number(last?.sharesOutTTM);
+  const revenue = Number(last?.revenue);
+  if (!(shares > 0) || !(currentPrice > 0)) return true;
+  if (shares < 100000) return true;
+  const impliedMarketCap = shares * currentPrice;
+  if (revenue > 0) {
+    const salesMultiple = impliedMarketCap / revenue;
+    if (salesMultiple < 0.05 || salesMultiple > 100) return true;
+    if (revenue / shares > 5000) return true;
+  }
+  return false;
+}
+
+function reconcileSharesWithLiveMarketCap(years, currentPrice, profile) {
+  const last = Array.isArray(years) ? years.at(-1) : null;
+  if (!last) return { reliable:false, applied:false, reason:'missing_financial_history' };
+  const reportedShares = Number(last.sharesOutTTM);
+  const profileMarketCap = Number(profile?.marketCapitalization) * 1e6;
+  const impliedShares = profileMarketCap > 0 && currentPrice > 0 ? profileMarketCap / currentPrice : null;
+  if (!(Number.isFinite(impliedShares) && impliedShares > 100000 && impliedShares < 1e11)) {
+    return { reliable:false, applied:false, reason:'live_market_cap_unavailable', reportedShares:reportedShares||null };
+  }
+
+  if (!(reportedShares > 0)) {
+    last.sharesOutTTM = impliedShares;
+    last.sharesSource = 'finnhub_market_cap_div_price';
+    return { reliable:true, applied:true, factor:null, reportedShares:null, impliedShares, profileMarketCap };
+  }
+
+  const ratio = impliedShares / reportedShares;
+  const mismatch = Math.max(ratio, 1/ratio);
+  // Ignore ordinary timing differences from buybacks/issuance. Only repair clear
+  // denominator-scale/corporate-action breaks.
+  if (mismatch < 1.75) {
+    return { reliable:true, applied:false, factor:1, reportedShares, impliedShares, profileMarketCap, mismatch };
+  }
+
+  // Rebase the historical denominator series by the same factor so dilution trends and
+  // historical per-share figures remain on one consistent basis. Dollar totals do not change.
+  for (const y of years) {
+    if (Number(y.sharesOutTTM) > 0) {
+      y.preLiveReconciliationSharesOutTTM = Number(y.sharesOutTTM);
+      y.sharesOutTTM = Number(y.sharesOutTTM) * ratio;
+      y.sharesSource = `${y.sharesSource || 'sec'}_live_market_cap_rebased`;
+    }
+    for (const field of ['dilutedEPS','dividendPerShare']) {
+      if (Number.isFinite(Number(y[field]))) y[field] = Number(y[field]) / ratio;
+    }
+    y.liveShareReconciliationFactor = ratio;
+  }
+  last.sharesOutTTM = impliedShares;
+  last.sharesSource = 'finnhub_market_cap_div_price_reconciled';
+  return { reliable:true, applied:true, factor:ratio, reportedShares, impliedShares, profileMarketCap, mismatch };
+}
+
 // --- Assemble the full stock object the scoring engine expects ---
 // Note: sector should be passed in (e.g. from your watchlist.json / index CSV) —
 // we don't call Finnhub's profile endpoint anymore, which halves Finnhub API usage
@@ -647,6 +711,18 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   const last = years[years.length - 1] || {};
   const currentPrice = quote?.c || (priceHistory.length ? priceHistory[priceHistory.length - 1].close : null);
 
+  // Independent denominator audit. Only spend the extra Finnhub profile request when
+  // the SEC-derived denominator creates economically implausible per-share scale.
+  let shareCountReconciliation = { reliable:true, applied:false, reason:'sec_denominator_plausible' };
+  if (shareDenominatorLooksSuspicious(years, currentPrice)) {
+    try {
+      const profile = await fetchFinnhubProfile(finnhubTicker);
+      shareCountReconciliation = reconcileSharesWithLiveMarketCap(years, currentPrice, profile);
+    } catch (_) {
+      shareCountReconciliation = { reliable:false, applied:false, reason:'live_reconciliation_fetch_failed' };
+    }
+  }
+
   // Corporate-action denominator repair. SEC share-count facts can remain on a
   // pre-split basis while diluted EPS and the live quote are already split-adjusted.
   // Net income / diluted EPS gives an independent diluted-share denominator. When it
@@ -665,26 +741,15 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
     }
   }
 
-  // Final live-data repair for the rare issuer whose SEC Company Facts omit every
-  // usable diluted-share denominator (Visa is the known example). Finnhub profile2
-  // reports marketCapitalization in USD millions. We call it ONLY for missing-share
-  // records, so normal runs remain at one Finnhub request per ticker.
-  if (!(last.sharesOutTTM > 100000) && currentPrice > 0) {
-    try {
-      const profile = await fetchFinnhubProfile(finnhubTicker);
-      const profileMarketCap = Number(profile?.marketCapitalization) * 1e6;
-      const impliedShares = profileMarketCap > 0 ? profileMarketCap / currentPrice : null;
-      if (Number.isFinite(impliedShares) && impliedShares > 100000 && impliedShares < 1e11) {
-        last.sharesOutTTM = impliedShares;
-        last.rawSharesOutTTM = null;
-        last.sharesScaleApplied = null;
-        last.sharesSource = 'finnhub_market_cap_div_price';
-        last.sharesFallbackMarketCap = profileMarketCap;
-      }
-    } catch (_) {
-      // Leave valuation unavailable rather than inventing a denominator.
-    }
+  // If the denominator still looks suspicious after the independent audit, do not
+  // permit it to flow into per-share valuation. A missing valuation is safer than a
+  // fabricated 50%-100% CAGR caused by a bad denominator.
+  if (shareDenominatorLooksSuspicious(years, currentPrice) && !shareCountReconciliation.reliable) {
+    last.unreliableSharesOutTTM = last.sharesOutTTM ?? null;
+    last.sharesOutTTM = null;
+    last.sharesSource = 'unreconciled_share_denominator';
   }
+
 
   const sharesOut = last.sharesOutTTM;
   const marketCap = currentPrice && sharesOut ? currentPrice * sharesOut : null;
@@ -728,6 +793,8 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
       fcfProxyYears: years.filter(y => y.fcfIsProxy).length,
       missingCapexYears: years.filter(y => y.fcfUnavailableReason === 'missing_capex').length,
       missingEbitdaYears: years.filter(y => y.operatingIncome != null && y.ebitda == null).length,
+      shareDenominatorReliable: shareCountReconciliation.reliable !== false,
+      shareDenominatorReason: shareCountReconciliation.reason || null,
     } },
     valuation: {
       pe, forwardPe: pe, evEbitda, fcfYield, marketCap,
@@ -746,6 +813,7 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
     price: { current: currentPrice },
     quarterly: quarters,
     corporateActionNormalization,
+    shareCountReconciliation,
     historicalMultiples: { evEbitda: [], forwardPe: [] }, // optional: backfill from priceHistory + trailing EPS
     earningsCallText: null, // optional: plug in a free transcript source if you find one
   };
@@ -757,7 +825,7 @@ const api = {
   fetchSecFacts, parseAnnualFinancials, parseQuarterlyRevenue, recentQuarterYoYGrowth, blendedForwardGrowth,
   fetchStooqPrice, fetchStooqHistory,
   fetchFinnhubProfile, fetchFinnhubQuote, fetchFinnhubRevenueEstimate,
-  buildStockRecord, latestDilutedSharesFromFacts, normalizeHistoryForCorporateAction, getTickerCikMap, normalizeSecTicker, normalizeFinnhubTicker, fetchWithTimeout,
+  buildStockRecord, latestDilutedSharesFromFacts, normalizeHistoryForCorporateAction, shareDenominatorLooksSuspicious, reconcileSharesWithLiveMarketCap, getTickerCikMap, normalizeSecTicker, normalizeFinnhubTicker, fetchWithTimeout,
 };
 
 if (typeof module !== 'undefined' && module.exports) module.exports = api;

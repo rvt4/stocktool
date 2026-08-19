@@ -232,3 +232,30 @@ assert(crExit?.cashFlowInclusive===true&&crDCF?.cashFlowInclusive===true,'cash-f
 assert(crExit?.audit?.dividendOutcomeAdded===0&&crDCF?.audit?.dividendOutcomeAdded===0,'dividends were double-counted inside a cash-flow method');
 assert(crV.presentValueDividends>0&&crV.terminalDividendValue>crV.cumulativeDividends,'interim dividends were not time-valued consistently');
 console.log('V11 cash-flow reconciliation invariants passed: explicit FCF is preserved and dividends are not double-counted.');
+
+// V11.1 share-denominator reconciliation invariants --------------------------
+const { shareDenominatorLooksSuspicious, reconcileSharesWithLiveMarketCap } = require('./data-fetchers');
+const brokenShareYears=[
+  {year:2024,revenue:4.0e9,netIncome:2.0e8,sharesOutTTM:300000,dilutedEPS:2.0},
+  {year:2025,revenue:5.0e9,netIncome:2.5e8,sharesOutTTM:350000,dilutedEPS:2.2},
+];
+assert(shareDenominatorLooksSuspicious(brokenShareYears,50),'obviously tiny share denominator was not flagged');
+const shareFix=reconcileSharesWithLiveMarketCap(brokenShareYears,50,{marketCapitalization:15000}); // $15B => 300M shares
+assert(shareFix.reliable===true&&shareFix.applied===true,'live market-cap reconciliation did not repair broken shares');
+assert(Math.abs(brokenShareYears.at(-1).sharesOutTTM-300e6)<1,'reconciled latest share count is wrong');
+assert(brokenShareYears[0].sharesOutTTM>200e6,'historical share series was not rebased with the repaired denominator');
+assert(!shareDenominatorLooksSuspicious(brokenShareYears,50),'repaired denominator still looks suspicious');
+
+const saneShareYears=[{year:2025,revenue:10e9,sharesOutTTM:100e6,dilutedEPS:5}];
+assert(!shareDenominatorLooksSuspicious(saneShareYears,100),'sane denominator was falsely flagged');
+const saneFix=reconcileSharesWithLiveMarketCap(saneShareYears,100,{marketCapitalization:10200});
+assert(saneFix.applied===false&&saneFix.reliable===true,'ordinary live/SEC timing difference should not trigger a rebase');
+
+// Valuation must fail closed when the denominator audit fails.
+const badDenom=stock({ticker:'BAD_DENOM',price:50,growth:.15,margin:.20,roic:.20});
+badDenom.financials.dataQuality={shareDenominatorReliable:false};
+const bdF=buildForecast(badDenom),bdQ=computeQuality(badDenom,bdF),bdV=valuate(badDenom,bdF,bdQ);
+assert.strictEqual(bdV.methods.length,0,'unreconciled share denominator was allowed into valuation');
+assert.strictEqual(bdV.modelSupport,'unsupported','unreconciled share denominator should fail closed');
+assert.strictEqual(bdV.expectedCAGR,null,'unreconciled share denominator published an expected CAGR');
+console.log('Share-denominator reconciliation tests passed: scale errors are repaired and unreconciled cases fail closed.');
