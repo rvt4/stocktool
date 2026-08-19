@@ -28,8 +28,13 @@ function weightedAverage(items){let n=0,d=0;for(const [v,w] of items){if(Number.
 
 function classifyCategory(stock,growth,qualityHint,dividendYield){
   const sector=stock.sector||'Unknown';
-  if(dividendYield>=0.03 && growth<0.12) return 'Dividend';
-  if(sector==='Financials') return growth>=0.10?'Growth':(dividendYield>=0.02?'Dividend':'Value');
+  const financialLike=stock.financials?.dataQuality?.financialLikeRevenue===true;
+  // Category is descriptive, not a return override. High-yield payout vehicles should
+  // not be mislabeled Growth merely because reported revenue is volatile (mortgage REITs
+  // are the classic failure mode). A very high yield is therefore a strong category signal.
+  if(dividendYield>=0.045) return 'Dividend';
+  if(dividendYield>=0.03 && growth<0.15) return 'Dividend';
+  if(sector==='Financials'||financialLike) return growth>=0.12?'Growth':(dividendYield>=0.02?'Dividend':'Value');
   if(growth>=0.20) return 'Hyper Growth';
   if(growth>=0.10) return 'Growth';
   if(qualityHint>=0.68 && growth>=0.035) return 'Compounder';

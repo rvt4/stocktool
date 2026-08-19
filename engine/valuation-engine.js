@@ -180,12 +180,15 @@ function valuate(stock,forecast,quality){
   const marketCap=price>0&&shares0>0?price*shares0:null, revenue0=finite(last.revenue)>0?finite(last.revenue):null;
   const q=(quality.qualityScore||50)/100, growth=clamp(forecast.year5OperatingGrowth??forecast.rows?.at(-1)?.revenueGrowth??forecast.sustainableGrowth??forecast.revenueGrowthAnchor,0,.18);
   const methods=[], base=normalizedOperatingBase(stock,forecast);
-  const shareDenominatorReliable=stock.financials?.dataQuality?.shareDenominatorReliable !== false;
+  const dataQuality=stock.financials?.dataQuality||{};
+  const shareDenominatorReliable=dataQuality.shareDenominatorReliable !== false;
+  const financialLike=stock.sector==='Financials'||dataQuality.financialLikeRevenue===true;
+  const materialNCI=dataQuality.materialNoncontrollingInterest===true;
 
   if(!shareDenominatorReliable){
     // Fail closed. A corrupted share denominator can turn an ordinary enterprise value
     // into a triple-digit per-share CAGR. Do not value until the denominator is reconciled.
-  } else if(stock.sector==='Financials'){
+  } else if(financialLike){
     const epsBase=normalizedFinancialEPS(years,last), currentPE=safeMultiple(price>0&&epsBase>0?price/epsBase:null,6,28);
     if(epsBase>0){
       const buybackTailwind=clamp(-(forecast.dilutionRate||0),-.03,.04);
@@ -207,11 +210,15 @@ function valuate(stock,forecast,quality){
     }
   } else {
     const normFCF=base.fcfPerShare, normEPS=base.eps, normEBITDA=base.ebitda;
+    // When a material slice of consolidated economics belongs to non-controlling owners,
+    // consolidated FCF/EBITDA is not on the same ownership scope as the listed share
+    // denominator. Keep parent EPS usable, but suppress whole-enterprise cash-flow methods.
+    const allowEnterpriseScopeMethods=!materialNCI;
     const currentPFCF=safeMultiple(price>0&&normFCF>0?price/normFCF:null,6,35);
     const currentPE=safeMultiple(price>0&&normEPS>0?price/normEPS:null,6,38);
     const currentEVEBITDA=safeMultiple(marketCap>0&&normEBITDA>0?(marketCap+netDebt)/normEBITDA:null,4,24);
 
-    if(Number(f.fcfPerShare)>0&&normFCF>0){
+    if(allowEnterpriseScopeMethods&&Number(f.fcfPerShare)>0&&normFCF>0){
       const stableG=clamp(forecast.terminalGrowth,.01,Math.min(.045,req-.03));
       const fundamental=(1+stableG)/Math.max(.035,req-stableG);
       const justified=.75*fundamental+.25*(13+growth*18+(q-.5)*6), m=boundedExit(currentPFCF,justified,8,26);
@@ -235,7 +242,7 @@ function valuate(stock,forecast,quality){
       const rel=methodReliability(stock,forecast,'EPS',normEPS,f.eps,quality);
       addMethod(methods,{name:'EPS exit',target:f.eps*m,weight:.20,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:f.eps,normalizedCurrentMetric:normEPS,reliabilityReasons:rel.reasons}});
     }
-    if(Number(f.ebitda)>0&&Number(f.shares)>0&&normEBITDA>0){
+    if(allowEnterpriseScopeMethods&&Number(f.ebitda)>0&&Number(f.shares)>0&&normEBITDA>0){
       const justified=cfg.baseEVEBITDA+growth*10+(q-.5)*3, m=boundedExit(currentEVEBITDA,justified,5,18), equity=f.ebitda*m-netDebt;
       if(equity>0){
         const rel=methodReliability(stock,forecast,'EBITDA',normEBITDA,f.ebitda,quality);
@@ -243,7 +250,7 @@ function valuate(stock,forecast,quality){
       }
     }
 
-    const dcf=dcfFairValue(forecast,req);
+    const dcf=allowEnterpriseScopeMethods?dcfFairValue(forecast,req):null;
     if(dcf){
       const terminalOutcome=dcf.fairValue*Math.pow(1+req,HORIZON_YEARS);
       const rel=methodReliability(stock,forecast,'FCF',normFCF,f.fcfPerShare,quality);
@@ -253,15 +260,22 @@ function valuate(stock,forecast,quality){
       addMethod(methods,{name:'10Y DCF',target:terminalOutcome,weight:.40,reliability:rel.score*terminalPenalty,price,family:'cashflow',cashFlowInclusive:true,audit:{fairValueToday:dcf.fairValue,pvExplicit:dcf.pvExplicit,pvTerminal:dcf.pvTerminal,terminalGrowth:dcf.terminalGrowth,terminalShare:dcf.terminalShare,reliabilityReasons:[...rel.reasons,...(terminalPenalty<1?['terminal_value_concentration']:[])]}});
     }
 
-    if(!methods.length&&Number(f.revenue)>0&&Number(f.shares)>0&&revenue0>0){
+    if(!methods.length&&allowEnterpriseScopeMethods&&Number(f.revenue)>0&&Number(f.shares)>0&&revenue0>0){
       const currentEVSales=marketCap>0?safeMultiple((marketCap+netDebt)/revenue0,.25,12):null;
-      {
-        const terminalEbitdaMargin=clamp(Number(f.ebitdaMargin)||0,0,.60), normalizedMargin=Math.max(.04,terminalEbitdaMargin);
-        const economicsMultiple=cfg.baseEVEBITDA*normalizedMargin, growthPremium=clamp(growth-.04,0,.21)*10, qualityPremium=(q-.5)*1.25;
-        const justified=clamp(economicsMultiple+growthPremium+qualityPremium,.5,10), m=boundedExit(currentEVSales,justified,.5,10), equity=Number(f.revenue)*m-netDebt;
+      // Trust-first fallback: never invent a 4% profitability floor. Revenue multiples are
+      // only defensible when the company has observable positive normalized economics.
+      // If profitability is absent/negative, publish no valuation rather than manufacture
+      // a huge fair value from sales alone.
+      const observedMargins=[base.margins?.fcf,base.margins?.ebitda,base.margins?.net].filter(x=>Number.isFinite(x)&&x>0);
+      const observedMargin=observedMargins.length?Math.max(...observedMargins):null;
+      const growthEligible=(forecast.category==='Growth'||forecast.category==='Hyper Growth')&&growth>=.10;
+      if(observedMargin>=.02&&growthEligible){
+        const economicsMultiple=cfg.baseEVEBITDA*clamp(observedMargin,.02,.35);
+        const growthPremium=clamp(growth-.08,0,.15)*6, qualityPremium=(q-.5)*.75;
+        const justified=clamp(economicsMultiple+growthPremium+qualityPremium,.25,5), m=boundedExit(currentEVSales,justified,.25,5), equity=Number(f.revenue)*m-netDebt;
         if(equity>0){
           const rel=methodReliability(stock,forecast,'SALES',revenue0,f.revenue,quality);
-          addMethod(methods,{name:'EV/Sales fallback',target:equity/Number(f.shares),weight:1,reliability:rel.score,price,family:'sales',audit:{exitMultiple:m,currentMultiple:currentEVSales,metric:f.revenue,reason:'profitability_methods_unavailable',reliabilityReasons:rel.reasons}});
+          addMethod(methods,{name:'EV/Sales fallback',target:equity/Number(f.shares),weight:1,reliability:rel.score*.75,price,family:'sales',audit:{exitMultiple:m,currentMultiple:currentEVSales,metric:f.revenue,observedMargin,reason:'profitability_methods_unavailable_but_positive_economics_observed',reliabilityReasons:rel.reasons}});
         }
       }
     }
@@ -312,7 +326,9 @@ function valuate(stock,forecast,quality){
   let modelSupport='standard', modelSupportReason=null;
   if(stock.sector==='Real Estate'){modelSupport='limited';modelSupportReason='REIT/real-estate specialized FFO-NAV metrics are not available in the free-data model';valuationConfidence=Math.min(valuationConfidence,50);}
   if(!shareDenominatorReliable){modelSupport='unsupported';modelSupportReason='Share-count denominator failed independent reconciliation';valuationConfidence=Math.min(valuationConfidence,20);}
-  else if(stock.sector==='Financials'&&methods.length===0){modelSupport='unsupported';modelSupportReason='No reliable normalized EPS basis for financial-company valuation';valuationConfidence=Math.min(valuationConfidence,35);}
+  else if(financialLike&&methods.length===0){modelSupport='unsupported';modelSupportReason='Financial/insurance-like economics require a reliable normalized EPS basis; cash-flow and sales fallbacks are intentionally disabled';valuationConfidence=Math.min(valuationConfidence,35);}
+  else if(materialNCI&&methods.length===0){modelSupport='unsupported';modelSupportReason='Material non-controlling interest creates an ownership-scope mismatch and no parent-scope EPS valuation was available';valuationConfidence=Math.min(valuationConfidence,35);}
+  else if(methods.length===0){modelSupport='unsupported';modelSupportReason='No defensible valuation method produced a value from the available economics';valuationConfidence=Math.min(valuationConfidence,35);}
   const uncertainty=clamp((100-valuationConfidence)/100,.10,.45);
   const bear=total!=null?total*Math.pow(1-(.035+.04*uncertainty),HORIZON_YEARS):null, bull=total!=null?total*Math.pow(1+(.035+.035*uncertainty),HORIZON_YEARS):null;
   const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
