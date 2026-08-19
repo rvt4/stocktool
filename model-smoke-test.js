@@ -313,3 +313,34 @@ slowValue.analystEstimates.revenueGrowthCurrentYear=.025; slowValue.analystEstim
 const svF=buildForecast(slowValue),svQ=computeQuality(slowValue,svF),svV=valuate(slowValue,svF,svQ);
 if(svV.returnDecompositionFailure){assert.strictEqual(svV.expectedCAGR,null,'unsupported slow-growth return leaked into published CAGR');assert.strictEqual(svV.modelSupport,'unsupported','return-integrity failure was not marked unsupported');}
 console.log('V11.3 return-integrity gate passed.');
+
+// V11.4 cash-flow valuation integrity ---------------------------------------
+// Buybacks must not create value twice inside a DCF. Aggregate operating FCF is the
+// economic cash flow; a smaller future share count is a use of that cash, not a second
+// independent source of intrinsic value.
+const dcfNoBuyback=stock({ticker:'DCF_NO_BUYBACK',price:100,growth:.12,margin:.22,roic:.24,dilution:0});
+const dcfBuyback=stock({ticker:'DCF_BUYBACK',price:100,growth:.12,margin:.22,roic:.24,dilution:-.04});
+const dnbF=buildForecast(dcfNoBuyback),dnbQ=computeQuality(dcfNoBuyback,dnbF),dnbV=valuate(dcfNoBuyback,dnbF,dnbQ);
+const dbF=buildForecast(dcfBuyback),dbQ=computeQuality(dcfBuyback,dbF),dbV=valuate(dcfBuyback,dbF,dbQ);
+const dnbDCF=dnbV.methods.find(m=>m.name==='10Y DCF'), dbDCF=dbV.methods.find(m=>m.name==='10Y DCF');
+assert(dnbDCF&&dbDCF,'DCF buyback-integrity test requires both DCF methods');
+assert(Number.isFinite(dnbDCF.audit.pvExplicit)&&Number.isFinite(dbDCF.audit.pvExplicit),'DCF audit must expose explicit PV');
+// Different forecast economics/quality can move value modestly, but a buyback path must
+// no longer mechanically inflate every interim FCF/share used by the DCF.
+assert(dbDCF.audit.pvExplicit/dnbDCF.audit.pvExplicit<1.10,'buyback path mechanically inflated DCF explicit cash flows');
+
+// FCF exit is an exit-only method. It must not capitalize year-10 FCF and then add the
+// same decade of FCF as though all of it were an extra distribution.
+const exitIntegrity=stock({ticker:'FCF_EXIT_INTEGRITY',price:100,growth:.12,margin:.22,roic:.24,dilution:-.02});
+const eiF=buildForecast(exitIntegrity),eiQ=computeQuality(exitIntegrity,eiF),eiV=valuate(exitIntegrity,eiF,eiQ);
+const eiExit=eiV.methods.find(m=>m.name==='FCF exit');
+assert(eiExit,'FCF exit integrity test requires FCF exit method');
+assert.strictEqual(eiExit.audit.pvExplicit,undefined,'FCF exit still includes explicit-period FCF');
+assert.strictEqual(eiExit.cashFlowInclusive,false,'FCF exit must be treated as exit-only so dividends can be added separately');
+
+// Generic financials with only normalized EPS evidence remain visible for research but
+// cannot present that one-method estimate as decision-grade support.
+assert.strictEqual(gfV.modelSupport,'limited','single-method financial valuation was not downgraded to limited support');
+assert(gfV.valuationConfidenceScore<=50,'single-method financial valuation retained excessive confidence');
+
+console.log('V11.4 valuation-integrity smoke tests passed: DCF buyback double-counting removed, FCF exit is exit-only, and generic financials fail closed to limited support.');
