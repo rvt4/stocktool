@@ -323,15 +323,21 @@ console.log('V11.3 return-integrity gate passed.');
 // economic cash flow; a smaller future share count is a use of that cash, not a second
 // independent source of intrinsic value.
 const dcfNoBuyback=stock({ticker:'DCF_NO_BUYBACK',price:100,growth:.12,margin:.22,roic:.24,dilution:0});
-const dcfBuyback=stock({ticker:'DCF_BUYBACK',price:100,growth:.12,margin:.22,roic:.24,dilution:-.04});
 const dnbF=buildForecast(dcfNoBuyback),dnbQ=computeQuality(dcfNoBuyback,dnbF),dnbV=valuate(dcfNoBuyback,dnbF,dnbQ);
-const dbF=buildForecast(dcfBuyback),dbQ=computeQuality(dcfBuyback,dbF),dbV=valuate(dcfBuyback,dbF,dbQ);
+// Isolate the denominator effect instead of creating a second company whose historical
+// dilution also changes forecast growth/quality inputs. Keep the exact same operating FCF
+// in every year, shrink only the future ownership denominator, and recompute FCF/share.
+const dbF={...dnbF,rows:dnbF.rows.map((r,i)=>{
+  const shares=r.shares*Math.pow(.96,i+1);
+  return {...r,shares,fcfPerShare:r.fcf/shares};
+})};
+const dbV=valuate(dcfNoBuyback,dbF,dnbQ);
 const dnbDCF=dnbV.methods.find(m=>m.name==='10Y DCF'), dbDCF=dbV.methods.find(m=>m.name==='10Y DCF');
 assert(dnbDCF&&dbDCF,'DCF buyback-integrity test requires both DCF methods');
 assert(Number.isFinite(dnbDCF.audit.pvExplicit)&&Number.isFinite(dbDCF.audit.pvExplicit),'DCF audit must expose explicit PV');
-// Different forecast economics/quality can move value modestly, but a buyback path must
-// no longer mechanically inflate every interim FCF/share used by the DCF.
-assert(dbDCF.audit.pvExplicit/dnbDCF.audit.pvExplicit<1.10,'buyback path mechanically inflated DCF explicit cash flows');
+// Identical aggregate FCF must produce identical explicit DCF value even when forecast
+// shares fall and FCF/share rises. This is the exact double-counting bug V11.4 prevents.
+assert(Math.abs(dbDCF.audit.pvExplicit-dnbDCF.audit.pvExplicit)<1e-9,'buyback path mechanically inflated DCF explicit cash flows');
 
 // FCF exit is an exit-only method. It must not capitalize year-10 FCF and then add the
 // same decade of FCF as though all of it were an extra distribution.
