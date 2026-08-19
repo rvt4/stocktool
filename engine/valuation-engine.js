@@ -295,7 +295,28 @@ function valuate(stock,forecast,quality){
   const consensus=valuationConsensus(methods,price);
   const canonical=robustOutcomeBlend(methods,price,consensus);
   let total=canonical.outcome, expected=cagr(price,total);
-  const hasValuation=Number.isFinite(expected)&&methods.length>0&&Number.isFinite(total)&&total>0;
+
+  // Return-integrity gate. A valuation is not decision-grade merely because its algebra
+  // works. Mature/slow-growing businesses cannot publish 25-40% annual returns unless
+  // the operating model itself contains enough growth, margin expansion, distributions,
+  // or dilution improvement to support that result. This is intentionally generic: it
+  // does not favor a category or ticker; it rejects a valuation whose re-rating is doing
+  // implausibly large amounts of work.
+  const startRevenue=finite(rows[0]?.revenue), endRevenue=finite(f?.revenue);
+  const modeledRevenueCAGR=startRevenue>0&&endRevenue>0?Math.pow(endRevenue/startRevenue,1/Math.max(1,HORIZON_YEARS-1))-1:null;
+  const startFCFM=finite(rows[0]?.fcfMargin), endFCFM=finite(f?.fcfMargin);
+  const startNetM=finite(rows[0]?.netMargin), endNetM=finite(f?.netMargin);
+  const marginLift=Math.max(0,(Number.isFinite(startFCFM)&&Number.isFinite(endFCFM)?endFCFM-startFCFM:0),(Number.isFinite(startNetM)&&Number.isFinite(endNetM)?endNetM-startNetM:0));
+  const dilutionTailwind=Math.max(0,-(finite(forecast.dilutionRate)||0));
+  const dividendYield=Math.max(0,finite(stock.valuation?.dividendYield)||0);
+  const operatingSupport=Math.max(0,modeledRevenueCAGR??growth??0)+Math.min(.05,marginLift/HORIZON_YEARS)+Math.min(.04,dilutionTailwind)+Math.min(.06,dividendYield);
+  const matureSlowGrowth=Math.max(modeledRevenueCAGR??0,growth??0)<.10;
+  const reratingAllowance=matureSlowGrowth?.075:.11;
+  const returnSupportCeiling=clamp(operatingSupport+reratingAllowance,.12,.30);
+  const conservativeCategory=forecast.category==='Value'||forecast.category==='Dividend';
+  const returnDecompositionFailure=conservativeCategory&&matureSlowGrowth&&Number.isFinite(expected)&&expected>returnSupportCeiling+.015;
+
+  let hasValuation=Number.isFinite(expected)&&methods.length>0&&Number.isFinite(total)&&total>0&&!returnDecompositionFailure;
   if(!hasValuation){total=null;expected=null;}
 
   const target=total!=null?Math.max(0,total-terminalDividendValue):null, fair=total!=null?pv(total,req,HORIZON_YEARS):null;
@@ -328,12 +349,13 @@ function valuate(stock,forecast,quality){
   if(!shareDenominatorReliable){modelSupport='unsupported';modelSupportReason='Share-count denominator failed independent reconciliation';valuationConfidence=Math.min(valuationConfidence,20);}
   else if(financialLike&&methods.length===0){modelSupport='unsupported';modelSupportReason='Financial/insurance-like economics require a reliable normalized EPS basis; cash-flow and sales fallbacks are intentionally disabled';valuationConfidence=Math.min(valuationConfidence,35);}
   else if(materialNCI&&methods.length===0){modelSupport='unsupported';modelSupportReason='Material non-controlling interest creates an ownership-scope mismatch and no parent-scope EPS valuation was available';valuationConfidence=Math.min(valuationConfidence,35);}
+  else if(returnDecompositionFailure){modelSupport='unsupported';modelSupportReason='Canonical return exceeds what modeled operating growth, margin change, dilution, dividends, and a bounded re-rating allowance can support';valuationConfidence=Math.min(valuationConfidence,35);}
   else if(methods.length===0){modelSupport='unsupported';modelSupportReason='No defensible valuation method produced a value from the available economics';valuationConfidence=Math.min(valuationConfidence,35);}
   const uncertainty=clamp((100-valuationConfidence)/100,.10,.45);
   const bear=total!=null?total*Math.pow(1-(.035+.04*uncertainty),HORIZON_YEARS):null, bull=total!=null?total*Math.pow(1+(.035+.035*uncertainty),HORIZON_YEARS):null;
   const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
   const lowReliability=methods.length>0&&Math.max(...methods.map(m=>m.reliability??0))<.40;
 
-  return {requiredReturn:req,methods,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget:target,tenYearPriceTarget:target,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,marginOfSafety:mos,premiumToFairValue:premium,methodAgreementScore:agreement,valuationConfidenceScore:valuationConfidence,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(consensus.hasConsensusOutlier?'isolated_method_outlier':(agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))};
+  return {requiredReturn:req,methods,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget:target,tenYearPriceTarget:target,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,marginOfSafety:mos,premiumToFairValue:premium,methodAgreementScore:agreement,valuationConfidenceScore:valuationConfidence,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(consensus.hasConsensusOutlier?'isolated_method_outlier':(agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))};
 }
 module.exports={valuate};
