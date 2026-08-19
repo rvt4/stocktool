@@ -550,6 +550,79 @@ async function fetchFinnhubRevenueEstimate(ticker) {
   }
 }
 
+
+// Return the most recent diluted share denominator disclosed in a 10-Q/10-K.
+// This is intentionally separate from the annual history parser: after a stock split,
+// the newest quarterly filing is often the first SEC fact on the new share basis.
+function latestDilutedSharesFromFacts(facts) {
+  const usGaap = facts?.facts?.['us-gaap'] || {};
+  const tags = [
+    'WeightedAverageNumberOfSharesOutstandingBasicAndDiluted',
+    'WeightedAverageNumberOfDilutedSharesOutstanding',
+    'WeightedAverageNumberOfSharesOutstandingDiluted',
+    'WeightedAverageNumberOfShareOutstandingBasicAndDiluted',
+  ];
+  const candidates = [];
+  for (const tag of tags) {
+    const units = usGaap[tag]?.units;
+    const arr = units?.shares || (units ? Object.values(units)[0] : null);
+    if (!arr) continue;
+    for (const x of arr) {
+      if (!['10-Q','10-Q/A','10-K','10-K/A'].includes(x.form) || !Number.isFinite(Number(x.val)) || Number(x.val) <= 100000) continue;
+      if (x.start && x.end) {
+        const days = (new Date(x.end) - new Date(x.start)) / 86400000;
+        // Prefer quarter/YTD/annual duration facts; reject instant/odd contexts.
+        if (!(days >= 60 && days <= 430)) continue;
+      }
+      candidates.push({ value:Number(x.val), filed:String(x.filed||''), end:String(x.end||''), form:x.form, tag });
+    }
+  }
+  candidates.sort((a,b) => b.filed.localeCompare(a.filed) || b.end.localeCompare(a.end));
+  return candidates[0] || null;
+}
+
+// Rebase historical per-share fields when a recent SEC filing proves that the latest
+// annual denominator is on a pre-split (or pre-reverse-split) basis. A split changes
+// shares and per-share figures, not the economics. Without this normalization a 25:1
+// split can masquerade as 2,400% dilution or make live-price valuation nonsensical.
+function normalizeHistoryForCorporateAction(years, currentShareFact) {
+  if (!Array.isArray(years) || !years.length || !currentShareFact?.value) return { applied:false, factor:1 };
+  const last = years[years.length-1];
+  const annualShares = Number(last?.sharesOutTTM), currentShares = Number(currentShareFact.value);
+  if (!(annualShares > 100000 && currentShares > 100000)) return { applied:false, factor:1 };
+  const rawFactor = currentShares / annualShares;
+  if (!(rawFactor >= 3.5 || rawFactor <= 1/3.5)) return { applied:false, factor:1 };
+  // Separate the mechanical split ratio from genuine buybacks/issuance since FY-end.
+  // Corporate actions overwhelmingly use simple ratios; snap to the nearest common
+  // ratio when the observed denominator jump is reasonably close. BKNG, for example,
+  // is ~24.5x after post-FY buybacks but the mechanical split itself was 25:1.
+  const common = [2,3,4,5,6,7,8,10,12,15,20,25,30,40,50,100];
+  const candidates = [...common, ...common.map(x=>1/x)];
+  let factor = candidates.reduce((best,x) =>
+    Math.abs(Math.log(x/rawFactor)) < Math.abs(Math.log(best/rawFactor)) ? x : best, candidates[0]);
+  if (Math.abs(Math.log(factor/rawFactor)) > Math.log(1.20)) factor = rawFactor;
+  if (!Number.isFinite(factor) || factor <= 0) return { applied:false, factor:1 };
+
+  for (const y of years) {
+    if (Number.isFinite(Number(y.sharesOutTTM)) && Number(y.sharesOutTTM) > 0) {
+      y.preCorporateActionSharesOutTTM = Number(y.sharesOutTTM);
+      y.sharesOutTTM = Number(y.sharesOutTTM) * factor;
+      y.sharesSource = `${y.sharesSource || 'sec'}_corporate_action_rebased`;
+    }
+    // SEC historical EPS/DPS can remain on the old basis until the next annual filing.
+    // Keep dollar totals unchanged and rebase only per-share disclosures.
+    for (const field of ['dilutedEPS','dividendPerShare']) {
+      if (Number.isFinite(Number(y[field]))) y[field] = Number(y[field]) / factor;
+    }
+    y.corporateActionFactor = factor;
+  }
+  // Use the freshest disclosed denominator as the starting share count. This also
+  // preserves any real buybacks/issuance that occurred after fiscal year-end.
+  last.sharesOutTTM = currentShares;
+  last.sharesSource = `latest_${currentShareFact.form.toLowerCase().replace(/-/g,'')}_diluted_shares`;
+  return { applied:true, factor, source:currentShareFact };
+}
+
 // --- Assemble the full stock object the scoring engine expects ---
 // Note: sector should be passed in (e.g. from your watchlist.json / index CSV) —
 // we don't call Finnhub's profile endpoint anymore, which halves Finnhub API usage
@@ -567,6 +640,10 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
 
   const years = parseAnnualFinancials(facts);
   const quarters = parseQuarterlyRevenue(facts);
+  // Normalize stock splits/reverse splits BEFORE any market-cap, dilution or per-share
+  // calculations. The latest 10-Q can be on a new share basis while the last 10-K is not.
+  const latestShareFact = latestDilutedSharesFromFacts(facts);
+  const corporateActionNormalization = normalizeHistoryForCorporateAction(years, latestShareFact);
   const last = years[years.length - 1] || {};
   const currentPrice = quote?.c || (priceHistory.length ? priceHistory[priceHistory.length - 1].close : null);
 
@@ -585,35 +662,6 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
       last.sharesOutTTM = epsImpliedShares;
       last.sharesScaleApplied = reportedShares > 0 ? epsImpliedShares / reportedShares : null;
       last.sharesSource = 'net_income_div_diluted_eps_corporate_action_repair';
-    }
-  }
-
-  // Second corporate-action check: a stock split can land between two annual filings
-  // (e.g. BKNG's 25-for-1 split), so the same 10-K reports netIncome, dilutedEPS, AND
-  // sharesOutTTM all consistently on the OLD pre-split basis — the check above finds no
-  // internal disagreement because there isn't one. The mismatch only shows up against the
-  // live, already-split-adjusted quote. A stale share count divides revenue across too few
-  // shares and inflates every per-share valuation output by the split ratio, so cross-check
-  // the implied price-to-sales ratio against a sane band before trusting SEC's share count.
-  if (last.sharesOutTTM > 100000 && currentPrice > 0 && Number(last.revenue) > 0) {
-    const revenuePerShare = Number(last.revenue) / Number(last.sharesOutTTM);
-    const impliedPS = revenuePerShare > 0 ? currentPrice / revenuePerShare : null;
-    if (Number.isFinite(impliedPS) && (impliedPS < 0.15 || impliedPS > 80)) {
-      try {
-        const profile = await fetchFinnhubProfile(finnhubTicker);
-        const profileMarketCap = Number(profile?.marketCapitalization) * 1e6;
-        const impliedShares = profileMarketCap > 0 ? profileMarketCap / currentPrice : null;
-        const ratio = impliedShares > 0 ? Math.max(last.sharesOutTTM / impliedShares, impliedShares / last.sharesOutTTM) : null;
-        if (Number.isFinite(impliedShares) && impliedShares > 100000 && impliedShares < 1e11 && ratio != null && ratio >= 3.5) {
-          last.rawSharesOutTTM = last.sharesOutTTM;
-          last.sharesOutTTM = impliedShares;
-          last.sharesScaleApplied = impliedShares / last.rawSharesOutTTM;
-          last.sharesSource = 'finnhub_market_cap_div_price_split_repair';
-          last.sharesFallbackMarketCap = profileMarketCap;
-        }
-      } catch (_) {
-        // Leave the SEC-reported share count in place rather than inventing one.
-      }
     }
   }
 
@@ -697,6 +745,7 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
     analystEstimates: analystEstimate,
     price: { current: currentPrice },
     quarterly: quarters,
+    corporateActionNormalization,
     historicalMultiples: { evEbitda: [], forwardPe: [] }, // optional: backfill from priceHistory + trailing EPS
     earningsCallText: null, // optional: plug in a free transcript source if you find one
   };
@@ -708,7 +757,7 @@ const api = {
   fetchSecFacts, parseAnnualFinancials, parseQuarterlyRevenue, recentQuarterYoYGrowth, blendedForwardGrowth,
   fetchStooqPrice, fetchStooqHistory,
   fetchFinnhubProfile, fetchFinnhubQuote, fetchFinnhubRevenueEstimate,
-  buildStockRecord, getTickerCikMap, normalizeSecTicker, normalizeFinnhubTicker, fetchWithTimeout,
+  buildStockRecord, latestDilutedSharesFromFacts, normalizeHistoryForCorporateAction, getTickerCikMap, normalizeSecTicker, normalizeFinnhubTicker, fetchWithTimeout,
 };
 
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
