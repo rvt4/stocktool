@@ -287,16 +287,22 @@ function valuate(stock,forecast,quality){
   const mos=fair>0&&price>0?1-price/fair:null, premium=fair>0&&price>0?price/fair-1:null;
   const reliable=methods.map((m,index)=>({m,index})).filter(x=>(x.m.reliability??1)>=.35);
   const agreementEntries=reliable.length>=2?reliable:methods.map((m,index)=>({m,index}));
-  const agreementValues=agreementEntries.map(x=>({index:x.index,v:Number.isFinite(x.m.outcome)&&x.m.outcome>0?Math.log(x.m.outcome):null})).filter(x=>Number.isFinite(x.v));
-  let spread=agreementValues.length>=2?Math.max(...agreementValues.map(x=>x.v))-Math.min(...agreementValues.map(x=>x.v)):null;
-  let agreement;
-  if(consensus.hasConsensusOutlier){
-    const clusterValues=agreementValues.filter(x=>consensus.clusterIndexes.includes(x.index)).map(x=>x.v);
-    const clusterSpread=clusterValues.length>=2?Math.max(...clusterValues)-Math.min(...clusterValues):consensus.pairSpread;
-    agreement=Math.round(85*clamp(1-(clusterSpread??0)/Math.log(1.45),0,1));
-    spread=clusterSpread;
+  const agreementValues=agreementEntries.map(x=>({index:x.index,v:Number.isFinite(x.m.outcome)&&x.m.outcome>0?Math.log(x.m.outcome):null,weight:Math.max(x.m.weight??0,.05)})).filter(x=>Number.isFinite(x.v));
+  // Agreement is a measure of how much of the *evidence weight* clusters together, not
+  // a binary "did we cleanly isolate exactly one outlier" test. The old pairwise-isolation
+  // test collapsed agreement to 0 whenever a third method sat "in between" a genuine tight
+  // cluster and a genuine outlier (e.g. EV/EBITDA sitting between FCF/DCF and a diverging
+  // EPS exit) even though most of the weighted evidence still agreed closely. A weighted
+  // median-absolute-deviation is robust to a single disagreeing method without requiring
+  // clean geometric separation.
+  let spread=null, agreement;
+  if(agreementValues.length>=2){
+    const center=weightedMedian(agreementValues.map(x=>({value:x.v,weight:x.weight})));
+    const deviations=agreementValues.map(x=>({value:Math.abs(x.v-center),weight:x.weight}));
+    spread=weightedMedian(deviations)??0;
+    agreement=Math.round(100*clamp(1-spread/(Math.log(1.45)/2),0,1));
   } else {
-    agreement=agreementValues.length>=2?Math.round(100*clamp(1-spread/Math.log(1.45),0,1)):(agreementValues.length===1?45:0);
+    agreement=agreementValues.length===1?45:0;
   }
   const families=new Set(methods.filter(m=>(m.reliability??0)>=.25).map(m=>m.family||m.name));
   const independentMethodCount=families.size;
