@@ -107,13 +107,13 @@ function methodReliability(stock,forecast,kind,base,future,quality){
   return {score:clamp(reliability,.12,1),reasons};
 }
 
-function addMethod(methods,{name,target,weight,reliability=1,audit,price,family=null}){
+function addMethod(methods,{name,target,weight,reliability=1,audit,price,family=null,cashFlowInclusive=false}){
   if(!(Number.isFinite(target)&&target>0&&Number.isFinite(price)&&price>0))return;
   const implied=cagr(price,target);
   if(!Number.isFinite(implied))return;
   const rel=clamp(reliability,.05,1);
   const effectiveWeight=weight*rel;
-  methods.push({name,target,weight:effectiveWeight,baseWeight:weight,reliability:rel,family:family||name,audit:{...audit,impliedCAGR:implied,effectiveWeight}});
+  methods.push({name,target,weight:effectiveWeight,baseWeight:weight,reliability:rel,family:family||name,cashFlowInclusive,audit:{...audit,impliedCAGR:implied,effectiveWeight}});
 }
 
 function valuationConsensus(methods,price){
@@ -212,7 +212,15 @@ function valuate(stock,forecast,quality){
       const fundamental=(1+stableG)/Math.max(.035,req-stableG);
       const justified=.75*fundamental+.25*(13+growth*18+(q-.5)*6), m=boundedExit(currentPFCF,justified,8,26);
       const rel=methodReliability(stock,forecast,'FCF',normFCF,f.fcfPerShare,quality);
-      addMethod(methods,{name:'FCF exit',target:f.fcfPerShare*m,weight:.30,reliability:rel.score,price,family:'cashflow',audit:{exitMultiple:m,currentMultiple:currentPFCF,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,reliabilityReasons:rel.reasons}});
+      // A terminal FCF multiple by itself discards the first ten years of owner cash flow.
+      // Value the explicit FCF stream plus the year-10 exit value, then express that PV
+      // as a year-10 equivalent so it can be blended consistently with other methods.
+      const explicitFCFPV=rows.reduce((sum,r,i)=>sum+(Number(r.fcfPerShare)>0?pv(Number(r.fcfPerShare),req,i+1):0),0);
+      const terminalFCFValue=f.fcfPerShare*m;
+      const terminalFCFPV=pv(terminalFCFValue,req,HORIZON_YEARS);
+      const fcfExitFair=explicitFCFPV+terminalFCFPV;
+      const fcfExitOutcome=fcfExitFair*Math.pow(1+req,HORIZON_YEARS);
+      addMethod(methods,{name:'FCF exit',target:fcfExitOutcome,weight:.30,reliability:rel.score,price,family:'cashflow',cashFlowInclusive:true,audit:{exitMultiple:m,currentMultiple:currentPFCF,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,pvExplicit:explicitFCFPV,pvTerminalExit:terminalFCFPV,terminalExitValue:terminalFCFValue,reliabilityReasons:rel.reasons}});
     }
     if(Number(f.eps)>0&&normEPS>0){
       const stableG=clamp(forecast.terminalGrowth,.01,Math.min(.045,req-.03));
@@ -238,7 +246,7 @@ function valuate(stock,forecast,quality){
       // Terminal-value-heavy DCFs are still useful, but receive less reliability when
       // most of the present value depends on the perpetuity rather than explicit cash flow.
       const terminalPenalty=dcf.terminalShare>.80?.70:(dcf.terminalShare>.70?.85:1);
-      addMethod(methods,{name:'10Y DCF',target:terminalOutcome,weight:.40,reliability:rel.score*terminalPenalty,price,family:'cashflow',audit:{fairValueToday:dcf.fairValue,pvExplicit:dcf.pvExplicit,pvTerminal:dcf.pvTerminal,terminalGrowth:dcf.terminalGrowth,terminalShare:dcf.terminalShare,reliabilityReasons:[...rel.reasons,...(terminalPenalty<1?['terminal_value_concentration']:[])]}});
+      addMethod(methods,{name:'10Y DCF',target:terminalOutcome,weight:.40,reliability:rel.score*terminalPenalty,price,family:'cashflow',cashFlowInclusive:true,audit:{fairValueToday:dcf.fairValue,pvExplicit:dcf.pvExplicit,pvTerminal:dcf.pvTerminal,terminalGrowth:dcf.terminalGrowth,terminalShare:dcf.terminalShare,reliabilityReasons:[...rel.reasons,...(terminalPenalty<1?['terminal_value_concentration']:[])]}});
     }
 
     if(!methods.length&&Number(f.revenue)>0&&Number(f.shares)>0&&revenue0>0){
@@ -255,20 +263,28 @@ function valuate(stock,forecast,quality){
     }
   }
 
-  const dividends=rows.reduce((s,r)=>s+(finite(r.dividendPerShare)||0),0);
+  // Cash-flow methods already include cash available to owners, so adding dividends to
+  // them again double-counts the same cash. Exit-only methods need dividends, valued in
+  // the year received rather than pretending every dividend arrives in year 10.
+  const dividends=rows.reduce((sum,r)=>sum+(finite(r.dividendPerShare)||0),0);
+  const pvDividends=rows.reduce((sum,r,i)=>sum+pv((finite(r.dividendPerShare)||0),req,i+1),0);
+  const terminalDividendValue=pvDividends*Math.pow(1+req,HORIZON_YEARS);
   for(const m of methods){
-    m.outcome=Number.isFinite(m.target)?m.target+dividends:null;
-    m.audit={...(m.audit||{}),year10Outcome:m.target,fairValueToday:Number.isFinite(m.target)?pv(m.target,req,HORIZON_YEARS):null};
+    const dividendOutcome=m.cashFlowInclusive?0:terminalDividendValue;
+    m.outcome=Number.isFinite(m.target)?m.target+dividendOutcome:null;
+    m.audit={...(m.audit||{}),year10Outcome:m.target,dividendOutcomeAdded:dividendOutcome,fairValueToday:Number.isFinite(m.outcome)?pv(m.outcome,req,HORIZON_YEARS):null};
   }
   const consensus=valuationConsensus(methods,price);
   const canonical=robustOutcomeBlend(methods,price,consensus);
   let total=canonical.outcome, expected=cagr(price,total);
-  const hasValuation=Number.isFinite(expected)&&expected<=.25&&methods.length>0&&Number.isFinite(total)&&total>0;
+  const hasValuation=Number.isFinite(expected)&&methods.length>0&&Number.isFinite(total)&&total>0;
   if(!hasValuation){total=null;expected=null;}
 
-  const target=total!=null?Math.max(0,total-dividends):null, fair=total!=null?pv(total,req,HORIZON_YEARS):null;
-  // MOS is expressed as upside/downside to fair value from today's price. This is bounded at -100% as fair value approaches zero.
-  const mos=fair>0&&price>0?fair/price-1:null, premium=fair>0&&price>0?price/fair-1:null;
+  const target=total!=null?Math.max(0,total-terminalDividendValue):null, fair=total!=null?pv(total,req,HORIZON_YEARS):null;
+  // Conventional margin of safety: discount to intrinsic value as a fraction of fair value.
+  // A $50 price versus $100 fair value is 50% MOS, not 100% 'upside'. Premium remains
+  // price/fair-1 so overvaluation is still explicit.
+  const mos=fair>0&&price>0?1-price/fair:null, premium=fair>0&&price>0?price/fair-1:null;
   const reliable=methods.map((m,index)=>({m,index})).filter(x=>(x.m.reliability??1)>=.35);
   const agreementEntries=reliable.length>=2?reliable:methods.map((m,index)=>({m,index}));
   const agreementValues=agreementEntries.map(x=>({index:x.index,v:Number.isFinite(x.m.outcome)&&x.m.outcome>0?Math.log(x.m.outcome):null})).filter(x=>Number.isFinite(x.v));
@@ -297,6 +313,6 @@ function valuate(stock,forecast,quality){
   const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
   const lowReliability=methods.length>0&&Math.max(...methods.map(m=>m.reliability??0))<.40;
 
-  return {requiredReturn:req,methods,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget:target,tenYearPriceTarget:target,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,marginOfSafety:mos,premiumToFairValue:premium,methodAgreementScore:agreement,valuationConfidenceScore:valuationConfidence,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(consensus.hasConsensusOutlier?'isolated_method_outlier':(agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))};
+  return {requiredReturn:req,methods,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget:target,tenYearPriceTarget:target,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,marginOfSafety:mos,premiumToFairValue:premium,methodAgreementScore:agreement,valuationConfidenceScore:valuationConfidence,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(consensus.hasConsensusOutlier?'isolated_method_outlier':(agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))};
 }
 module.exports={valuate};

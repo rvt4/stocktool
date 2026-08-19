@@ -28,7 +28,7 @@ function rateStock(stock,forecast,quality,v){
     else if(['Strong Buy','Exceptional Buy'].includes(rating))rating='Buy';
   }
   if(agreement<35&&['Strong Buy','Exceptional Buy'].includes(rating))rating='Buy';
-  if(agreement<20&&rating==='Buy')rating='Hold';
+  if(agreement<35&&['Buy','Strong Buy','Exceptional Buy'].includes(rating))rating='Hold';
 
   const agreementFactor=clamp(agreement/100,.30,1), evidenceFactor=clamp((conf/100)*(.80+.20*clamp(independent/3,0,1)),.35,1);
   const investmentScore=Number.isFinite(c)?Math.round(clamp((.30*clamp((c+.02)/.24,0,1)*100+.16*clamp((mos+.05)/.40,0,1)*100+.27*q+.10*(quality.moatScore||50)+.17*conf)*(.84+.08*agreementFactor+.08*evidenceFactor),0,100)):0;
