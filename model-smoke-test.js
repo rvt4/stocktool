@@ -222,17 +222,21 @@ if(evV.independentMethodCount===1)assert(evV.valuationConfidenceScore<=68,'singl
 console.log('V10 trust invariants passed: price independence, dilution monotonicity, weak-history fade, specialized-model guardrails, and evidence-count confidence are enforced.');
 
 
-// V11 cash-flow reconciliation invariants -----------------------------------
-// FCF-exit valuation must include the explicit owner-cash-flow stream rather than only
-// the year-10 terminal multiple. DCF/FCF methods must not add dividends a second time.
+// V11/V11.4 cash-flow reconciliation invariants -----------------------------
+// DCF includes the explicit owner-cash-flow stream. FCF-exit is intentionally an
+// exit-only multiple method so interim FCF is not counted once as distributable cash
+// and again through the future per-share denominator. Dividends are therefore added
+// only to the exit-only method, while DCF must not add them a second time.
 const cashRecon=stock({ticker:'CASH_RECON',price:100,growth:.10,margin:.20,roic:.22,dividend:3});
 const crF=buildForecast(cashRecon),crQ=computeQuality(cashRecon,crF),crV=valuate(cashRecon,crF,crQ);
 const crExit=crV.methods.find(m=>m.name==='FCF exit'), crDCF=crV.methods.find(m=>m.name==='10Y DCF');
-assert(crExit?.audit?.pvExplicit>0,'FCF exit omitted explicit owner cash flows');
-assert(crExit?.cashFlowInclusive===true&&crDCF?.cashFlowInclusive===true,'cash-flow methods not marked cash-flow inclusive');
-assert(crExit?.audit?.dividendOutcomeAdded===0&&crDCF?.audit?.dividendOutcomeAdded===0,'dividends were double-counted inside a cash-flow method');
+assert(crExit&&crDCF,'cash-flow reconciliation test requires FCF exit and DCF methods');
+assert(!Number.isFinite(crExit?.audit?.pvExplicit),'FCF exit should not contain an explicit FCF stream');
+assert(Number.isFinite(crExit?.audit?.terminalExitValue)&&crExit.audit.terminalExitValue>0,'FCF exit did not expose its terminal exit value');
+assert(crExit?.cashFlowInclusive===false&&crDCF?.cashFlowInclusive===true,'cash-flow inclusion flags are inconsistent with method construction');
+assert(crExit?.audit?.dividendOutcomeAdded>0&&crDCF?.audit?.dividendOutcomeAdded===0,'dividend treatment is inconsistent across exit-only and DCF methods');
 assert(crV.presentValueDividends>0&&crV.terminalDividendValue>crV.cumulativeDividends,'interim dividends were not time-valued consistently');
-console.log('V11 cash-flow reconciliation invariants passed: explicit FCF is preserved and dividends are not double-counted.');
+console.log('V11/V11.4 cash-flow reconciliation invariants passed: DCF preserves explicit FCF, FCF exit is exit-only, and dividends are not double-counted.');
 
 // V11.1 share-denominator reconciliation invariants --------------------------
 const { shareDenominatorLooksSuspicious, reconcileSharesWithLiveMarketCap } = require('./data-fetchers');
