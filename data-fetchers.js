@@ -588,6 +588,35 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
     }
   }
 
+  // Second corporate-action check: a stock split can land between two annual filings
+  // (e.g. BKNG's 25-for-1 split), so the same 10-K reports netIncome, dilutedEPS, AND
+  // sharesOutTTM all consistently on the OLD pre-split basis — the check above finds no
+  // internal disagreement because there isn't one. The mismatch only shows up against the
+  // live, already-split-adjusted quote. A stale share count divides revenue across too few
+  // shares and inflates every per-share valuation output by the split ratio, so cross-check
+  // the implied price-to-sales ratio against a sane band before trusting SEC's share count.
+  if (last.sharesOutTTM > 100000 && currentPrice > 0 && Number(last.revenue) > 0) {
+    const revenuePerShare = Number(last.revenue) / Number(last.sharesOutTTM);
+    const impliedPS = revenuePerShare > 0 ? currentPrice / revenuePerShare : null;
+    if (Number.isFinite(impliedPS) && (impliedPS < 0.15 || impliedPS > 80)) {
+      try {
+        const profile = await fetchFinnhubProfile(finnhubTicker);
+        const profileMarketCap = Number(profile?.marketCapitalization) * 1e6;
+        const impliedShares = profileMarketCap > 0 ? profileMarketCap / currentPrice : null;
+        const ratio = impliedShares > 0 ? Math.max(last.sharesOutTTM / impliedShares, impliedShares / last.sharesOutTTM) : null;
+        if (Number.isFinite(impliedShares) && impliedShares > 100000 && impliedShares < 1e11 && ratio != null && ratio >= 3.5) {
+          last.rawSharesOutTTM = last.sharesOutTTM;
+          last.sharesOutTTM = impliedShares;
+          last.sharesScaleApplied = impliedShares / last.rawSharesOutTTM;
+          last.sharesSource = 'finnhub_market_cap_div_price_split_repair';
+          last.sharesFallbackMarketCap = profileMarketCap;
+        }
+      } catch (_) {
+        // Leave the SEC-reported share count in place rather than inventing one.
+      }
+    }
+  }
+
   // Final live-data repair for the rare issuer whose SEC Company Facts omit every
   // usable diluted-share denominator (Visa is the known example). Finnhub profile2
   // reports marketCapitalization in USD millions. We call it ONLY for missing-share
