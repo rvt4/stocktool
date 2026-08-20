@@ -177,6 +177,23 @@ assert(gfV.methods[0]?.audit?.epsGrowth<=.20,'growth-financial EPS convergence e
 
 console.log('V7 method-reliability smoke tests passed.');
 
+// V11.5 exit-multiple differentiation ---------------------------------------
+// Terminal multiples should reflect durable company economics rather than collapsing
+// every non-financial company toward the same sector-normal multiple.
+const eliteExit=stock({ticker:'ELITE_EXIT',price:100,growth:.16,margin:.30,roic:.32,dilution:-.01});
+const ordinaryExit=stock({ticker:'ORDINARY_EXIT',price:100,growth:.07,margin:.14,roic:.13,dilution:.02});
+const eeF=buildForecast(eliteExit),eeQ=computeQuality(eliteExit,eeF),eeV=valuate(eliteExit,eeF,eeQ);
+const oeF=buildForecast(ordinaryExit),oeQ=computeQuality(ordinaryExit,oeF),oeV=valuate(ordinaryExit,oeF,oeQ);
+for(const name of ['FCF exit','EPS exit','EV/EBITDA exit']){
+  const eliteM=eeV.methods.find(m=>m.name===name)?.audit?.exitMultiple;
+  const ordinaryM=oeV.methods.find(m=>m.name===name)?.audit?.exitMultiple;
+  assert(Number.isFinite(eliteM)&&Number.isFinite(ordinaryM),`${name} differentiation test needs both multiples`);
+  assert(eliteM>ordinaryM+2,`${name} failed to preserve a meaningful premium for superior durable economics`);
+}
+assert(eeV.methods.find(m=>m.name==='FCF exit').audit.exitMultiple>=17,'elite FCF terminal multiple remained mechanically over-conservative');
+assert(oeV.methods.find(m=>m.name==='FCF exit').audit.exitMultiple<=17,'ordinary business received an excessive FCF terminal multiple');
+console.log('V11.5 exit-multiple tests passed: durable growth/quality premiums differentiate terminal valuations.');
+
 // V10 trust invariants -------------------------------------------------------
 // 1) Intrinsic value cannot follow the quote. Repricing the exact same business must
 // change expected return, not the modeled fair value.
