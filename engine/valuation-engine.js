@@ -25,6 +25,57 @@ function boundedExit(current,justified,lo,hi){
   return clamp(justified,lo,hi);
 }
 
+// V11.5: company-specific terminal multiple framework. A decade-out multiple should not
+// simply collapse every business to a sector-average 12-14x. Durable growth and superior
+// economics can justify a lasting premium, while weak balance sheets, dilution and low
+// quality pull the multiple back down. Importantly, this uses business evidence only --
+// never the current share price or current trading multiple -- preserving price invariance.
+function terminalMultipleProfile(stock,forecast,quality,base){
+  const q=clamp((quality?.qualityScore??50)/100,0,1);
+  const moat=clamp((quality?.moatScore??50)/100,0,1);
+  const capital=clamp((quality?.capitalAllocationScore??50)/100,0,1);
+  const compounder=clamp((quality?.compounderScore??50)/100,0,1);
+  const pricing=clamp((quality?.pricingPowerScore??50)/100,0,1);
+  const protection=clamp((quality?.protectionScore??50)/100,0,1);
+  const growthQuality=clamp((quality?.growthQualityScore??50)/100,0,1);
+  const confidence=clamp((quality?.confidenceScore??50)/100,0,1);
+  const roic=finite(quality?.diagnostics?.roic);
+  const dilution=Math.max(0,finite(forecast?.dilutionRate)||0);
+  const growth=clamp(forecast?.year5OperatingGrowth??forecast?.rows?.at(-1)?.revenueGrowth??forecast?.sustainableGrowth??forecast?.revenueGrowthAnchor,0,.22);
+  const margin=Math.max(0,finite(base?.margins?.fcf)||0,finite(base?.margins?.ebitda)||0,finite(base?.margins?.net)||0);
+
+  // Quality is deliberately multi-dimensional. This prevents one high ROIC year or one
+  // growth estimate from single-handedly granting an elite terminal multiple.
+  const durableQuality=.22*q+.18*moat+.15*compounder+.13*pricing+.12*capital+.10*protection+.10*growthQuality;
+  const qualityAdj=(durableQuality-.55)*10;
+  const roicAdj=Number.isFinite(roic)?clamp((roic-.12)*18,-1.5,3.0):0;
+  const marginAdj=clamp((margin-.12)*8,-1.0,2.0);
+  const confidenceAdj=(confidence-.60)*2;
+  const dilutionPenalty=clamp(dilution*35,0,2.5);
+  return {growth,durableQuality,qualityAdj,roicAdj,marginAdj,confidenceAdj,dilutionPenalty};
+}
+
+function justifiedExitMultiple(kind,stock,forecast,quality,base,cfg){
+  const p=terminalMultipleProfile(stock,forecast,quality,base);
+  let multiple;
+  if(kind==='FCF'){
+    // FCF deserves the widest quality/growth differentiation because it is the cleanest
+    // owner-economics anchor. ~10% durable growth with strong economics lands around the
+    // mid/high teens; truly elite businesses can retain a low/mid-20s multiple.
+    multiple=11.5+p.growth*42+p.qualityAdj+p.roicAdj+p.marginAdj+p.confidenceAdj-p.dilutionPenalty;
+    return {multiple:clamp(multiple,8,28),profile:p};
+  }
+  if(kind==='EPS'){
+    multiple=cfg.basePE+p.growth*38+p.qualityAdj*.90+p.roicAdj*.85+p.marginAdj*.45+p.confidenceAdj-p.dilutionPenalty;
+    return {multiple:clamp(multiple,8,32),profile:p};
+  }
+  if(kind==='EBITDA'){
+    multiple=cfg.baseEVEBITDA+p.growth*26+p.qualityAdj*.60+p.roicAdj*.45+p.marginAdj*.35+p.confidenceAdj*.60-p.dilutionPenalty*.70;
+    return {multiple:clamp(multiple,6,22),profile:p};
+  }
+  return {multiple:null,profile:p};
+}
+
 function normalizedOperatingBase(stock,forecast){
   const years=stock.financials?.years||[], last=years.at(-1)||{};
   const revenue=finite(last.revenue), shares=finite(last.sharesOutTTM);
@@ -233,9 +284,7 @@ function valuate(stock,forecast,quality){
     const currentEVEBITDA=safeMultiple(marketCap>0&&normEBITDA>0?(marketCap+netDebt)/normEBITDA:null,4,24);
 
     if(allowEnterpriseScopeMethods&&Number(f.fcfPerShare)>0&&normFCF>0){
-      const stableG=clamp(forecast.terminalGrowth,.01,Math.min(.045,req-.03));
-      const fundamental=(1+stableG)/Math.max(.035,req-stableG);
-      const justified=.75*fundamental+.25*(13+growth*18+(q-.5)*6), m=boundedExit(currentPFCF,justified,8,26);
+      const exit=justifiedExitMultiple('FCF',stock,forecast,quality,base,cfg), m=boundedExit(currentPFCF,exit.multiple,8,28);
       const rel=methodReliability(stock,forecast,'FCF',normFCF,f.fcfPerShare,quality);
       // V11.4: an exit-multiple method values the business at the exit date. Do not also
       // add every interim dollar of FCF here. The forecast share path already reflects
@@ -243,22 +292,18 @@ function valuate(stock,forecast,quality){
       // double-counting owner cash and made FCF-exit values track the (also inflated) DCF.
       // Dividends are added later because this is now an exit-only method.
       const terminalFCFValue=f.fcfPerShare*m;
-      addMethod(methods,{name:'FCF exit',target:terminalFCFValue,weight:.30,reliability:rel.score,price,family:'cashflow_exit',cashFlowInclusive:false,audit:{exitMultiple:m,currentMultiple:currentPFCF,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,terminalExitValue:terminalFCFValue,reliabilityReasons:rel.reasons}});
+      addMethod(methods,{name:'FCF exit',target:terminalFCFValue,weight:.30,reliability:rel.score,price,family:'cashflow_exit',cashFlowInclusive:false,audit:{exitMultiple:m,currentMultiple:currentPFCF,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,terminalExitValue:terminalFCFValue,multipleProfile:exit.profile,reliabilityReasons:rel.reasons}});
     }
     if(Number(f.eps)>0&&normEPS>0){
-      const stableG=clamp(forecast.terminalGrowth,.01,Math.min(.045,req-.03));
-      const stableROE=clamp(.10+.11*q,.10,.21);
-      const payout=clamp(1-stableG/stableROE,.30,.85);
-      const fundamental=payout*(1+stableG)/Math.max(.035,req-stableG);
-      const justified=.65*fundamental+.35*(cfg.basePE+growth*14+(q-.5)*5), m=boundedExit(currentPE,justified,7,28);
+      const exit=justifiedExitMultiple('EPS',stock,forecast,quality,base,cfg), m=boundedExit(currentPE,exit.multiple,8,32);
       const rel=methodReliability(stock,forecast,'EPS',normEPS,f.eps,quality);
-      addMethod(methods,{name:'EPS exit',target:f.eps*m,weight:.20,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:f.eps,normalizedCurrentMetric:normEPS,reliabilityReasons:rel.reasons}});
+      addMethod(methods,{name:'EPS exit',target:f.eps*m,weight:.20,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:f.eps,normalizedCurrentMetric:normEPS,multipleProfile:exit.profile,reliabilityReasons:rel.reasons}});
     }
     if(allowEnterpriseScopeMethods&&Number(f.ebitda)>0&&Number(f.shares)>0&&normEBITDA>0){
-      const justified=cfg.baseEVEBITDA+growth*10+(q-.5)*3, m=boundedExit(currentEVEBITDA,justified,5,18), equity=f.ebitda*m-netDebt;
+      const exit=justifiedExitMultiple('EBITDA',stock,forecast,quality,base,cfg), m=boundedExit(currentEVEBITDA,exit.multiple,6,22), equity=f.ebitda*m-netDebt;
       if(equity>0){
         const rel=methodReliability(stock,forecast,'EBITDA',normEBITDA,f.ebitda,quality);
-        addMethod(methods,{name:'EV/EBITDA exit',target:equity/f.shares,weight:.10,reliability:rel.score,price,family:'enterprise',audit:{exitMultiple:m,currentMultiple:currentEVEBITDA,metric:f.ebitda,normalizedCurrentMetric:normEBITDA,reliabilityReasons:rel.reasons}});
+        addMethod(methods,{name:'EV/EBITDA exit',target:equity/f.shares,weight:.10,reliability:rel.score,price,family:'enterprise',audit:{exitMultiple:m,currentMultiple:currentEVEBITDA,metric:f.ebitda,normalizedCurrentMetric:normEBITDA,multipleProfile:exit.profile,reliabilityReasons:rel.reasons}});
       }
     }
 
