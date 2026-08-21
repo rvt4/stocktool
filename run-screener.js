@@ -86,7 +86,7 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
     investmentScore:decision.investmentScore, qualityScore:quality.qualityScore, moatScore:quality.moatScore, capitalAllocationScore:quality.capitalAllocationScore,
     compounderScore:quality.compounderScore, growthQuality:quality.growthQualityScore, growthQualityScore:quality.growthQualityScore, pricingPowerV2Score:quality.pricingPowerScore, downsideProtectionScore:quality.protectionScore,
     qualifiesForBuyList:decision.qualifiesForBuyList,
-    fairValueEstimate:valuation.fairValueEstimate, fiveYearPriceTarget:valuation.fiveYearPriceTarget, tenYearPriceTarget:valuation.tenYearPriceTarget, horizonYears:valuation.horizonYears, totalShareholderValue:valuation.totalShareholderValue, cumulativeDividends:valuation.cumulativeDividends,
+    fairValueEstimate:valuation.fairValueEstimate, requiredReturnBuyPrice:valuation.requiredReturnBuyPrice, fairValueDiscountRate:valuation.fairValueDiscountRate, valuationGap:valuation.valuationGap, fiveYearPriceTarget:valuation.fiveYearPriceTarget, tenYearPriceTarget:valuation.tenYearPriceTarget, horizonYears:valuation.horizonYears, totalShareholderValue:valuation.totalShareholderValue, cumulativeDividends:valuation.cumulativeDividends,
     fundamentalGrowthRate:forecast.revenueGrowthAnchor, growthSource:v.growthSource, dilutionRate:forecast.dilutionRate, matureDilutionRate:forecast.matureDilutionRate, dilutionPath:forecast.dilutionPath, sbcIntensity:stock.financials?.years?.at(-1)?.sbcIntensity??null,
     valuationMethods:methodMap, valuationMethodAudits:methodAudits, methodAgreementScore:valuation.methodAgreementScore, methodCount:(valuation.methods||[]).length, independentMethodCount:valuation.independentMethodCount??null, modelSupport:valuation.modelSupport??'standard', modelSupportReason:valuation.modelSupportReason??null, valuationConsensus:valuation.valuationConsensus||null,
     valuationProjection:forecast.rows, projectionAssumptions:{terminalGrowth:forecast.terminalGrowth,requiredReturn:valuation.requiredReturn,revenueGrowthAnchor:forecast.revenueGrowthAnchor,historicalGrowth:forecast.historicalGrowth,historyReliability:forecast.historyReliability,historyGrowthDispersion:forecast.historyGrowthDispersion,forecastReliabilityScore:forecast.forecastReliabilityScore,marginAssumptions:forecast.marginAssumptions,marginTargets:forecast.marginTargets,forecastBridge:forecast.forecastBridge,forecastFlags:forecast.forecastFlags,dilutionPath:forecast.dilutionPath,matureDilutionRate:forecast.matureDilutionRate},
@@ -141,7 +141,7 @@ async function run(){
   rank(stocks);
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v11.3-fail-closed-return-integrity',stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v11.9-valuation-semantics-evidence-ranking',stocks}; writeJson('results.json',output);
   diag.finishedAt=new Date().toISOString();diag.scored=stocks.length;writeJson('screener-diagnostics.json',diag);
   console.log(`Done. Wrote ${stocks.length} stocks using the simplified one-path model.`);
 }
