@@ -327,27 +327,81 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   let matureCFO=Number.isFinite(matureCfoSpread)?clamp(matureOperating+matureCfoSpread,-.08,.70):targetCFO;
   if(Number.isFinite(currentCFO)&&Number.isFinite(targetCFO)) targetCFO=clamp(weightedAverage([[targetCFO,.70],[currentCFO,.30]]),-.08,.70);
 
-  let currentFCF=Number.isFinite(currentCFO)&&Number.isFinite(currentCapex)?currentCFO-currentCapex:latestFCF;
-  let targetFCF=Number.isFinite(targetCFO)&&Number.isFinite(targetCapex)
-    ? targetCFO-targetCapex
-    : (Number.isFinite(directFCF)?directFCF+leverageSignal*.75:null);
-  let matureTargetFCF=Number.isFinite(matureCFO)&&Number.isFinite(matureCapex)
-    ? matureCFO-matureCapex
-    : (Number.isFinite(targetFCF)?targetFCF+leverageSignal*.35:targetFCF);
+  // Economic FCF anchor -------------------------------------------------------
+  // CFO-capex is the accounting identity, but CFO can be a terrible *forecasting* anchor:
+  // stock compensation, deferred revenue and working-capital releases can make a single
+  // year's CFO margin look permanently spectacular.  Conversely, a temporary capex build
+  // can make reported FCF look permanently broken.  Reconcile cash flow to the operating
+  // model through net income + D&A - normalized capex, then allow only a small persistent
+  // working-capital premium/drag that is supported by multi-year history.
+  const netDaCapexSeries=[];
+  const wcResidualSeries=[];
+  for(let i=0;i<years.length;i++){
+    const nm=netSeries[i], da=daSeries[i], cx=capexSeries[i], cf=cfoSeries[i];
+    if(Number.isFinite(nm)&&Number.isFinite(da)&&Number.isFinite(cx)) netDaCapexSeries.push(nm+da-cx);
+    if(Number.isFinite(cf)&&Number.isFinite(nm)&&Number.isFinite(da)) wcResidualSeries.push(cf-nm-da);
+  }
+  const normalizedEconomicFCF=medianRecent(netDaCapexSeries,5);
+  const rawWorkingCapitalResidual=medianRecent(wcResidualSeries,5);
+  // Only a modest residual is allowed into a decade forecast. Large positive residuals
+  // are commonly SBC / deferred-revenue / working-capital timing rather than free money.
+  const persistentCashResidual=Number.isFinite(rawWorkingCapitalResidual)
+    ? clamp(rawWorkingCapitalResidual,-.025,.025)
+    : 0;
+  const daAnchor=medianRecent(daSeries,5);
+  const targetEconomicFCF=Number.isFinite(targetNet)&&Number.isFinite(daAnchor)&&Number.isFinite(targetCapex)
+    ? targetNet+daAnchor-targetCapex+persistentCashResidual
+    : null;
+  const matureEconomicFCF=Number.isFinite(matureTargetNet)&&Number.isFinite(daAnchor)&&Number.isFinite(matureCapex)
+    ? matureTargetNet+daAnchor-matureCapex+persistentCashResidual*.65
+    : null;
+
+  const accountingCurrentFCF=Number.isFinite(currentCFO)&&Number.isFinite(currentCapex)?currentCFO-currentCapex:latestFCF;
+  let currentFCF=weightedAverage([[accountingCurrentFCF,.45],[directFCF,.30],[normalizedEconomicFCF,.25]]);
+  let targetFCF=weightedAverage([
+    [Number.isFinite(targetCFO)&&Number.isFinite(targetCapex)?targetCFO-targetCapex:null,.30],
+    [targetEconomicFCF,.50],
+    [Number.isFinite(directFCF)?directFCF+leverageSignal*.45:null,.20]
+  ]);
+  let matureTargetFCF=weightedAverage([
+    [Number.isFinite(matureCFO)&&Number.isFinite(matureCapex)?matureCFO-matureCapex:null,.20],
+    [matureEconomicFCF,.65],
+    [targetFCF,.15]
+  ]);
+
+  // FCF must remain reconcilable with operating earnings.  Permit a modest premium for
+  // recurring non-cash charges / favorable working capital, but not a 20-30 point gap that
+  // turns cash conversion into the entire investment thesis.
+  const economicCeiling=(netM,ebitdaM,capexM)=>{
+    const fromNet=Number.isFinite(netM)&&Number.isFinite(daAnchor)&&Number.isFinite(capexM)
+      ? netM+daAnchor-capexM+.035 : null;
+    const fromEbitda=Number.isFinite(ebitdaM)?ebitdaM+.025:null;
+    return median([fromNet,fromEbitda,fcfCeiling].filter(Number.isFinite));
+  };
+  const targetCashCeiling=economicCeiling(targetNet,targetEBITDA,targetCapex);
+  const matureCashCeiling=economicCeiling(matureTargetNet,matureTargetEBITDA,matureCapex);
+  if(Number.isFinite(targetFCF)&&Number.isFinite(targetCashCeiling)) targetFCF=Math.min(targetFCF,targetCashCeiling);
+  if(Number.isFinite(matureTargetFCF)&&Number.isFinite(matureCashCeiling)) matureTargetFCF=Math.min(matureTargetFCF,matureCashCeiling);
+
   currentFCF=Number.isFinite(currentFCF)?clamp(currentFCF,-.10,fcfCeiling):null;
   targetFCF=Number.isFinite(targetFCF)?clamp(targetFCF,-.10,fcfCeiling):null;
   matureTargetFCF=Number.isFinite(matureTargetFCF)?clamp(matureTargetFCF,-.10,fcfCeiling):null;
 
-  // Long-run cash conversion cannot be allowed to detach wildly from the operating model.
-  // Preserve a historically persistent FCF-vs-EBITDA premium/discount, but suppress a
-  // one-off working-capital surge from becoming a permanent valuation assumption.
-  const fcfEbitdaSpreads=[];
-  for(let i=0;i<years.length;i++) if(Number.isFinite(fcfSeries[i])&&Number.isFinite(ebitdaSeries[i])) fcfEbitdaSpreads.push(fcfSeries[i]-ebitdaSeries[i]);
-  const normalizedFcfEbitdaSpread=medianRecent(fcfEbitdaSpreads,5);
-  if(Number.isFinite(matureTargetFCF)&&Number.isFinite(matureTargetEBITDA)&&Number.isFinite(normalizedFcfEbitdaSpread)){
-    const maxMatureFCF=matureTargetEBITDA+clamp(normalizedFcfEbitdaSpread+.025,-.10,.08);
-    matureTargetFCF=Math.min(matureTargetFCF,maxMatureFCF);
+  // A healthy, still-growing business should not be forced into decade-long FCF
+  // compression merely because today's capex is elevated. If operating/net margins are
+  // stable or improving and normalized capex falls, let mature FCF at least preserve the
+  // year-5 economics. This is evidence-based and applies equally to every ticker.
+  if(Number.isFinite(targetFCF)&&Number.isFinite(matureTargetFCF)&&compressionVotes<3&&durableGrowth>.03&&
+     Number.isFinite(matureCapex)&&Number.isFinite(targetCapex)&&matureCapex<=targetCapex+.003){
+    matureTargetFCF=Math.max(matureTargetFCF,targetFCF-.003);
   }
+
+  // Close the loop: once sustainable FCF has been reconciled to earnings and reinvestment,
+  // CFO is the balancing cash-flow line (FCF + capex). The projection rows therefore use
+  // the reconciled economics rather than silently reverting to the noisy historical
+  // CFO-spread model that we just rejected above.
+  if(Number.isFinite(targetFCF)&&Number.isFinite(targetCapex)) targetCFO=clamp(targetFCF+targetCapex,-.08,.70);
+  if(Number.isFinite(matureTargetFCF)&&Number.isFinite(matureCapex)) matureCFO=clamp(matureTargetFCF+matureCapex,-.08,.70);
 
   const cycleNormalizedFCF=abnormalCapexCycle&&Number.isFinite(currentCFO)&&Number.isFinite(targetCapex)?currentCFO-targetCapex:null;
   const profitabilityConsistencyApplied=Boolean(compressionVotes<3&&durableGrowth>.035);
@@ -359,7 +413,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     incrementalFCFMargin:incFCF,incrementalOperatingMargin:incOp,analystMarginGrowth,analystMarginDelta,
     expansionVotes,compressionVotes,abnormalCapexCycle,reportedFCFMargin:latestFCF,normalizedCapexMargin:targetCapex,
     cycleNormalizedFCFMargin:cycleNormalizedFCF,maintenanceCapexMargin:maintenanceAnchor,growthReinvestmentShare,
-    matureGrowthReinvestmentShare,normalizedCFO:rawCFO,cashEconomicsTarget:matureTargetFCF,profitabilityConsistencyApplied
+    matureGrowthReinvestmentShare,normalizedCFO:rawCFO,normalizedEconomicFCF,persistentCashResidual,cashEconomicsTarget:matureTargetFCF,profitabilityConsistencyApplied
   };
 }
 function buildForecast(stock){
@@ -413,7 +467,7 @@ function buildForecast(stock){
   const category=classifyCategory(stock,sustainableGrowth,growth.qualityHint,Number(stock.valuation?.dividendYield)||0);
   const forecastBridge={
     revenue:{model:growth.y1,analystCurrent:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthCurrentYear??stock.analystEstimates?.revenueGrowthFwd),analystNext:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthNextYear),recentQuarter:growth.recentQuarter,recentAnnual:growth.recentAnnual,historicalNormalized:growth.historicalAnchor,terminalOperatingGrowth:growth.year5Growth,analystWeight:growth.analystWeight,structuralStepUp:growth.structuralStepUp,structuralStepDown:growth.structuralStepDown},
-    margins:{fcfStart:margins.currentFCF,fcfNormalized:margins.rawFCF,fcfTarget:margins.targetFCF,fcfMatureTarget:margins.matureTargetFCF,operatingStart:margins.currentOperating,operatingTarget:margins.targetOperating,operatingMatureTarget:margins.matureOperating,ebitdaStart:margins.currentEBITDA,ebitdaNormalized:margins.rawEBITDA,ebitdaTarget:margins.targetEBITDA,ebitdaMatureTarget:margins.matureTargetEBITDA,netStart:margins.currentNet,netNormalized:margins.rawNet,netTarget:margins.targetNet,netMatureTarget:margins.matureTargetNet,cfoStart:margins.currentCFO,cfoTarget:margins.targetCFO,cfoMatureTarget:margins.matureCFO,capexStart:margins.currentCapex,capexTarget:margins.targetCapex,capexMatureTarget:margins.matureCapex,incrementalFCFMargin:margins.incrementalFCFMargin,incrementalOperatingMargin:margins.incrementalOperatingMargin,analystMarginGrowth:margins.analystMarginGrowth,analystMarginDelta:margins.analystMarginDelta,expansionVotes:margins.expansionVotes,compressionVotes:margins.compressionVotes,fcfTrend:margins.fcfTrend,operatingTrend:margins.opTrend,grossMarginTrend:margins.grossTrend,operatingLeverageAdjustment:margins.leverageSignal,abnormalCapexCycle:margins.abnormalCapexCycle,reportedFCFMargin:margins.reportedFCFMargin,normalizedCapexMargin:margins.normalizedCapexMargin,cycleNormalizedFCFMargin:margins.cycleNormalizedFCFMargin,maintenanceCapexMargin:margins.maintenanceCapexMargin,growthReinvestmentShare:margins.growthReinvestmentShare,matureGrowthReinvestmentShare:margins.matureGrowthReinvestmentShare,matureCapexMargin:margins.matureCapex,normalizedCFOMargin:margins.normalizedCFO,cashEconomicsTarget:margins.cashEconomicsTarget,profitabilityConsistencyApplied:margins.profitabilityConsistencyApplied},
+    margins:{fcfStart:margins.currentFCF,fcfNormalized:margins.rawFCF,fcfTarget:margins.targetFCF,fcfMatureTarget:margins.matureTargetFCF,operatingStart:margins.currentOperating,operatingTarget:margins.targetOperating,operatingMatureTarget:margins.matureOperating,ebitdaStart:margins.currentEBITDA,ebitdaNormalized:margins.rawEBITDA,ebitdaTarget:margins.targetEBITDA,ebitdaMatureTarget:margins.matureTargetEBITDA,netStart:margins.currentNet,netNormalized:margins.rawNet,netTarget:margins.targetNet,netMatureTarget:margins.matureTargetNet,cfoStart:margins.currentCFO,cfoTarget:margins.targetCFO,cfoMatureTarget:margins.matureCFO,capexStart:margins.currentCapex,capexTarget:margins.targetCapex,capexMatureTarget:margins.matureCapex,incrementalFCFMargin:margins.incrementalFCFMargin,incrementalOperatingMargin:margins.incrementalOperatingMargin,analystMarginGrowth:margins.analystMarginGrowth,analystMarginDelta:margins.analystMarginDelta,expansionVotes:margins.expansionVotes,compressionVotes:margins.compressionVotes,fcfTrend:margins.fcfTrend,operatingTrend:margins.opTrend,grossMarginTrend:margins.grossTrend,operatingLeverageAdjustment:margins.leverageSignal,abnormalCapexCycle:margins.abnormalCapexCycle,reportedFCFMargin:margins.reportedFCFMargin,normalizedCapexMargin:margins.normalizedCapexMargin,cycleNormalizedFCFMargin:margins.cycleNormalizedFCFMargin,maintenanceCapexMargin:margins.maintenanceCapexMargin,growthReinvestmentShare:margins.growthReinvestmentShare,matureGrowthReinvestmentShare:margins.matureGrowthReinvestmentShare,matureCapexMargin:margins.matureCapex,normalizedCFOMargin:margins.normalizedCFO,normalizedEconomicFCFMargin:margins.normalizedEconomicFCF,persistentCashResidual:margins.persistentCashResidual,cashEconomicsTarget:margins.cashEconomicsTarget,profitabilityConsistencyApplied:margins.profitabilityConsistencyApplied},
     shares:{recent:recentShareGrowth,normalized:medianShareGrowth,model:dilutionRate,mature:matureDilutionRate,path:dilutionPath},
   };
   const forecastFlags=[];
