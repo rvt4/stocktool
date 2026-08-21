@@ -247,7 +247,7 @@ function valuate(stock,forecast,quality){
   const methods=[], base=normalizedOperatingBase(stock,forecast);
   const dataQuality=stock.financials?.dataQuality||{};
   const shareDenominatorReliable=dataQuality.shareDenominatorReliable !== false;
-  const financialLike=stock.sector==='Financials'||dataQuality.financialLikeRevenue===true;
+  const financialLike=dataQuality.financialLikeRevenue===true;
   const materialNCI=dataQuality.materialNoncontrollingInterest===true;
 
   if(!shareDenominatorReliable){

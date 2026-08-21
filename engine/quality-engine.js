@@ -30,7 +30,7 @@ function computeQuality(stock, forecast) {
   const ebitda = Number(last.ebitda);
   const netDebtToEbitda = ebitda>0 ? (debt-cash)/ebitda : null;
 
-  const isFinancial=stock.sector==='Financials';
+  const isFinancial=stock.financials?.dataQuality?.financialLikeRevenue===true;
   const netMargins=years.slice(-4).map(y=>Number(y.revenue)>0&&Number.isFinite(Number(y.netIncome))?Number(y.netIncome)/Number(y.revenue):null).filter(Number.isFinite);
   const profitability = isFinancial
     ? Math.round(0.55*scoreBand(median(netMargins)??0,0,.25)+0.45*scoreBand(growthMed,-.05,.15))
