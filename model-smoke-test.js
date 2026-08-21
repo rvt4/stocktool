@@ -71,10 +71,21 @@ assert(pathV.extremeReturnFlag===true,'pathological upside must be flagged for r
 // Financials are valued from normalized EPS, not revenue × margin. This protects
 // banks/insurers/multi-class investment companies from accounting-base explosions.
 const financial=stock({ticker:'FIN',sector:'Financials',price:100,growth:.18,margin:.30,roic:.18,dilution:-.02});
+financial.financials.dataQuality={financialLikeRevenue:true};
 for(const y of financial.financials.years){ y.dilutedEPS=y.netIncome/y.sharesOutTTM; }
 const finF=buildForecast(financial), finQ=computeQuality(financial,finF), finV=valuate(financial,finF,finQ);
 assert(finV.methods.every(m=>m.name==='Normalized EPS exit'),'financial valuation should use normalized EPS only');
 assert(Number.isFinite(finV.expectedCAGR),'modelable financial valuation should remain visible rather than be silently nulled');
+
+// Payment networks can be classified in the Financials sector by market-data vendors, but
+// their revenue/FCF economics are ordinary operating-company economics. Sector alone must
+// not suppress margins or force normalized-EPS-only valuation.
+const paymentNetwork=stock({ticker:'PAYNET',sector:'Financials',price:100,growth:.11,margin:.32,roic:.30,dilution:-.01});
+paymentNetwork.financials.dataQuality={financialLikeRevenue:false};
+for(const y of paymentNetwork.financials.years){y.cfo=y.fcf+y.revenue*.02;y.capex=y.revenue*.02;y.dilutedEPS=y.netIncome/y.sharesOutTTM;}
+const payF=buildForecast(paymentNetwork),payQ=computeQuality(paymentNetwork,payF),payV=valuate(paymentNetwork,payF,payQ);
+assert(Number.isFinite(payF.rows[0].fcfMargin)&&Number.isFinite(payF.rows[0].netMargin),'payment-network margins were incorrectly suppressed by sector label');
+assert(payV.methods.some(m=>m.name!=='Normalized EPS exit'),'payment network was incorrectly forced into specialized-financial valuation');
 
 console.log('Model smoke test passed: canonical math, normalized valuation anchors, financial EPS handling, and extreme-upside review flags are internally consistent.');
 
@@ -169,6 +180,7 @@ assert(cveEps.reliability<cveFcf.reliability,'EPS should be downweighted when ca
 // Fast-growing financials still use a financial-specific EPS framework, but the generic
 // growth-financial path may compound earnings faster than a mature bank/insurer path.
 const growthFin=stock({ticker:'GROWTH_FIN',sector:'Financials',price:40,growth:.22,margin:.15,roic:.16,dilution:.02});
+growthFin.financials.dataQuality={financialLikeRevenue:true};
 for(const y of growthFin.financials.years){y.dilutedEPS=Math.max(.35,y.netIncome/y.sharesOutTTM);}
 growthFin.analystEstimates.revenueGrowthCurrentYear=.25; growthFin.analystEstimates.revenueGrowthNextYear=.22;
 const gfF=buildForecast(growthFin), gfQ=computeQuality(growthFin,gfF), gfV=valuate(growthFin,gfF,gfQ);
@@ -415,3 +427,46 @@ assert(ncb.operatingMatureTarget>=ncb.operatingStart-.012,'mixed evidence caused
 assert(ncb.netMatureTarget>=ncb.netStart-.012,'mixed evidence caused excessive decade-long net margin compression');
 
 console.log('V11.6 coherent margin-engine tests passed: profitability, cash conversion, and capex now reconcile to one operating model.');
+
+// V11.8 structural capital-light cash-conversion invariants -----------------
+// A persistently high-FCF, low-capex software-like business should not have its
+// cash margin mechanically cut in half merely because FCF sits above accounting
+// EBITDA/net margins. The premium must be multi-year and cash-backed, not a one-off.
+const structuralCash=stock({ticker:'STRUCTURAL_CASH',sector:'Technology',price:100,growth:.22,margin:.48,roic:.30,dilution:.025});
+{
+  const fcfs=[.43,.46,.49,.52,.55], cfos=[.455,.485,.515,.545,.575], caps=[.025,.025,.025,.025,.025];
+  const ops=[.18,.19,.20,.21,.22], ebs=[.22,.23,.24,.25,.26], nets=[.16,.17,.18,.19,.20];
+  for(let i=0;i<structuralCash.financials.years.length;i++){
+    const y=structuralCash.financials.years[i];
+    y.fcf=y.revenue*fcfs[i]; y.cfo=y.revenue*cfos[i]; y.capex=y.revenue*caps[i];
+    y.operatingIncome=y.revenue*ops[i]; y.opMargin=ops[i]; y.ebitda=y.revenue*ebs[i]; y.netIncome=y.revenue*nets[i];
+    y.da=y.revenue*.015; y.grossMargin=.80;
+  }
+  structuralCash.analystEstimates.revenueGrowthCurrentYear=.28;
+  structuralCash.analystEstimates.revenueGrowthNextYear=.22;
+  structuralCash.analystEstimates.epsGrowthCurrentYear=.35;
+  structuralCash.analystEstimates.epsGrowthNextYear=.28;
+}
+const structuralCashF=buildForecast(structuralCash), scb=structuralCashF.forecastBridge.margins;
+assert(structuralCashF.forecastFlags.includes('structural_capital_light_cash_conversion'),'persistent capital-light cash conversion was not recognized');
+assert(scb.fcfCeiling>.45,'persistent capital-light economics remained trapped by the generic technology FCF ceiling');
+assert(structuralCashF.rows.at(-1).fcfMargin>=scb.reportedFCFMargin*.72,'persistent capital-light FCF margin was mechanically cut roughly in half');
+assert(structuralCashF.rows.at(-1).fcfMargin>.35,'structural high cash conversion faded to an implausibly ordinary mature margin');
+
+// A single FCF spike with otherwise ordinary history must NOT earn the structural
+// exemption. This preserves the CELH-style working-capital normalization behavior.
+const transientCash=stock({ticker:'TRANSIENT_CASH',sector:'Consumer Staples',price:40,growth:.12,margin:.10,roic:.15,dilution:.01});
+{
+  const fcfs=[.08,.09,.09,.10,.24], cfos=[.11,.12,.12,.13,.27], caps=[.03,.03,.03,.03,.03];
+  const ebs=[.10,.10,.10,.10,.11], nets=[.05,.05,.05,.05,.055];
+  for(let i=0;i<transientCash.financials.years.length;i++){
+    const y=transientCash.financials.years[i];
+    y.fcf=y.revenue*fcfs[i]; y.cfo=y.revenue*cfos[i]; y.capex=y.revenue*caps[i];
+    y.operatingIncome=y.revenue*.08; y.opMargin=.08; y.ebitda=y.revenue*ebs[i]; y.netIncome=y.revenue*nets[i]; y.da=y.revenue*.02;
+  }
+}
+const transientCashF=buildForecast(transientCash);
+assert(!transientCashF.forecastFlags.includes('structural_capital_light_cash_conversion'),'one-off cash spike incorrectly earned structural cash-conversion treatment');
+assert(transientCashF.rows.at(-1).fcfMargin<.20,'one-off cash spike leaked into mature FCF economics');
+
+console.log('V11.8 structural cash-conversion tests passed: persistent capital-light FCF is preserved while one-off cash spikes still normalize.');
