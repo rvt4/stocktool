@@ -31,7 +31,7 @@ function rateStock(stock,forecast,quality,v){
   if(agreement<35&&['Buy','Strong Buy','Exceptional Buy'].includes(rating))rating='Hold';
 
   const agreementFactor=clamp(agreement/100,.30,1), evidenceFactor=clamp((conf/100)*(.80+.20*clamp(independent/3,0,1)),.35,1);
-  const investmentScore=Number.isFinite(c)?Math.round(clamp((.30*clamp((c+.02)/.24,0,1)*100+.16*clamp((mos+.05)/.40,0,1)*100+.27*q+.10*(quality.moatScore||50)+.17*conf)*(.84+.08*agreementFactor+.08*evidenceFactor),0,100)):0;
+  const investmentScore=Number.isFinite(c)?Math.round(clamp((.22*clamp((c+.02)/.24,0,1)*100+.14*clamp((mos+.05)/.40,0,1)*100+.31*q+.11*(quality.moatScore||50)+.22*conf)*(.80+.09*agreementFactor+.11*evidenceFactor),0,100)):0;
   return {rating,requiredMOS:req,investmentScore,qualifiesForBuyList:['Buy','Strong Buy','Exceptional Buy'].includes(rating),expectedAlpha:Number.isFinite(c)?c-.10:null};
 }
 module.exports={rateStock,requiredMOS};

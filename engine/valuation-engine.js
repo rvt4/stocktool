@@ -241,16 +241,23 @@ function dcfFairValue(forecast,req,currentShares){
 function valuate(stock,forecast,quality){
   const rows=forecast.rows||[], f=rows.at(-1)||{}, years=stock.financials?.years||[], last=years.at(-1)||{};
   const price=finite(stock.price?.current), cfg=sectorConfig(stock.sector), req=requiredReturn(quality,forecast.category);
-  const shares0=finite(last.sharesOutTTM), netDebt=(finite(last.totalDebt)||finite(last.longTermDebt)||0)-(finite(last.cash)||0);
+  const reportedShares0=finite(last.sharesOutTTM)>0?finite(last.sharesOutTTM):null;
+  const impliedShares0=!reportedShares0&&price>0&&finite(stock.valuation?.marketCap)>0?finite(stock.valuation.marketCap)/price:null;
+  const shares0=reportedShares0||impliedShares0, netDebt=(finite(last.totalDebt)||finite(last.longTermDebt)||0)-(finite(last.cash)||0);
   const marketCap=price>0&&shares0>0?price*shares0:null, revenue0=finite(last.revenue)>0?finite(last.revenue):null;
   const q=(quality.qualityScore||50)/100, growth=clamp(forecast.year5OperatingGrowth??forecast.rows?.at(-1)?.revenueGrowth??forecast.sustainableGrowth??forecast.revenueGrowthAnchor,0,.18);
   const methods=[], base=normalizedOperatingBase(stock,forecast);
   const dataQuality=stock.financials?.dataQuality||{};
   const shareDenominatorReliable=dataQuality.shareDenominatorReliable !== false;
+  // A missing SEC share denominator should not make a profitable company permanently
+  // unrateable when market cap / price supplies a coherent per-share denominator. This
+  // remains lower-confidence than a reported diluted share count and is surfaced below.
+  const shareCountFallbackUsed=!reportedShares0&&impliedShares0>0;
+  const shareDenominatorUsable=shareDenominatorReliable||shareCountFallbackUsed;
   const financialLike=dataQuality.financialLikeRevenue===true;
   const materialNCI=dataQuality.materialNoncontrollingInterest===true;
 
-  if(!shareDenominatorReliable){
+  if(!shareDenominatorUsable){
     // Fail closed. A corrupted share denominator can turn an ordinary enterprise value
     // into a triple-digit per-share CAGR. Do not value until the denominator is reconciled.
   } else if(financialLike){
@@ -265,11 +272,11 @@ function valuate(stock,forecast,quality){
       const epsGrowth=clamp((growthFinancial?.72:.60)*analystGrowth+(growthFinancial?.28:.40)*growth+buybackTailwind,-.04,growthFinancial?.20:.16);
       const futureEPS=epsBase*Math.pow(1+epsGrowth,HORIZON_YEARS);
       const stableG=clamp(forecast.terminalGrowth,.01,Math.min(.045,req-.03));
-      const stableROE=clamp(.10+.10*q,.10,.20);
+      const stableROE=clamp(.105+.13*q,.10,.235);
       const payout=clamp(1-stableG/stableROE,.35,.85);
       const fundamentalPE=payout*(1+stableG)/Math.max(.035,req-stableG);
-      const justified=.70*fundamentalPE+.30*(cfg.basePE+epsGrowth*(growthFinancial?12:8)+(q-.5)*4);
-      const m=boundedExit(currentPE,justified,7,growthFinancial?24:21);
+      const justified=.62*fundamentalPE+.38*(cfg.basePE+epsGrowth*(growthFinancial?20:9)+(q-.5)*5);
+      const m=boundedExit(currentPE,justified,7,growthFinancial?28:21);
       const rel=methodReliability(stock,forecast,'FINANCIAL_EPS',epsBase,futureEPS,quality);
       addMethod(methods,{name:'Normalized EPS exit',target:futureEPS*m,weight:1,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:futureEPS,normalizedEPSBase:epsBase,epsGrowth,reliabilityReasons:rel.reasons}});
     }
@@ -376,24 +383,38 @@ function valuate(stock,forecast,quality){
   let hasValuation=Number.isFinite(expected)&&methods.length>0&&Number.isFinite(total)&&total>0&&!returnDecompositionFailure;
   if(!hasValuation){total=null;expected=null;}
 
-  const target=total!=null?Math.max(0,total-terminalDividendValue):null, fair=total!=null?pv(total,req,HORIZON_YEARS):null;
-  // Conventional margin of safety: discount to intrinsic value as a fraction of fair value.
-  // A $50 price versus $100 fair value is 50% MOS, not 100% 'upside'. Premium remains
-  // price/fair-1 so overvaluation is still explicit.
-  const mos=fair>0&&price>0?1-price/fair:null, premium=fair>0&&price>0?price/fair-1:null;
+  const target=total!=null?Math.max(0,total-terminalDividendValue):null;
+  // Keep two concepts separate:
+  //   fairValueEstimate = risk-normalized intrinsic value (what the business is worth)
+  //   requiredReturnBuyPrice = price that would deliver this model's stricter hurdle rate.
+  // Previously both were the same number, which made high-quality growth companies look
+  // artificially 'worth' only the price needed to earn 11-12% annually.
+  const fairDiscountRate=clamp(.09+(1-q)*.015,.09,.105);
+  const fair=total!=null?pv(total,fairDiscountRate,HORIZON_YEARS):null;
+  const requiredReturnBuyPrice=total!=null?pv(total,req,HORIZON_YEARS):null;
+  // MOS is never a negative percentage. Overvaluation is represented separately by
+  // premiumToFairValue / valuationGap, avoiding outputs such as -165% MOS.
+  const rawMos=fair>0&&price>0?1-price/fair:null;
+  const mos=rawMos==null?null:Math.max(0,rawMos);
+  const premium=fair>0&&price>0?Math.max(0,price/fair-1):null;
+  const valuationGap=fair>0&&price>0?fair/price-1:null;
   const reliable=methods.map((m,index)=>({m,index})).filter(x=>(x.m.reliability??1)>=.35);
   const agreementEntries=reliable.length>=2?reliable:methods.map((m,index)=>({m,index}));
   const agreementValues=agreementEntries.map(x=>({index:x.index,v:Number.isFinite(x.m.outcome)&&x.m.outcome>0?Math.log(x.m.outcome):null})).filter(x=>Number.isFinite(x.v));
-  let spread=agreementValues.length>=2?Math.max(...agreementValues.map(x=>x.v))-Math.min(...agreementValues.map(x=>x.v)):null;
-  let agreement;
-  if(consensus.hasConsensusOutlier){
-    const clusterValues=agreementValues.filter(x=>consensus.clusterIndexes.includes(x.index)).map(x=>x.v);
-    const clusterSpread=clusterValues.length>=2?Math.max(...clusterValues)-Math.min(...clusterValues):consensus.pairSpread;
-    agreement=Math.round(85*clamp(1-(clusterSpread??0)/Math.log(1.45),0,1));
-    spread=clusterSpread;
-  } else {
-    agreement=agreementValues.length>=2?Math.round(100*clamp(1-spread/Math.log(1.45),0,1)):(agreementValues.length===1?45:0);
-  }
+  // Agreement is based on robust dispersion around the median, not the full min/max
+  // range. One legitimately conservative or optimistic method should lower confidence,
+  // not turn otherwise corroborating methods into a misleading 0/100 score.
+  const agreementLogs=(consensus.hasConsensusOutlier
+    ? agreementValues.filter(x=>consensus.clusterIndexes.includes(x.index))
+    : agreementValues).map(x=>x.v);
+  const logCenter=agreementLogs.length?median(agreementLogs):null;
+  const deviations=logCenter==null?[]:agreementLogs.map(v=>Math.abs(v-logCenter));
+  const robustSpread=deviations.length?median(deviations):null;
+  let agreement=agreementLogs.length>=2
+    ? Math.round(100*clamp(1-(robustSpread??0)/Math.log(1.65),0,1))
+    : (agreementLogs.length===1?45:0);
+  if(consensus.hasConsensusOutlier) agreement=Math.min(88,agreement);
+  const spread=robustSpread;
   const families=new Set(methods.filter(m=>(m.reliability??0)>=.25).map(m=>m.family||m.name));
   const independentMethodCount=families.size;
   const forecastRel=clamp((forecast.forecastReliabilityScore??quality.confidenceScore??50)/100,.20,.95);
@@ -412,7 +433,7 @@ function valuate(stock,forecast,quality){
     valuationConfidence=Math.min(valuationConfidence,50);
   }
   if(stock.sector==='Real Estate'){modelSupport='limited';modelSupportReason='REIT/real-estate specialized FFO-NAV metrics are not available in the free-data model';valuationConfidence=Math.min(valuationConfidence,50);}
-  if(!shareDenominatorReliable){modelSupport='unsupported';modelSupportReason='Share-count denominator failed independent reconciliation';valuationConfidence=Math.min(valuationConfidence,20);}
+  if(!shareDenominatorUsable){modelSupport='unsupported';modelSupportReason='Share-count denominator failed independent reconciliation';valuationConfidence=Math.min(valuationConfidence,20);}
   else if(financialLike&&methods.length===0){modelSupport='unsupported';modelSupportReason='Financial/insurance-like economics require a reliable normalized EPS basis; cash-flow and sales fallbacks are intentionally disabled';valuationConfidence=Math.min(valuationConfidence,35);}
   else if(materialNCI&&methods.length===0){modelSupport='unsupported';modelSupportReason='Material non-controlling interest creates an ownership-scope mismatch and no parent-scope EPS valuation was available';valuationConfidence=Math.min(valuationConfidence,35);}
   else if(returnDecompositionFailure){modelSupport='unsupported';modelSupportReason='Canonical return exceeds what modeled operating growth, margin change, dilution, dividends, and a bounded re-rating allowance can support';valuationConfidence=Math.min(valuationConfidence,35);}
@@ -422,6 +443,6 @@ function valuate(stock,forecast,quality){
   const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
   const lowReliability=methods.length>0&&Math.max(...methods.map(m=>m.reliability??0))<.40;
 
-  return {requiredReturn:req,methods,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget:target,tenYearPriceTarget:target,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,marginOfSafety:mos,premiumToFairValue:premium,methodAgreementScore:agreement,valuationConfidenceScore:valuationConfidence,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(consensus.hasConsensusOutlier?'isolated_method_outlier':(agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))};
+  return {requiredReturn:req,methods,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget:target,tenYearPriceTarget:target,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,requiredReturnBuyPrice,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,valuationConfidenceScore:valuationConfidence,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(consensus.hasConsensusOutlier?'isolated_method_outlier':(agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))};
 }
 module.exports={valuate};

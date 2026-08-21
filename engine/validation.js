@@ -6,7 +6,7 @@ function validateStock(s){
   if(p>0&&fut>0){const calc=Math.pow(fut/p,1/HORIZON_YEARS)-1;if(!near(calc,c))issues.push('canonical_return_math_mismatch');}
   if(Number.isFinite(s.bearCAGR)&&Number.isFinite(s.baseCAGR)&&s.bearCAGR>s.baseCAGR+1e-9)issues.push('bear_above_base');
   if(Number.isFinite(s.bullCAGR)&&Number.isFinite(s.baseCAGR)&&s.bullCAGR<s.baseCAGR-1e-9)issues.push('bull_below_base');
-  if(Number.isFinite(s.fairValueEstimate)&&Number.isFinite(s.marginOfSafety)&&p>0){const calc=1-p/s.fairValueEstimate;if(!near(calc,s.marginOfSafety))issues.push('mos_math_mismatch');}
+  if(Number.isFinite(s.fairValueEstimate)&&Number.isFinite(s.marginOfSafety)&&p>0){const calc=Math.max(0,1-p/s.fairValueEstimate);if(!near(calc,s.marginOfSafety))issues.push('mos_math_mismatch');}
   if(['Buy','Strong Buy','Exceptional Buy'].includes(s.rating)&&(!Number.isFinite(c)||!Number.isFinite(s.marginOfSafety)))issues.push('buy_without_canonical_valuation');
   if(['Strong Buy','Exceptional Buy'].includes(s.rating)&&(s.independentMethodCount??0)<2)issues.push('high_conviction_without_independent_methods');
   if(s.rating==='Exceptional Buy'&&(s.independentMethodCount??0)<3)issues.push('exceptional_buy_without_three_evidence_families');
