@@ -15,6 +15,43 @@ function weightedMedian(items){
   let acc=0; for(const x of v){acc+=x.weight;if(acc>=total/2)return x.value;} return v.at(-1)?.value??null;
 }
 
+function inferShareCount(stock,forecast,years){
+  const last=years.at(-1)||{};
+  const direct=[last.sharesOutTTM,last.weightedAverageDilutedShares,last.dilutedShares,last.sharesDiluted]
+    .map(finite).filter(x=>x>0);
+  if(direct.length)return {shares:direct[0],source:'reported'};
+  const forecastShares=finite(forecast?.startShares);
+  if(forecastShares>0)return {shares:forecastShares,source:forecast?.shareCountSource||'forecast_inferred'};
+  const price=finite(stock?.price?.current), marketCap=finite(stock?.valuation?.marketCap);
+  if(price>0&&marketCap>0)return {shares:marketCap/price,source:'market_cap_implied'};
+  const implied=[];
+  for(const y of years.slice(-5)){
+    const ni=finite(y?.netIncome),eps=finite(y?.dilutedEPS ?? y?.epsDiluted ?? y?.eps);
+    if(ni!=null&&eps!=null&&Math.abs(eps)>.0001&&ni*eps>0){const sh=ni/eps;if(Number.isFinite(sh)&&sh>1e5&&sh<1e12)implied.push(sh);}
+  }
+  const med=median(implied);
+  return med>0?{shares:med,source:'earnings_per_share_implied'}:{shares:null,source:null};
+}
+
+function normalizeWithCaps(items,methodCap,familyCap){
+  let rows=items.map(x=>({...x,w:Math.max(0,x.adjustedWeight||0)}));
+  const normalize=()=>{const t=rows.reduce((s,x)=>s+x.w,0);if(t>0)for(const x of rows)x.w/=t;return t;};
+  if(!(normalize()>0))return rows;
+  // Iterative caps redistribute concentration rather than simply discarding weight.
+  for(let pass=0;pass<8;pass++){
+    let changed=false;
+    let excess=0,open=[];
+    for(const x of rows){if(x.w>methodCap){excess+=x.w-methodCap;x.w=methodCap;changed=true;}else open.push(x);}
+    if(excess>1e-12&&open.length){const base=open.reduce((s,x)=>s+x.w,0)||open.length;for(const x of open)x.w+=excess*((base===open.length?1:x.w)/base);}
+    normalize();
+    const fams=new Map();for(const x of rows){const f=x.family||x.name;if(!fams.has(f))fams.set(f,[]);fams.get(f).push(x);}
+    for(const [,group] of fams){const fw=group.reduce((s,x)=>s+x.w,0);if(fw<=familyCap+1e-12)continue;const cut=fw-familyCap;const scale=familyCap/fw;for(const x of group)x.w*=scale;const others=rows.filter(x=>!group.includes(x));const ow=others.reduce((s,x)=>s+x.w,0);if(others.length){for(const x of others)x.w+=cut*(ow>0?x.w/ow:1/others.length);}changed=true;}
+    normalize();
+    if(!changed)break;
+  }
+  return rows;
+}
+
 // Terminal multiples may normalize, but most of a ten-year return must come from the
 // business rather than a heroic re-rating. The guardrail is generic and sector-aware.
 function boundedExit(current,justified,lo,hi){
@@ -78,7 +115,7 @@ function justifiedExitMultiple(kind,stock,forecast,quality,base,cfg){
 
 function normalizedOperatingBase(stock,forecast){
   const years=stock.financials?.years||[], last=years.at(-1)||{};
-  const revenue=finite(last.revenue), shares=finite(last.sharesOutTTM);
+  const revenue=finite(last.revenue), shares=finite(last.sharesOutTTM)>0?finite(last.sharesOutTTM):finite(forecast?.startShares);
   const bridge=forecast.forecastBridge?.margins||{};
   const fcfMargin=finite(bridge.fcfNormalized), ebitdaMargin=finite(bridge.ebitdaNormalized), netMargin=finite(bridge.netNormalized);
   const perShare=(margin)=>revenue>0&&shares>0&&Number.isFinite(margin)&&margin>0?revenue*margin/shares:null;
@@ -190,20 +227,25 @@ function robustOutcomeBlend(methods,price,consensus=null){
   const valid=methods.map((m,index)=>({...m,index})).filter(m=>Number.isFinite(m.outcome)&&m.outcome>0&&m.weight>0);
   if(!valid.length)return {outcome:null,weights:{}};
   if(valid.length===1)return {outcome:valid[0].outcome,weights:{[valid[0].name]:1}};
-  const info=consensus||valuationConsensus(methods,price);
-  const outliers=new Set(info.outlierIndexes||[]);
-  const items=valid.map(m=>({value:Math.log(m.outcome),weight:m.weight,index:m.index,name:m.name,outcome:m.outcome}));
-  const center=weightedMedian(items.map(x=>({value:x.value,weight:x.weight*(outliers.has(x.index)?.08:1)})));
+  const info=consensus||valuationConsensus(methods,price), outliers=new Set(info.outlierIndexes||[]);
+  // Base weights should express method usefulness, not permit a 40% DCF prior to become
+  // 70-80% of the answer after disagreement. Square-root the prior and let reliability +
+  // agreement do most of the work.
+  const items=valid.map(m=>({value:Math.log(m.outcome),weight:Math.sqrt(Math.max(.001,m.baseWeight||m.weight))*Math.pow(clamp(m.reliability??1,.05,1),1.25),index:m.index,name:m.name,outcome:m.outcome,family:m.family||m.name}));
+  const center=weightedMedian(items.map(x=>({value:x.value,weight:x.weight*(outliers.has(x.index)?.10:1)})));
   const adjusted=items.map(x=>{
     const gap=Math.abs(x.value-center);
-    let consensusWeight=gap<=Math.log(1.15)?1:gap<=Math.log(1.30)?.72:gap<=Math.log(1.60)?.42:.18;
-    if(info.hasConsensusOutlier&&outliers.has(x.index))consensusWeight=Math.min(consensusWeight,.10);
+    let consensusWeight=gap<=Math.log(1.15)?1:gap<=Math.log(1.30)?.78:gap<=Math.log(1.60)?.48:.20;
+    if(info.hasConsensusOutlier&&outliers.has(x.index))consensusWeight=Math.min(consensusWeight,.12);
     return {...x,adjustedWeight:x.weight*consensusWeight};
   });
-  const totalW=adjusted.reduce((s,x)=>s+x.adjustedWeight,0);
+  const methodCap=valid.length>=3?.45:.62;
+  const familyCap=valid.length>=3?.58:.72;
+  const capped=normalizeWithCaps(adjusted,methodCap,familyCap);
+  const totalW=capped.reduce((s,x)=>s+x.w,0);
   if(!(totalW>0))return {outcome:null,weights:{}};
-  const outcome=adjusted.reduce((s,x)=>s+x.outcome*x.adjustedWeight,0)/totalW;
-  return {outcome,weights:Object.fromEntries(adjusted.map(x=>[x.name,x.adjustedWeight/totalW]))};
+  const outcome=capped.reduce((s,x)=>s+x.outcome*x.w,0)/totalW;
+  return {outcome,weights:Object.fromEntries(capped.map(x=>[x.name,x.w/totalW]))};
 }
 
 function dcfFairValue(forecast,req,currentShares){
@@ -241,9 +283,10 @@ function dcfFairValue(forecast,req,currentShares){
 function valuate(stock,forecast,quality){
   const rows=forecast.rows||[], f=rows.at(-1)||{}, years=stock.financials?.years||[], last=years.at(-1)||{};
   const price=finite(stock.price?.current), cfg=sectorConfig(stock.sector), req=requiredReturn(quality,forecast.category);
-  const reportedShares0=finite(last.sharesOutTTM)>0?finite(last.sharesOutTTM):null;
-  const impliedShares0=!reportedShares0&&price>0&&finite(stock.valuation?.marketCap)>0?finite(stock.valuation.marketCap)/price:null;
-  const shares0=reportedShares0||impliedShares0, netDebt=(finite(last.totalDebt)||finite(last.longTermDebt)||0)-(finite(last.cash)||0);
+  const shareInfo=inferShareCount(stock,forecast,years);
+  const reportedShares0=shareInfo.source==='reported'?shareInfo.shares:null;
+  const inferredShares0=shareInfo.shares;
+  const shares0=inferredShares0, netDebt=(finite(last.totalDebt)||finite(last.longTermDebt)||0)-(finite(last.cash)||0);
   const marketCap=price>0&&shares0>0?price*shares0:null, revenue0=finite(last.revenue)>0?finite(last.revenue):null;
   const q=(quality.qualityScore||50)/100, growth=clamp(forecast.year5OperatingGrowth??forecast.rows?.at(-1)?.revenueGrowth??forecast.sustainableGrowth??forecast.revenueGrowthAnchor,0,.18);
   const methods=[], base=normalizedOperatingBase(stock,forecast);
@@ -252,7 +295,7 @@ function valuate(stock,forecast,quality){
   // A missing SEC share denominator should not make a profitable company permanently
   // unrateable when market cap / price supplies a coherent per-share denominator. This
   // remains lower-confidence than a reported diluted share count and is surfaced below.
-  const shareCountFallbackUsed=!reportedShares0&&impliedShares0>0;
+  const shareCountFallbackUsed=!reportedShares0&&inferredShares0>0;
   const shareDenominatorUsable=shareDenominatorReliable||shareCountFallbackUsed;
   const financialLike=dataQuality.financialLikeRevenue===true;
   const materialNCI=dataQuality.materialNoncontrollingInterest===true;
@@ -299,7 +342,7 @@ function valuate(stock,forecast,quality){
       // double-counting owner cash and made FCF-exit values track the (also inflated) DCF.
       // Dividends are added later because this is now an exit-only method.
       const terminalFCFValue=f.fcfPerShare*m;
-      addMethod(methods,{name:'FCF exit',target:terminalFCFValue,weight:.30,reliability:rel.score,price,family:'cashflow_exit',cashFlowInclusive:false,audit:{exitMultiple:m,currentMultiple:currentPFCF,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,terminalExitValue:terminalFCFValue,multipleProfile:exit.profile,reliabilityReasons:rel.reasons}});
+      addMethod(methods,{name:'FCF exit',target:terminalFCFValue,weight:.30,reliability:rel.score,price,family:'cashflow',cashFlowInclusive:false,audit:{exitMultiple:m,currentMultiple:currentPFCF,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,terminalExitValue:terminalFCFValue,multipleProfile:exit.profile,reliabilityReasons:rel.reasons}});
     }
     if(Number(f.eps)>0&&normEPS>0){
       const exit=justifiedExitMultiple('EPS',stock,forecast,quality,base,cfg), m=boundedExit(currentPE,exit.multiple,8,32);
