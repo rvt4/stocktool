@@ -470,3 +470,46 @@ assert(!transientCashF.forecastFlags.includes('structural_capital_light_cash_con
 assert(transientCashF.rows.at(-1).fcfMargin<.20,'one-off cash spike leaked into mature FCF economics');
 
 console.log('V11.8 structural cash-conversion tests passed: persistent capital-light FCF is preserved while one-off cash spikes still normalize.');
+
+// V11.10 valuation-evidence and share-denominator invariants ----------------
+// Missing SEC share tags must not make a profitable company unrateable when recent
+// net income and diluted EPS imply a coherent ownership denominator.
+const epsShareFallback=stock({ticker:'EPS_SHARE_FALLBACK',price:120,growth:.18,margin:.26,roic:.28,dilution:.02});
+for(const y of epsShareFallback.financials.years){
+  y.dilutedEPS=y.netIncome/y.sharesOutTTM;
+  y.sharesOutTTM=null;
+  y.cfo=y.fcf+y.revenue*.025;
+  y.capex=y.revenue*.025;
+}
+const esfF=buildForecast(epsShareFallback),esfQ=computeQuality(epsShareFallback,esfF),esfV=valuate(epsShareFallback,esfF,esfQ);
+assert(esfF.startShares>0,'EPS-implied share denominator was not reconstructed');
+assert.strictEqual(esfF.shareCountSource,'earnings_per_share_implied','share fallback did not disclose its evidence source');
+assert(esfV.methods.length>=2,'share fallback failed to restore ordinary valuation methods');
+assert(Number.isFinite(esfV.expectedCAGR),'share fallback still left a modelable company unrateable');
+
+// With three or more methods, no single method or duplicate cash-flow family may dominate
+// simply because the others disagree. Reliability and agreement still matter, but the
+// canonical estimate must remain genuinely corroborated.
+const balanced=stock({ticker:'BALANCED_METHODS',price:100,growth:.14,margin:.24,roic:.27,dilution:-.01});
+for(const y of balanced.financials.years){y.cfo=y.fcf+y.revenue*.03;y.capex=y.revenue*.03;y.dilutedEPS=y.netIncome/y.sharesOutTTM;}
+const balF=buildForecast(balanced),balQ=computeQuality(balanced,balF),balV=valuate(balanced,balF,balQ);
+const balWeights=Object.values(balV.canonicalMethodWeights||{});
+if(balWeights.length>=3)assert(Math.max(...balWeights)<=.451,'one valuation method still dominates a multi-method canonical estimate');
+const cashWeight=(balV.canonicalMethodWeights?.['FCF exit']||0)+(balV.canonicalMethodWeights?.['10Y DCF']||0);
+if(balWeights.length>=3)assert(cashWeight<=.581,'correlated FCF methods still dominate the canonical estimate as independent evidence');
+
+// Forecast bridge targets must describe the rows that are actually valued. Correcting a
+// target FCF margin without synchronizing CFO used to leave the displayed target and the
+// cash-flow path on different economic stories.
+const coherentCash=stock({ticker:'COHERENT_CASH',price:80,growth:.15,margin:.16,roic:.22,dilution:.01});
+for(let i=0;i<coherentCash.financials.years.length;i++){
+  const y=coherentCash.financials.years[i];
+  y.cfo=y.revenue*(.18+i*.005); y.capex=y.revenue*.035; y.fcf=y.cfo-y.capex;
+  y.operatingIncome=y.revenue*(.12+i*.004); y.opMargin=.12+i*.004;
+  y.ebitda=y.revenue*(.15+i*.004); y.netIncome=y.revenue*(.075+i*.003);
+}
+const cohF=buildForecast(coherentCash),cmb=cohF.forecastBridge.margins;
+assert(Math.abs(cmb.fcfTarget-(cmb.cfoTarget-cmb.capexTarget))<1e-10,'year-5 FCF target diverges from CFO minus capex');
+assert(Math.abs(cmb.fcfMatureTarget-(cmb.cfoMatureTarget-cmb.capexMatureTarget))<1e-10,'mature FCF target diverges from CFO minus capex');
+
+console.log('V11.10 evidence-balance tests passed: share fallback restores coverage, method concentration is capped, and cash-margin targets reconcile to valued rows.');
