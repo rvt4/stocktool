@@ -513,3 +513,39 @@ assert(Math.abs(cmb.fcfTarget-(cmb.cfoTarget-cmb.capexTarget))<1e-10,'year-5 FCF
 assert(Math.abs(cmb.fcfMatureTarget-(cmb.cfoMatureTarget-cmb.capexMatureTarget))<1e-10,'mature FCF target diverges from CFO minus capex');
 
 console.log('V11.10 evidence-balance tests passed: share fallback restores coverage, method concentration is capped, and cash-margin targets reconcile to valued rows.');
+
+// V11.11 cash-path integrity invariants ------------------------------------
+// The company-specific FCF ceiling selected by the margin engine must also be the ceiling
+// used by the annual rows. This catches the old downstream cfg.maxFCFMargin clamp that
+// silently turned a 50%+ Visa-like cash margin into 35% in the actual valuation path.
+assert(Math.abs(structuralCashF.rows.at(-1).fcfMargin-scb.fcfMatureTarget)<1e-10,
+  'year-10 FCF row does not equal the mature FCF target actually published by the margin engine');
+assert(structuralCashF.rows.at(-1).fcfMargin>.35,
+  'company-specific high-FCF ceiling was overwritten by the generic sector cap in annual rows');
+
+// After transient cash spikes have already been normalized, years 6-10 may not invent a
+// second large cash-margin collapse unless capex or operating-profitability evidence says
+// the business is structurally becoming more cash intensive / less profitable.
+const highCashNoCompression=stock({ticker:'HIGH_CASH_NO_COMPRESSION',sector:'Technology',price:100,growth:.20,margin:.34,roic:.25,dilution:.02});
+{
+  const fcfs=[.30,.35,.39,.42,.43], cfos=[.35,.40,.44,.47,.48], caps=[.05,.05,.05,.05,.05];
+  const ops=[.17,.18,.19,.20,.21], ebs=[.22,.23,.24,.25,.26], nets=[.15,.16,.17,.18,.19];
+  for(let i=0;i<highCashNoCompression.financials.years.length;i++){
+    const y=highCashNoCompression.financials.years[i];
+    y.fcf=y.revenue*fcfs[i]; y.cfo=y.revenue*cfos[i]; y.capex=y.revenue*caps[i];
+    y.operatingIncome=y.revenue*ops[i]; y.opMargin=ops[i]; y.ebitda=y.revenue*ebs[i]; y.netIncome=y.revenue*nets[i];
+    y.da=y.revenue*.02; y.grossMargin=.75;
+  }
+  highCashNoCompression.analystEstimates.revenueGrowthCurrentYear=.25;
+  highCashNoCompression.analystEstimates.revenueGrowthNextYear=.20;
+  highCashNoCompression.analystEstimates.epsGrowthCurrentYear=.30;
+  highCashNoCompression.analystEstimates.epsGrowthNextYear=.25;
+}
+const hcnF=buildForecast(highCashNoCompression), hcnB=hcnF.forecastBridge.margins;
+assert(!hcnB.broadCashCompressionEvidence,'no-compression fixture unexpectedly generated structural cash-compression evidence');
+assert(hcnB.fcfMatureTarget>=Math.max(hcnB.fcfTarget*.90,hcnB.fcfTarget-.035)-1e-10,
+  'mature FCF was mechanically compressed without economic evidence');
+assert(Math.abs(hcnF.rows.at(-1).fcfMargin-hcnB.fcfMatureTarget)<1e-10,
+  'annual row path diverges from the mature cash-margin target');
+
+console.log('V11.11 cash-path integrity tests passed: row ceilings match margin targets and unexplained mature FCF compression is blocked.');
