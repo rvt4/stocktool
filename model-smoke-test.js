@@ -371,3 +371,47 @@ assert.strictEqual(gfV.modelSupport,'limited','single-method financial valuation
 assert(gfV.valuationConfidenceScore<=50,'single-method financial valuation retained excessive confidence');
 
 console.log('V11.4 valuation-integrity smoke tests passed: DCF buyback double-counting removed, FCF exit is exit-only, and generic financials fail closed to limited support.');
+
+// V11.6 coherent margin-engine invariants -----------------------------------
+// A high-quality platform in a temporary capex buildout should be allowed to improve
+// operating/net margins while FCF recovers as excess capex fades. No ticker override is
+// used; the result must come from operating leverage + cash-conversion evidence.
+const platform=stock({ticker:'PLATFORM_MARGIN',sector:'Consumer Discretionary',price:200,growth:.12,margin:.08,roic:.20,dilution:0});
+{
+  const ops=[.075,.085,.095,.105,.115], ebs=[.16,.17,.18,.19,.20], nets=[.07,.078,.085,.095,.105], cfos=[.13,.14,.15,.16,.17], caps=[.06,.065,.07,.10,.14];
+  for(let i=0;i<platform.financials.years.length;i++){
+    const y=platform.financials.years[i];
+    y.operatingIncome=y.revenue*ops[i]; y.opMargin=ops[i]; y.ebitda=y.revenue*ebs[i]; y.netIncome=y.revenue*nets[i];
+    y.cfo=y.revenue*cfos[i]; y.capex=y.revenue*caps[i]; y.fcf=y.revenue*(cfos[i]-caps[i]); y.da=y.revenue*.055; y.grossMargin=.46;
+  }
+  platform.analystEstimates.revenueGrowthCurrentYear=.15; platform.analystEstimates.revenueGrowthNextYear=.14;
+  platform.analystEstimates.epsGrowthCurrentYear=.22; platform.analystEstimates.epsGrowthNextYear=.20; platform.analystEstimates.numAnalysts=50;
+}
+const platformF=buildForecast(platform), pmb=platformF.forecastBridge.margins;
+assert(platformF.forecastFlags.includes('abnormal_capex_cycle_normalized'),'temporary capex buildout was not detected');
+assert(pmb.operatingMatureTarget>pmb.operatingStart,'supported operating leverage failed to improve mature operating margin');
+assert(pmb.netMatureTarget>=pmb.netStart,'net margin contradicted supported operating leverage');
+assert(pmb.capexMatureTarget<pmb.capexStart,'temporary excess capex failed to normalize over the decade');
+assert(pmb.fcfMatureTarget>pmb.fcfTarget&&pmb.fcfTarget>pmb.fcfStart,'FCF did not recover as the investment cycle normalized');
+for(const r of platformF.rows){
+  assert(Math.abs(r.fcfMargin-(r.cfoMargin-r.capexMargin))<1e-10,'FCF margin is no longer CFO minus capex');
+}
+
+// One weak recent profitability period must not automatically become a decade of severe
+// margin erosion when the company is still growing and the broader evidence is mixed.
+const noisyCompression=stock({ticker:'NOISY_COMPRESSION',sector:'Consumer Staples',price:40,growth:.18,margin:.10,roic:.14,dilution:.02});
+{
+  const ops=[.10,.095,.09,.075,.068], ebs=[.105,.10,.095,.073,.068], nets=[.055,.05,.045,.032,.026], cfos=[.14,.13,.12,.13,.135], caps=[.025,.02,.02,.018,.008], gross=[.52,.515,.51,.505,.50];
+  for(let i=0;i<noisyCompression.financials.years.length;i++){
+    const y=noisyCompression.financials.years[i];
+    y.operatingIncome=y.revenue*ops[i]; y.opMargin=ops[i]; y.ebitda=y.revenue*ebs[i]; y.netIncome=y.revenue*nets[i];
+    y.cfo=y.revenue*cfos[i]; y.capex=y.revenue*caps[i]; y.fcf=y.revenue*(cfos[i]-caps[i]); y.grossMargin=gross[i]; y.da=y.revenue*.005;
+  }
+  noisyCompression.analystEstimates.revenueGrowthCurrentYear=.26; noisyCompression.analystEstimates.revenueGrowthNextYear=.084;
+  noisyCompression.analystEstimates.epsGrowthCurrentYear=.20; noisyCompression.analystEstimates.epsGrowthNextYear=.10;
+}
+const noisyF=buildForecast(noisyCompression), ncb=noisyF.forecastBridge.margins;
+assert(ncb.operatingMatureTarget>=ncb.operatingStart-.012,'mixed evidence caused excessive decade-long operating margin compression');
+assert(ncb.netMatureTarget>=ncb.netStart-.012,'mixed evidence caused excessive decade-long net margin compression');
+
+console.log('V11.6 coherent margin-engine tests passed: profitability, cash conversion, and capex now reconcile to one operating model.');
