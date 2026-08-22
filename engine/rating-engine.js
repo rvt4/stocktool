@@ -3,7 +3,7 @@ const { clamp }=require('./config');
 function requiredMOS(category,q){let m=category==='Hyper Growth'?.225:category==='Growth'?.175:category==='Dividend'?.15:category==='Compounder'?.12:.20;if((q.qualityScore||50)>=85&&(q.moatScore||50)>=80)m-=.02;if((q.confidenceScore||50)<60)m+=.025;return clamp(m,.10,.30);}
 function rateStock(stock,forecast,quality,v){
   const c=v.expectedCAGR,mos=v.marginOfSafety,req=requiredMOS(forecast.category,quality),q=quality.qualityScore||0;
-  const rawConf=quality.confidenceScore||0,agreement=v.methodAgreementScore||0,conf=v.valuationConfidenceScore??rawConf;
+  const rawConf=quality.confidenceScore||0,agreement=Number.isFinite(v.methodAgreementScore)?v.methodAgreementScore:50,conf=v.valuationConfidenceScore??rawConf;
   const methodCount=(v.methods||[]).length, independent=v.independentMethodCount??methodCount;
   const forecastConf=forecast.forecastReliabilityScore??rawConf;
   let rating='Unrated';

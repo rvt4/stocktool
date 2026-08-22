@@ -549,13 +549,19 @@ function buildForecast(stock){
 
   const shareGrowth=yoySeries(years.slice(-5),'sharesOutTTM').filter(x=>x>-.25&&x<.30);
   const recentShareGrowth=shareGrowth.at(-1), medianShareGrowth=median(shareGrowth)??0;
-  // Share-count behavior gets its own fade. A recent SBC spike or aggressive buyback
-  // program should not be compounded unchanged for a decade. Positive dilution fades
-  // toward a modest mature-company rate; buybacks fade toward a sustainable tailwind.
+  // Share count is a capital-allocation forecast, not a mechanical extrapolation. Start
+  // from observed dilution, then fade it using SBC intensity and owner-cash generation.
   const dilutionRate=clamp(weightedAverage([[recentShareGrowth,.55],[medianShareGrowth,.45]])??0,-.05,.07);
+  const sbcSeries=years.slice(-5).map(y=>finite(y?.sbcIntensity)).filter(x=>Number.isFinite(x)&&x>=0&&x<.50);
+  const sbcNow=finite(last.sbcIntensity), sbcNormalized=median(sbcSeries);
+  const matureSbc=(Number.isFinite(sbcNow)||Number.isFinite(sbcNormalized))
+    ? clamp((Number.isFinite(sbcNow)?sbcNow:sbcNormalized)*.35+(Number.isFinite(sbcNormalized)?sbcNormalized:0)*.20,0,.06) : null;
+  const ownerCash=median(years.slice(-4).map(fcfMargin).filter(Number.isFinite));
+  const buybackCapacity=Number.isFinite(ownerCash)?clamp((ownerCash-.06)*.10,0,.025):0;
+  const sbcDilutionFloor=Number.isFinite(matureSbc)?clamp(matureSbc*.16,0,.010):.004;
   const matureDilutionRate=dilutionRate>0
-    ? clamp(.004 + .18*dilutionRate, .004, .015)
-    : clamp(.25*dilutionRate, -.012, 0);
+    ? clamp(sbcDilutionFloor+.10*dilutionRate-buybackCapacity,-.008,.015)
+    : clamp(.30*dilutionRate-buybackCapacity*.35,-.015,0);
   const dilutionPath=Array.from({length:HORIZON_YEARS},(_,i)=>{
     const t=Math.min(1,(i+1)/HORIZON_YEARS), curved=t*t*(3-2*t);
     return dilutionRate+(matureDilutionRate-dilutionRate)*curved;
@@ -602,7 +608,7 @@ function buildForecast(stock){
   const forecastBridge={
     revenue:{model:growth.y1,analystCurrent:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthCurrentYear??stock.analystEstimates?.revenueGrowthFwd),analystNext:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthNextYear),recentQuarter:growth.recentQuarter,recentAnnual:growth.recentAnnual,historicalNormalized:growth.historicalAnchor,terminalOperatingGrowth:growth.year5Growth,analystWeight:growth.analystWeight,structuralStepUp:growth.structuralStepUp,structuralStepDown:growth.structuralStepDown},
     margins:{fcfStart:margins.currentFCF,fcfNormalized:margins.rawFCF,fcfTarget:margins.targetFCF,fcfMatureTarget:margins.matureTargetFCF,operatingStart:margins.currentOperating,operatingTarget:margins.targetOperating,operatingMatureTarget:margins.matureOperating,ebitdaStart:margins.currentEBITDA,ebitdaNormalized:margins.rawEBITDA,ebitdaTarget:margins.targetEBITDA,ebitdaMatureTarget:margins.matureTargetEBITDA,netStart:margins.currentNet,netNormalized:margins.rawNet,netTarget:margins.targetNet,netMatureTarget:margins.matureTargetNet,cfoStart:margins.currentCFO,cfoTarget:margins.targetCFO,cfoMatureTarget:margins.matureCFO,capexStart:margins.currentCapex,capexTarget:margins.targetCapex,capexMatureTarget:margins.matureCapex,incrementalFCFMargin:margins.incrementalFCFMargin,incrementalOperatingMargin:margins.incrementalOperatingMargin,analystMarginGrowth:margins.analystMarginGrowth,analystMarginDelta:margins.analystMarginDelta,expansionVotes:margins.expansionVotes,compressionVotes:margins.compressionVotes,fcfTrend:margins.fcfTrend,operatingTrend:margins.opTrend,grossMarginTrend:margins.grossTrend,operatingLeverageAdjustment:margins.leverageSignal,abnormalCapexCycle:margins.abnormalCapexCycle,reportedFCFMargin:margins.reportedFCFMargin,normalizedCapexMargin:margins.normalizedCapexMargin,cycleNormalizedFCFMargin:margins.cycleNormalizedFCFMargin,maintenanceCapexMargin:margins.maintenanceCapexMargin,growthReinvestmentShare:margins.growthReinvestmentShare,matureGrowthReinvestmentShare:margins.matureGrowthReinvestmentShare,matureCapexMargin:margins.matureCapex,normalizedCFOMargin:margins.normalizedCFO,cashEconomicsTarget:margins.cashEconomicsTarget,profitabilityConsistencyApplied:margins.profitabilityConsistencyApplied,structuralCapitalLightCashConversion:margins.structuralCapitalLightCashConversion,recurringFcfCfoRatio:margins.recurringFcfCfoRatio,fcfCeiling:margins.fcfCeiling,crossMarginCoherenceApplied:margins.crossMarginCoherenceApplied,unexplainedFcfCompressionPrevented:margins.unexplainedFcfCompressionPrevented,broadCashCompressionEvidence:margins.broadCashCompressionEvidence},
-    shares:{recent:recentShareGrowth,normalized:medianShareGrowth,model:dilutionRate,mature:matureDilutionRate,path:dilutionPath},
+    shares:{recent:recentShareGrowth,normalized:medianShareGrowth,model:dilutionRate,mature:matureDilutionRate,path:dilutionPath,sbcNow,sbcNormalized,matureSbc,buybackCapacity},
   };
   const forecastFlags=[];
   if(growth.structuralStepUp)forecastFlags.push('structural_revenue_step_up_detected');

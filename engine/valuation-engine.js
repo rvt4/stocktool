@@ -77,8 +77,10 @@ function terminalMultipleProfile(stock,forecast,quality,base){
   const growthQuality=clamp((quality?.growthQualityScore??50)/100,0,1);
   const confidence=clamp((quality?.confidenceScore??50)/100,0,1);
   const roic=finite(quality?.diagnostics?.roic);
-  const dilution=Math.max(0,finite(forecast?.dilutionRate)||0);
+  const dilution=Math.max(0,finite(forecast?.matureDilutionRate)??finite(forecast?.dilutionRate)??0);
   const growth=clamp(forecast?.year5OperatingGrowth??forecast?.rows?.at(-1)?.revenueGrowth??forecast?.sustainableGrowth??forecast?.revenueGrowthAnchor,0,.22);
+  const matureGrowth=clamp(forecast?.rows?.at(-1)?.revenueGrowth??forecast?.terminalGrowth??growth,0,.12);
+  const growthDurability=clamp(.65*growth+.35*matureGrowth,0,.18);
   const margin=Math.max(0,finite(base?.margins?.fcf)||0,finite(base?.margins?.ebitda)||0,finite(base?.margins?.net)||0);
 
   // Quality is deliberately multi-dimensional. This prevents one high ROIC year or one
@@ -89,7 +91,7 @@ function terminalMultipleProfile(stock,forecast,quality,base){
   const marginAdj=clamp((margin-.12)*8,-1.0,2.0);
   const confidenceAdj=(confidence-.60)*2;
   const dilutionPenalty=clamp(dilution*35,0,2.5);
-  return {growth,durableQuality,qualityAdj,roicAdj,marginAdj,confidenceAdj,dilutionPenalty};
+  return {growth,matureGrowth,growthDurability,durableQuality,qualityAdj,roicAdj,marginAdj,confidenceAdj,dilutionPenalty};
 }
 
 function justifiedExitMultiple(kind,stock,forecast,quality,base,cfg){
@@ -99,15 +101,15 @@ function justifiedExitMultiple(kind,stock,forecast,quality,base,cfg){
     // FCF deserves the widest quality/growth differentiation because it is the cleanest
     // owner-economics anchor. ~10% durable growth with strong economics lands around the
     // mid/high teens; truly elite businesses can retain a low/mid-20s multiple.
-    multiple=11.5+p.growth*42+p.qualityAdj+p.roicAdj+p.marginAdj+p.confidenceAdj-p.dilutionPenalty;
+    multiple=11.0+p.growthDurability*42+p.qualityAdj+p.roicAdj+p.marginAdj+p.confidenceAdj-p.dilutionPenalty;
     return {multiple:clamp(multiple,8,28),profile:p};
   }
   if(kind==='EPS'){
-    multiple=cfg.basePE+p.growth*38+p.qualityAdj*.90+p.roicAdj*.85+p.marginAdj*.45+p.confidenceAdj-p.dilutionPenalty;
+    multiple=cfg.basePE+p.growthDurability*42+p.qualityAdj*.90+p.roicAdj*.85+p.marginAdj*.45+p.confidenceAdj-p.dilutionPenalty;
     return {multiple:clamp(multiple,8,32),profile:p};
   }
   if(kind==='EBITDA'){
-    multiple=cfg.baseEVEBITDA+p.growth*26+p.qualityAdj*.60+p.roicAdj*.45+p.marginAdj*.35+p.confidenceAdj*.60-p.dilutionPenalty*.70;
+    multiple=cfg.baseEVEBITDA+p.growthDurability*28+p.qualityAdj*.60+p.roicAdj*.45+p.marginAdj*.35+p.confidenceAdj*.60-p.dilutionPenalty*.70;
     return {multiple:clamp(multiple,6,22),profile:p};
   }
   return {multiple:null,profile:p};
@@ -403,6 +405,22 @@ function valuate(stock,forecast,quality){
   const canonical=robustOutcomeBlend(methods,price,consensus);
   let total=canonical.outcome, expected=cagr(price,total);
 
+  // Exit-multiple sensitivity: a decision that flips when terminal multiples move 20% is
+  // intrinsically less certain. DCF is left unchanged because its terminal assumption is
+  // already represented by perpetual growth rather than an exit multiple.
+  const sensitivityOutcome=(factor)=>{
+    const shocked=methods.map(m=>{
+      if(!/exit$/i.test(m.name)||!Number.isFinite(m.target)) return {...m};
+      const dividendOutcome=m.cashFlowInclusive?0:terminalDividendValue;
+      const target=m.target*factor;
+      return {...m,target,outcome:target+dividendOutcome};
+    });
+    return robustOutcomeBlend(shocked,price,valuationConsensus(shocked,price)).outcome;
+  };
+  const lowMultipleOutcome=sensitivityOutcome(.80), highMultipleOutcome=sensitivityOutcome(1.20);
+  const lowMultipleCAGR=cagr(price,lowMultipleOutcome), highMultipleCAGR=cagr(price,highMultipleOutcome);
+  const multipleSensitivitySpread=Number.isFinite(lowMultipleCAGR)&&Number.isFinite(highMultipleCAGR)?highMultipleCAGR-lowMultipleCAGR:null;
+
   // Return-integrity gate. A valuation is not decision-grade merely because its algebra
   // works. Mature/slow-growing businesses cannot publish 25-40% annual returns unless
   // the operating model itself contains enough growth, margin expansion, distributions,
@@ -455,16 +473,21 @@ function valuate(stock,forecast,quality){
   const robustSpread=deviations.length?median(deviations):null;
   let agreement=agreementLogs.length>=2
     ? Math.round(100*clamp(1-(robustSpread??0)/Math.log(1.65),0,1))
-    : (agreementLogs.length===1?45:0);
+    : (agreementLogs.length===1?null:0);
   if(consensus.hasConsensusOutlier) agreement=Math.min(88,agreement);
   const spread=robustSpread;
   const families=new Set(methods.filter(m=>(m.reliability??0)>=.25).map(m=>m.family||m.name));
   const independentMethodCount=families.size;
   const forecastRel=clamp((forecast.forecastReliabilityScore??quality.confidenceScore??50)/100,.20,.95);
-  let valuationConfidence=Math.round(clamp(.45*(quality.confidenceScore||50)+.25*(forecastRel*100)+.30*agreement,0,100));
+  const agreementForConfidence=Number.isFinite(agreement)?agreement:50;
+  let valuationConfidence=Math.round(clamp(.45*(quality.confidenceScore||50)+.25*(forecastRel*100)+.30*agreementForConfidence,0,100));
   if(methods.length===1) valuationConfidence=Math.min(valuationConfidence,55);
   else if(independentMethodCount===1) valuationConfidence=Math.min(valuationConfidence,68);
   else if(independentMethodCount===2) valuationConfidence=Math.min(valuationConfidence,82);
+  if(Number.isFinite(multipleSensitivitySpread)){
+    const sensitivityPenalty=Math.round(clamp((multipleSensitivitySpread-.035)/.08,0,1)*14);
+    valuationConfidence=Math.max(20,valuationConfidence-sensitivityPenalty);
+  }
   let modelSupport='standard', modelSupportReason=null;
   if(financialLike&&methods.length>0){
     // Banks, insurers and mortgage REITs need book value/ROTCE, capital, reserve or
@@ -486,6 +509,6 @@ function valuate(stock,forecast,quality){
   const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
   const lowReliability=methods.length>0&&Math.max(...methods.map(m=>m.reliability??0))<.40;
 
-  return {requiredReturn:req,methods,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget:target,tenYearPriceTarget:target,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,requiredReturnBuyPrice,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,valuationConfidenceScore:valuationConfidence,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(consensus.hasConsensusOutlier?'isolated_method_outlier':(agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))};
+  return {requiredReturn:req,methods,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget:target,tenYearPriceTarget:target,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,requiredReturnBuyPrice,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,multipleSensitivity:{down20CAGR:lowMultipleCAGR,up20CAGR:highMultipleCAGR,spread:multipleSensitivitySpread},valuationConfidenceScore:valuationConfidence,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(consensus.hasConsensusOutlier?'isolated_method_outlier':(Number.isFinite(agreement)&&agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))};
 }
 module.exports={valuate};
