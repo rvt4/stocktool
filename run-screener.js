@@ -63,7 +63,7 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
   if(valuation.valuationConsensus?.hasConsensusOutlier){
     const names=(valuation.valuationConsensus.outlierMethods||[]).join(', ');
     risks.push(names?`Valuation outlier detected: ${names}`:'One valuation method is an outlier versus the consensus');
-  } else if(valuation.methodAgreementScore<55)risks.push('Valuation methods disagree materially');
+  } else if(Number.isFinite(valuation.methodAgreementScore)&&valuation.methodAgreementScore<55)risks.push('Valuation methods disagree materially');
   if((valuation.methods||[]).length===1)risks.push('Valuation rests on a single usable method');
   if(valuation.bearCAGR<0)risks.push(`Bear-case CAGR is ${(valuation.bearCAGR*100).toFixed(1)}%`);
   if((quality.diagnostics?.dilutionRate||0)>0.03)risks.push('Share dilution is elevated');
@@ -88,14 +88,14 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
     qualifiesForBuyList:decision.qualifiesForBuyList,
     fairValueEstimate:valuation.fairValueEstimate, requiredReturnBuyPrice:valuation.requiredReturnBuyPrice, fairValueDiscountRate:valuation.fairValueDiscountRate, valuationGap:valuation.valuationGap, fiveYearPriceTarget:valuation.fiveYearPriceTarget, tenYearPriceTarget:valuation.tenYearPriceTarget, horizonYears:valuation.horizonYears, totalShareholderValue:valuation.totalShareholderValue, cumulativeDividends:valuation.cumulativeDividends,
     fundamentalGrowthRate:forecast.revenueGrowthAnchor, growthSource:v.growthSource, dilutionRate:forecast.dilutionRate, matureDilutionRate:forecast.matureDilutionRate, dilutionPath:forecast.dilutionPath, sbcIntensity:stock.financials?.years?.at(-1)?.sbcIntensity??null,
-    valuationMethods:methodMap, valuationMethodAudits:methodAudits, methodAgreementScore:valuation.methodAgreementScore, methodCount:(valuation.methods||[]).length, independentMethodCount:valuation.independentMethodCount??null, modelSupport:valuation.modelSupport??'standard', modelSupportReason:valuation.modelSupportReason??null, valuationConsensus:valuation.valuationConsensus||null,
+    valuationMethods:methodMap, valuationMethodAudits:methodAudits, methodAgreementScore:valuation.methodAgreementScore, methodCount:(valuation.methods||[]).length, independentMethodCount:valuation.independentMethodCount??null, modelSupport:valuation.modelSupport??'standard', modelSupportReason:valuation.modelSupportReason??null, valuationConsensus:valuation.valuationConsensus||null, multipleSensitivity:valuation.multipleSensitivity||null,
     valuationProjection:forecast.rows, projectionAssumptions:{terminalGrowth:forecast.terminalGrowth,requiredReturn:valuation.requiredReturn,revenueGrowthAnchor:forecast.revenueGrowthAnchor,historicalGrowth:forecast.historicalGrowth,historyReliability:forecast.historyReliability,historyGrowthDispersion:forecast.historyGrowthDispersion,forecastReliabilityScore:forecast.forecastReliabilityScore,marginAssumptions:forecast.marginAssumptions,marginTargets:forecast.marginTargets,forecastBridge:forecast.forecastBridge,forecastFlags:forecast.forecastFlags,dilutionPath:forecast.dilutionPath,matureDilutionRate:forecast.matureDilutionRate},
     analystEstimates:stock.analystEstimates,
     investmentThesis:{strengths,risks}, pricingPowerSignals: strengths.filter(x=>/pricing/i.test(x)), capitalAllocationSignals: strengths.filter(x=>/capital|dilution|leverage/i.test(x)),
     qualityBreakdown:quality.diagnostics, cagrBreakdown,
     decisionDashboard:{grade:decision.investmentScore>=80?'A':decision.investmentScore>=70?'B+':decision.investmentScore>=60?'B':decision.investmentScore>=50?'C':'D',positionTier:decision.qualifiesForBuyList?'Core':'Unrated',suggestedWeight:decision.rating==='Exceptional Buy'?'8–10%':decision.rating==='Strong Buy'?'6–8%':decision.rating==='Buy'?'4–6%':'Unrated'},
     returnAttribution:cagrBreakdown,
-    valuationConfidenceScore:valuation.valuationConfidenceScore??Math.round((quality.confidenceScore+valuation.methodAgreementScore)/2), dataConfidenceScore:quality.confidenceScore, businessConfidenceScore:quality.qualityScore, forecastConfidenceScore:forecast.forecastReliabilityScore??quality.confidenceScore, forecastReliabilityScore:forecast.forecastReliabilityScore??quality.confidenceScore,
+    valuationConfidenceScore:valuation.valuationConfidenceScore??quality.confidenceScore, dataConfidenceScore:quality.confidenceScore, businessConfidenceScore:quality.qualityScore, forecastConfidenceScore:forecast.forecastReliabilityScore??quality.confidenceScore, forecastReliabilityScore:forecast.forecastReliabilityScore??quality.confidenceScore,
     businessQualityScore:quality.qualityScore, valuationAttractivenessScore:Math.round(Math.max(0,Math.min(100,50+(valuation.marginOfSafety||0)*100))),
     portfolioManagerScore:decision.investmentScore, investmentCommitteeScore:decision.investmentScore, investmentCommittee:{score:decision.investmentScore},
     returnQualityFlags:[...(valuation.plausibilityFailure?['valuation_plausibility_failure']:[]),...(valuation.returnDecompositionFailure?['return_decomposition_failure']:[]),...(valuation.extremeReturnFlag?['extreme_canonical_return_review']:[])], returnIntegrityError:valuation.plausibilityFailure?'No defensible canonical valuation could be constructed':null, lowConfidence:quality.confidenceScore<55, valuationReviewFlag:valuation.valuationReviewFlag||null,
@@ -141,7 +141,7 @@ async function run(){
   rank(stocks);
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v11.11-cash-path-integrity',stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v11.12-terminal-dilution-sensitivity',stocks}; writeJson('results.json',output);
   diag.finishedAt=new Date().toISOString();diag.scored=stocks.length;writeJson('screener-diagnostics.json',diag);
   console.log(`Done. Wrote ${stocks.length} stocks using the simplified one-path model.`);
 }
