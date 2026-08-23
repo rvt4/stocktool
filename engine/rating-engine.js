@@ -30,8 +30,14 @@ function rateStock(stock,forecast,quality,v){
   if(agreement<35&&['Strong Buy','Exceptional Buy'].includes(rating))rating='Buy';
   if(agreement<35&&['Buy','Strong Buy','Exceptional Buy'].includes(rating))rating='Hold';
 
-  const agreementFactor=clamp(agreement/100,.30,1), evidenceFactor=clamp((conf/100)*(.80+.20*clamp(independent/3,0,1)),.35,1);
-  const investmentScore=Number.isFinite(c)?Math.round(clamp((.22*clamp((c+.02)/.24,0,1)*100+.14*clamp((mos+.05)/.40,0,1)*100+.31*q+.11*(quality.moatScore||50)+.22*conf)*(.80+.09*agreementFactor+.11*evidenceFactor),0,100)):0;
+  const agreementFactor=clamp((Number.isFinite(agreement)?agreement:50)/100,.30,1);
+  const methodBreadth=clamp(independent/3,0,1);
+  const evidenceFactor=clamp((conf/100)*(.55+.45*methodBreadth)*(.72+.28*agreementFactor),.25,1);
+  const rawInvestment=.22*clamp((c+.02)/.24,0,1)*100+.14*clamp((mos+.05)/.40,0,1)*100+.31*q+.11*(quality.moatScore||50)+.22*conf;
+  // Ranking rewards returns that are both attractive and corroborated. A fragile
+  // one-method point estimate should not outrank a slightly lower, well-evidenced return.
+  const evidenceMultiplier=.62+.38*evidenceFactor;
+  const investmentScore=Number.isFinite(c)?Math.round(clamp(rawInvestment*evidenceMultiplier,0,100)):0;
   return {rating,requiredMOS:req,investmentScore,qualifiesForBuyList:['Buy','Strong Buy','Exceptional Buy'].includes(rating),expectedAlpha:Number.isFinite(c)?c-.10:null};
 }
 module.exports={rateStock,requiredMOS};
