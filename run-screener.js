@@ -69,12 +69,13 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
   if((quality.diagnostics?.dilutionRate||0)>0.03)risks.push('Share dilution is elevated');
   if((quality.diagnostics?.netDebtToEbitda||0)>3)risks.push('Leverage is elevated');
 
-  const cagrBreakdown={
+  const cagrBreakdown=valuation.returnAttribution||{
     revenueContribution:forecast.revenueGrowthAnchor,
-    marginContribution:(forecast.rows.at(-1)?.fcfMargin??0)-(forecast.marginAssumptions?.fcf??0),
+    marginContribution:null,
     shareCountContribution:-(forecast.dilutionRate||0),
     dividendContribution:stock.valuation?.dividendYield||0,
     multipleReratingContribution:null,
+    uncertaintyAdjustment:null,
   };
 
   return {
@@ -88,7 +89,7 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
     qualifiesForBuyList:decision.qualifiesForBuyList,
     fairValueEstimate:valuation.fairValueEstimate, requiredReturnBuyPrice:valuation.requiredReturnBuyPrice, fairValueDiscountRate:valuation.fairValueDiscountRate, valuationGap:valuation.valuationGap, fiveYearPriceTarget:valuation.fiveYearPriceTarget, tenYearPriceTarget:valuation.tenYearPriceTarget, horizonYears:valuation.horizonYears, totalShareholderValue:valuation.totalShareholderValue, cumulativeDividends:valuation.cumulativeDividends,
     fundamentalGrowthRate:forecast.revenueGrowthAnchor, growthSource:v.growthSource, dilutionRate:forecast.dilutionRate, matureDilutionRate:forecast.matureDilutionRate, dilutionPath:forecast.dilutionPath, sbcIntensity:stock.financials?.years?.at(-1)?.sbcIntensity??null,
-    valuationMethods:methodMap, valuationMethodAudits:methodAudits, methodAgreementScore:valuation.methodAgreementScore, methodCount:(valuation.methods||[]).length, independentMethodCount:valuation.independentMethodCount??null, modelSupport:valuation.modelSupport??'standard', modelSupportReason:valuation.modelSupportReason??null, valuationConsensus:valuation.valuationConsensus||null, multipleSensitivity:valuation.multipleSensitivity||null,
+    valuationMethods:methodMap, valuationMethodAudits:methodAudits, methodAgreementScore:valuation.methodAgreementScore, methodCount:(valuation.methods||[]).length, independentMethodCount:valuation.independentMethodCount??null, modelSupport:valuation.modelSupport??'standard', modelSupportReason:valuation.modelSupportReason??null, valuationConsensus:valuation.valuationConsensus||null, multipleSensitivity:valuation.multipleSensitivity||null, preUncertaintyCAGR:valuation.preUncertaintyCAGR??null, uncertaintyHaircutRate:valuation.uncertaintyHaircutRate??null,
     valuationProjection:forecast.rows, projectionAssumptions:{terminalGrowth:forecast.terminalGrowth,requiredReturn:valuation.requiredReturn,revenueGrowthAnchor:forecast.revenueGrowthAnchor,historicalGrowth:forecast.historicalGrowth,historyReliability:forecast.historyReliability,historyGrowthDispersion:forecast.historyGrowthDispersion,forecastReliabilityScore:forecast.forecastReliabilityScore,marginAssumptions:forecast.marginAssumptions,marginTargets:forecast.marginTargets,forecastBridge:forecast.forecastBridge,forecastFlags:forecast.forecastFlags,dilutionPath:forecast.dilutionPath,matureDilutionRate:forecast.matureDilutionRate},
     analystEstimates:stock.analystEstimates,
     investmentThesis:{strengths,risks}, pricingPowerSignals: strengths.filter(x=>/pricing/i.test(x)), capitalAllocationSignals: strengths.filter(x=>/capital|dilution|leverage/i.test(x)),
@@ -141,7 +142,7 @@ async function run(){
   rank(stocks);
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v11.13-valuation-uncertainty',stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v11.14-investor-realism',stocks}; writeJson('results.json',output);
   diag.finishedAt=new Date().toISOString();diag.scored=stocks.length;writeJson('screener-diagnostics.json',diag);
   console.log(`Done. Wrote ${stocks.length} stocks using the simplified one-path model.`);
 }
