@@ -326,14 +326,28 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   // This mirrors the user's spreadsheet: revenue growth creates operating leverage because
   // R&D/SG&A do not have to grow one-for-one with revenue. The result is blended with the
   // consolidated-margin model so imperfect SEC tagging cannot take over the forecast.
-  const grossNow=medianRecent(grossSeries.filter(Number.isFinite),3);
-  const rdNow=medianRecent(rdSeries.filter(Number.isFinite),3);
-  const sgaNow=medianRecent(sgaSeries.filter(Number.isFinite),3);
-  const driverCoverage=Math.min(
-    grossSeries.filter(Number.isFinite).length,
-    rdSeries.filter(Number.isFinite).length,
-    sgaSeries.filter(Number.isFinite).length
-  );
+  let grossNow=medianRecent(grossSeries.filter(Number.isFinite),3);
+  let rdNow=medianRecent(rdSeries.filter(Number.isFinite),3);
+  let sgaNow=medianRecent(sgaSeries.filter(Number.isFinite),3);
+  // SEC operating-expense tags are useful only when they reconcile to reported operating
+  // profit. A partial/misclassified tag set (for example SG&A larger than gross profit while
+  // reported operating income is positive) must not drive the forecast or even be presented
+  // as if it were a complete spreadsheet bridge.
+  const driverResiduals=[];
+  let completeDriverYears=0;
+  for(let i=0;i<years.length;i++){
+    const gm=grossSeries[i],op=opSeries[i],rd=rdSeries[i],sg=sgaSeries[i];
+    if([gm,op,rd,sg].every(Number.isFinite)){
+      completeDriverYears++;
+      const residual=gm-rd-sg-op;
+      if(Number.isFinite(residual))driverResiduals.push(residual);
+    }
+  }
+  const driverResidual=medianRecent(driverResiduals,4);
+  const driverModelReliable=completeDriverYears>=2 && Number.isFinite(driverResidual) && driverResidual>=-.025 && driverResidual<=.22 &&
+    Number.isFinite(grossNow)&&Number.isFinite(rdNow)&&Number.isFinite(sgaNow)&&grossNow-rdNow-sgaNow>-.03;
+  const driverCoverage=driverModelReliable?completeDriverYears:0;
+  if(!driverModelReliable){ rdNow=null; sgaNow=null; }
   const growthForLeverage=clamp(weightedAverage([[growthInfo.y1,.25],[growthInfo.y2,.35],[growthInfo.year5Growth,.40]])??0,-.05,.25);
   const leverageIntensity=clamp((growthForLeverage-.035)/.165,0,1);
   const grossTarget=Number.isFinite(grossNow)
@@ -416,9 +430,15 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   const amortTarget=Number.isFinite(amortNow)?clamp(amortNow*.90/Math.max(1,explicitRevenueScale),0,.15):null;
   const amortMature=Number.isFinite(amortNow)?clamp(amortNow*.80/Math.max(1,fullRevenueScale),0,.10):null;
   const afterTax=x=>Number.isFinite(x)?x*(1-normalizedTaxRate):0;
-  const currentNormalizationAddback=clamp(afterTax(sbcNowForEarnings)+afterTax(amortNow),0,.16);
-  const targetNormalizationAddback=clamp(afterTax(sbcTarget)+afterTax(amortTarget),0,.14);
-  const matureNormalizationAddback=clamp(afterTax(sbcMature)+afterTax(amortMature),0,.12);
+  // Amortization is a clean non-cash add-back. SBC is different: it is non-cash today but
+  // economically paid through dilution/buybacks. Give it less than a 100% earnings add-back,
+  // especially when SBC intensity is extreme, so PLTR-like issuers cannot manufacture a
+  // normalized margin almost entirely from stock compensation.
+  const sbcAddbackShare=x=>Number.isFinite(x)?clamp(.78-(Math.max(0,x-.08)*2.0),.42,.78):0;
+  const normAddback=(sbc,amort)=>afterTax(sbc)*sbcAddbackShare(sbc)+afterTax(amort);
+  const currentNormalizationAddback=clamp(normAddback(sbcNowForEarnings,amortNow),0,.13);
+  const targetNormalizationAddback=clamp(normAddback(sbcTarget,amortTarget),0,.115);
+  const matureNormalizationAddback=clamp(normAddback(sbcMature,amortMature),0,.10);
   const gaapCurrentNet=currentNet;
   let gaapTargetNet=targetNet, gaapMatureTargetNet=matureTargetNet;
   currentNet=clamp(currentNet+currentNormalizationAddback,-.10,netCeiling);
@@ -733,7 +753,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     currentNormalizationAddback,targetNormalizationAddback,matureNormalizationAddback,
     grossNow,grossTarget,grossMature,rdNow,rdTarget,rdMature,sgaNow,sgaTarget,sgaMature,
     sbcNowForEarnings,sbcTarget,sbcMature,amortNow,amortTarget,amortMature,
-    driverTargetOperating,driverCoverage,leverageIntensity
+    driverTargetOperating,driverCoverage,driverModelReliable,driverResidual,leverageIntensity
   };
 }
 function buildForecast(stock){
@@ -756,7 +776,7 @@ function buildForecast(stock){
     ? clamp(weightedAverage([[sbcNow,.60],[sbcNormalized,.40]])??0,0,.30) : null;
   // SBC/revenue is not identical to share issuance, so only a modest fraction is
   // translated into expected net dilution. The rest may be offset by repurchases.
-  const sbcImpliedDilution=Number.isFinite(normalizedSbc)?clamp(normalizedSbc*.18,0,.025):.004;
+  const sbcImpliedDilution=Number.isFinite(normalizedSbc)?clamp(normalizedSbc*.24,0,.040):.004;
   const ownerCash=median(years.slice(-4).map(fcfMargin).filter(Number.isFinite));
   const forwardGrowth=Math.max(0,finite(growth.y1)||0,finite(growth.y2)||0);
   // Fast-growing companies should retain more cash for reinvestment; mature cash-rich
@@ -775,7 +795,7 @@ function buildForecast(stock){
   }
 
   const matureDilutionRate=observedDilution>0
-    ? clamp(sbcImpliedDilution*.45-buybackCapacity*.35,-.005,.010)
+    ? clamp(sbcImpliedDilution*.55-buybackCapacity*.35,-.005,.018)
     : clamp(-buybackCapacity*.45,-.010,0);
 
   // Explicit fast fade: current behavior dominates years 1-2, but by year 5 the
@@ -843,7 +863,7 @@ function buildForecast(stock){
       sgaMarginStart:margins.sgaNow,sgaMarginTarget:margins.sgaTarget,sgaMarginMatureTarget:margins.sgaMature,
       sbcMarginStart:margins.sbcNowForEarnings,sbcMarginTarget:margins.sbcTarget,sbcMarginMatureTarget:margins.sbcMature,
       intangibleAmortizationStart:margins.amortNow,intangibleAmortizationTarget:margins.amortTarget,intangibleAmortizationMatureTarget:margins.amortMature,
-      operatingDriverTarget:margins.driverTargetOperating,operatingDriverCoverage:margins.driverCoverage,operatingLeverageIntensity:margins.leverageIntensity},
+      operatingDriverTarget:margins.driverTargetOperating,operatingDriverCoverage:margins.driverCoverage,operatingDriverReliable:margins.driverModelReliable,operatingDriverResidual:margins.driverResidual,operatingLeverageIntensity:margins.leverageIntensity},
     shares:{recent:recentShareGrowth,normalized:medianShareGrowth,observed:observedDilution,model:dilutionRate,mature:matureDilutionRate,path:dilutionPath,sbcNow,sbcNormalized,normalizedSbc,sbcImpliedDilution,buybackCapacity},
   };
   const forecastFlags=[];
@@ -857,6 +877,7 @@ function buildForecast(stock){
   if(margins.unexplainedFcfCompressionPrevented)forecastFlags.push('unexplained_fcf_compression_prevented');
   if(margins.temporaryMarginReset)forecastFlags.push('temporary_margin_reset_normalized');
   if((margins.driverCoverage||0)>=2)forecastFlags.push('spreadsheet_operating_driver_model');
+  else if(margins.driverModelReliable===false)forecastFlags.push('partial_operating_driver_data_rejected');
   if((margins.currentNormalizationAddback||0)>.015)forecastFlags.push('normalized_earnings_bridge');
   if(growth.recentQuarter!=null&&Math.abs(growth.recentQuarter-growth.historicalAnchor)>.12)forecastFlags.push('recent_growth_inflection');
 
