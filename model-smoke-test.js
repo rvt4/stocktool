@@ -601,3 +601,31 @@ for(const r of smoothCashF.rows){
   assert(Math.abs(r.cfoMargin-r.capexMargin-r.fcfMargin)<1e-10,'row CFO-capex no longer reconciles to directly modeled FCF');
 }
 console.log('V11.19 cash-path regression passed: stable economics cannot generate an unexplained FCF U-shape.');
+
+// V12 spreadsheet-style operating model ------------------------------------
+// High-growth companies with observable gross-margin / R&D / SG&A structure should
+// receive operating leverage through explicit expense-ratio modeling, and recurring
+// SBC + acquired-intangible amortization should bridge GAAP earnings to the normalized
+// investor earnings used for EPS valuation while dilution remains modeled separately.
+const spreadsheetLike=stock({ticker:'SPREADSHEET',price:100,growth:.15,margin:.18,roic:.24,dilution:.01});
+for(let i=0;i<spreadsheetLike.financials.years.length;i++){
+  const y=spreadsheetLike.financials.years[i];
+  const gross=.49+i*.01, rd=.24-i*.004, sga=.10-i*.002, other=.04;
+  y.grossProfit=y.revenue*gross; y.grossMargin=gross;
+  y.researchAndDevelopment=y.revenue*rd;
+  y.sellingGeneralAdministrative=y.revenue*sga;
+  y.operatingIncome=y.revenue*(gross-rd-sga-other); y.opMargin=y.operatingIncome/y.revenue;
+  y.sbc=y.revenue*.05; y.sbcIntensity=.05;
+  y.intangibleAmortization=y.revenue*(.06-i*.004);
+  y.pretaxIncome=y.netIncome/.85; y.incomeTaxExpense=y.pretaxIncome*.15;
+  y.cfo=y.revenue*.24; y.capex=y.revenue*.03; y.fcf=y.cfo-y.capex;
+}
+spreadsheetLike.analystEstimates={revenueGrowthCurrentYear:.35,revenueGrowthNextYear:.30,epsGrowthCurrentYear:.50,epsGrowthNextYear:.40,numAnalysts:30};
+const ssF=buildForecast(spreadsheetLike);
+assert(ssF.forecastFlags.includes('spreadsheet_operating_driver_model'),'explicit expense-ratio operating model did not activate');
+assert(ssF.forecastFlags.includes('normalized_earnings_bridge'),'normalized earnings bridge did not activate');
+assert(ssF.forecastBridge.margins.operatingTarget>ssF.forecastBridge.margins.operatingStart,'high-growth operating leverage failed to expand operating margin');
+assert(ssF.forecastBridge.margins.netTarget>ssF.forecastBridge.margins.gaapNetTarget,'normalized earnings did not exceed GAAP earnings despite recurring SBC/amortization');
+assert(ssF.rows[0].gaapEps<ssF.rows[0].eps,'forecast did not expose separate GAAP and normalized EPS');
+assert(ssF.rows[4].intangibleAmortizationMargin<ssF.rows[0].intangibleAmortizationMargin,'legacy intangible amortization did not fade as a percentage of revenue');
+console.log('V12 spreadsheet-operating-model tests passed: expense leverage and normalized earnings bridge are active and auditable.');

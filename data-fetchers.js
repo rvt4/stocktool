@@ -233,6 +233,24 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   pullAnnual('NetIncomeLossAvailableToCommonStockholdersBasic', 'netIncomeAttributableToCommon');
   pullAnnual('NetIncomeLossAttributableToNoncontrollingInterest', 'netIncomeAttributableToNCI');
   pullAnnual('GrossProfit', 'grossProfit');
+  // Spreadsheet-style operating drivers. These let the forecast model the business from
+  // revenue -> gross profit -> operating expenses -> earnings instead of independently
+  // extrapolating headline margins. SEC tagging is uneven, so each field is optional and
+  // the forecast falls back to the consolidated operating history when coverage is weak.
+  pullAnnual('CostOfRevenue', 'costOfRevenue', { preferLargest: true });
+  pullAnnual('CostOfGoodsAndServicesSold', 'costOfRevenue', { preferLargest: true });
+  pullAnnual('ResearchAndDevelopmentExpense', 'researchAndDevelopment');
+  pullAnnual('SellingGeneralAndAdministrativeExpense', 'sellingGeneralAdministrative');
+  pullAnnual('SellingAndMarketingExpense', 'sellingAndMarketing');
+  pullAnnual('GeneralAndAdministrativeExpense', 'generalAdministrative');
+  pullAnnual('IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest', 'pretaxIncome');
+  pullAnnual('IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments', 'pretaxIncome');
+  pullAnnual('IncomeTaxExpenseBenefit', 'incomeTaxExpense');
+  // Acquisition accounting can make GAAP earnings a poor proxy for the normalized earnings
+  // power used in a long-term valuation spreadsheet. Keep identifiable intangible
+  // amortization separate so the forecast can show both GAAP and investor-normalized EPS.
+  pullAnnual('FiniteLivedIntangibleAssetsAmortizationExpense', 'intangibleAmortization');
+  pullAnnual('AmortizationOfIntangibleAssets', 'intangibleAmortization');
   pullAnnual('OperatingIncomeLoss', 'operatingIncome');
   pullAnnual('NetCashProvidedByUsedInOperatingActivities', 'cfo');
   // Capex is reported under several different XBRL tags depending on the company —
