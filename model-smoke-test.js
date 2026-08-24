@@ -577,3 +577,27 @@ assert(Math.abs(ieF.rows.at(-1).fcfMargin-ieB.fcfMatureTarget)<1e-10,
   'year-10 FCF row diverges from the coherent mature FCF target');
 
 console.log('V11.18 FCF-coherence test passed: improving operating economics can no longer coexist with unexplained cash-margin collapse.');
+
+// V11.19 cash-path shape regression -----------------------------------------
+// Stable/improving accounting economics with no heavier capex must not create a
+// deep year-5 FCF trough followed by a recovery. This catches the CELH/ELF-style
+// U-shape even when the terminal FCF margin eventually looks reasonable.
+const smoothCash=stock({ticker:'SMOOTH_CASH_PATH',sector:'Consumer Staples',price:40,growth:.16,margin:.10,roic:.18,dilution:.02});
+{
+  const yrs=smoothCash.financials.years;
+  const fcfs=[.095,.10,.105,.108,.11], nets=[.045,.048,.050,.052,.054], eb=[.085,.087,.089,.091,.093], caps=[.028,.028,.027,.027,.026];
+  for(let i=0;i<yrs.length;i++){
+    const y=yrs[i];
+    y.netIncome=y.revenue*nets[i]; y.ebitda=y.revenue*eb[i]; y.operatingIncome=y.revenue*(eb[i]-.015);
+    y.capex=y.revenue*caps[i]; y.fcf=y.revenue*fcfs[i]; y.cfo=y.fcf+y.capex; y.da=y.revenue*.018; y.grossMargin=.48;
+  }
+}
+const smoothCashF=buildForecast(smoothCash);
+const scRows=smoothCashF.rows.map(r=>r.fcfMargin).filter(Number.isFinite);
+const scStart=smoothCashF.forecastBridge.margins.fcfStart;
+assert(scRows.length===10,'smooth cash regression did not produce a full FCF path');
+assert(Math.min(...scRows)>=scStart-.03-1e-10,'FCF path still contains an unexplained deep mid-forecast trough');
+for(const r of smoothCashF.rows){
+  assert(Math.abs(r.cfoMargin-r.capexMargin-r.fcfMargin)<1e-10,'row CFO-capex no longer reconciles to directly modeled FCF');
+}
+console.log('V11.19 cash-path regression passed: stable economics cannot generate an unexplained FCF U-shape.');
