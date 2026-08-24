@@ -438,174 +438,162 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   let matureCFO=Number.isFinite(matureCfoSpread)?clamp(matureOperating+matureCfoSpread,-.08,.70):targetCFO;
   if(Number.isFinite(currentCFO)&&Number.isFinite(targetCFO)) targetCFO=clamp(weightedAverage([[targetCFO,.70],[currentCFO,.30]]),-.08,.70);
 
-  // Structural cash conversion: use CFO-capex as the accounting identity, but anchor the
-  // forecast to recurring cash economics rather than letting the latest working-capital
-  // swing become a decade-long assumption. This is deliberately company-specific: the
-  // anchor comes from the company's own multi-year FCF/net-income relationship.
+  // V11.18 earnings-derived owner cash flow. FCF should tell the same economic story as
+  // operating earnings unless the model can identify a concrete reinvestment burden. The
+  // old implementation independently mean-reverted CFO/operating and FCF/EBITDA spreads;
+  // that could make FCF margins collapse even while EBITDA and net margins improved.
+  //
+  // We now treat recurring FCF-minus-net-income as the company's cash-conversion signature,
+  // derive future owner cash from projected earnings, and use CFO-capex only as a secondary
+  // accounting cross-check. Capex can still pull FCF lower when the forecast explicitly
+  // models a structurally higher reinvestment burden.
   const priorFcfMargins=fcfSeries.filter(Number.isFinite).slice(-6,-1);
-  const priorNetMargins=netSeries.filter(Number.isFinite).slice(-6,-1);
   const fcfNetSpreads=[];
-  for(let i=0;i<years.length-1;i++) if(Number.isFinite(fcfSeries[i])&&Number.isFinite(netSeries[i])) fcfNetSpreads.push(clamp(fcfSeries[i]-netSeries[i],-.15,.25));
+  for(let i=0;i<years.length-1;i++){
+    if(Number.isFinite(fcfSeries[i])&&Number.isFinite(netSeries[i])){
+      fcfNetSpreads.push(clamp(fcfSeries[i]-netSeries[i],-.18,.28));
+    }
+  }
   const recurringFcfNetSpread=medianRecent(fcfNetSpreads,5);
   const recurringFCF=median(priorFcfMargins);
-  const earningsCashAnchor=Number.isFinite(recurringFcfNetSpread)&&Number.isFinite(targetNet)
-    ? clamp(targetNet+recurringFcfNetSpread,-.10,fcfCeiling) : null;
-  const matureEarningsCashAnchor=Number.isFinite(recurringFcfNetSpread)&&Number.isFinite(matureTargetNet)
-    ? clamp(matureTargetNet+recurringFcfNetSpread,-.10,fcfCeiling) : null;
+  const cashSpreadSamples=fcfNetSpreads.filter(Number.isFinite).length;
+  const cashSpreadReliability=clamp(cashSpreadSamples/4,0,1);
 
   let currentFCF=Number.isFinite(currentCFO)&&Number.isFinite(currentCapex)?currentCFO-currentCapex:latestFCF;
-  const cashModelTarget=Number.isFinite(targetCFO)&&Number.isFinite(targetCapex)?targetCFO-targetCapex:null;
-  const cashModelMature=Number.isFinite(matureCFO)&&Number.isFinite(matureCapex)?matureCFO-matureCapex:null;
-  // Owner cash should follow the operating/earnings forecast unless the model can identify
-  // a real reinvestment reason for divergence.  V11.16 still let the CFO-spread model carry
-  // 60%+ of the FCF target, so a historically low CFO/operating relationship could force FCF
-  // down even while operating, EBITDA and net margins were all forecast to rise.  That was
-  // the source of the AMD/CELH/ELF-style contradiction.  Give the company's recurring
-  // FCF-vs-earnings conversion equal standing with the CFO-capex bridge; capex remains fully
-  // modeled, so this is not a blanket assumption that FCF must equal accounting earnings.
-  let targetFCF=weightedAverage([[cashModelTarget,.45],[earningsCashAnchor,.45],[recurringFCF,.10]]);
-  if(!Number.isFinite(targetFCF)) targetFCF=Number.isFinite(directFCF)?directFCF+leverageSignal*.75:null;
-  let matureTargetFCF=weightedAverage([[cashModelMature,.45],[matureEarningsCashAnchor,.45],[targetFCF,.10]]);
-  if(!Number.isFinite(matureTargetFCF)) matureTargetFCF=Number.isFinite(targetFCF)?targetFCF+leverageSignal*.35:targetFCF;
 
-  // Cross-margin directionality guardrail. If normalized earnings/operations improve and
-  // there is no broad compression signal or rising mature capex burden, FCF is not allowed
-  // to move sharply in the opposite direction solely because a historical CFO spread mean-
-  // reverts.  Preserve the recurring FCF-minus-net relationship, with a small conservative
-  // haircut for working-capital noise. Genuine capex/reinvestment pressure can still lower
-  // FCF later via broadCashCompressionEvidence below.
-  const operatingEconomicsImproving=(
-    (Number.isFinite(targetNet)&&Number.isFinite(currentNet)&&targetNet>currentNet+.003) ||
-    (Number.isFinite(targetOperating)&&Number.isFinite(currentOperating)&&targetOperating>currentOperating+.003)
-  );
-  const matureEconomicsImproving=(
-    (Number.isFinite(matureTargetNet)&&Number.isFinite(targetNet)&&matureTargetNet>=targetNet-.004) &&
-    (Number.isFinite(matureOperating)&&Number.isFinite(targetOperating)&&matureOperating>=targetOperating-.008)
-  );
-  if(compressionVotes<3 && operatingEconomicsImproving && Number.isFinite(earningsCashAnchor)){
-    const conversionFloor=clamp(earningsCashAnchor-.012,-.10,fcfCeiling);
-    if(!Number.isFinite(targetFCF)||targetFCF<conversionFloor) targetFCF=conversionFloor;
-  }
-  if(compressionVotes<3 && matureEconomicsImproving && Number.isFinite(matureEarningsCashAnchor)){
-    const matureConversionFloor=clamp(matureEarningsCashAnchor-.015,-.10,fcfCeiling);
-    if(!Number.isFinite(matureTargetFCF)||matureTargetFCF<matureConversionFloor) matureTargetFCF=matureConversionFloor;
-  }
-
-  // If high cash conversion is demonstrably persistent and capital-light, do not force it
-  // to converge toward an accounting-margin relationship that has never described the
-  // business. We still fade some of the premium and separately model dilution/SBC, but the
-  // mature cash margin remains anchored to recurring observed economics rather than being
-  // cut in half by a generic CFO-spread haircut.
-  if(structuralCapitalLightCashConversion && Number.isFinite(recurringFcfAll)){
-    const dilutionHist=yoySeries(years.slice(-5),'sharesOutTTM').filter(x=>x>-.20&&x<.25);
-    const dilutionPenalty=Math.max(0,median(dilutionHist)??0);
-    const preservation=clamp(.90-dilutionPenalty*1.5,.78,.90);
-    const structuralTargetFloor=clamp(recurringFcfAll*.92,-.10,fcfCeiling);
-    const structuralMatureFloor=clamp(recurringFcfAll*preservation,-.10,fcfCeiling);
-    targetFCF=Number.isFinite(targetFCF)?Math.max(targetFCF,structuralTargetFloor):structuralTargetFloor;
-    matureTargetFCF=Number.isFinite(matureTargetFCF)?Math.max(matureTargetFCF,structuralMatureFloor):structuralMatureFloor;
-    if(Number.isFinite(targetCapex)) targetCFO=Math.max(targetCFO??-.08,targetFCF+targetCapex);
-    if(Number.isFinite(matureCapex)) matureCFO=Math.max(matureCFO??-.08,matureTargetFCF+matureCapex);
-  }
-
-  // A single working-capital release can make reported FCF temporarily exceed the firm's
-  // underlying operating profitability. Keep the reported figure in diagnostics, but start
-  // the projection from a normalized cash margin when the latest observation is a clear
-  // outlier versus both history and EBITDA. This fixes cases such as CELH without imposing
-  // a blanket FCF<=EBITDA rule on asset-light compounders where the premium is persistent.
+  // Normalize the latest cash margin only when it is clearly a one-off working-capital spike.
   const historicalFcfEbitda=[];
-  for(let i=0;i<years.length-1;i++) if(Number.isFinite(fcfSeries[i])&&Number.isFinite(ebitdaSeries[i])) historicalFcfEbitda.push(fcfSeries[i]-ebitdaSeries[i]);
+  for(let i=0;i<years.length-1;i++){
+    if(Number.isFinite(fcfSeries[i])&&Number.isFinite(ebitdaSeries[i])) historicalFcfEbitda.push(fcfSeries[i]-ebitdaSeries[i]);
+  }
   const recurringFcfEbitdaSpread=medianRecent(historicalFcfEbitda,5);
   const latestCashOutlier=Number.isFinite(latestFCF)&&Number.isFinite(latestEBITDA)&&Number.isFinite(recurringFcfEbitdaSpread)&&
     latestFCF-latestEBITDA>Math.max(.045,recurringFcfEbitdaSpread+.04);
-  if(latestCashOutlier && !structuralCapitalLightCashConversion){
-    const normalizedStart=weightedAverage([[recurringFCF,.45],[earningsCashAnchor,.30],[cashModelTarget,.25]]);
-    if(Number.isFinite(normalizedStart)) currentFCF=clamp(normalizedStart,-.10,fcfCeiling);
-  } else if(expansionVotes>=2 && leverageSignal>0 && Number.isFinite(currentFCF) && Number.isFinite(targetFCF)) {
-    // Genuine multi-signal operating leverage should not be erased by normalization.
-    targetFCF=Math.max(targetFCF,currentFCF);
-    if(Number.isFinite(matureTargetFCF)) matureTargetFCF=Math.max(matureTargetFCF,targetFCF);
+
+  // Preserve more of a positive cash-conversion premium when growth and profitability are
+  // healthy. A negative spread is allowed to recover as margins normalize rather than being
+  // locked in forever. This is company-specific and uses the firm's own history.
+  const baseSpread=Number.isFinite(recurringFcfNetSpread)?recurringFcfNetSpread:
+    (Number.isFinite(currentFCF)&&Number.isFinite(currentNet)?currentFCF-currentNet:null);
+  let targetSpread=null,matureSpread=null;
+  if(Number.isFinite(baseSpread)){
+    const positiveRetention=durableGrowth>.10?.96:durableGrowth>.06?.92:.86;
+    const matureRetention=durableGrowth>.10?.90:durableGrowth>.06?.86:.78;
+    if(baseSpread>=0){
+      targetSpread=baseSpread*positiveRetention;
+      matureSpread=baseSpread*matureRetention;
+    }else{
+      targetSpread=baseSpread*.70;
+      matureSpread=baseSpread*.45;
+    }
   }
+
+  let earningsCashTarget=Number.isFinite(targetNet)&&Number.isFinite(targetSpread)
+    ? clamp(targetNet+targetSpread,-.10,fcfCeiling):null;
+  let earningsCashMature=Number.isFinite(matureTargetNet)&&Number.isFinite(matureSpread)
+    ? clamp(matureTargetNet+matureSpread,-.10,fcfCeiling):null;
+
+  const cashModelTarget=Number.isFinite(targetCFO)&&Number.isFinite(targetCapex)?targetCFO-targetCapex:null;
+  const cashModelMature=Number.isFinite(matureCFO)&&Number.isFinite(matureCapex)?matureCFO-matureCapex:null;
+
+  // Explicit capex burden is the principal reason projected FCF may lag improving earnings.
+  // Compare future capex with the normalized maintenance/growth anchor rather than allowing
+  // historical CFO spread mean reversion to create an unexplained cash-flow haircut.
+  const normalizedCapexAnchor=Number.isFinite(maintenanceAnchor)?maintenanceAnchor:
+    (Number.isFinite(targetCapex)?targetCapex:null);
+  const targetCapexBurden=Number.isFinite(targetCapex)&&Number.isFinite(normalizedCapexAnchor)
+    ? Math.max(0,targetCapex-normalizedCapexAnchor):0;
+  const matureCapexBurden=Number.isFinite(matureCapex)&&Number.isFinite(normalizedCapexAnchor)
+    ? Math.max(0,matureCapex-normalizedCapexAnchor):0;
+  if(Number.isFinite(earningsCashTarget)) earningsCashTarget-=targetCapexBurden;
+  if(Number.isFinite(earningsCashMature)) earningsCashMature-=matureCapexBurden;
+
+  // Earnings-derived FCF is the primary forecast. CFO-capex remains a cross-check with more
+  // influence only when cash-conversion history is sparse or explicit capex pressure exists.
+  const targetAccountingWeight=clamp(.30-.18*cashSpreadReliability+(targetCapexBurden>.01?.18:0),.10,.48);
+  const matureAccountingWeight=clamp(.26-.14*cashSpreadReliability+(matureCapexBurden>.01?.22:0),.12,.52);
+  let targetFCF=weightedAverage([
+    [earningsCashTarget,1-targetAccountingWeight],
+    [cashModelTarget,targetAccountingWeight]
+  ]);
+  let matureTargetFCF=weightedAverage([
+    [earningsCashMature,1-matureAccountingWeight],
+    [cashModelMature,matureAccountingWeight]
+  ]);
+  if(!Number.isFinite(targetFCF)) targetFCF=Number.isFinite(cashModelTarget)?cashModelTarget:directFCF;
+  if(!Number.isFinite(matureTargetFCF)) matureTargetFCF=Number.isFinite(targetFCF)?targetFCF:cashModelMature;
+
+  // Persistent capital-light businesses keep their demonstrated cash economics. This is a
+  // floor, not a ticker override, and is activated only by multi-year evidence already
+  // detected above.
+  if(structuralCapitalLightCashConversion && Number.isFinite(recurringFcfAll)){
+    const dilutionHist=yoySeries(years.slice(-5),'sharesOutTTM').filter(x=>x>-.20&&x<.25);
+    const dilutionPenalty=Math.max(0,median(dilutionHist)??0);
+    const preservation=clamp(.92-dilutionPenalty*1.5,.80,.92);
+    const structuralTargetFloor=clamp(recurringFcfAll*.94,-.10,fcfCeiling);
+    const structuralMatureFloor=clamp(recurringFcfAll*preservation,-.10,fcfCeiling);
+    targetFCF=Number.isFinite(targetFCF)?Math.max(targetFCF,structuralTargetFloor):structuralTargetFloor;
+    matureTargetFCF=Number.isFinite(matureTargetFCF)?Math.max(matureTargetFCF,structuralMatureFloor):structuralMatureFloor;
+  }
+
+  if(latestCashOutlier && !structuralCapitalLightCashConversion){
+    const normalizedStart=weightedAverage([[recurringFCF,.45],[earningsCashTarget,.35],[cashModelTarget,.20]]);
+    if(Number.isFinite(normalizedStart)) currentFCF=clamp(normalizedStart,-.10,fcfCeiling);
+  }
+
   currentFCF=Number.isFinite(currentFCF)?clamp(currentFCF,-.10,fcfCeiling):null;
   targetFCF=Number.isFinite(targetFCF)?clamp(targetFCF,-.10,fcfCeiling):null;
   matureTargetFCF=Number.isFinite(matureTargetFCF)?clamp(matureTargetFCF,-.10,fcfCeiling):null;
 
-  // Long-run cash conversion cannot be allowed to detach wildly from the operating model.
-  // Preserve a historically persistent FCF-vs-EBITDA premium/discount, but suppress a
-  // one-off working-capital surge from becoming a permanent valuation assumption.
-  const fcfEbitdaSpreads=[];
-  for(let i=0;i<years.length;i++) if(Number.isFinite(fcfSeries[i])&&Number.isFinite(ebitdaSeries[i])) fcfEbitdaSpreads.push(fcfSeries[i]-ebitdaSeries[i]);
-  const normalizedFcfEbitdaSpread=medianRecent(fcfEbitdaSpreads,5);
-  if(!structuralCapitalLightCashConversion && Number.isFinite(matureTargetFCF)&&Number.isFinite(matureTargetEBITDA)&&Number.isFinite(normalizedFcfEbitdaSpread)){
-    const maxMatureFCF=matureTargetEBITDA+clamp(normalizedFcfEbitdaSpread+.025,-.10,.08);
-    matureTargetFCF=Math.min(matureTargetFCF,maxMatureFCF);
+  // Multi-signal operating leverage is direct evidence that near-term owner cash should not
+  // be mean-reverted below the already-demonstrated normalized cash margin when capex is not
+  // becoming structurally heavier.
+  if(expansionVotes>=2 && leverageSignal>0 && targetCapexBurden<=.01 && Number.isFinite(currentFCF) && Number.isFinite(targetFCF)){
+    targetFCF=Math.max(targetFCF,currentFCF);
+    if(Number.isFinite(matureTargetFCF)) matureTargetFCF=Math.max(matureTargetFCF,targetFCF-.01);
   }
 
-  // V11.11 evidence-required cash compression. Once the near-term target has already
-  // normalized any one-off working-capital windfall, do not invent a second large FCF
-  // collapse in years 6-10 merely because the CFO/operating spread is faded mechanically.
-  // A material mature decline is allowed only when the model can point to an economic
-  // cause: broad profitability compression or a higher mature capex burden. This keeps
-  // high-quality cash converters (payment networks, software/platforms, etc.) on their
-  // demonstrated cash economics without granting the exemption to a transient FCF spike.
+  // Coherence rule: when projected accounting profitability improves and capex burden is
+  // not worsening, FCF is not allowed to deteriorate materially without evidence. This is
+  // intentionally directional rather than a blanket "FCF must rise" rule.
   let unexplainedFcfCompressionPrevented=false;
+  const netImproving=Number.isFinite(currentNet)&&Number.isFinite(matureTargetNet)&&matureTargetNet>=currentNet+.003;
+  const ebitdaImproving=Number.isFinite(currentEBITDA)&&Number.isFinite(matureTargetEBITDA)&&matureTargetEBITDA>=currentEBITDA+.003;
   const capexCompressionEvidence=Number.isFinite(targetCapex)&&Number.isFinite(matureCapex)
-    ? matureCapex>targetCapex+.010 : false;
+    ? matureCapex>targetCapex+.010:false;
   const operatingCompressionEvidence=Number.isFinite(targetOperating)&&Number.isFinite(matureOperating)
-    ? matureOperating<targetOperating-.015 : false;
+    ? matureOperating<targetOperating-.015:false;
   const broadCashCompressionEvidence=compressionVotes>=3||capexCompressionEvidence||operatingCompressionEvidence;
-  if(!broadCashCompressionEvidence && Number.isFinite(targetFCF)&&targetFCF>.06&&Number.isFinite(matureTargetFCF)){
-    // Faster-growing firms should not lose a quarter of their normalized owner-cash margin
-    // merely because the CFO/working-capital spread mechanically mean-reverts. Preserve more
-    // of year-5 cash economics when growth is still healthy; mature businesses keep the older
-    // conservative preservation bands.
-    const growthPreservation=durableGrowth>.10?.95:durableGrowth>.06?.92:null;
-    const preservation=growthPreservation??(targetFCF>=.30?.90:targetFCF>=.18?.88:.85);
-    const maxUnexplainedDrop=durableGrowth>.10?.018:durableGrowth>.06?.022:(targetFCF>=.30?.035:targetFCF>=.18?.030:.025);
-    const matureFloor=Math.max(targetFCF*preservation,targetFCF-maxUnexplainedDrop);
+
+  if(!broadCashCompressionEvidence && (netImproving||ebitdaImproving) && Number.isFinite(currentFCF) && Number.isFinite(matureTargetFCF)){
+    // Allow modest normalization of a high current cash margin, but not a multi-point collapse
+    // while the rest of the operating model is improving.
+    const allowedDrop=durableGrowth>.10?.010:durableGrowth>.06?.015:.020;
+    const coherenceFloor=currentFCF-allowedDrop;
+    if(matureTargetFCF<coherenceFloor){
+      matureTargetFCF=clamp(coherenceFloor,-.10,fcfCeiling);
+      unexplainedFcfCompressionPrevented=true;
+    }
+  }
+
+  // Also preserve the year-5 cash economics into maturity unless there is explicit evidence
+  // that reinvestment intensity or operating profitability worsens.
+  if(!broadCashCompressionEvidence && Number.isFinite(targetFCF)&&Number.isFinite(matureTargetFCF)){
+    const preservation=durableGrowth>.10?.97:durableGrowth>.06?.94:.90;
+    const matureFloor=Math.max(targetFCF*preservation,targetFCF-(durableGrowth>.06?.015:.025));
     if(matureTargetFCF<matureFloor){
       matureTargetFCF=clamp(matureFloor,-.10,fcfCeiling);
       unexplainedFcfCompressionPrevented=true;
     }
   }
 
-  // V11.11 cross-margin coherence. Accounting earnings and owner cash flow may differ,
-  // sometimes materially, but the difference should resemble the company's recurring
-  // history. Do not let a noisy net-income series drift indefinitely away from stable cash
-  // economics, and do not let a temporary FCF windfall force earnings upward. This uses
-  // the company's own recurring FCF-minus-net spread and only acts when operating economics
-  // remain positive.
-  let crossMarginCoherenceApplied=false;
-  const historicalCashEarningsSpread=Number.isFinite(recurringFcfNetSpread)?recurringFcfNetSpread:
-    (Number.isFinite(currentFCF)&&Number.isFinite(currentNet)?currentFCF-currentNet:null);
-  if(!structuralCapitalLightCashConversion && Number.isFinite(historicalCashEarningsSpread)){
-    const allowedCashPremium=clamp(historicalCashEarningsSpread+.025,.025,.12);
-    if(Number.isFinite(targetFCF)&&targetFCF>.02&&Number.isFinite(targetNet)&&Number.isFinite(targetOperating)&&targetOperating>.025){
-      const floor=targetFCF-allowedCashPremium;
-      if(targetNet<floor){targetNet=clamp(floor,-.10,netCeiling);crossMarginCoherenceApplied=true;}
-    }
-    if(Number.isFinite(matureTargetFCF)&&matureTargetFCF>.02&&Number.isFinite(matureTargetNet)&&Number.isFinite(matureOperating)&&matureOperating>.025){
-      const floor=matureTargetFCF-allowedCashPremium;
-      if(matureTargetNet<floor){matureTargetNet=clamp(floor,-.10,netCeiling);crossMarginCoherenceApplied=true;}
-    }
-  }
-  // Growing businesses without broad compression evidence should not be assumed to lose
-  // a meaningful amount of accounting profitability merely because one component series
-  // is noisy. This is a preservation floor, not an expansion assumption.
-  if(compressionVotes<3&&durableGrowth>.05){
-    if(Number.isFinite(currentNet)&&currentNet>0&&Number.isFinite(matureTargetNet)&&matureTargetNet<currentNet-.004){
-      matureTargetNet=currentNet-.004;crossMarginCoherenceApplied=true;
-    }
-    if(Number.isFinite(currentEBITDA)&&currentEBITDA>0&&Number.isFinite(matureTargetEBITDA)&&matureTargetEBITDA<currentEBITDA-.006){
-      matureTargetEBITDA=currentEBITDA-.006;crossMarginCoherenceApplied=true;
-    }
-  }
-  // FCF rows are generated from CFO - capex, so synchronize the cash bridge after all
-  // coherence/structural constraints. Previously targetFCF could be corrected while the
-  // actual row path still followed an older CFO target.
-  if(Number.isFinite(targetFCF)&&Number.isFinite(targetCapex))targetCFO=clamp(targetFCF+targetCapex,-.08,.70);
-  if(Number.isFinite(matureTargetFCF)&&Number.isFinite(matureCapex))matureCFO=clamp(matureTargetFCF+matureCapex,-.08,.70);
+  // Synchronize CFO to the chosen owner-cash forecast so annual rows still satisfy the
+  // accounting identity FCF = CFO - capex. CFO is now the balancing cash-conversion output,
+  // not an independent decade-long mean-reversion engine.
+  if(Number.isFinite(targetFCF)&&Number.isFinite(targetCapex)) targetCFO=clamp(targetFCF+targetCapex,-.08,.70);
+  if(Number.isFinite(matureTargetFCF)&&Number.isFinite(matureCapex)) matureCFO=clamp(matureTargetFCF+matureCapex,-.08,.70);
 
+  let crossMarginCoherenceApplied=unexplainedFcfCompressionPrevented;
   const cycleNormalizedFCF=abnormalCapexCycle&&Number.isFinite(currentCFO)&&Number.isFinite(targetCapex)?currentCFO-targetCapex:null;
   const profitabilityConsistencyApplied=Boolean(compressionVotes<3&&durableGrowth>.035||crossMarginCoherenceApplied);
 
