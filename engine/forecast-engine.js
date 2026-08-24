@@ -137,6 +137,15 @@ function buildGrowthForecast(stock,years,cfg){
   const effectiveHistoryWeight=historyWeight*historyReliability;
   const historyWeightGap=historyWeight-effectiveHistoryWeight;
   let evidenceGrowth=weightedAverage([[Math.max(y2,-.05),y2Weight],[historicalAnchor,effectiveHistoryWeight],[matureGrowth,matureWeight+historyWeightGap]])??matureGrowth;
+  // Durable reinvestment evidence earns a modest, generic persistence premium. This is not
+  // a ticker override: it requires both strong underlying economics and corroboration from
+  // consensus/history. It helps prevent high-quality growers from being forced toward a
+  // mature rate too quickly simply because they are already large.
+  const consensusPersistence=(a1!=null&&a2!=null)?clamp(Math.min(a1,a2)-matureGrowth,0,.18):0;
+  const historyPersistence=clamp(historicalAnchor-matureGrowth,0,.18)*historyReliability;
+  const persistenceEvidence=Math.min(consensusPersistence,Math.max(historyPersistence,consensusPersistence*.55));
+  const reinvestmentPersistence=clamp((qualityHint-.45)*.065,0,.032)*clamp(persistenceEvidence/.10,0,1);
+  evidenceGrowth+=reinvestmentPersistence;
   // Very large businesses need stronger evidence to carry an exceptional growth burst
   // deep into the forecast. This is a smooth scale adjustment, not a hard company rule.
   if(scale>50e9 && inflectionSeverity>0) evidenceGrowth-=Math.min(.018,inflectionSeverity*(scale>150e9?.018:.012));
@@ -165,7 +174,7 @@ function buildGrowthForecast(stock,years,cfg){
   }
   const analystCoverage=(a1!=null?1:0)+(a2!=null?1:0);
   const forecastReliabilityScore=Math.round(100*clamp(.20+.35*historyReliability+.25*(analystCoverage/2)+.20*clamp(analysts/20,0,1)-((structuralStepUp||structuralStepDown)?.10:0),.20,.95));
-  return {growthPath,y1,y2,matureGrowth,year5Growth,historicalAnchor,recentAnnual,recentQuarter,qualityHint,analystWeight,structuralStepUp,structuralStepDown,analystUsed:a1!=null||a2!=null,historyReliability,histDispersion,forecastReliabilityScore};
+  return {growthPath,y1,y2,matureGrowth,year5Growth,historicalAnchor,recentAnnual,recentQuarter,qualityHint,reinvestmentPersistence,analystWeight,structuralStepUp,structuralStepDown,analystUsed:a1!=null||a2!=null,historyReliability,histDispersion,forecastReliabilityScore};
 }
 
 function buildMarginForecast(stock,years,cfg,growthInfo){
@@ -621,6 +630,6 @@ function buildForecast(stock){
   if(margins.unexplainedFcfCompressionPrevented)forecastFlags.push('unexplained_fcf_compression_prevented');
   if(growth.recentQuarter!=null&&Math.abs(growth.recentQuarter-growth.historicalAnchor)>.12)forecastFlags.push('recent_growth_inflection');
 
-  return {horizonYears:HORIZON_YEARS,category,rows,terminalGrowth:growth.matureGrowth,year5OperatingGrowth:growth.year5Growth,revenueGrowthAnchor:growth.y1,sustainableGrowth,historicalGrowth:growth.historicalAnchor,dilutionRate,matureDilutionRate,dilutionPath,startRevenue:finite(last.revenue),startShares:inferredShares,shareCountSource:shareInfo.source,marginAssumptions:{fcf:margins.currentFCF,ebitda:margins.currentEBITDA,net:margins.currentNet},marginTargets:{fcf:margins.targetFCF,ebitda:margins.targetEBITDA,net:margins.targetNet,matureFCF:margins.matureTargetFCF,matureEBITDA:margins.matureTargetEBITDA,matureNet:margins.matureTargetNet},analystUsed:growth.analystUsed,forecastReliabilityScore:growth.forecastReliabilityScore,historyReliability:growth.historyReliability,historyGrowthDispersion:growth.histDispersion,forecastBridge,forecastFlags};
+  return {horizonYears:HORIZON_YEARS,category,rows,terminalGrowth:growth.matureGrowth,year5OperatingGrowth:growth.year5Growth,revenueGrowthAnchor:growth.y1,sustainableGrowth,historicalGrowth:growth.historicalAnchor,dilutionRate,matureDilutionRate,dilutionPath,startRevenue:finite(last.revenue),startShares:inferredShares,shareCountSource:shareInfo.source,marginAssumptions:{fcf:margins.currentFCF,ebitda:margins.currentEBITDA,net:margins.currentNet},marginTargets:{fcf:margins.targetFCF,ebitda:margins.targetEBITDA,net:margins.targetNet,matureFCF:margins.matureTargetFCF,matureEBITDA:margins.matureTargetEBITDA,matureNet:margins.matureTargetNet},analystUsed:growth.analystUsed,forecastReliabilityScore:growth.forecastReliabilityScore,historyReliability:growth.historyReliability,reinvestmentPersistence:growth.reinvestmentPersistence,historyGrowthDispersion:growth.histDispersion,forecastBridge,forecastFlags};
 }
 module.exports={buildForecast};
