@@ -1,5 +1,5 @@
 'use strict';
-const { HORIZON_YEARS, MARKET_RETURN, sectorConfig, clamp, median } = require('./config');
+const { HORIZON_YEARS, MARKET_RETURN, sectorConfig, clamp, median, rate } = require('./config');
 
 function cagr(p,f){if(!(p>0)||!(f>0))return null;return Math.pow(f/p,1/HORIZON_YEARS)-1;}
 function pv(v,r,n){return v/Math.pow(1+r,n);}
@@ -325,22 +325,45 @@ function valuate(stock,forecast,quality){
     const epsBase=normalizedFinancialEPS(years,last), currentPE=safeMultiple(price>0&&epsBase>0?price/epsBase:null,6,28);
     if(epsBase>0){
       const buybackTailwind=clamp(-(forecast.dilutionRate||0),-.03,.04);
-      const analystGrowth=forecast.forecastBridge?.revenue?.analystNext??forecast.forecastBridge?.revenue?.analystCurrent??growth;
-      // Growth financials deserve more room for earnings convergence, while mature
-      // financials remain conservative. The distinction comes from growth and dilution,
-      // not a company-name override.
+      const a=stock.analystEstimates||{};
+      const analystEPS1=rate(a.epsGrowthCurrentYear??a.epsGrowthFwd);
+      const analystEPS2=rate(a.epsGrowthNextYear);
+      const analystRevenue=forecast.forecastBridge?.revenue?.analystNext??forecast.forecastBridge?.revenue?.analystCurrent??growth;
+      // V11.16: growth financials are earnings businesses, not revenue-multiple businesses.
+      // Use explicit analyst EPS growth when available for the near term, then fade toward a
+      // quality- and revenue-supported mature earnings rate. The old implementation used
+      // analyst *revenue* growth as the EPS proxy and a single constant CAGR, which erased
+      // operating leverage in fast-scaling lenders/fintechs and understated their earnings
+      // power even when consensus expected EPS to grow much faster than revenue.
       const growthFinancial=forecast.category==='Growth'||forecast.category==='Hyper Growth';
-      const epsGrowth=clamp((growthFinancial?.72:.60)*analystGrowth+(growthFinancial?.28:.40)*growth+buybackTailwind,-.04,growthFinancial?.20:.16);
-      const futureEPS=epsBase*Math.pow(1+epsGrowth,HORIZON_YEARS);
+      const near1=clamp(Number.isFinite(analystEPS1)?analystEPS1:analystRevenue,-.10,growthFinancial?.40:.24);
+      const near2=clamp(Number.isFinite(analystEPS2)?analystEPS2:(Number.isFinite(near1)?near1*.85:analystRevenue),-.08,growthFinancial?.34:.22);
+      const qualityGrowth=((quality?.growthQualityScore??50)/100);
+      const compounder=((quality?.compounderScore??50)/100);
+      const terminalRevenue=clamp(forecast.terminalGrowth??growth,.01,.12);
+      const matureEpsGrowth=clamp(terminalRevenue+Math.max(0,qualityGrowth-.55)*.055+Math.max(0,compounder-.55)*.035+buybackTailwind*.55,.02,growthFinancial?.12:.08);
+      const year3=clamp(.60*near2+.40*Math.max(matureEpsGrowth,analystRevenue??matureEpsGrowth),-.06,growthFinancial?.28:.18);
+      const year4=clamp(.62*year3+.38*matureEpsGrowth,-.04,growthFinancial?.23:.16);
+      const year5=clamp(.58*year4+.42*matureEpsGrowth,-.03,growthFinancial?.19:.13);
+      const epsPath=[near1,near2,year3,year4,year5];
+      while(epsPath.length<HORIZON_YEARS){
+        const prev=epsPath.at(-1);
+        const t=(epsPath.length-4)/(HORIZON_YEARS-5);
+        epsPath.push(clamp(prev+(matureEpsGrowth-prev)*clamp(t,0,1),-.03,growthFinancial?.18:.12));
+      }
+      let futureEPS=epsBase;
+      for(const g of epsPath) futureEPS*=1+g;
+      const epsGrowth=Math.pow(futureEPS/epsBase,1/HORIZON_YEARS)-1;
       const stableG=clamp(forecast.terminalGrowth,.01,Math.min(.045,req-.03));
-      const stableROE=clamp(.105+.13*q,.10,.235);
-      const payout=clamp(1-stableG/stableROE,.35,.85);
+      const stableROE=clamp(.105+.13*q+.04*Math.max(0,qualityGrowth-.60),.10,.26);
+      const payout=clamp(1-stableG/stableROE,.30,.85);
       const fundamentalPE=payout*(1+stableG)/Math.max(.035,req-stableG);
-      const qualityPremium=(q-.5)*7+((quality?.growthQualityScore??50)-50)/100*4+((quality?.moatScore??50)-50)/100*3;
-      const justified=.52*fundamentalPE+.48*(cfg.basePE+epsGrowth*(growthFinancial?28:9)+qualityPremium);
-      const m=boundedExit(currentPE,justified,7,growthFinancial?32:21);
+      const qualityPremium=(q-.5)*7+(qualityGrowth-.5)*6+(((quality?.moatScore??50)/100)-.5)*4+(compounder-.5)*4;
+      const growthPremium=Math.max(0,matureEpsGrowth-.035)*(growthFinancial?46:18);
+      const justified=.45*fundamentalPE+.55*(cfg.basePE+growthPremium+qualityPremium);
+      const m=boundedExit(currentPE,justified,7,growthFinancial?36:22);
       const rel=methodReliability(stock,forecast,'FINANCIAL_EPS',epsBase,futureEPS,quality);
-      addMethod(methods,{name:'Normalized EPS exit',target:futureEPS*m,weight:1,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:futureEPS,normalizedEPSBase:epsBase,epsGrowth,reliabilityReasons:rel.reasons}});
+      addMethod(methods,{name:'Normalized EPS exit',target:futureEPS*m,weight:1,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:futureEPS,normalizedEPSBase:epsBase,epsGrowth,epsGrowthPath:epsPath,matureEpsGrowth,reliabilityReasons:rel.reasons}});
     }
   } else {
     const normFCF=base.fcfPerShare, normEPS=base.eps, normEBITDA=base.ebitda;
