@@ -549,3 +549,28 @@ assert(Math.abs(hcnF.rows.at(-1).fcfMargin-hcnB.fcfMatureTarget)<1e-10,
   'annual row path diverges from the mature cash-margin target');
 
 console.log('V11.11 cash-path integrity tests passed: row ceilings match margin targets and unexplained mature FCF compression is blocked.');
+
+// V11.17 cross-margin directionality regression ----------------------------
+// A stale/low historical CFO-to-operating spread must not make owner-cash margins fall
+// sharply while the same forecast says operating and net margins are improving. FCF may
+// still diverge when capex/reinvestment or broad compression evidence explicitly supports it.
+const improvingEconomics=stock({ticker:'IMPROVING_CASH_COHERENCE',sector:'Technology',price:100,growth:.18,margin:.14,roic:.24,dilution:.01});
+{
+  const ops=[.12,.13,.145,.16,.18], nets=[.07,.08,.09,.105,.12], fcfs=[.115,.125,.14,.155,.18];
+  const cfos=[.15,.16,.175,.19,.215], caps=[.035,.035,.035,.035,.035];
+  for(let i=0;i<improvingEconomics.financials.years.length;i++){
+    const y=improvingEconomics.financials.years[i];
+    y.operatingIncome=y.revenue*ops[i]; y.opMargin=ops[i]; y.netIncome=y.revenue*nets[i];
+    y.ebitda=y.revenue*(ops[i]+.045); y.cfo=y.revenue*cfos[i]; y.capex=y.revenue*caps[i];
+    y.fcf=y.revenue*fcfs[i]; y.da=y.revenue*.025; y.grossMargin=.55+i*.006;
+  }
+  improvingEconomics.analystEstimates.revenueGrowthCurrentYear=.20;
+  improvingEconomics.analystEstimates.revenueGrowthNextYear=.17;
+  improvingEconomics.analystEstimates.epsGrowthCurrentYear=.27;
+  improvingEconomics.analystEstimates.epsGrowthNextYear=.23;
+}
+const ieF=buildForecast(improvingEconomics),ieB=ieF.forecastBridge.margins;
+assert(ieB.netMatureTarget>=ieB.netStart-.004,'fixture did not preserve improving earnings economics');
+assert(ieB.fcfMatureTarget>=ieB.fcfTarget-.022-1e-10,'FCF still collapses while operating economics improve without compression evidence');
+assert(Math.abs(ieF.rows.at(-1).fcfMargin-ieB.fcfMatureTarget)<1e-10,'cash coherence fix did not reach the annual valuation rows');
+console.log('V11.17 cross-margin directionality test passed: improving earnings no longer coexist with unexplained FCF collapse.');
