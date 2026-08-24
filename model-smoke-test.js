@@ -629,3 +629,27 @@ assert(ssF.forecastBridge.margins.netTarget>ssF.forecastBridge.margins.gaapNetTa
 assert(ssF.rows[0].gaapEps<ssF.rows[0].eps,'forecast did not expose separate GAAP and normalized EPS');
 assert(ssF.rows[4].intangibleAmortizationMargin<ssF.rows[0].intangibleAmortizationMargin,'legacy intangible amortization did not fade as a percentage of revenue');
 console.log('V12 spreadsheet-operating-model tests passed: expense leverage and normalized earnings bridge are active and auditable.');
+
+
+// V12.1 malformed SEC driver tags must fail closed rather than create impossible economics.
+const malformedDrivers=stock({ticker:'BADDRIVER',price:100,growth:.12,margin:.15,roic:.18,dilution:.01});
+for(const y of malformedDrivers.financials.years){
+  y.grossProfit=y.revenue*.25; y.grossMargin=.25;
+  y.researchAndDevelopment=y.revenue*.05;
+  y.sellingGeneralAdministrative=y.revenue*.58;
+  y.operatingIncome=y.revenue*.10; y.opMargin=.10;
+}
+const badDriverF=buildForecast(malformedDrivers);
+assert(badDriverF.forecastFlags.includes('partial_operating_driver_data_rejected'),'non-reconciling expense tags did not fail closed');
+assert(!badDriverF.forecastFlags.includes('spreadsheet_operating_driver_model'),'non-reconciling expense tags incorrectly activated spreadsheet driver model');
+assert.strictEqual(badDriverF.forecastBridge.margins.rdMarginStart,null,'rejected driver set still exposed R&D as a modeled driver');
+assert.strictEqual(badDriverF.forecastBridge.margins.sgaMarginStart,null,'rejected driver set still exposed SG&A as a modeled driver');
+
+// Extreme SBC should receive only a partial normalized-earnings add-back and retain a
+// meaningful mature dilution burden.
+const heavySbc=stock({ticker:'HEAVYSBC',price:100,growth:.20,margin:.20,roic:.20,dilution:.05});
+for(const y of heavySbc.financials.years){ y.sbc=y.revenue*.20; y.sbcIntensity=.20; }
+const heavySbcF=buildForecast(heavySbc);
+assert(heavySbcF.forecastBridge.margins.earningsNormalizationAddbackStart<.13,'extreme SBC received an excessive normalized-earnings add-back');
+assert(heavySbcF.matureDilutionRate>.005,'extreme SBC faded to an implausibly trivial mature dilution rate');
+console.log('V12.1 reconciliation tests passed: malformed operating tags fail closed and extreme SBC remains economically charged.');
