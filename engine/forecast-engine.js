@@ -456,10 +456,40 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   let currentFCF=Number.isFinite(currentCFO)&&Number.isFinite(currentCapex)?currentCFO-currentCapex:latestFCF;
   const cashModelTarget=Number.isFinite(targetCFO)&&Number.isFinite(targetCapex)?targetCFO-targetCapex:null;
   const cashModelMature=Number.isFinite(matureCFO)&&Number.isFinite(matureCapex)?matureCFO-matureCapex:null;
-  let targetFCF=weightedAverage([[cashModelTarget,.60],[earningsCashAnchor,.25],[recurringFCF,.15]]);
+  // Owner cash should follow the operating/earnings forecast unless the model can identify
+  // a real reinvestment reason for divergence.  V11.16 still let the CFO-spread model carry
+  // 60%+ of the FCF target, so a historically low CFO/operating relationship could force FCF
+  // down even while operating, EBITDA and net margins were all forecast to rise.  That was
+  // the source of the AMD/CELH/ELF-style contradiction.  Give the company's recurring
+  // FCF-vs-earnings conversion equal standing with the CFO-capex bridge; capex remains fully
+  // modeled, so this is not a blanket assumption that FCF must equal accounting earnings.
+  let targetFCF=weightedAverage([[cashModelTarget,.45],[earningsCashAnchor,.45],[recurringFCF,.10]]);
   if(!Number.isFinite(targetFCF)) targetFCF=Number.isFinite(directFCF)?directFCF+leverageSignal*.75:null;
-  let matureTargetFCF=weightedAverage([[cashModelMature,.62],[matureEarningsCashAnchor,.28],[targetFCF,.10]]);
+  let matureTargetFCF=weightedAverage([[cashModelMature,.45],[matureEarningsCashAnchor,.45],[targetFCF,.10]]);
   if(!Number.isFinite(matureTargetFCF)) matureTargetFCF=Number.isFinite(targetFCF)?targetFCF+leverageSignal*.35:targetFCF;
+
+  // Cross-margin directionality guardrail. If normalized earnings/operations improve and
+  // there is no broad compression signal or rising mature capex burden, FCF is not allowed
+  // to move sharply in the opposite direction solely because a historical CFO spread mean-
+  // reverts.  Preserve the recurring FCF-minus-net relationship, with a small conservative
+  // haircut for working-capital noise. Genuine capex/reinvestment pressure can still lower
+  // FCF later via broadCashCompressionEvidence below.
+  const operatingEconomicsImproving=(
+    (Number.isFinite(targetNet)&&Number.isFinite(currentNet)&&targetNet>currentNet+.003) ||
+    (Number.isFinite(targetOperating)&&Number.isFinite(currentOperating)&&targetOperating>currentOperating+.003)
+  );
+  const matureEconomicsImproving=(
+    (Number.isFinite(matureTargetNet)&&Number.isFinite(targetNet)&&matureTargetNet>=targetNet-.004) &&
+    (Number.isFinite(matureOperating)&&Number.isFinite(targetOperating)&&matureOperating>=targetOperating-.008)
+  );
+  if(compressionVotes<3 && operatingEconomicsImproving && Number.isFinite(earningsCashAnchor)){
+    const conversionFloor=clamp(earningsCashAnchor-.012,-.10,fcfCeiling);
+    if(!Number.isFinite(targetFCF)||targetFCF<conversionFloor) targetFCF=conversionFloor;
+  }
+  if(compressionVotes<3 && matureEconomicsImproving && Number.isFinite(matureEarningsCashAnchor)){
+    const matureConversionFloor=clamp(matureEarningsCashAnchor-.015,-.10,fcfCeiling);
+    if(!Number.isFinite(matureTargetFCF)||matureTargetFCF<matureConversionFloor) matureTargetFCF=matureConversionFloor;
+  }
 
   // If high cash conversion is demonstrably persistent and capital-light, do not force it
   // to converge toward an accounting-margin relationship that has never described the
