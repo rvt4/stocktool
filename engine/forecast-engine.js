@@ -563,12 +563,41 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     ? matureCapex>targetCapex+.010:false;
   const operatingCompressionEvidence=Number.isFinite(targetOperating)&&Number.isFinite(matureOperating)
     ? matureOperating<targetOperating-.015:false;
-  const broadCashCompressionEvidence=compressionVotes>=3||capexCompressionEvidence||operatingCompressionEvidence;
+  // Generic historical 'compression votes' are useful for the accounting-margin model, but
+  // they are not enough by themselves to justify a decade-long collapse in owner cash. For
+  // FCF we require a concrete cash burden: structurally heavier capex or a material decline
+  // in the operating/earnings margins that fund cash generation. This is what prevents the
+  // CELH/ELF-style artificial cash trough while still allowing genuine reinvestment cycles.
+  const earningsCompressionEvidence=Boolean(
+    (Number.isFinite(targetNet)&&Number.isFinite(currentNet)&&targetNet<currentNet-.015) ||
+    (Number.isFinite(targetEBITDA)&&Number.isFinite(currentEBITDA)&&targetEBITDA<currentEBITDA-.020) ||
+    operatingCompressionEvidence
+  );
+  const broadCashCompressionEvidence=capexCompressionEvidence||earningsCompressionEvidence;
 
-  if(!broadCashCompressionEvidence && (netImproving||ebitdaImproving) && Number.isFinite(currentFCF) && Number.isFinite(matureTargetFCF)){
+  const accountingStableOrBetter=Boolean(
+    (Number.isFinite(targetNet)&&Number.isFinite(currentNet)&&targetNet>=currentNet-.0075) ||
+    (Number.isFinite(targetEBITDA)&&Number.isFinite(currentEBITDA)&&targetEBITDA>=currentEBITDA-.010) ||
+    (Number.isFinite(targetOperating)&&Number.isFinite(currentOperating)&&targetOperating>=currentOperating-.010)
+  );
+
+  // Year-5 coherence matters just as much as terminal coherence. Previously the engine could
+  // force target FCF almost to zero and then let it recover by year 10, producing a U-shaped
+  // cash path with no modeled economic cause. If earnings economics are broadly intact and
+  // capex is not structurally heavier, only modest cash normalization is permitted.
+  if(!broadCashCompressionEvidence && accountingStableOrBetter && Number.isFinite(currentFCF) && Number.isFinite(targetFCF)){
+    const allowedTargetDrop=durableGrowth>.10?.018:durableGrowth>.06?.022:.028;
+    const targetCoherenceFloor=currentFCF-allowedTargetDrop;
+    if(targetFCF<targetCoherenceFloor){
+      targetFCF=clamp(targetCoherenceFloor,-.10,fcfCeiling);
+      unexplainedFcfCompressionPrevented=true;
+    }
+  }
+
+  if(!broadCashCompressionEvidence && (netImproving||ebitdaImproving||accountingStableOrBetter) && Number.isFinite(currentFCF) && Number.isFinite(matureTargetFCF)){
     // Allow modest normalization of a high current cash margin, but not a multi-point collapse
-    // while the rest of the operating model is improving.
-    const allowedDrop=durableGrowth>.10?.010:durableGrowth>.06?.015:.020;
+    // while the rest of the operating model is stable or improving.
+    const allowedDrop=durableGrowth>.10?.015:durableGrowth>.06?.020:.025;
     const coherenceFloor=currentFCF-allowedDrop;
     if(matureTargetFCF<coherenceFloor){
       matureTargetFCF=clamp(coherenceFloor,-.10,fcfCeiling);
@@ -653,19 +682,17 @@ function buildForecast(stock){
     const operatingMargin=firstPhase?interp(margins.currentOperating,margins.targetOperating):interp(margins.targetOperating,margins.matureOperating);
     const ebitdaMargin=firstPhase?interp(margins.currentEBITDA,margins.targetEBITDA):interp(margins.targetEBITDA,margins.matureTargetEBITDA);
     const netMargin=firstPhase?interp(margins.currentNet,margins.targetNet):interp(margins.targetNet,margins.matureTargetNet);
-    const cfoMargin=firstPhase?interp(margins.currentCFO,margins.targetCFO):interp(margins.targetCFO,margins.matureCFO);
     const capexMargin=firstPhase?interp(margins.currentCapex,margins.targetCapex):interp(margins.targetCapex,margins.matureCapex);
-    // FCF is an output of the cash-conversion model, not an independently interpolated
-    // margin. This is the central accounting consistency invariant of the margin engine.
-    const fallbackFcfMargin=firstPhase?interp(margins.currentFCF,margins.targetFCF):interp(margins.targetFCF,margins.matureTargetFCF);
-    // The row path must use the same company-specific ceiling used by the margin engine.
-    // Using cfg.maxFCFMargin here silently reintroduced a universal sector cap (35% for
-    // several sectors), so displayed 50%+ targets for Visa-like cash converters were
-    // valued as 35% despite the forecast bridge saying otherwise.
+    // V11.19: interpolate the already-underwritten owner-cash targets directly. The margin
+    // engine has already incorporated earnings conversion, capex burden, and coherence
+    // guardrails; reconstructing FCF from a separately interpolated CFO path could recreate
+    // the very U-shaped trough we removed upstream. CFO is therefore the balancing output.
+    const modeledFcfMargin=firstPhase?interp(margins.currentFCF,margins.targetFCF):interp(margins.targetFCF,margins.matureTargetFCF);
     const rowFcfCeiling=Number.isFinite(margins.fcfCeiling)?margins.fcfCeiling:cfg.maxFCFMargin;
-    const fcfMargin=Number.isFinite(cfoMargin)&&Number.isFinite(capexMargin)
-      ? clamp(cfoMargin-capexMargin,-.10,rowFcfCeiling)
-      : (Number.isFinite(fallbackFcfMargin)?clamp(fallbackFcfMargin,-.10,rowFcfCeiling):fallbackFcfMargin);
+    const fcfMargin=Number.isFinite(modeledFcfMargin)?clamp(modeledFcfMargin,-.10,rowFcfCeiling):modeledFcfMargin;
+    const cfoMargin=Number.isFinite(fcfMargin)&&Number.isFinite(capexMargin)
+      ? clamp(fcfMargin+capexMargin,-.08,.70)
+      : (firstPhase?interp(margins.currentCFO,margins.targetCFO):interp(margins.targetCFO,margins.matureCFO));
     const fcf=revenue!=null&&fcfMargin!=null?revenue*fcfMargin:null, ebitda=revenue!=null&&ebitdaMargin!=null?revenue*ebitdaMargin:null, netIncome=revenue!=null&&netMargin!=null?revenue*netMargin:null;
     rows.push({year:(finite(last.year)||new Date().getFullYear())+i+1,revenueGrowth:growth.growthPath[i],revenue,operatingMargin,fcfMargin,cfoMargin,capexMargin,ebitdaMargin,netMargin,fcf,ebitda,netIncome,shares,eps:shares>0&&netIncome!=null?netIncome/shares:null,fcfPerShare:shares>0&&fcf!=null?fcf/shares:null,dividendPerShare:dividend});
   }
