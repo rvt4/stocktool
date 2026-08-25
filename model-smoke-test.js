@@ -174,8 +174,9 @@ for(const y of cashVsEarnings.financials.years){
 }
 const cveF=buildForecast(cashVsEarnings), cveQ=computeQuality(cashVsEarnings,cveF), cveV=valuate(cashVsEarnings,cveF,cveQ);
 const cveFcf=cveV.methods.find(m=>m.name==='FCF exit'), cveEps=cveV.methods.find(m=>m.name==='EPS exit');
-assert(cveFcf&&cveEps,'cash/earnings divergence test needs both FCF and EPS methods');
-assert(cveEps.reliability<cveFcf.reliability,'EPS should be downweighted when cash earnings materially exceed accounting earnings');
+assert(cveV.valuationArchetype==='cash-conversion-divergence','cash/earnings divergence should select the divergence archetype');
+assert(cveFcf,'cash/earnings divergence should retain a reliable cash-flow lens');
+assert(!cveEps || cveEps.reliability<cveFcf.reliability,'weak accounting-EPS evidence should be excluded or carry less reliability than FCF');
 
 // Fast-growing financials still use a financial-specific EPS framework, but the generic
 // growth-financial path may compound earnings faster than a mature bank/insurer path.
