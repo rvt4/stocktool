@@ -80,7 +80,9 @@ function buildGrowthForecast(stock,years,cfg){
   const recentAnnual=hist.at(-1)??historicalAnchor, recentQuarter=latestQuarterYoY(stock.quarterly);
   const a1=safeAnalystGrowth(a.revenueGrowthCurrentYear??a.revenueGrowthFwd), a2=safeAnalystGrowth(a.revenueGrowthNextYear);
   const analysts=Math.max(0,finite(a.numAnalysts)||0);
-  const analystWeight=clamp(0.45+Math.min(analysts,30)/100,0.45,0.75);
+  // V12.5: explicit consensus should be the primary near-term underwriting input.
+  // History is a cross-check, not a 25-55% drag on a well-covered inflecting business.
+  const analystWeight=clamp(0.62+Math.min(analysts,30)/120,0.62,0.87);
 
   // Detect a likely acquisition / divestiture / accounting step change. We keep the new
   // revenue base, but do not teach the model that the one-time jump is organic growth.
@@ -104,8 +106,14 @@ function buildGrowthForecast(stock,years,cfg){
   }
   // Five-year valuation is extremely sensitive to a bad first-year growth input.
   // Keep genuine hyper-growth, but do not extrapolate one noisy annual/quarterly print.
-  const analystCeiling = Math.max(.10, Math.min(.35, Math.max(a1??-.99,a2??-.99)+.06));
-  y1=clamp(y1,-0.18,Math.min(.35,analystCeiling)); y2=clamp(y2,-0.15,Math.min(.30,analystCeiling));
+  // Do not mechanically truncate genuine consensus-led hyper-growth at 30-35%. The cap
+  // expands only when analysts actually underwrite the growth, so noisy history alone can
+  // never manufacture a 50%+ forecast.
+  const consensusPeak=Math.max(a1??-.99,a2??-.99);
+  const analystCeiling=Math.max(.10,Math.min(.60,consensusPeak+.05));
+  const y1Cap=a1!=null?Math.min(.55,analystCeiling):.35;
+  const y2Cap=a2!=null?Math.min(.60,analystCeiling):.32;
+  y1=clamp(y1,-0.18,y1Cap); y2=clamp(y2,-0.15,y2Cap);
 
   // Maturity is company-specific: durable high-growth businesses fade more slowly, but
   // nobody gets a perpetual hyper-growth destination just because the last year was hot.
@@ -128,8 +136,12 @@ function buildGrowthForecast(stock,years,cfg){
   // near-term consensus and the company's own normalized growth, not by ticker.
   const inflectionGap=Math.max(0,(y2??historicalAnchor)-historicalAnchor);
   const inflectionSeverity=clamp((inflectionGap-.04)/.16,0,1);
-  const y2Weight=.32-.17*inflectionSeverity;
-  const historyWeight=.43+.07*inflectionSeverity;
+  // Beyond consensus, durable growth is still allowed to persist when consensus, history
+  // and business quality corroborate one another. The prior weights over-reverted strong
+  // growers to stale history immediately after year 2.
+  const corroboratedInflection=(a1!=null&&a2!=null&&qualityHint>=.55&&historicalAnchor>=.12&&Math.min(a1,a2)>historicalAnchor&&Math.min(a1,a2)<=historicalAnchor+.20) ? 1 : 0;
+  const y2Weight=.40-.12*inflectionSeverity+.08*corroboratedInflection;
+  const historyWeight=.36+.04*inflectionSeverity-.05*corroboratedInflection;
   const matureWeight=1-y2Weight-historyWeight;
   // Scale the historical weight by its reliability and reallocate the difference to mature
   // economics. This prevents a two-year or acquisition-distorted history from dictating
@@ -148,8 +160,12 @@ function buildGrowthForecast(stock,years,cfg){
   evidenceGrowth+=reinvestmentPersistence;
   // Very large businesses need stronger evidence to carry an exceptional growth burst
   // deep into the forecast. This is a smooth scale adjustment, not a hard company rule.
-  if(scale>50e9 && inflectionSeverity>0) evidenceGrowth-=Math.min(.018,inflectionSeverity*(scale>150e9?.018:.012));
-  let maxYear5=Math.max(matureGrowth+.025, Math.min(.18, historicalAnchor+.025+Math.max(0,inflectionGap)*.38));
+  // Scale is a mild constraint, not a thesis. Large companies with corroborated forward
+  // evidence can still compound rapidly; penalize size only when the growth spike lacks
+  // durable corroboration.
+  if(scale>50e9 && inflectionSeverity>0 && !corroboratedInflection) evidenceGrowth-=Math.min(.010,inflectionSeverity*(scale>150e9?.010:.007));
+  let maxYear5=Math.max(matureGrowth+.025, Math.min(.24, historicalAnchor+.035+Math.max(0,inflectionGap)*.55+reinvestmentPersistence*.50));
+  if(inflectionSeverity>.75&&!corroboratedInflection) maxYear5=Math.min(maxYear5,.155);
   // When current and next-year consensus both sit materially below a weak historical
   // anchor, do not invent a re-acceleration back toward that stale history.
   if(a1!=null&&a2!=null&&historyReliability<.65&&historicalAnchor>Math.max(a1,a2)+.08){

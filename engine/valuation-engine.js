@@ -320,7 +320,14 @@ function valuationArchetype(stock,forecast,quality,base){
 function archetypeMethodWeight(archetype,kind,reliability){
   const w=archetype?.weights?.[kind]??0;
   const floor=archetype?.minimum?.[kind]??.35;
-  return reliability>=floor?w:0;
+  if(!(w>0)||!(reliability>0))return 0;
+  // V12.5: reliability should change how much a valid lens matters, not usually delete it.
+  // V12.4's hard floors often collapsed otherwise modelable companies to one method,
+  // making the answer both less robust and excessively dependent on a single conservative
+  // lens. Keep truly weak methods out, but taper borderline methods smoothly.
+  if(reliability<.18)return 0;
+  const support=clamp(reliability/Math.max(floor,.18),.35,1);
+  return w*support;
 }
 
 function addMethod(methods,{name,target,weight,reliability=1,audit,price,family=null,cashFlowInclusive=false}){
