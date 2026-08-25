@@ -653,3 +653,28 @@ const heavySbcF=buildForecast(heavySbc);
 assert(heavySbcF.forecastBridge.margins.earningsNormalizationAddbackStart<.13,'extreme SBC received an excessive normalized-earnings add-back');
 assert(heavySbcF.matureDilutionRate>.005,'extreme SBC faded to an implausibly trivial mature dilution rate');
 console.log('V12.1 reconciliation tests passed: malformed operating tags fail closed and extreme SBC remains economically charged.');
+
+// V12.3 coherent terminal economics and transition uncertainty ----------------
+const coherentCase=stock({ticker:'COHERENT',price:100,growth:.14,margin:.22,roic:.24,dilution:.00});
+const v123CohF=buildForecast(coherentCase),v123CohQ=computeQuality(coherentCase,v123CohF),v123CohV=valuate(coherentCase,v123CohF,v123CohQ);
+for(const name of ['FCF exit','EPS exit','EV/EBITDA exit']){
+  const method=v123CohV.methods.find(m=>m.name===name);
+  assert(method&&Number.isFinite(method.audit.coherentMultipleReference),`${name} missing mature-economics coherence reference`);
+}
+assert(Number.isFinite(v123CohV.methodDispersionRatio)&&v123CohV.methodDispersionRatio>=1,'method dispersion was not surfaced for valuation confidence');
+
+const transitionCase=stock({ticker:'TRANSITION',price:100,growth:.24,margin:.20,roic:.25,dilution:.00});
+transitionCase.analystEstimates.revenueGrowthCurrentYear=.35;
+transitionCase.analystEstimates.revenueGrowthNextYear=.30;
+const v123TrF=buildForecast(transitionCase),v123TrQ=computeQuality(transitionCase,v123TrF),v123TrV=valuate(transitionCase,v123TrF,v123TrQ);
+assert(v123TrV.methods.some(m=>(m.audit?.reliabilityReasons||[]).includes('years_6_10_transition_dependence')),'terminal methods did not recognize years 6-10 transition dependence');
+
+const sbcGuard=stock({ticker:'SBC_GUARD',price:100,growth:.25,margin:.25,roic:.25,dilution:.05});
+for(const y of sbcGuard.financials.years){
+  y.sbcIntensity=.22;y.sbc=y.revenue*.22;y.grossProfit=y.revenue*.85;y.researchAndDevelopment=y.revenue*.15;y.sellingGeneralAdministrative=y.revenue*.25;y.operatingIncome=y.revenue*.25;y.netIncome=y.revenue*.18;y.ebitda=y.revenue*.30;
+}
+const v123SgF=buildForecast(sbcGuard);
+const v123Mb=v123SgF.forecastBridge.margins;
+assert(v123Mb.netMatureTarget<=Math.max(v123Mb.gaapNetMatureTarget+.051,v123Mb.operatingMatureTarget+.071),'normalized mature margin escaped structural profitability guardrail');
+console.log('V12.3 tests passed: terminal methods share coherent economics, transition dependence lowers reliability, and normalized mature margins remain structurally bounded.');
+
