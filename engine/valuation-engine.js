@@ -5,6 +5,28 @@ function cagr(p,f){if(!(p>0)||!(f>0))return null;return Math.pow(f/p,1/HORIZON_Y
 function pv(v,r,n){return v/Math.pow(1+r,n);}
 function finite(v){if(v==null||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null;}
 function requiredReturn(q,cat){let r=MARKET_RETURN;if(cat==='Hyper Growth')r+=.02;else if(cat==='Growth')r+=.01;if((q?.confidenceScore||50)<60)r+=.01;if((q?.protectionScore||50)<45)r+=.01;return clamp(r,.09,.14);}
+
+// V12.6: intrinsic-value discounting is deliberately separate from the investor's
+// hurdle return above. The DCF rate reflects business/forecast risk; it is not increased
+// by 1-2 points merely because a company is labelled Growth/Hyper Growth. That avoids
+// double-charging growth companies through both conservative terminal economics and a
+// category premium in the discount rate.
+function intrinsicDiscountRate(quality,forecast){
+  const q=clamp((quality?.qualityScore??50)/100,0,1);
+  const confidence=clamp((quality?.confidenceScore??50)/100,0,1);
+  const moat=clamp((quality?.moatScore??50)/100,0,1);
+  const forecastReliability=clamp((forecast?.forecastReliabilityScore??65)/100,0,1);
+  let r=.0925;
+  r+=(.65-confidence)*.012;
+  r+=(.55-moat)*.005;
+  r+=(.65-forecastReliability)*.008;
+  r+=(.55-q)*.004;
+  // Growth complexity can add a small uncertainty premium, but never the old automatic
+  // +100/+200 bps hurdle-rate surcharge.
+  if(forecast?.category==='Hyper Growth')r+=.0025;
+  else if(forecast?.category==='Growth')r+=.0010;
+  return clamp(r,.0825,.11);
+}
 function blend(items){const v=items.filter(x=>Number.isFinite(x.value)&&x.value>0&&x.weight>0);if(!v.length)return null;const w=v.reduce((s,x)=>s+x.weight,0);return v.reduce((s,x)=>s+x.value*x.weight,0)/w;}
 function weightedAverage(items){const v=items.filter(x=>Number.isFinite(x.value)&&x.weight>0);if(!v.length)return null;const w=v.reduce((s,x)=>s+x.weight,0);return w>0?v.reduce((s,x)=>s+x.value*x.weight,0)/w:null;}
 function recentMedian(values,n=4){return median(values.slice(-n).filter(x=>Number.isFinite(x)&&x>0));}
@@ -383,9 +405,9 @@ function robustOutcomeBlend(methods,price,consensus=null){
   return {outcome,weights:Object.fromEntries(capped.map(x=>[x.name,x.w/totalW]))};
 }
 
-function dcfFairValue(forecast,req,currentShares){
+function dcfFairValue(forecast,discountRate,currentShares,cfg){
   const rows=forecast.rows||[];
-  if(rows.length!==HORIZON_YEARS||!(req>0)||!(currentShares>0))return null;
+  if(rows.length!==HORIZON_YEARS||!(discountRate>0)||!(currentShares>0))return null;
 
   // V11.4: value aggregate owner cash flow, then divide by TODAY'S ownership base.
   // Discounting forecast FCF/share while the forecast also shrinks the share count counts
@@ -400,24 +422,25 @@ function dcfFairValue(forecast,req,currentShares){
   let explicitTotal=0;
   for(let i=0;i<cashflows.length;i++){
     if(!(cashflows[i]>0))return null;
-    explicitTotal+=pv(cashflows[i],req,i+1);
+    explicitTotal+=pv(cashflows[i],discountRate,i+1);
   }
 
-  // Mature perpetual growth is deliberately conservative. The explicit forecast already
-  // gives the business ten years to compound; the terminal period should resemble a
-  // mature economy, not extend a premium growth regime indefinitely.
-  const g=clamp(finite(forecast.terminalGrowth)??.02,.005,Math.min(.025,req-.04));
-  if(!(req>g))return null;
-  const terminalTotal=cashflows.at(-1)*(1+g)/(req-g);
-  const pvTerminalTotal=pv(terminalTotal,req,HORIZON_YEARS);
+  // Mature perpetual growth remains bounded, but V12.6 no longer silently forces every
+  // sector to <=2.5%. Use the sector's mature-growth ceiling (max 4%) while preserving a
+  // healthy spread to the intrinsic discount rate.
+  const sectorCeiling=clamp(finite(cfg?.terminalGrowth)??.025,.02,.04);
+  const g=clamp(finite(forecast.terminalGrowth)??.02,.005,Math.min(sectorCeiling,discountRate-.045));
+  if(!(discountRate>g))return null;
+  const terminalTotal=cashflows.at(-1)*(1+g)/(discountRate-g);
+  const pvTerminalTotal=pv(terminalTotal,discountRate,HORIZON_YEARS);
   const explicit=explicitTotal/currentShares, pvTerminal=pvTerminalTotal/currentShares;
   const fair=explicit+pvTerminal;
-  return fair>0?{fairValue:fair,pvExplicit:explicit,pvTerminal,terminalGrowth:g,terminalShare:pvTerminal/fair}:null;
+  return fair>0?{fairValue:fair,pvExplicit:explicit,pvTerminal,terminalGrowth:g,terminalShare:pvTerminal/fair,discountRate}:null;
 }
 
 function valuate(stock,forecast,quality){
   const rows=forecast.rows||[], f=rows.at(-1)||{}, years=stock.financials?.years||[], last=years.at(-1)||{};
-  const price=finite(stock.price?.current), cfg=sectorConfig(stock.sector), req=requiredReturn(quality,forecast.category);
+  const price=finite(stock.price?.current), cfg=sectorConfig(stock.sector), req=requiredReturn(quality,forecast.category), intrinsicRate=intrinsicDiscountRate(quality,forecast);
   const shareInfo=inferShareCount(stock,forecast,years);
   const reportedShares0=shareInfo.source==='reported'?shareInfo.shares:null;
   const inferredShares0=shareInfo.shares;
@@ -518,14 +541,14 @@ function valuate(stock,forecast,quality){
       }
     }
 
-    const dcf=allowEnterpriseScopeMethods?dcfFairValue(forecast,req,shares0):null;
+    const dcf=allowEnterpriseScopeMethods?dcfFairValue(forecast,intrinsicRate,shares0,cfg):null;
     if(dcf){
-      const terminalOutcome=dcf.fairValue*Math.pow(1+req,HORIZON_YEARS);
+      const terminalOutcome=dcf.fairValue*Math.pow(1+intrinsicRate,HORIZON_YEARS);
       const rel=methodReliability(stock,forecast,'FCF',normFCF,f.fcfPerShare,quality);
       // Terminal-value-heavy DCFs are still useful, but receive less reliability when
       // most of the present value depends on the perpetuity rather than explicit cash flow.
       const terminalPenalty=dcf.terminalShare>.75?.55:(dcf.terminalShare>.65?.72:(dcf.terminalShare>.55?.88:1));
-      { const dcfRel=rel.score*terminalPenalty, w=archetypeMethodWeight(archetype,'DCF',dcfRel); if(w>0)addMethod(methods,{name:'10Y DCF',target:terminalOutcome,weight:w,reliability:dcfRel,price,family:'cashflow',cashFlowInclusive:true,audit:{fairValueToday:dcf.fairValue,pvExplicit:dcf.pvExplicit,pvTerminal:dcf.pvTerminal,terminalGrowth:dcf.terminalGrowth,terminalShare:dcf.terminalShare,reliabilityReasons:[...rel.reasons,...(terminalPenalty<1?['terminal_value_concentration']:[])]}}); }
+      { const dcfRel=rel.score*terminalPenalty, w=archetypeMethodWeight(archetype,'DCF',dcfRel); if(w>0)addMethod(methods,{name:'10Y DCF',target:terminalOutcome,weight:w,reliability:dcfRel,price,family:'cashflow',cashFlowInclusive:true,audit:{fairValueToday:dcf.fairValue,pvExplicit:dcf.pvExplicit,pvTerminal:dcf.pvTerminal,discountRate:dcf.discountRate,terminalGrowth:dcf.terminalGrowth,terminalShare:dcf.terminalShare,reliabilityReasons:[...rel.reasons,...(terminalPenalty<1?['terminal_value_concentration']:[])]}}); }
     }
 
     if(!methods.length&&allowEnterpriseScopeMethods&&Number(f.revenue)>0&&Number(f.shares)>0&&revenue0>0){
@@ -617,9 +640,14 @@ function valuate(stock,forecast,quality){
   const lowMultipleOutcome=sensitivityOutcome(.80), highMultipleOutcome=sensitivityOutcome(1.20);
   const lowMultipleCAGR=cagr(price,lowMultipleOutcome), highMultipleCAGR=cagr(price,highMultipleOutcome);
   const multipleSensitivitySpread=Number.isFinite(lowMultipleCAGR)&&Number.isFinite(highMultipleCAGR)?highMultipleCAGR-lowMultipleCAGR:null;
+  // Confidence must be intrinsic-value invariant: changing only today's quote cannot make
+  // the modeled business more or less uncertain. Score multiple sensitivity from the
+  // high/low intrinsic outcomes themselves, not from CAGR measured off the current price.
+  const intrinsicSensitivitySpread=lowMultipleOutcome>0&&highMultipleOutcome>0
+    ? Math.pow(highMultipleOutcome/lowMultipleOutcome,1/HORIZON_YEARS)-1:null;
 
-  if(Number.isFinite(multipleSensitivitySpread)){
-    const sensitivityPenalty=Math.round(clamp((multipleSensitivitySpread-.035)/.08,0,1)*14);
+  if(Number.isFinite(intrinsicSensitivitySpread)){
+    const sensitivityPenalty=Math.round(clamp((intrinsicSensitivitySpread-.035)/.08,0,1)*14);
     valuationConfidence=Math.max(20,valuationConfidence-sensitivityPenalty);
   }
   // Keep expected return and conservative underwriting separate. Uncertainty belongs in
@@ -660,7 +688,7 @@ function valuate(stock,forecast,quality){
   //   requiredReturnBuyPrice = price that would deliver this model's stricter hurdle rate.
   // Previously both were the same number, which made high-quality growth companies look
   // artificially 'worth' only the price needed to earn 11-12% annually.
-  const fairDiscountRate=clamp(.09+(1-q)*.015,.09,.105);
+  const fairDiscountRate=intrinsicRate;
   const fair=riskAdjustedTotal!=null?pv(riskAdjustedTotal,fairDiscountRate,HORIZON_YEARS):null;
   const requiredReturnBuyPrice=riskAdjustedTotal!=null?pv(riskAdjustedTotal,req,HORIZON_YEARS):null;
   // MOS is never a negative percentage. Overvaluation is represented separately by
@@ -707,6 +735,6 @@ function valuate(stock,forecast,quality){
   const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
   const lowReliability=methods.length>0&&Math.max(...methods.map(m=>m.reliability??0))<.40;
 
-  return {requiredReturn:req,methods,valuationArchetype:archetype.name,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget:target,tenYearPriceTarget:target,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,requiredReturnBuyPrice,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,multipleSensitivity:{down20CAGR:lowMultipleCAGR,up20CAGR:highMultipleCAGR,spread:multipleSensitivitySpread},returnAttribution,preUncertaintyCAGR,riskAdjustedTotal,riskAdjustedCAGR,uncertaintyHaircutRate,valuationConfidenceScore:valuationConfidence,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},methodDispersionRatio,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(consensus.hasConsensusOutlier?'isolated_method_outlier':(Number.isFinite(agreement)&&agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))};
+  return {requiredReturn:req,intrinsicDiscountRate:intrinsicRate,methods,valuationArchetype:archetype.name,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget:target,tenYearPriceTarget:target,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,requiredReturnBuyPrice,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,multipleSensitivity:{down20CAGR:lowMultipleCAGR,up20CAGR:highMultipleCAGR,spread:multipleSensitivitySpread},returnAttribution,preUncertaintyCAGR,riskAdjustedTotal,riskAdjustedCAGR,uncertaintyHaircutRate,valuationConfidenceScore:valuationConfidence,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},methodDispersionRatio,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(consensus.hasConsensusOutlier?'isolated_method_outlier':(Number.isFinite(agreement)&&agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))};
 }
 module.exports={valuate};
