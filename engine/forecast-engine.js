@@ -214,7 +214,19 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   const capexSeries=years.map(y=>{const r=finite(y?.revenue),c=finite(y?.capex);return r>0&&c!=null?Math.abs(c)/r:null;});
   const daSeries=years.map(y=>{const r=finite(y?.revenue),d=finite(y?.da);return r>0&&d!=null&&d>=0?d/r:null;});
   const opSeries=years.map(y=>Number.isFinite(finite(y?.opMargin))?finite(y.opMargin):pctMargin(y,'operatingIncome'));
-  const grossSeries=years.map(y=>Number.isFinite(finite(y?.grossMargin))?finite(y.grossMargin):pctMargin(y,'grossProfit'));
+  // V12.7: reconcile ratio fields against the underlying dollar statement before using
+  // them. SEC/company feeds occasionally attach a valid-looking percentage from the wrong
+  // concept/period (ELF-style gross-margin corruption). A dollar-derived margin has a much
+  // stronger accounting identity, so prefer it whenever the two disagree materially.
+  const grossSeries=years.map(y=>{
+    const reported=finite(y?.grossMargin);
+    const derived=pctMargin(y,'grossProfit');
+    if(Number.isFinite(reported)&&Number.isFinite(derived)){
+      if(Math.abs(reported-derived)>.06)return derived;
+      return .75*derived+.25*reported;
+    }
+    return Number.isFinite(derived)?derived:reported;
+  });
   // Spreadsheet-style operating drivers. We intentionally keep these optional because
   // SEC expense tags are less standardized than revenue/operating income. When enough
   // history exists they become a forward operating model; otherwise the consolidated
