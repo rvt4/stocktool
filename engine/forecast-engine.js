@@ -344,10 +344,14 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     }
   }
   const driverResidual=medianRecent(driverResiduals,4);
-  const driverModelReliable=completeDriverYears>=2 && Number.isFinite(driverResidual) && driverResidual>=-.025 && driverResidual<=.22 &&
-    Number.isFinite(grossNow)&&Number.isFinite(rdNow)&&Number.isFinite(sgaNow)&&grossNow-rdNow-sgaNow>-.03;
-  const driverCoverage=driverModelReliable?completeDriverYears:0;
-  if(!driverModelReliable){ rdNow=null; sgaNow=null; }
+  // V12.2: classify operating-driver evidence as full, partial, or fallback.
+  const driverReconciles=Number.isFinite(driverResidual) && driverResidual>=-.025 && driverResidual<=.22;
+  const driverInputsPlausible=Number.isFinite(grossNow)&&Number.isFinite(rdNow)&&Number.isFinite(sgaNow)&&grossNow-rdNow-sgaNow>-.03;
+  const driverModelReliable=completeDriverYears>=2 && driverReconciles && driverInputsPlausible;
+  const driverModelPartial=!driverModelReliable && completeDriverYears>=1 && driverReconciles && driverInputsPlausible;
+  const driverReconciliation=driverModelReliable?'full':(driverModelPartial?'partial':'fallback');
+  const driverCoverage=(driverModelReliable||driverModelPartial)?completeDriverYears:0;
+  if(driverReconciliation==='fallback'){ rdNow=null; sgaNow=null; }
   const growthForLeverage=clamp(weightedAverage([[growthInfo.y1,.25],[growthInfo.y2,.35],[growthInfo.year5Growth,.40]])??0,-.05,.25);
   const leverageIntensity=clamp((growthForLeverage-.035)/.165,0,1);
   const grossTarget=Number.isFinite(grossNow)
@@ -373,7 +377,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   if(driverCoverage>=2&&[grossTarget,rdTarget,sgaTarget,otherOpexNow].every(Number.isFinite)){
     const otherTarget=clamp(otherOpexNow*(1-.10*leverageIntensity),-.04,.30);
     driverTargetOperating=clamp(grossTarget-rdTarget-sgaTarget-otherTarget,-.10,opCeiling);
-    const driverWeight=clamp(.42+.10*Math.min(driverCoverage,4)+.16*leverageIntensity,.52,.82);
+    const driverWeight=driverReconciliation==='full' ? clamp(.42+.10*Math.min(driverCoverage,4)+.16*leverageIntensity,.52,.82) : clamp(.18+.05*Math.min(driverCoverage,2)+.05*leverageIntensity,.18,.32);
     targetOperating=clamp(weightedAverage([[driverTargetOperating,driverWeight],[targetOperating,1-driverWeight]]),-.10,opCeiling);
   }
 
@@ -439,6 +443,12 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   const currentNormalizationAddback=clamp(normAddback(sbcNowForEarnings,amortNow),0,.13);
   const targetNormalizationAddback=clamp(normAddback(sbcTarget,amortTarget),0,.115);
   const matureNormalizationAddback=clamp(normAddback(sbcMature,amortMature),0,.10);
+  // Explicit economic SBC cost: the portion excluded from normalized earnings is also
+  // charged to owner cash economics; dilution continues to capture the share-count cost.
+  const economicSbcCost=(sbc)=>Number.isFinite(sbc)?afterTax(sbc)*(1-sbcAddbackShare(sbc)):0;
+  const economicSbcCostNow=clamp(economicSbcCost(sbcNowForEarnings),0,.12);
+  const economicSbcCostTarget=clamp(economicSbcCost(sbcTarget),0,.10);
+  const economicSbcCostMature=clamp(economicSbcCost(sbcMature),0,.09);
   const gaapCurrentNet=currentNet;
   let gaapTargetNet=targetNet, gaapMatureTargetNet=matureTargetNet;
   currentNet=clamp(currentNet+currentNormalizationAddback,-.10,netCeiling);
@@ -648,6 +658,9 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     if(Number.isFinite(normalizedStart)) currentFCF=clamp(normalizedStart,-.10,fcfCeiling);
   }
 
+  if(Number.isFinite(currentFCF)) currentFCF-=economicSbcCostNow;
+  if(Number.isFinite(targetFCF)) targetFCF-=economicSbcCostTarget;
+  if(Number.isFinite(matureTargetFCF)) matureTargetFCF-=economicSbcCostMature;
   currentFCF=Number.isFinite(currentFCF)?clamp(currentFCF,-.10,fcfCeiling):null;
   targetFCF=Number.isFinite(targetFCF)?clamp(targetFCF,-.10,fcfCeiling):null;
   matureTargetFCF=Number.isFinite(matureTargetFCF)?clamp(matureTargetFCF,-.10,fcfCeiling):null;
@@ -746,7 +759,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     incrementalFCFMargin:incFCF,incrementalOperatingMargin:incOp,analystMarginGrowth,analystMarginDelta,
     expansionVotes,compressionVotes,abnormalCapexCycle,reportedFCFMargin:latestFCF,normalizedCapexMargin:targetCapex,
     cycleNormalizedFCFMargin:cycleNormalizedFCF,maintenanceCapexMargin:maintenanceAnchor,growthReinvestmentShare,
-    matureGrowthReinvestmentShare,normalizedCFO:rawCFO,cashEconomicsTarget:matureTargetFCF,profitabilityConsistencyApplied,
+    matureGrowthReinvestmentShare,normalizedCFO:rawCFO,cashEconomicsTarget:matureTargetFCF,profitabilityConsistencyApplied,driverReconciliation,economicSbcCostNow,economicSbcCostTarget,economicSbcCostMature,
     structuralCapitalLightCashConversion,recurringFcfCfoRatio,fcfCeiling,crossMarginCoherenceApplied,
     unexplainedFcfCompressionPrevented,broadCashCompressionEvidence,temporaryMarginReset,
     normalizedTaxRate,gaapCurrentNet,gaapTargetNet,gaapMatureTargetNet,
@@ -863,7 +876,7 @@ function buildForecast(stock){
       sgaMarginStart:margins.sgaNow,sgaMarginTarget:margins.sgaTarget,sgaMarginMatureTarget:margins.sgaMature,
       sbcMarginStart:margins.sbcNowForEarnings,sbcMarginTarget:margins.sbcTarget,sbcMarginMatureTarget:margins.sbcMature,
       intangibleAmortizationStart:margins.amortNow,intangibleAmortizationTarget:margins.amortTarget,intangibleAmortizationMatureTarget:margins.amortMature,
-      operatingDriverTarget:margins.driverTargetOperating,operatingDriverCoverage:margins.driverCoverage,operatingDriverReliable:margins.driverModelReliable,operatingDriverResidual:margins.driverResidual,operatingLeverageIntensity:margins.leverageIntensity},
+      operatingDriverTarget:margins.driverTargetOperating,operatingDriverCoverage:margins.driverCoverage,operatingDriverReliable:margins.driverModelReliable,operatingDriverReconciliation:margins.driverReconciliation,operatingDriverResidual:margins.driverResidual,operatingLeverageIntensity:margins.leverageIntensity,economicSbcCostStart:margins.economicSbcCostNow,economicSbcCostTarget:margins.economicSbcCostTarget,economicSbcCostMature:margins.economicSbcCostMature},
     shares:{recent:recentShareGrowth,normalized:medianShareGrowth,observed:observedDilution,model:dilutionRate,mature:matureDilutionRate,path:dilutionPath,sbcNow,sbcNormalized,normalizedSbc,sbcImpliedDilution,buybackCapacity},
   };
   const forecastFlags=[];
@@ -876,8 +889,10 @@ function buildForecast(stock){
   if(margins.structuralCapitalLightCashConversion)forecastFlags.push('structural_capital_light_cash_conversion');
   if(margins.unexplainedFcfCompressionPrevented)forecastFlags.push('unexplained_fcf_compression_prevented');
   if(margins.temporaryMarginReset)forecastFlags.push('temporary_margin_reset_normalized');
-  if((margins.driverCoverage||0)>=2)forecastFlags.push('spreadsheet_operating_driver_model');
-  else if(margins.driverModelReliable===false)forecastFlags.push('partial_operating_driver_data_rejected');
+  if(margins.driverReconciliation==='full'){forecastFlags.push('full_operating_driver_reconciliation');forecastFlags.push('spreadsheet_operating_driver_model');}
+  else if(margins.driverReconciliation==='partial')forecastFlags.push('partial_operating_driver_reconciliation');
+  else {forecastFlags.push('operating_driver_fallback');forecastFlags.push('partial_operating_driver_data_rejected');}
+  if((margins.economicSbcCostNow||0)>.01)forecastFlags.push('economic_sbc_charge_applied');
   if((margins.currentNormalizationAddback||0)>.015)forecastFlags.push('normalized_earnings_bridge');
   if(growth.recentQuarter!=null&&Math.abs(growth.recentQuarter-growth.historicalAnchor)>.12)forecastFlags.push('recent_growth_inflection');
 

@@ -62,6 +62,23 @@ function boundedExit(current,justified,lo,hi){
   return clamp(justified,lo,hi);
 }
 
+// V12.2: a company's own observed valuation history is a soft anchor when genuine
+// historical multiples are available. Missing history gets zero weight; today's price is
+// never substituted for history, preserving intrinsic-value price invariance.
+function historicalMultipleAnchor(stock,kind){
+  const h=stock?.historicalMultiples||{};
+  const keys=kind==='EPS'?['forwardPe','pe']:kind==='EBITDA'?['evEbitda']:['pFcf','priceFcf','fcfMultiple'];
+  const vals=[];
+  for(const k of keys)for(const x of (Array.isArray(h[k])?h[k]:[])){const n=finite(x?.value??x);if(n>0)vals.push(n);}
+  return vals.length>=2?{value:median(vals.slice(-12)),samples:vals.length}:{value:null,samples:vals.length};
+}
+function applyHistoricalMultipleAnchor(stock,kind,justified,lo,hi,quality){
+  const hist=historicalMultipleAnchor(stock,kind);
+  if(!(hist.value>0))return {multiple:clamp(justified,lo,hi),historicalAnchor:null,historicalSamples:hist.samples,historicalWeight:0};
+  const w=clamp((hist.samples-1)/7,0,.55)*clamp((quality?.confidenceScore??50)/100,.35,.95);
+  return {multiple:clamp(weightedAverage([[justified,1-w],[hist.value,w]]),lo,hi),historicalAnchor:hist.value,historicalSamples:hist.samples,historicalWeight:w};
+}
+
 // V11.5: company-specific terminal multiple framework. A decade-out multiple should not
 // simply collapse every business to a sector-average 12-14x. Durable growth and superior
 // economics can justify a lasting premium, while weak balance sheets, dilution and low
@@ -118,15 +135,15 @@ function justifiedExitMultiple(kind,stock,forecast,quality,base,cfg){
     // owner-economics anchor. ~10% durable growth with strong economics lands around the
     // mid/high teens; truly elite businesses can retain a low/mid-20s multiple.
     multiple=9.5+p.growthDurability*44+p.qualityAdj*1.10+p.roicAdj+p.marginAdj+p.confidenceAdj-p.dilutionPenalty-p.maturityPenalty;
-    return {multiple:clamp(multiple,8,34),profile:p};
+    { const a=applyHistoricalMultipleAnchor(stock,'FCF',multiple,8,34,quality); return {...a,profile:p}; }
   }
   if(kind==='EPS'){
     multiple=cfg.basePE+p.growthDurability*52+p.qualityAdj*1.00+p.roicAdj*.90+p.marginAdj*.50+p.confidenceAdj-p.dilutionPenalty-p.maturityPenalty;
-    return {multiple:clamp(multiple,8,38),profile:p};
+    { const a=applyHistoricalMultipleAnchor(stock,'EPS',multiple,8,38,quality); return {...a,profile:p}; }
   }
   if(kind==='EBITDA'){
     multiple=cfg.baseEVEBITDA+p.growthDurability*31+p.qualityAdj*.68+p.roicAdj*.50+p.marginAdj*.38+p.confidenceAdj*.60-p.dilutionPenalty*.70-p.maturityPenalty*.65;
-    return {multiple:clamp(multiple,6,25),profile:p};
+    { const a=applyHistoricalMultipleAnchor(stock,'EBITDA',multiple,6,25,quality); return {...a,profile:p}; }
   }
   return {multiple:null,profile:p};
 }
@@ -173,12 +190,16 @@ function methodReliability(stock,forecast,kind,base,future,quality){
   const ebitdaDisp=dispersion(marginSeries(years,'ebitda'));
   const fcfM=finite(bridge.fcfNormalized), netM=finite(bridge.netNormalized), ebitdaM=finite(bridge.ebitdaNormalized);
   const dilution=Math.max(0,finite(forecast.dilutionRate)||0);
+  const sbc=Math.max(0,finite(bridge.sbcMarginStart)||finite(years.at(-1)?.sbcIntensity)||0);
+  const driverMode=bridge.operatingDriverReconciliation||'fallback';
   let reliability=.75*conf, reasons=[];
 
   if(kind==='FCF'){
     reliability*=clamp(1-fcfDisp/.12,.45,1);
     if(bridge.abnormalCapexCycle){reliability*=.88;reasons.push('capex_cycle_normalized');}
     if(Number.isFinite(fcfM)&&fcfM>0)reliability*=1.05;
+    if(sbc>.08){reliability*=clamp(1-(sbc-.08)*1.8,.62,.95);reasons.push('high_sbc_owner_cost');}
+    if(driverMode==='fallback'){reliability*=.92;reasons.push('operating_bridge_fallback');}
   } else if(kind==='EPS'){
     reliability*=clamp(1-netDisp/.10,.40,1);
     // If cash economics are much stronger than reported earnings economics, GAAP EPS is
@@ -190,6 +211,8 @@ function methodReliability(stock,forecast,kind,base,future,quality){
       else if(gap>.06){reliability*=.65;reasons.push('cash_earnings_divergence');}
     }
     if(dilution>.03){reliability*=.90;reasons.push('elevated_dilution');}
+    if(sbc>.08){reliability*=clamp(1-(sbc-.08)*1.2,.72,.96);reasons.push('high_sbc_normalization_risk');}
+    if(driverMode==='full')reliability*=1.05;
   } else if(kind==='EBITDA'){
     reliability*=clamp(1-ebitdaDisp/.12,.45,1);
     const debt=finite(years.at(-1)?.totalDebt)||finite(years.at(-1)?.longTermDebt)||0;
@@ -197,6 +220,8 @@ function methodReliability(stock,forecast,kind,base,future,quality){
     const ebitda=finite(base?.ebitda);
     const leverage=ebitda>0?(debt-cash)/ebitda:null;
     if(Number.isFinite(leverage)&&leverage>3){reliability*=.65;reasons.push('high_leverage');}
+    if(driverMode==='full')reliability*=1.08;
+    else if(driverMode==='fallback'){reliability*=.82;reasons.push('operating_bridge_fallback');}
   } else if(kind==='SALES'){
     reliability*=.55;
     if(Number.isFinite(ebitdaM)&&ebitdaM>.08)reliability*=.85;
@@ -384,18 +409,18 @@ function valuate(stock,forecast,quality){
       // double-counting owner cash and made FCF-exit values track the (also inflated) DCF.
       // Dividends are added later because this is now an exit-only method.
       const terminalFCFValue=f.fcfPerShare*m;
-      addMethod(methods,{name:'FCF exit',target:terminalFCFValue,weight:.30,reliability:rel.score,price,family:'cashflow',cashFlowInclusive:false,audit:{exitMultiple:m,currentMultiple:currentPFCF,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,terminalExitValue:terminalFCFValue,multipleProfile:exit.profile,reliabilityReasons:rel.reasons}});
+      addMethod(methods,{name:'FCF exit',target:terminalFCFValue,weight:.30,reliability:rel.score,price,family:'cashflow',cashFlowInclusive:false,audit:{exitMultiple:m,currentMultiple:currentPFCF,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,terminalExitValue:terminalFCFValue,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,reliabilityReasons:rel.reasons}});
     }
     if(Number(f.eps)>0&&normEPS>0){
       const exit=justifiedExitMultiple('EPS',stock,forecast,quality,base,cfg), m=boundedExit(currentPE,exit.multiple,8,38);
       const rel=methodReliability(stock,forecast,'EPS',normEPS,f.eps,quality);
-      addMethod(methods,{name:'EPS exit',target:f.eps*m,weight:.20,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:f.eps,normalizedCurrentMetric:normEPS,multipleProfile:exit.profile,reliabilityReasons:rel.reasons}});
+      addMethod(methods,{name:'EPS exit',target:f.eps*m,weight:.20,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:f.eps,normalizedCurrentMetric:normEPS,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,reliabilityReasons:rel.reasons}});
     }
     if(allowEnterpriseScopeMethods&&Number(f.ebitda)>0&&Number(f.shares)>0&&normEBITDA>0){
       const exit=justifiedExitMultiple('EBITDA',stock,forecast,quality,base,cfg), m=boundedExit(currentEVEBITDA,exit.multiple,6,25), equity=f.ebitda*m-netDebt;
       if(equity>0){
         const rel=methodReliability(stock,forecast,'EBITDA',normEBITDA,f.ebitda,quality);
-        addMethod(methods,{name:'EV/EBITDA exit',target:equity/f.shares,weight:.10,reliability:rel.score,price,family:'enterprise',audit:{exitMultiple:m,currentMultiple:currentEVEBITDA,metric:f.ebitda,normalizedCurrentMetric:normEBITDA,multipleProfile:exit.profile,reliabilityReasons:rel.reasons}});
+        addMethod(methods,{name:'EV/EBITDA exit',target:equity/f.shares,weight:.10,reliability:rel.score,price,family:'enterprise',audit:{exitMultiple:m,currentMultiple:currentEVEBITDA,metric:f.ebitda,normalizedCurrentMetric:normEBITDA,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,reliabilityReasons:rel.reasons}});
       }
     }
 
