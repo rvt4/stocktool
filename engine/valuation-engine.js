@@ -286,6 +286,43 @@ function methodReliability(stock,forecast,kind,base,future,quality){
   return {score:clamp(reliability,.12,1),reasons,transitionRatio:transition.ratio};
 }
 
+// V12.4: choose valuation lenses from the economics of the business before blending.
+// A mathematically available method is not automatically decision-useful. This keeps a
+// distorted cash-flow lens from receiving a token vote against a much cleaner earnings
+// lens (and vice versa), while remaining completely ticker-agnostic.
+function valuationArchetype(stock,forecast,quality,base){
+  const dq=stock.financials?.dataQuality||{};
+  if(dq.financialLikeRevenue===true)return {name:'financial-earnings',weights:{FINANCIAL_EPS:1},minimum:{FINANCIAL_EPS:.28}};
+  const category=forecast.category||'Value';
+  const growth=clamp(forecast.year5OperatingGrowth??forecast.rows?.at(-1)?.revenueGrowth??forecast.sustainableGrowth??0,0,.30);
+  const q=clamp((quality?.qualityScore??50)/100,0,1);
+  const compounder=clamp((quality?.compounderScore??50)/100,0,1);
+  const fcf=finite(base?.margins?.fcf), net=finite(base?.margins?.net), ebitda=finite(base?.margins?.ebitda);
+  const assetLight=(fcf??0)>.10&&(ebitda??0)>.14;
+  const cashEarningsGap=Number.isFinite(fcf)&&Number.isFinite(net)?Math.abs(fcf-net):0;
+  const highQuality=q>=.72||compounder>=.75;
+  if(cashEarningsGap>.09){
+    // When accounting earnings and cash conversion diverge materially, admit only lenses
+    // that clear a higher evidence bar rather than forcing both into the answer.
+    return {name:'cash-conversion-divergence',weights:{FCF:.42,DCF:.34,EPS:.18,EBITDA:.06},minimum:{FCF:.48,DCF:.45,EPS:.50,EBITDA:.52}};
+  }
+  if((category==='Hyper Growth'||growth>=.16)&&assetLight){
+    return {name:'growth-normalized-earnings',weights:{EPS:.46,FCF:.24,DCF:.20,EBITDA:.10},minimum:{EPS:.28,FCF:.42,DCF:.38,EBITDA:.45}};
+  }
+  if((category==='Compounder'||highQuality)&&assetLight){
+    return {name:'asset-light-compounder',weights:{EPS:.38,FCF:.30,DCF:.24,EBITDA:.08},minimum:{EPS:.30,FCF:.38,DCF:.38,EBITDA:.48}};
+  }
+  const capitalIntensive=(ebitda??0)>.08&&(fcf??0)<.08;
+  if(capitalIntensive)return {name:'capital-intensive',weights:{DCF:.40,EBITDA:.35,FCF:.20,EPS:.05},minimum:{DCF:.38,EBITDA:.38,FCF:.45,EPS:.55}};
+  return {name:'balanced-operating-business',weights:{DCF:.34,FCF:.30,EPS:.26,EBITDA:.10},minimum:{DCF:.34,FCF:.34,EPS:.34,EBITDA:.42}};
+}
+
+function archetypeMethodWeight(archetype,kind,reliability){
+  const w=archetype?.weights?.[kind]??0;
+  const floor=archetype?.minimum?.[kind]??.35;
+  return reliability>=floor?w:0;
+}
+
 function addMethod(methods,{name,target,weight,reliability=1,audit,price,family=null,cashFlowInclusive=false}){
   if(!(Number.isFinite(target)&&target>0&&Number.isFinite(price)&&price>0))return;
   const implied=cagr(price,target);
@@ -381,6 +418,7 @@ function valuate(stock,forecast,quality){
   const marketCap=price>0&&shares0>0?price*shares0:null, revenue0=finite(last.revenue)>0?finite(last.revenue):null;
   const q=(quality.qualityScore||50)/100, growth=clamp(forecast.year5OperatingGrowth??forecast.rows?.at(-1)?.revenueGrowth??forecast.sustainableGrowth??forecast.revenueGrowthAnchor,0,.18);
   const methods=[], base=normalizedOperatingBase(stock,forecast);
+  const archetype=valuationArchetype(stock,forecast,quality,base);
   const dataQuality=stock.financials?.dataQuality||{};
   const shareDenominatorReliable=dataQuality.shareDenominatorReliable !== false;
   // A missing SEC share denominator should not make a profitable company permanently
@@ -458,18 +496,18 @@ function valuate(stock,forecast,quality){
       // double-counting owner cash and made FCF-exit values track the (also inflated) DCF.
       // Dividends are added later because this is now an exit-only method.
       const terminalFCFValue=f.fcfPerShare*m;
-      addMethod(methods,{name:'FCF exit',target:terminalFCFValue,weight:.30,reliability:rel.score,price,family:'cashflow',cashFlowInclusive:false,audit:{exitMultiple:m,currentMultiple:currentPFCF,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,terminalExitValue:terminalFCFValue,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}});
+      { const w=archetypeMethodWeight(archetype,'FCF',rel.score); if(w>0)addMethod(methods,{name:'FCF exit',target:terminalFCFValue,weight:w,reliability:rel.score,price,family:'cashflow',cashFlowInclusive:false,audit:{exitMultiple:m,currentMultiple:currentPFCF,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,terminalExitValue:terminalFCFValue,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
     }
     if(Number(f.eps)>0&&normEPS>0){
       const exit=coherentExits.EPS, m=boundedExit(currentPE,exit.multiple,8,38);
       const rel=methodReliability(stock,forecast,'EPS',normEPS,f.eps,quality);
-      addMethod(methods,{name:'EPS exit',target:f.eps*m,weight:.20,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:f.eps,normalizedCurrentMetric:normEPS,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}});
+      { const w=archetypeMethodWeight(archetype,'EPS',rel.score); if(w>0)addMethod(methods,{name:'EPS exit',target:f.eps*m,weight:w,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:f.eps,normalizedCurrentMetric:normEPS,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
     }
     if(allowEnterpriseScopeMethods&&Number(f.ebitda)>0&&Number(f.shares)>0&&normEBITDA>0){
       const exit=coherentExits.EBITDA, m=boundedExit(currentEVEBITDA,exit.multiple,6,25), equity=f.ebitda*m-netDebt;
       if(equity>0){
         const rel=methodReliability(stock,forecast,'EBITDA',normEBITDA,f.ebitda,quality);
-        addMethod(methods,{name:'EV/EBITDA exit',target:equity/f.shares,weight:.10,reliability:rel.score,price,family:'enterprise',audit:{exitMultiple:m,currentMultiple:currentEVEBITDA,metric:f.ebitda,normalizedCurrentMetric:normEBITDA,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}});
+        { const w=archetypeMethodWeight(archetype,'EBITDA',rel.score); if(w>0)addMethod(methods,{name:'EV/EBITDA exit',target:equity/f.shares,weight:w,reliability:rel.score,price,family:'enterprise',audit:{exitMultiple:m,currentMultiple:currentEVEBITDA,metric:f.ebitda,normalizedCurrentMetric:normEBITDA,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
       }
     }
 
@@ -480,7 +518,7 @@ function valuate(stock,forecast,quality){
       // Terminal-value-heavy DCFs are still useful, but receive less reliability when
       // most of the present value depends on the perpetuity rather than explicit cash flow.
       const terminalPenalty=dcf.terminalShare>.75?.55:(dcf.terminalShare>.65?.72:(dcf.terminalShare>.55?.88:1));
-      addMethod(methods,{name:'10Y DCF',target:terminalOutcome,weight:.40,reliability:rel.score*terminalPenalty,price,family:'cashflow',cashFlowInclusive:true,audit:{fairValueToday:dcf.fairValue,pvExplicit:dcf.pvExplicit,pvTerminal:dcf.pvTerminal,terminalGrowth:dcf.terminalGrowth,terminalShare:dcf.terminalShare,reliabilityReasons:[...rel.reasons,...(terminalPenalty<1?['terminal_value_concentration']:[])]}});
+      { const dcfRel=rel.score*terminalPenalty, w=archetypeMethodWeight(archetype,'DCF',dcfRel); if(w>0)addMethod(methods,{name:'10Y DCF',target:terminalOutcome,weight:w,reliability:dcfRel,price,family:'cashflow',cashFlowInclusive:true,audit:{fairValueToday:dcf.fairValue,pvExplicit:dcf.pvExplicit,pvTerminal:dcf.pvTerminal,terminalGrowth:dcf.terminalGrowth,terminalShare:dcf.terminalShare,reliabilityReasons:[...rel.reasons,...(terminalPenalty<1?['terminal_value_concentration']:[])]}}); }
     }
 
     if(!methods.length&&allowEnterpriseScopeMethods&&Number(f.revenue)>0&&Number(f.shares)>0&&revenue0>0){
@@ -662,6 +700,6 @@ function valuate(stock,forecast,quality){
   const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
   const lowReliability=methods.length>0&&Math.max(...methods.map(m=>m.reliability??0))<.40;
 
-  return {requiredReturn:req,methods,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget:target,tenYearPriceTarget:target,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,requiredReturnBuyPrice,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,multipleSensitivity:{down20CAGR:lowMultipleCAGR,up20CAGR:highMultipleCAGR,spread:multipleSensitivitySpread},returnAttribution,preUncertaintyCAGR,riskAdjustedTotal,riskAdjustedCAGR,uncertaintyHaircutRate,valuationConfidenceScore:valuationConfidence,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},methodDispersionRatio,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(consensus.hasConsensusOutlier?'isolated_method_outlier':(Number.isFinite(agreement)&&agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))};
+  return {requiredReturn:req,methods,valuationArchetype:archetype.name,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget:target,tenYearPriceTarget:target,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,requiredReturnBuyPrice,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,multipleSensitivity:{down20CAGR:lowMultipleCAGR,up20CAGR:highMultipleCAGR,spread:multipleSensitivitySpread},returnAttribution,preUncertaintyCAGR,riskAdjustedTotal,riskAdjustedCAGR,uncertaintyHaircutRate,valuationConfidenceScore:valuationConfidence,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},methodDispersionRatio,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(consensus.hasConsensusOutlier?'isolated_method_outlier':(Number.isFinite(agreement)&&agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))};
 }
 module.exports={valuate};
