@@ -455,6 +455,24 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   targetNet=clamp(targetNet+targetNormalizationAddback,-.10,netCeiling);
   matureTargetNet=clamp(matureTargetNet+matureNormalizationAddback,-.10,netCeiling);
 
+  // V12.3 structural mature-margin guardrail. Normalized earnings are useful, but they
+  // should not become an unconstrained second profit model. In the mature state, normalized
+  // net margin must remain tethered to both GAAP earnings and operating profitability.
+  // This still allows meaningful non-cash add-backs (important for acquisition-heavy and
+  // semiconductor businesses), while preventing SBC-heavy issuers from manufacturing a
+  // 40%+ normalized margin mainly through compensation add-backs.
+  const structuralTargetNetCeiling=Number.isFinite(gaapTargetNet)&&Number.isFinite(targetOperating)
+    ? Math.max(gaapTargetNet+.055,targetOperating+.075) : null;
+  const structuralMatureNetCeiling=Number.isFinite(gaapMatureTargetNet)&&Number.isFinite(matureOperating)
+    ? Math.max(gaapMatureTargetNet+.050,matureOperating+.070) : null;
+  let structuralMarginGuardrailApplied=false;
+  if(Number.isFinite(structuralTargetNetCeiling)&&Number.isFinite(targetNet)&&targetNet>structuralTargetNetCeiling){
+    targetNet=clamp(structuralTargetNetCeiling,-.10,netCeiling); structuralMarginGuardrailApplied=true;
+  }
+  if(Number.isFinite(structuralMatureNetCeiling)&&Number.isFinite(matureTargetNet)&&matureTargetNet>structuralMatureNetCeiling){
+    matureTargetNet=clamp(structuralMatureNetCeiling,-.10,netCeiling); structuralMarginGuardrailApplied=true;
+  }
+
   // V11.16 earnings-power persistence. A growing company can pass through a temporary
   // integration / investment / mix-reset period without its year-10 economics being worse
   // than its already-normalized year-5 economics. Previously the mature model could fade
@@ -746,6 +764,18 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   const cycleNormalizedFCF=abnormalCapexCycle&&Number.isFinite(currentCFO)&&Number.isFinite(targetCapex)?currentCFO-targetCapex:null;
   const profitabilityConsistencyApplied=Boolean(compressionVotes<3&&durableGrowth>.035||crossMarginCoherenceApplied);
 
+  // Re-apply the structural guardrail after all persistence/recovery logic. Those later
+  // routines are intentionally allowed to preserve real earnings power, but must not
+  // accidentally restore an normalization-driven margin that this guardrail rejected.
+  const finalGaapTargetPreAddback=Number.isFinite(targetNet)?targetNet-targetNormalizationAddback:gaapTargetNet;
+  const finalGaapMaturePreAddback=Number.isFinite(matureTargetNet)?matureTargetNet-matureNormalizationAddback:gaapMatureTargetNet;
+  const finalTargetNetCeiling=Number.isFinite(finalGaapTargetPreAddback)&&Number.isFinite(targetOperating)
+    ? Math.max(finalGaapTargetPreAddback+.055,targetOperating+.075):null;
+  const finalMatureNetCeiling=Number.isFinite(finalGaapMaturePreAddback)&&Number.isFinite(matureOperating)
+    ? Math.max(finalGaapMaturePreAddback+.050,matureOperating+.070):null;
+  if(Number.isFinite(finalTargetNetCeiling)&&Number.isFinite(targetNet)&&targetNet>finalTargetNetCeiling){targetNet=clamp(finalTargetNetCeiling,-.10,netCeiling);structuralMarginGuardrailApplied=true;}
+  if(Number.isFinite(finalMatureNetCeiling)&&Number.isFinite(matureTargetNet)&&matureTargetNet>finalMatureNetCeiling){matureTargetNet=clamp(finalMatureNetCeiling,-.10,netCeiling);structuralMarginGuardrailApplied=true;}
+
   gaapTargetNet=Number.isFinite(targetNet)?clamp(targetNet-targetNormalizationAddback,-.10,netCeiling):gaapTargetNet;
   gaapMatureTargetNet=Number.isFinite(matureTargetNet)?clamp(matureTargetNet-matureNormalizationAddback,-.10,netCeiling):gaapMatureTargetNet;
   const grossMature=Number.isFinite(grossTarget)?clamp(grossTarget+Math.max(0,grossTrend)*1.2,.05,.85):grossTarget;
@@ -760,7 +790,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     expansionVotes,compressionVotes,abnormalCapexCycle,reportedFCFMargin:latestFCF,normalizedCapexMargin:targetCapex,
     cycleNormalizedFCFMargin:cycleNormalizedFCF,maintenanceCapexMargin:maintenanceAnchor,growthReinvestmentShare,
     matureGrowthReinvestmentShare,normalizedCFO:rawCFO,cashEconomicsTarget:matureTargetFCF,profitabilityConsistencyApplied,driverReconciliation,economicSbcCostNow,economicSbcCostTarget,economicSbcCostMature,
-    structuralCapitalLightCashConversion,recurringFcfCfoRatio,fcfCeiling,crossMarginCoherenceApplied,
+    structuralCapitalLightCashConversion,recurringFcfCfoRatio,fcfCeiling,crossMarginCoherenceApplied,structuralMarginGuardrailApplied,structuralTargetNetCeiling,structuralMatureNetCeiling,
     unexplainedFcfCompressionPrevented,broadCashCompressionEvidence,temporaryMarginReset,
     normalizedTaxRate,gaapCurrentNet,gaapTargetNet,gaapMatureTargetNet,
     currentNormalizationAddback,targetNormalizationAddback,matureNormalizationAddback,
@@ -876,7 +906,7 @@ function buildForecast(stock){
       sgaMarginStart:margins.sgaNow,sgaMarginTarget:margins.sgaTarget,sgaMarginMatureTarget:margins.sgaMature,
       sbcMarginStart:margins.sbcNowForEarnings,sbcMarginTarget:margins.sbcTarget,sbcMarginMatureTarget:margins.sbcMature,
       intangibleAmortizationStart:margins.amortNow,intangibleAmortizationTarget:margins.amortTarget,intangibleAmortizationMatureTarget:margins.amortMature,
-      operatingDriverTarget:margins.driverTargetOperating,operatingDriverCoverage:margins.driverCoverage,operatingDriverReliable:margins.driverModelReliable,operatingDriverReconciliation:margins.driverReconciliation,operatingDriverResidual:margins.driverResidual,operatingLeverageIntensity:margins.leverageIntensity,economicSbcCostStart:margins.economicSbcCostNow,economicSbcCostTarget:margins.economicSbcCostTarget,economicSbcCostMature:margins.economicSbcCostMature},
+      operatingDriverTarget:margins.driverTargetOperating,operatingDriverCoverage:margins.driverCoverage,operatingDriverReliable:margins.driverModelReliable,operatingDriverReconciliation:margins.driverReconciliation,operatingDriverResidual:margins.driverResidual,operatingLeverageIntensity:margins.leverageIntensity,economicSbcCostStart:margins.economicSbcCostNow,economicSbcCostTarget:margins.economicSbcCostTarget,economicSbcCostMature:margins.economicSbcCostMature,structuralMarginGuardrailApplied:margins.structuralMarginGuardrailApplied,structuralTargetNetCeiling:margins.structuralTargetNetCeiling,structuralMatureNetCeiling:margins.structuralMatureNetCeiling},
     shares:{recent:recentShareGrowth,normalized:medianShareGrowth,observed:observedDilution,model:dilutionRate,mature:matureDilutionRate,path:dilutionPath,sbcNow,sbcNormalized,normalizedSbc,sbcImpliedDilution,buybackCapacity},
   };
   const forecastFlags=[];
@@ -893,6 +923,7 @@ function buildForecast(stock){
   else if(margins.driverReconciliation==='partial')forecastFlags.push('partial_operating_driver_reconciliation');
   else {forecastFlags.push('operating_driver_fallback');forecastFlags.push('partial_operating_driver_data_rejected');}
   if((margins.economicSbcCostNow||0)>.01)forecastFlags.push('economic_sbc_charge_applied');
+  if(margins.structuralMarginGuardrailApplied)forecastFlags.push('structural_mature_margin_guardrail');
   if((margins.currentNormalizationAddback||0)>.015)forecastFlags.push('normalized_earnings_bridge');
   if(growth.recentQuarter!=null&&Math.abs(growth.recentQuarter-growth.historicalAnchor)>.12)forecastFlags.push('recent_growth_inflection');
 
