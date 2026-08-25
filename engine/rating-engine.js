@@ -1,8 +1,11 @@
 'use strict';
 const { clamp }=require('./config');
-function requiredMOS(category,q){let m=category==='Hyper Growth'?.225:category==='Growth'?.175:category==='Dividend'?.15:category==='Compounder'?.12:.20;if((q.qualityScore||50)>=85&&(q.moatScore||50)>=80)m-=.02;if((q.confidenceScore||50)<60)m+=.025;return clamp(m,.10,.30);}
+function requiredMOS(){return .20;}
 function rateStock(stock,forecast,quality,v){
-  const c=v.expectedCAGR,mos=v.marginOfSafety,req=requiredMOS(forecast.category,quality),q=quality.qualityScore||0;
+  const c=v.expectedCAGR,mos=v.marginOfSafety,req=requiredMOS(),q=quality.qualityScore||0;
+  const price=Number(stock?.price?.current), finalBuyPrice=Number(v.requiredReturnBuyPrice), hurdlePrice=Number(v.hurdleReturnPrice);
+  const meetsFinalBuyPrice=price>0&&finalBuyPrice>0&&price<=finalBuyPrice;
+  const meetsHurdlePrice=price>0&&hurdlePrice>0&&price<=hurdlePrice;
   const rawConf=quality.confidenceScore||0,agreement=Number.isFinite(v.methodAgreementScore)?v.methodAgreementScore:50,conf=v.valuationConfidenceScore??rawConf;
   const methodCount=(v.methods||[]).length, independent=v.independentMethodCount??methodCount;
   const forecastConf=forecast.forecastReliabilityScore??rawConf;
@@ -11,9 +14,9 @@ function rateStock(stock,forecast,quality,v){
   else if(c<0)rating='Sell';
   else if(c<.08)rating='Avoid';
   else if(c<.12||mos<=0)rating='Hold';
-  else if(c>=.18&&mos>=.20&&q>=78&&conf>=72&&agreement>=65&&independent>=3&&forecastConf>=65)rating='Exceptional Buy';
-  else if(c>=.15&&mos>=req&&q>=68&&conf>=62&&agreement>=52&&independent>=2&&forecastConf>=58)rating='Strong Buy';
-  else if(c>=.12&&mos>0&&q>=52&&conf>=52&&forecastConf>=48)rating='Buy';
+  else if(c>=.18&&meetsFinalBuyPrice&&q>=78&&conf>=72&&agreement>=65&&independent>=3&&forecastConf>=65)rating='Exceptional Buy';
+  else if(c>=.15&&meetsFinalBuyPrice&&q>=68&&conf>=62&&agreement>=52&&independent>=2&&forecastConf>=58)rating='Strong Buy';
+  else if(c>=.12&&meetsHurdlePrice&&q>=52&&conf>=52&&forecastConf>=48)rating='Buy';
   else rating='Hold';
 
   // Trust guardrails: weak valuation architecture may publish an estimate, but it cannot
