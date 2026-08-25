@@ -679,3 +679,27 @@ const v123Mb=v123SgF.forecastBridge.margins;
 assert(v123Mb.netMatureTarget<=Math.max(v123Mb.gaapNetMatureTarget+.051,v123Mb.operatingMatureTarget+.071),'normalized mature margin escaped structural profitability guardrail');
 console.log('V12.3 tests passed: terminal methods share coherent economics, transition dependence lowers reliability, and normalized mature margins remain structurally bounded.');
 
+
+// V12.6 separated discount-rate architecture ---------------------------------
+// The investor hurdle rate is a buy-price requirement; it must not be reused as the DCF
+// discount rate for growth/hyper-growth businesses. Intrinsic discounting is company-risk
+// based and can therefore be lower than the return hurdle.
+const discountCase=stock({ticker:'DISCOUNT_ARCH',sector:'Technology',price:100,growth:.18,margin:.24,roic:.28,dilution:.00});
+discountCase.analystEstimates.revenueGrowthCurrentYear=.30;
+discountCase.analystEstimates.revenueGrowthNextYear=.26;
+const dcaF=buildForecast(discountCase),dcaQ=computeQuality(discountCase,dcaF),dcaV=valuate(discountCase,dcaF,dcaQ);
+const dcaDCF=dcaV.methods.find(m=>m.name==='10Y DCF');
+assert(dcaDCF,'V12.6 discount architecture test requires a DCF method');
+assert(Number.isFinite(dcaV.intrinsicDiscountRate)&&Number.isFinite(dcaV.requiredReturn),'discount rates were not surfaced');
+assert(dcaV.requiredReturn>dcaV.intrinsicDiscountRate,'growth-company hurdle rate still leaked into intrinsic DCF discounting');
+assert(Math.abs(dcaDCF.audit.discountRate-dcaV.intrinsicDiscountRate)<1e-12,'DCF audit discount rate does not match intrinsic discount rate');
+assert(Math.abs(dcaV.fairValueDiscountRate-dcaV.intrinsicDiscountRate)<1e-12,'fair-value discount rate is not aligned with intrinsic DCF rate');
+
+// Technology can retain a mature perpetual growth assumption above the old universal 2.5%
+// ceiling when the forecast and discount-rate spread support it.
+const higherTerminalF={...dcaF,terminalGrowth:.035};
+const higherTerminalV=valuate(discountCase,higherTerminalF,dcaQ);
+const higherTerminalDCF=higherTerminalV.methods.find(m=>m.name==='10Y DCF');
+assert(higherTerminalDCF&&higherTerminalDCF.audit.terminalGrowth>.025,'DCF still applies the old universal 2.5% terminal-growth ceiling');
+assert(higherTerminalDCF.audit.terminalGrowth<=.04+1e-12,'technology DCF exceeded the sector mature-growth ceiling');
+console.log('V12.6 discount-rate tests passed: hurdle return is separated from intrinsic DCF discounting and sector-aware terminal growth is bounded independently.');
