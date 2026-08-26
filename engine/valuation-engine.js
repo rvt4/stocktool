@@ -642,7 +642,20 @@ function valuate(stock,forecast,quality){
   for(const m of methods){
     const dividendOutcome=m.cashFlowInclusive?0:terminalDividendValue;
     m.outcome=Number.isFinite(m.target)?m.target+dividendOutcome:null;
-    m.audit={...(m.audit||{}),year10Outcome:m.target,dividendOutcomeAdded:dividendOutcome,fairValueToday:Number.isFinite(m.outcome)?pv(m.outcome,req,HORIZON_YEARS):null};
+    // Keep the method card on the same valuation basis as the headline fair value.
+    // `fairValueToday` is intrinsic value discounted at the business-specific intrinsic
+    // rate; `hurdleValueToday` is the separate 15% investor entry-price reference.
+    // Using the hurdle rate for the method card made the displayed method fair values
+    // look far below (and fail to reconcile to) the canonical fair value.
+    m.audit={
+      ...(m.audit||{}),
+      year10Outcome:m.target,
+      dividendOutcomeAdded:dividendOutcome,
+      fairValueToday:Number.isFinite(m.outcome)?pv(m.outcome,intrinsicRate,HORIZON_YEARS):null,
+      hurdleValueToday:Number.isFinite(m.outcome)?pv(m.outcome,INVESTOR_HURDLE_RETURN,HORIZON_YEARS):null,
+      intrinsicDiscountRate:intrinsicRate,
+      investorHurdleReturn:INVESTOR_HURDLE_RETURN,
+    };
   }
   // Parallel 5Y outcome using the same admitted methods. Exit methods value year-5
   // forecast metrics with their already-underwritten mature multiple; DCF is rolled forward
