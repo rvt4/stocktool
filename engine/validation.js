@@ -12,6 +12,7 @@ function validateStock(s){
   if(fut>0&&Number.isFinite(s.hurdleReturnPrice)){const calc=fut/Math.pow(1+INVESTOR_HURDLE_RETURN,HORIZON_YEARS);if(!near(calc,s.hurdleReturnPrice))issues.push('hurdle_price_reconciliation_mismatch');}
   if(Number.isFinite(s.hurdleReturnPrice)&&Number.isFinite(s.requiredReturnBuyPrice)){const calc=s.hurdleReturnPrice*(1-INVESTOR_MARGIN_OF_SAFETY);if(!near(calc,s.requiredReturnBuyPrice))issues.push('buy_price_reconciliation_mismatch');}
   if(['Buy','Strong Buy','Exceptional Buy'].includes(s.rating)&&(!Number.isFinite(c)||!Number.isFinite(s.marginOfSafety)))issues.push('buy_without_canonical_valuation');
+  if(['Buy','Strong Buy','Exceptional Buy'].includes(s.rating)&&!(Number.isFinite(s.requiredReturnBuyPrice)&&Number.isFinite(s.currentPrice)&&s.currentPrice<=s.requiredReturnBuyPrice*(1+1e-6)))issues.push('buy_above_investor_buy_price');
   if(['Strong Buy','Exceptional Buy'].includes(s.rating)&&(s.independentMethodCount??0)<2)issues.push('high_conviction_without_independent_methods');
   if(s.rating==='Exceptional Buy'&&(s.independentMethodCount??0)<3)issues.push('exceptional_buy_without_three_evidence_families');
   if(['Buy','Strong Buy','Exceptional Buy'].includes(s.rating)&&s.modelSupport==='limited')issues.push('buy_on_limited_model_support');
