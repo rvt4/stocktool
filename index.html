@@ -28,7 +28,7 @@ tr.stock:hover{background:#151516}.badge{display:inline-block;padding:2px 8px;bo
 .warning{color:#e3d18a;margin:8px 0}.core-note{color:#aaa;font-size:.78rem;margin-top:8px}.score{font-variant-numeric:tabular-nums}
 </style></head><body>
 <h1>FreeScreener</h1><div id="meta" class="meta muted">Loading…</div>
-<div class="controls"><select id="category"><option>All categories</option></select><select id="rating"><option>All ratings</option><option>Exceptional Buy</option><option>Strong Buy</option><option>Buy</option><option>Hold</option><option>Avoid</option><option>Sell</option><option>Unrated</option></select><input id="search" placeholder="Search ticker…"><label class="check"><input type="checkbox" id="strict">15% modeled return + MOS only</label></div>
+<div class="controls"><select id="category"><option>All categories</option></select><select id="rating"><option>All ratings</option><option>Exceptional Buy</option><option>Strong Buy</option><option>Buy</option><option>Watch</option><option>Hold</option><option>Avoid</option><option>Sell</option><option>Unrated</option></select><input id="search" placeholder="Search ticker…"><label class="check"><input type="checkbox" id="strict">At/below 15% CAGR + 20% MOS buy price only</label></div>
 <div class="wrap"><table><thead><tr>
 <th data-key="ticker">Ticker</th><th data-key="category">Category</th><th data-key="rating">Rating</th><th data-key="expectedReturn">Expected CAGR</th><th data-key="expectedAlpha">Alpha</th><th data-key="bearCAGR">Bear</th><th data-key="baseCAGR">Base</th><th data-key="bullCAGR">Bull</th><th data-key="confidenceScore">Confidence</th><th data-key="marginOfSafety">MOS</th><th data-key="requiredMOS">Req. MOS</th><th data-key="investmentScore">Investment</th><th data-key="qualityScore">Quality</th><th data-key="moatScore">Moat</th><th data-key="capitalAllocationScore">Capital Alloc.</th><th data-key="compounderScore">Compounder</th><th data-key="growthQualityScore">Growth Q.</th><th data-key="pricingPowerV2Score">Pricing</th><th data-key="downsideProtectionScore">Protection</th><th data-key="overallRank">Rank</th>
 </tr></thead><tbody id="body"></tbody></table></div>
@@ -60,7 +60,7 @@ function candidates(){
  if(q && window.tickerMap && tickerMap.has(q)) xs=[tickerMap.get(q)];
  else {
    const base=(rat!=='All ratings'&&window.byRating?.get(rat))||all;
-   xs=base.filter(s=>(cat==='All categories'||s.category===cat)&&(rat==='All ratings'||s.rating===rat)&&(!q||s._ticker.includes(q))&&(!strict||(s.expectedReturn>=.15&&Number.isFinite(s.requiredReturnBuyPrice)&&s.currentPrice<=s.requiredReturnBuyPrice)));
+   xs=base.filter(s=>(cat==='All categories'||s.category===cat)&&(rat==='All ratings'||s.rating===rat)&&(!q||s._ticker.includes(q))&&(!strict||s.qualifiesForBuyList===true));
  }
  xs=xs.slice();
  xs.sort((a,b)=>{let A=a[sortKey],B=b[sortKey];if(typeof A==='string')return sortDir*A.localeCompare(B);A=Number.isFinite(A)?A:-Infinity;B=Number.isFinite(B)?B:-Infinity;return sortDir*(A-B)});
