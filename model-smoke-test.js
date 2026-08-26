@@ -11,11 +11,18 @@ function stock({ticker='TEST',sector='Technology',price=100,growth=.10,margin=.2
   for(let i=0;i<5;i++){revenue*=1+growth;shares*=1+dilution;years.push({year:2021+i,revenue,fcf:revenue*margin,fcfSBCAdjusted:revenue*(margin-.01),ebitda:revenue*(margin+.08),netIncome:revenue*(margin-.03),operatingIncome:revenue*(margin+.05),sharesOutTTM:shares,roic,opMargin:margin+.05,totalDebt:1e9,cash:1.5e9,dividendPerShare:dividend,sbcIntensity:.02});}
   return{ticker,sector,financials:{years,dataQuality:{}},analystEstimates:{revenueGrowthCurrentYear:growth,revenueGrowthNextYear:growth*.9,numAnalysts:25},growthYear1:growth,price:{current:price},valuation:{dividendYield:dividend/price,growthSource:'test'}};
 }
-function run(s){const f=buildForecast(s),q=computeQuality(s,f),v=valuate(s,f,q),d=rateStock(s,f,q,v);const pub={ticker:s.ticker,currentPrice:s.price.current,totalShareholderValue:v.totalShareholderValue,expectedReturn:v.expectedCAGR,bearCAGR:v.bearCAGR,baseCAGR:v.baseCAGR,bullCAGR:v.bullCAGR,fairValueEstimate:v.fairValueEstimate,marginOfSafety:v.marginOfSafety,rating:d.rating,methodAgreementScore:v.methodAgreementScore,methodCount:v.methods.length,independentMethodCount:v.independentMethodCount,valuationConfidenceScore:v.valuationConfidenceScore,forecastReliabilityScore:v.forecastReliabilityScore,modelSupport:v.modelSupport};assert.deepStrictEqual(validateStock(pub),[]);assert(v.bearCAGR<=v.baseCAGR&&v.baseCAGR<=v.bullCAGR);assert(Math.abs(Math.max(0,1-s.price.current/v.fairValueEstimate)-v.marginOfSafety)<1e-10);return{f,q,v,d};}
+function run(s){const f=buildForecast(s),q=computeQuality(s,f),v=valuate(s,f,q),d=rateStock(s,f,q,v);const pub={ticker:s.ticker,currentPrice:s.price.current,totalShareholderValue:v.totalShareholderValue,expectedReturn:v.expectedCAGR,bearCAGR:v.bearCAGR,baseCAGR:v.baseCAGR,bullCAGR:v.bullCAGR,fairValueEstimate:v.fairValueEstimate,intrinsicDiscountRate:v.intrinsicDiscountRate,hurdleReturnPrice:v.hurdleReturnPrice,requiredReturnBuyPrice:v.requiredReturnBuyPrice,marginOfSafety:v.marginOfSafety,rating:d.rating,methodAgreementScore:v.methodAgreementScore,methodCount:v.methods.length,independentMethodCount:v.independentMethodCount,valuationConfidenceScore:v.valuationConfidenceScore,forecastReliabilityScore:v.forecastReliabilityScore,modelSupport:v.modelSupport};assert.deepStrictEqual(validateStock(pub),[]);assert(v.bearCAGR<=v.baseCAGR&&v.baseCAGR<=v.bullCAGR);assert(Math.abs(Math.max(0,1-s.price.current/v.fairValueEstimate)-v.marginOfSafety)<1e-10);return{f,q,v,d};}
 const compounder=run(stock({ticker:'COMPOUNDER',price:180,growth:.11,margin:.30,roic:.30,dilution:-.01}));
 const expensive=run(stock({ticker:'EXPENSIVE',price:1000,growth:.25,margin:.20,roic:.24,dilution:.02}));
 const dividend=run(stock({ticker:'DIVIDEND',sector:'Consumer Staples',price:80,growth:.04,margin:.14,roic:.18,dividend:3}));
 assert(Number.isFinite(compounder.v.expectedCAGR));assert(Number.isFinite(expensive.v.expectedCAGR));assert(Number.isFinite(dividend.v.expectedCAGR));
+for(const sample of [compounder.v,expensive.v,dividend.v]){
+  for(const m of sample.methods){
+    assert(Math.abs(m.audit.fairValueToday-m.outcome/Math.pow(1+sample.intrinsicDiscountRate,10))<1e-8,'method fair value does not use intrinsic discount rate');
+    assert(Math.abs(m.audit.hurdleValueToday-m.outcome/Math.pow(1+.15,10))<1e-8,'method hurdle value does not use 15% hurdle rate');
+  }
+  assert(Math.abs(sample.requiredReturnBuyPrice-sample.hurdleReturnPrice*.80)<1e-10,'20% MOS buy price does not reconcile to hurdle price');
+}
 
 // Forward-looking forecast sanity checks: one-time acquisition-style revenue jumps must
 // reset the revenue base without becoming the organic run-rate, and real operating
