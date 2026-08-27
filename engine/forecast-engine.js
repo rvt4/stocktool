@@ -82,7 +82,12 @@ function buildGrowthForecast(stock,years,cfg){
   const analysts=Math.max(0,finite(a.numAnalysts)||0);
   // V12.5: explicit consensus should be the primary near-term underwriting input.
   // History is a cross-check, not a 25-55% drag on a well-covered inflecting business.
-  const analystWeight=clamp(0.62+Math.min(analysts,30)/120,0.62,0.87);
+  // Earnings-release calibration: for well-covered companies, current consensus is the
+  // best public near-term base rate we have. History remains a sanity check, but it should
+  // not pull a fresh 30-80% consensus forecast down by double digits (the pre-earnings
+  // NVDA/CRM comparisons exposed this). Sparse coverage still receives a meaningful
+  // historical cross-check.
+  const analystWeight=clamp(0.72+Math.min(analysts,40)*0.0055,0.72,0.94);
 
   // Detect a likely acquisition / divestiture / accounting step change. We keep the new
   // revenue base, but do not teach the model that the one-time jump is organic growth.
@@ -96,7 +101,7 @@ function buildGrowthForecast(stock,years,cfg){
   if(a1!=null){ y1=weightedAverage([[a1,analystWeight],[historicalAnchor,1-analystWeight]]); }
   else { y1=weightedAverage([[momentum,.60],[historicalAnchor,.40]]); }
   let y2;
-  if(a2!=null){ y2=weightedAverage([[a2,Math.min(.80,analystWeight+.05)],[historicalAnchor,1-Math.min(.80,analystWeight+.05)]]); }
+  if(a2!=null){ const w2=Math.min(.96,analystWeight+.02); y2=weightedAverage([[a2,w2],[historicalAnchor,1-w2]]); }
   else { y2=weightedAverage([[y1,.55],[historicalAnchor,.45]]); }
 
   if(structuralStepUp||structuralStepDown){
@@ -110,9 +115,13 @@ function buildGrowthForecast(stock,years,cfg){
   // expands only when analysts actually underwrite the growth, so noisy history alone can
   // never manufacture a 50%+ forecast.
   const consensusPeak=Math.max(a1??-.99,a2??-.99);
-  const analystCeiling=Math.max(.10,Math.min(.60,consensusPeak+.05));
-  const y1Cap=a1!=null?Math.min(.55,analystCeiling):.35;
-  const y2Cap=a2!=null?Math.min(.60,analystCeiling):.32;
+  // A hard 55-60% cap silently overruled consensus for genuine hyper-growth businesses.
+  // Keep a cap for protection against bad feeds, but let a valid analyst estimate up to
+  // 90% pass through with only a small buffer. No analyst estimate means the old, much
+  // tighter history/momentum cap still applies.
+  const analystCeiling=Math.max(.10,Math.min(.95,consensusPeak+.04));
+  const y1Cap=a1!=null?Math.min(.90,analystCeiling):.35;
+  const y2Cap=a2!=null?Math.min(.90,analystCeiling):.32;
   y1=clamp(y1,-0.18,y1Cap); y2=clamp(y2,-0.15,y2Cap);
 
   // Maturity is company-specific: durable high-growth businesses fade more slowly, but
