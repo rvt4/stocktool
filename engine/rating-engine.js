@@ -43,7 +43,7 @@ function rateStock(stock,forecast,quality,v){
   const breadthFactor=clamp(independent/3,.20,1);
   const forecastFactor=clamp(forecastConf/100,.30,1);
   const confidenceFactor=clamp(conf/100,.30,1);
-  const evidenceFactor=clamp(.30*confidenceFactor+.25*forecastFactor+.25*breadthFactor+.20*agreementFactor,.25,1);
+  const evidenceFactor=clamp(.32*confidenceFactor+.24*forecastFactor+.28*breadthFactor+.16*agreementFactor,.20,1);
 
   const returnScore=clamp((c+.02)/.24,0,1)*100;
   const fairValueScore=clamp((mos+.05)/.40,0,1)*100;
@@ -51,7 +51,10 @@ function rateStock(stock,forecast,quality,v){
   // meaningful, while merely reaching the raw 15% hurdle price is useful but not a Buy.
   const entryScore=meetsFinalBuyPrice?100:meetsHurdlePrice?65:(c>=.15&&mos>0?45:20);
   const rawInvestment=.20*returnScore+.08*fairValueScore+.30*q+.10*(quality.moatScore||50)+.12*forecastConf+.10*conf+.10*entryScore;
-  const evidenceMultiplier=.55+.45*evidenceFactor;
+  let evidenceMultiplier=.50+.50*evidenceFactor;
+  if(independent===1)evidenceMultiplier*=.86;
+  if(v.modelSupport==='limited')evidenceMultiplier*=.82;
+  if(v.cyclicalBusiness)evidenceMultiplier*=.92;
   const investmentScore=Number.isFinite(c)?Math.round(clamp(rawInvestment*evidenceMultiplier,0,100)):0;
 
   return {

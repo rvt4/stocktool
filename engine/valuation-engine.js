@@ -157,7 +157,14 @@ function terminalMultipleProfile(stock,forecast,quality,base){
   // broad quality/reinvestment profile. This keeps ordinary businesses out of the 20s while
   // preserving room for genuinely exceptional compounders whose growth naturally fades.
   const premiumEvidence=clamp(.55*durableQuality+.45*reinvestmentQuality,0,1);
-  return {growth,matureGrowth,growthDurability,maturityGap,maturityPenalty,reinvestmentQuality,durableGrowthCarry,deteriorationRisk,durableQuality,premiumEvidence,qualityAdj,roicAdj,marginAdj,confidenceAdj,dilutionPenalty};
+  // Terminal durability is deliberately broader than premiumEvidence: it asks whether the
+  // mature company should still deserve an above-market valuation after growth has faded.
+  // Cash conversion, reinvestment quality, moat, capital allocation and forecast stability
+  // all matter; no ticker/category override is used.
+  const forecastStability=clamp((forecast?.forecastReliabilityScore??60)/100,0,1);
+  const cashDurability=clamp((margin-.05)/.30,0,1);
+  const terminalDurability=clamp(.24*durableQuality+.22*reinvestmentQuality+.16*moat+.12*capital+.12*cashDurability+.08*forecastStability+.06*protection,0,1);
+  return {growth,matureGrowth,growthDurability,maturityGap,maturityPenalty,reinvestmentQuality,durableGrowthCarry,deteriorationRisk,durableQuality,premiumEvidence,terminalDurability,qualityAdj,roicAdj,marginAdj,confidenceAdj,dilutionPenalty};
 }
 
 function justifiedExitMultiple(kind,stock,forecast,quality,base,cfg){
@@ -170,16 +177,20 @@ function justifiedExitMultiple(kind,stock,forecast,quality,base,cfg){
     multiple=11.0+p.growthDurability*56+p.qualityAdj*1.15+p.roicAdj*1.05+p.marginAdj*1.10+p.confidenceAdj-p.dilutionPenalty-p.maturityPenalty*.75;
     // Low/mid-20s FCF exits are reserved for businesses with corroborated premium evidence.
     // The ceiling rises smoothly rather than switching on a category/ticker-specific rule.
-    const evidenceCeiling=20+clamp((p.premiumEvidence-.62)/.20,0,1)*14;
+    const evidenceCeiling=18.5+clamp((.55*p.premiumEvidence+.45*p.terminalDurability-.58)/.26,0,1)*15.5;
     multiple=Math.min(multiple,evidenceCeiling);
     { const a=applyHistoricalMultipleAnchor(stock,'FCF',multiple,8,34,quality); return {...a,profile:p}; }
   }
   if(kind==='EPS'){
     multiple=cfg.basePE+p.growthDurability*58+p.qualityAdj*1.08+p.roicAdj*.95+p.marginAdj*.55+p.confidenceAdj-p.dilutionPenalty-p.maturityPenalty*.80;
+    const evidenceCeiling=19.5+clamp((.50*p.premiumEvidence+.50*p.terminalDurability-.56)/.28,0,1)*18.5;
+    multiple=Math.min(multiple,evidenceCeiling);
     { const a=applyHistoricalMultipleAnchor(stock,'EPS',multiple,8,38,quality); return {...a,profile:p}; }
   }
   if(kind==='EBITDA'){
     multiple=cfg.baseEVEBITDA+p.growthDurability*31+p.qualityAdj*.68+p.roicAdj*.50+p.marginAdj*.38+p.confidenceAdj*.60-p.dilutionPenalty*.70-p.maturityPenalty*.65;
+    const evidenceCeiling=14.0+clamp((.50*p.premiumEvidence+.50*p.terminalDurability-.56)/.28,0,1)*11.0;
+    multiple=Math.min(multiple,evidenceCeiling);
     { const a=applyHistoricalMultipleAnchor(stock,'EBITDA',multiple,6,25,quality); return {...a,profile:p}; }
   }
   return {multiple:null,profile:p};
@@ -326,7 +337,20 @@ function methodReliability(stock,forecast,kind,base,future,quality){
   const dilution=Math.max(0,finite(forecast.dilutionRate)||0);
   const sbc=Math.max(0,finite(bridge.sbcMarginStart)||finite(years.at(-1)?.sbcIntensity)||0);
   const driverMode=bridge.operatingDriverReconciliation||'fallback';
+  // V12.15: cyclical businesses get less confidence in point-in-time exit metrics. This
+  // does not change the base CAGR; it changes how much we trust a terminal multiple built
+  // from a commodity/cycle-sensitive earnings snapshot.
+  const sector=String(stock?.sector||'');
+  const revenueGrowth=[];
+  for(let i=1;i<years.length;i++){const a=finite(years[i-1]?.revenue),b=finite(years[i]?.revenue);if(a>0&&b>0)revenueGrowth.push(b/a-1);}
+  const growthDispersion=dispersion(revenueGrowth.slice(-6));
+  const cyclicalSector=/Energy|Materials/i.test(sector);
+  const cyclicalEvidence=cyclicalSector||growthDispersion>.16;
   let reliability=.75*conf, reasons=[];
+  if(cyclicalEvidence){
+    const cyclePenalty=cyclicalSector?clamp(1-growthDispersion/.55,.62,.88):clamp(1-growthDispersion/.70,.72,.92);
+    reliability*=cyclePenalty; reasons.push('cyclical_economics_normalized');
+  }
 
   if(kind==='FCF'){
     reliability*=clamp(1-fcfDisp/.12,.45,1);
@@ -756,6 +780,19 @@ function valuate(stock,forecast,quality){
     valuationConfidence=Math.max(20,valuationConfidence-dispersionPenalty);
   }
 
+  // V12.15: explicitly separate forecast certainty from valuation certainty. Commodity and
+  // strongly cyclical economics can have decent near-term forecasts while still deserving
+  // a wider terminal-value range.
+  const historicalRevenueGrowth=[];
+  const histYears=stock.financials?.years||[];
+  for(let i=1;i<histYears.length;i++){const a=finite(histYears[i-1]?.revenue),b=finite(histYears[i]?.revenue);if(a>0&&b>0)historicalRevenueGrowth.push(b/a-1);}
+  const cycleDispersion=dispersion(historicalRevenueGrowth.slice(-6));
+  const cyclicalBusiness=/Energy|Materials/i.test(String(stock?.sector||''))||cycleDispersion>.16;
+  if(cyclicalBusiness){
+    const cyclePenalty=Math.round(6+clamp((cycleDispersion-.08)/.24,0,1)*12);
+    valuationConfidence=Math.max(20,valuationConfidence-cyclePenalty);
+  }
+
   const preUncertaintyTotal=canonical.outcome;
   const preUncertaintyCAGR=cagr(price,preUncertaintyTotal);
   let uncertaintyHaircutRate=.002;
@@ -872,11 +909,11 @@ function valuate(stock,forecast,quality){
   const multipleReratingContribution=Number.isFinite(expected)?expected-fundamentalContribution-(dividendContribution||0):null;
   const returnAttribution={revenueContribution,marginContribution,shareCountContribution,dividendContribution,multipleReratingContribution,uncertaintyAdjustment,preUncertaintyCAGR,uncertaintyHaircutRate};
 
-  const uncertainty=clamp((100-valuationConfidence)/100,.10,.45);
+  const uncertainty=clamp((100-valuationConfidence)/100+(cyclicalBusiness?.08:0),.10,.55);
   const bear=total!=null?total*Math.pow(1-(.035+.04*uncertainty),HORIZON_YEARS):null, bull=total!=null?total*Math.pow(1+(.035+.035*uncertainty),HORIZON_YEARS):null;
   const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
   const lowReliability=methods.length>0&&Math.max(...methods.map(m=>m.reliability??0))<.40;
 
-  return {requiredReturn:req,intrinsicDiscountRate:intrinsicRate,methods,valuationArchetype:archetype.name,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget,tenYearPriceTarget:target,fiveYearTotalShareholderValue,fiveYearExpectedCAGR,tenYearExpectedCAGR:expected,horizonCAGRSpread,horizonDivergenceFlag,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,hurdleReturnPrice,requiredReturnBuyPrice,investorMarginOfSafety:INVESTOR_MARGIN_OF_SAFETY,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,multipleSensitivity:{down20CAGR:lowMultipleCAGR,up20CAGR:highMultipleCAGR,spread:multipleSensitivitySpread},returnAttribution,preUncertaintyCAGR,riskAdjustedTotal,riskAdjustedCAGR,uncertaintyHaircutRate,valuationConfidenceScore:valuationConfidence,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},methodDispersionRatio,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(horizonDivergenceFlag?'large_5y_10y_return_divergence':(consensus.hasConsensusOutlier?'isolated_method_outlier':(Number.isFinite(agreement)&&agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null))))};
+  return {requiredReturn:req,intrinsicDiscountRate:intrinsicRate,methods,valuationArchetype:archetype.name,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget,tenYearPriceTarget:target,fiveYearTotalShareholderValue,fiveYearExpectedCAGR,tenYearExpectedCAGR:expected,horizonCAGRSpread,horizonDivergenceFlag,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,hurdleReturnPrice,requiredReturnBuyPrice,investorMarginOfSafety:INVESTOR_MARGIN_OF_SAFETY,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,multipleSensitivity:{down20CAGR:lowMultipleCAGR,up20CAGR:highMultipleCAGR,spread:multipleSensitivitySpread},returnAttribution,preUncertaintyCAGR,riskAdjustedTotal,riskAdjustedCAGR,uncertaintyHaircutRate,valuationConfidenceScore:valuationConfidence,cyclicalBusiness,cycleDispersion,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},methodDispersionRatio,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(horizonDivergenceFlag?'large_5y_10y_return_divergence':(consensus.hasConsensusOutlier?'isolated_method_outlier':(Number.isFinite(agreement)&&agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null))))};
 }
 module.exports={valuate};
