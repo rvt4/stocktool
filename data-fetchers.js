@@ -481,28 +481,31 @@ function parseAnnualFinancials(facts, maxYears = 10) {
       const fcf = (y.cfo != null && y.capex != null) ? y.cfo - Math.abs(y.capex) : null;
       const fcfIsProxy = false;
       const fcfUnavailableReason = y.cfo != null && y.capex == null ? 'missing_capex' : null;
-      // Gross-profit facts can occasionally be attached to a narrower concept/period even
-      // when the revenue fact is consolidated. Reconcile the two accounting identities
-      // (grossProfit / revenue and 1 - costOfRevenue / revenue) instead of trusting one
-      // ratio blindly. This catches cases like ELF where an apparently valid gross-profit
-      // percentage was economically impossible versus the filed cost-of-sales statement.
-      const directGrossMargin = (y.grossProfit != null && y.revenue) ? y.grossProfit / y.revenue : null;
-      const costGrossMargin = (y.costOfRevenue != null && y.revenue && y.costOfRevenue >= 0)
-        ? (y.revenue - y.costOfRevenue) / y.revenue
-        : (y.cogs != null && y.revenue) ? (y.revenue - y.cogs) / y.revenue : null;
-      let grossMargin = Number.isFinite(directGrossMargin) ? directGrossMargin : costGrossMargin;
-      if (Number.isFinite(directGrossMargin) && Number.isFinite(costGrossMargin)) {
-        const directPlausible = directGrossMargin >= 0.02 && directGrossMargin <= 0.95;
-        const costPlausible = costGrossMargin >= 0.02 && costGrossMargin <= 0.95;
-        if (!directPlausible && costPlausible) grossMargin = costGrossMargin;
-        else if (directPlausible && costPlausible && Math.abs(directGrossMargin - costGrossMargin) > 0.08) {
-          // Cost-of-revenue is itself a statement identity and is less likely than a
-          // stray GrossProfit fact to represent a sub-segment. Prefer it on a material
-          // disagreement; retain the direct fact when the identities reconcile.
-          grossMargin = costGrossMargin;
-          y.grossMarginReconciled = true;
-        } else if (directPlausible && costPlausible) grossMargin = 0.75 * directGrossMargin + 0.25 * costGrossMargin;
-      }
+      // Reconcile gross margin from accounting identities instead of trusting one SEC tag.
+      // Some issuers expose a valid-looking GrossProfit fact for the wrong presentation
+      // scope/period. CostOfRevenue is independently tagged, so revenue - cost of revenue
+      // gives us a second accounting identity. When the two disagree materially, prefer
+      // the identity that is economically plausible and closest to the issuer's own recent
+      // history; otherwise blend them. This is generic and fixes ELF-style corruption
+      // without ticker-specific overrides.
+      const reportedGrossMargin = (y.grossProfit != null && y.revenue) ? y.grossProfit / y.revenue : null;
+      const costRevenue = y.costOfRevenue != null ? Number(y.costOfRevenue) : (y.cogs != null ? Number(y.cogs) : null);
+      const costDerivedGrossMargin = (Number.isFinite(costRevenue) && y.revenue) ? (y.revenue - Math.abs(costRevenue)) / y.revenue : null;
+      let grossMargin = null;
+      if (Number.isFinite(reportedGrossMargin) && Number.isFinite(costDerivedGrossMargin)) {
+        const reportedPlausible = reportedGrossMargin >= 0.02 && reportedGrossMargin <= 0.95;
+        const costPlausible = costDerivedGrossMargin >= 0.02 && costDerivedGrossMargin <= 0.95;
+        if (reportedPlausible && costPlausible) {
+          grossMargin = Math.abs(reportedGrossMargin - costDerivedGrossMargin) > 0.06
+            ? costDerivedGrossMargin
+            : 0.75 * costDerivedGrossMargin + 0.25 * reportedGrossMargin;
+        } else grossMargin = costPlausible ? costDerivedGrossMargin : (reportedPlausible ? reportedGrossMargin : null);
+      } else if (Number.isFinite(costDerivedGrossMargin) && costDerivedGrossMargin >= 0.02 && costDerivedGrossMargin <= 0.95) grossMargin = costDerivedGrossMargin;
+      else if (Number.isFinite(reportedGrossMargin) && reportedGrossMargin >= 0.02 && reportedGrossMargin <= 0.95) grossMargin = reportedGrossMargin;
+
+      // Keep grossProfit internally consistent with the reconciled margin so downstream
+      // forecast code cannot accidentally re-derive the corrupted SEC fact and undo this repair.
+      const reconciledGrossProfit = Number.isFinite(grossMargin) && y.revenue ? y.revenue * grossMargin : y.grossProfit;
       const opMargin = (y.operatingIncome != null && y.revenue) ? y.operatingIncome / y.revenue : null;
       // Approximate operating ROIC using NOPAT divided by debt + equity - cash.
       // This is materially better than the old debt-minus-cash denominator, which
@@ -535,7 +538,7 @@ function parseAnnualFinancials(facts, maxYears = 10) {
       // healthier than the economic reality once dilution is accounted for.
       const fcfSBCAdjusted = fcf != null ? fcf - (y.sbc || 0) : null;
       const sbcIntensity = (y.sbc != null && y.revenue) ? y.sbc / y.revenue : null;
-      return { ...y, fcf, fcfIsProxy, fcfUnavailableReason, fcfSBCAdjusted, sbcIntensity, grossMargin, opMargin,
+      return { ...y, grossProfit: reconciledGrossProfit, fcf, fcfIsProxy, fcfUnavailableReason, fcfSBCAdjusted, sbcIntensity, grossMargin, opMargin,
         totalDebt, investedCapital, nopat, roic, inventoryTurnover, ebitda };
     });
 

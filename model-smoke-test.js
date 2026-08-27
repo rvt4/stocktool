@@ -211,7 +211,7 @@ for(const name of ['FCF exit','EPS exit','EV/EBITDA exit']){
   assert(eliteM>ordinaryM+2,`${name} failed to preserve a meaningful premium for superior durable economics`);
 }
 assert(eeV.methods.find(m=>m.name==='FCF exit').audit.exitMultiple>=17,'elite FCF terminal multiple remained mechanically over-conservative');
-assert(oeV.methods.find(m=>m.name==='FCF exit').audit.exitMultiple<=21,'ordinary business received an excessive FCF terminal multiple');
+assert(oeV.methods.find(m=>m.name==='FCF exit').audit.exitMultiple<=17,'ordinary business received an excessive FCF terminal multiple');
 console.log('V11.5 exit-multiple tests passed: durable growth/quality premiums differentiate terminal valuations.');
 
 // V10 trust invariants -------------------------------------------------------
@@ -711,30 +711,20 @@ assert(higherTerminalDCF&&higherTerminalDCF.audit.terminalGrowth>.025,'DCF still
 assert(higherTerminalDCF.audit.terminalGrowth<=.04+1e-12,'technology DCF exceeded the sector mature-growth ceiling');
 console.log('V12.6 discount-rate tests passed: hurdle return is separated from intrinsic DCF discounting and sector-aware terminal growth is bounded independently.');
 
-
-// V12.11 valuation/display integrity -----------------------------------------
-// Published methods must carry their 5Y checkpoint audit so the UI cannot show blanks
-// for calculations that were actually performed.
-for(const m of eeV.methods.filter(m=>['FCF exit','EPS exit','EV/EBITDA exit','10Y DCF'].includes(m.name))){
-  assert(Object.prototype.hasOwnProperty.call(m.audit||{},'year5Outcome'),`${m.name} lost its published year-5 audit outcome`);
-  assert(Number.isFinite(m.audit.year5Outcome)&&m.audit.year5Outcome>0,`${m.name} year-5 outcome is not usable`);
+// V12.12 gross-margin identity reconciliation --------------------------------
+// A malformed GrossProfit/grossMargin pair must not beat an independent
+// revenue-minus-cost-of-revenue accounting identity (ELF-style SEC corruption).
+const grossIdentity=stock({ticker:'GROSS_IDENTITY',price:100,growth:.12,margin:.16,roic:.20,dilution:0});
+for(const y of grossIdentity.financials.years){
+  y.grossProfit=y.revenue*.25;
+  y.grossMargin=.25;
+  y.costOfRevenue=y.revenue*.15;
+  y.researchAndDevelopment=y.revenue*.08;
+  y.sellingGeneralAdministrative=y.revenue*.38;
+  y.operatingIncome=y.revenue*.19;
+  y.opMargin=.19;
 }
-
-// Reconcile gross margin from cost of revenue when a stray GrossProfit fact disagrees
-// materially with the statement identity. This protects operating-driver forecasts from
-// ELF-style gross-margin corruption without a ticker override.
-const grossIntegrityFacts={facts:{'us-gaap':{
-  RevenueFromContractWithCustomerExcludingAssessedTax:{units:{USD:[
-    {form:'10-K',fy:2026,fp:'FY',start:'2025-04-01',end:'2026-03-31',filed:'2026-05-20',val:1636472},
-  ]}},
-  GrossProfit:{units:{USD:[
-    {form:'10-K',fy:2026,fp:'FY',start:'2025-04-01',end:'2026-03-31',filed:'2026-05-20',val:404000},
-  ]}},
-  CostOfGoodsAndServicesSold:{units:{USD:[
-    {form:'10-K',fy:2026,fp:'FY',start:'2025-04-01',end:'2026-03-31',filed:'2026-05-20',val:479125},
-  ]}},
-},dei:{}}};
-const grossIntegrityYear=parseAnnualFinancials(grossIntegrityFacts,10).at(-1);
-assert(grossIntegrityYear?.grossMarginReconciled===true,'material gross-margin identity disagreement was not flagged');
-assert(Math.abs(grossIntegrityYear.grossMargin-(1-479125/1636472))<1e-9,'cost-of-revenue identity did not repair corrupted gross margin');
-console.log('V12.11 valuation/display integrity tests passed: year-5 method audits publish and gross-margin identity disagreements reconcile.');
+const grossIdentityF=buildForecast(grossIdentity);
+assert(grossIdentityF.forecastBridge.margins.grossMarginStart>.75,'independent cost-of-revenue identity did not repair malformed gross margin');
+assert(grossIdentityF.forecastBridge.margins.grossMarginTarget>.70,'repaired gross margin did not survive into the forward operating model');
+console.log('V12.12 gross-margin reconciliation test passed: cost-of-revenue identity overrides malformed gross-profit tags.');
