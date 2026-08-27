@@ -416,6 +416,33 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     targetOperating=clamp(weightedAverage([[driverTargetOperating,driverWeight],[targetOperating,1-driverWeight]]),-.10,opCeiling);
   }
 
+  // V12.13: gross-profit economics must still inform operating leverage when detailed
+  // R&D/SG&A tags are unavailable. In that case, use the *reconciled* gross margin and
+  // reported operating income to infer total operating expense below gross profit.
+  // We only allow modest expense-ratio leverage, and only with multi-year gross/op evidence;
+  // this avoids inventing an expense structure while preventing a repaired gross-margin
+  // identity from becoming display-only information that never reaches valuation.
+  const residualOpexSeries=[];
+  for(let i=0;i<years.length;i++){
+    const gm=grossSeries[i],op=opSeries[i];
+    if(Number.isFinite(gm)&&Number.isFinite(op)&&gm>=op-.02){
+      residualOpexSeries.push(clamp(gm-op,.02,.85));
+    }
+  }
+  const residualOpexNow=medianRecent(residualOpexSeries,4);
+  let residualDriverTargetOperating=null;
+  let residualDriverWeight=0;
+  if(driverReconciliation==='fallback' && residualOpexSeries.length>=3 &&
+     Number.isFinite(grossTarget)&&Number.isFinite(residualOpexNow)){
+    const residualLeverage=clamp(.035*leverageIntensity + Math.max(0,grossTrend)*.30,0,.055);
+    const residualOpexTarget=clamp(residualOpexNow*(1-residualLeverage),.02,.85);
+    residualDriverTargetOperating=clamp(grossTarget-residualOpexTarget,-.10,opCeiling);
+    // Keep the consolidated operating-income history primary; the residual bridge is
+    // corroborating evidence, not a license to extrapolate gross margin directly to profit.
+    residualDriverWeight=clamp(.22+.12*leverageIntensity+.04*Math.min(residualOpexSeries.length,5),.30,.46);
+    targetOperating=clamp(weightedAverage([[residualDriverTargetOperating,residualDriverWeight],[targetOperating,1-residualDriverWeight]]),-.10,opCeiling);
+  }
+
   // Long-run compression requires broad evidence. A bad recent year is not enough to
   // extrapolate deterioration for a decade. Conversely, strong incremental economics can
   // earn further scale leverage, but only gradually after year 5.
@@ -831,7 +858,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     currentNormalizationAddback,targetNormalizationAddback,matureNormalizationAddback,
     grossNow,grossTarget,grossMature,rdNow,rdTarget,rdMature,sgaNow,sgaTarget,sgaMature,
     sbcNowForEarnings,sbcTarget,sbcMature,amortNow,amortTarget,amortMature,
-    driverTargetOperating,driverCoverage,driverModelReliable,driverResidual,leverageIntensity
+    driverTargetOperating,driverCoverage,driverModelReliable,driverResidual,leverageIntensity,residualOpexNow,residualDriverTargetOperating,residualDriverWeight
   };
 }
 function buildForecast(stock){
@@ -941,7 +968,7 @@ function buildForecast(stock){
       sgaMarginStart:margins.sgaNow,sgaMarginTarget:margins.sgaTarget,sgaMarginMatureTarget:margins.sgaMature,
       sbcMarginStart:margins.sbcNowForEarnings,sbcMarginTarget:margins.sbcTarget,sbcMarginMatureTarget:margins.sbcMature,
       intangibleAmortizationStart:margins.amortNow,intangibleAmortizationTarget:margins.amortTarget,intangibleAmortizationMatureTarget:margins.amortMature,
-      operatingDriverTarget:margins.driverTargetOperating,operatingDriverCoverage:margins.driverCoverage,operatingDriverReliable:margins.driverModelReliable,operatingDriverReconciliation:margins.driverReconciliation,operatingDriverResidual:margins.driverResidual,operatingLeverageIntensity:margins.leverageIntensity,economicSbcCostStart:margins.economicSbcCostNow,economicSbcCostTarget:margins.economicSbcCostTarget,economicSbcCostMature:margins.economicSbcCostMature,structuralMarginGuardrailApplied:margins.structuralMarginGuardrailApplied,structuralTargetNetCeiling:margins.structuralTargetNetCeiling,structuralMatureNetCeiling:margins.structuralMatureNetCeiling},
+      operatingDriverTarget:margins.driverTargetOperating,operatingDriverCoverage:margins.driverCoverage,operatingDriverReliable:margins.driverModelReliable,operatingDriverReconciliation:margins.driverReconciliation,operatingDriverResidual:margins.driverResidual,operatingLeverageIntensity:margins.leverageIntensity,residualOpexStart:margins.residualOpexNow,residualOperatingDriverTarget:margins.residualDriverTargetOperating,residualOperatingDriverWeight:margins.residualDriverWeight,economicSbcCostStart:margins.economicSbcCostNow,economicSbcCostTarget:margins.economicSbcCostTarget,economicSbcCostMature:margins.economicSbcCostMature,structuralMarginGuardrailApplied:margins.structuralMarginGuardrailApplied,structuralTargetNetCeiling:margins.structuralTargetNetCeiling,structuralMatureNetCeiling:margins.structuralMatureNetCeiling},
     shares:{recent:recentShareGrowth,normalized:medianShareGrowth,observed:observedDilution,model:dilutionRate,mature:matureDilutionRate,path:dilutionPath,sbcNow,sbcNormalized,normalizedSbc,sbcImpliedDilution,buybackCapacity},
   };
   const forecastFlags=[];
@@ -956,7 +983,7 @@ function buildForecast(stock){
   if(margins.temporaryMarginReset)forecastFlags.push('temporary_margin_reset_normalized');
   if(margins.driverReconciliation==='full'){forecastFlags.push('full_operating_driver_reconciliation');forecastFlags.push('spreadsheet_operating_driver_model');}
   else if(margins.driverReconciliation==='partial')forecastFlags.push('partial_operating_driver_reconciliation');
-  else {forecastFlags.push('operating_driver_fallback');forecastFlags.push('partial_operating_driver_data_rejected');}
+  else {forecastFlags.push('operating_driver_fallback');forecastFlags.push('partial_operating_driver_data_rejected');if((margins.residualDriverWeight||0)>0)forecastFlags.push('gross_to_operating_residual_bridge');}
   if((margins.economicSbcCostNow||0)>.01)forecastFlags.push('economic_sbc_charge_applied');
   if(margins.structuralMarginGuardrailApplied)forecastFlags.push('structural_mature_margin_guardrail');
   if((margins.currentNormalizationAddback||0)>.015)forecastFlags.push('normalized_earnings_bridge');
