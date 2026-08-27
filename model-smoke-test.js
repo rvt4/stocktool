@@ -710,3 +710,16 @@ const higherTerminalDCF=higherTerminalV.methods.find(m=>m.name==='10Y DCF');
 assert(higherTerminalDCF&&higherTerminalDCF.audit.terminalGrowth>.025,'DCF still applies the old universal 2.5% terminal-growth ceiling');
 assert(higherTerminalDCF.audit.terminalGrowth<=.04+1e-12,'technology DCF exceeded the sector mature-growth ceiling');
 console.log('V12.6 discount-rate tests passed: hurdle return is separated from intrinsic DCF discounting and sector-aware terminal growth is bounded independently.');
+
+// V12.10 earnings calibration: broad analyst consensus must dominate years 1-2, and a
+// legitimate >60% consensus growth rate must not be clipped by an arbitrary hyper-growth cap.
+const earningsCal=stock({ticker:'EARNINGS_CAL',price:100,growth:.32,margin:.28,roic:.30});
+earningsCal.analystEstimates.revenueGrowthCurrentYear=.83;
+earningsCal.analystEstimates.revenueGrowthNextYear=.44;
+earningsCal.analystEstimates.numAnalysts=50;
+const earningsCalF=buildForecast(earningsCal);
+assert(Math.abs(earningsCalF.rows[0].revenueGrowth-.83)<.04,'well-covered year-1 consensus is still being over-diluted by history');
+assert(Math.abs(earningsCalF.rows[1].revenueGrowth-.44)<.04,'well-covered year-2 consensus is still being over-diluted by history');
+assert(earningsCalF.rows[0].revenueGrowth>.70,'valid hyper-growth consensus is still being clipped by the old 55-60% cap');
+console.log('V12.10 earnings-calibration tests passed: fresh broad consensus dominates years 1-2 without an artificial hyper-growth ceiling.');
+
