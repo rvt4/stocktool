@@ -162,11 +162,11 @@ function justifiedExitMultiple(kind,stock,forecast,quality,base,cfg){
     // FCF deserves the widest quality/growth differentiation because it is the cleanest
     // owner-economics anchor. ~10% durable growth with strong economics lands around the
     // mid/high teens; truly elite businesses can retain a low/mid-20s multiple.
-    multiple=9.5+p.growthDurability*44+p.qualityAdj*1.10+p.roicAdj+p.marginAdj+p.confidenceAdj-p.dilutionPenalty-p.maturityPenalty;
+    multiple=11.0+p.growthDurability*56+p.qualityAdj*1.15+p.roicAdj*1.05+p.marginAdj*1.10+p.confidenceAdj-p.dilutionPenalty-p.maturityPenalty*.75;
     { const a=applyHistoricalMultipleAnchor(stock,'FCF',multiple,8,34,quality); return {...a,profile:p}; }
   }
   if(kind==='EPS'){
-    multiple=cfg.basePE+p.growthDurability*52+p.qualityAdj*1.00+p.roicAdj*.90+p.marginAdj*.50+p.confidenceAdj-p.dilutionPenalty-p.maturityPenalty;
+    multiple=cfg.basePE+p.growthDurability*58+p.qualityAdj*1.08+p.roicAdj*.95+p.marginAdj*.55+p.confidenceAdj-p.dilutionPenalty-p.maturityPenalty*.80;
     { const a=applyHistoricalMultipleAnchor(stock,'EPS',multiple,8,38,quality); return {...a,profile:p}; }
   }
   if(kind==='EBITDA'){
@@ -212,7 +212,22 @@ function coherentExitMultiples(stock,forecast,quality,base,cfg,netDebt,intrinsic
   const reconcile=(kind,raw,coherent,lo,hi)=>{
     if(!(raw>0))return null;
     let x=raw;
-    if(coherent>0){const boundedCoherent=clamp(coherent,raw*.85,raw*1.15);x=.72*raw+.28*boundedCoherent;}
+    if(coherent>0){
+      // When terminal cash flow and earnings describe the same owner economics, P/FCF
+      // should not sit dramatically below the P/E lens simply because the standalone
+      // FCF formula started from a conservative base. Let the common-equity bridge carry
+      // materially more weight when cash conversion is close to earnings, while retaining
+      // a smaller reconciliation weight when the two metrics genuinely diverge.
+      let w=.34, lower=.78, upper=1.40;
+      if(kind==='FCF'&&eps>0&&fcfps>0){
+        const conversion=fcfps/eps;
+        const alignment=clamp(1-Math.abs(Math.log(conversion))/Math.log(2),0,1);
+        w=.34+.24*alignment;
+        lower=.72; upper=1.65;
+      }
+      const boundedCoherent=clamp(coherent,raw*lower,raw*upper);
+      x=(1-w)*raw+w*boundedCoherent;
+    }
     x=dcfAnchor(kind,x);
     return clamp(x,lo,hi);
   };
@@ -665,7 +680,7 @@ function valuate(stock,forecast,quality){
   const dividends5=rows.slice(0,5).reduce((sum,r)=>sum+(finite(r.dividendPerShare)||0),0);
   const pvDividends5=rows.slice(0,5).reduce((sum,r,i)=>sum+pv((finite(r.dividendPerShare)||0),req,i+1),0);
   const year5DividendValue=pvDividends5*Math.pow(1+req,5);
-  const methods5=methods.map(m=>{
+  const methods5Raw=methods.map(m=>{
     const terminalMult=finite(m.audit?.exitMultiple);
     const kind=/EPS exit/i.test(m.name)?'EPS':(/FCF exit/i.test(m.name)?'FCF':(/EV\/EBITDA exit/i.test(m.name)?'EBITDA':null));
     const mult=kind?horizonExitMultiple(kind,terminalMult,forecast,quality):terminalMult; let target5=null;
@@ -676,7 +691,16 @@ function valuate(stock,forecast,quality){
     else if(/EV\/Sales fallback/i.test(m.name)&&mult>0&&finite(y5.revenue)>0&&finite(y5.shares)>0){const eq=y5.revenue*mult-netDebt;target5=eq>0?eq/y5.shares:null;}
     const outcome5=target5>0?target5+(m.cashFlowInclusive?0:year5DividendValue):null;
     return {...m,target:target5,outcome:outcome5,audit:{...(m.audit||{}),year5ExitMultiple:mult,year5Outcome:target5,year5DividendOutcomeAdded:m.cashFlowInclusive?0:year5DividendValue}};
-  }).filter(m=>m.outcome>0);
+  });
+  // The UI reads audit fields from the canonical 10Y methods. Previously the 5Y audit
+  // lived only on temporary cloned methods, so every displayed Year-5 outcome was blank
+  // even though the calculation existed. Copy the checkpoint audit back to the published
+  // method objects before filtering invalid 5Y values.
+  for(const m5 of methods5Raw){
+    const published=methods.find(m=>m.name===m5.name);
+    if(published) published.audit={...(published.audit||{}),year5ExitMultiple:m5.audit?.year5ExitMultiple??null,year5Outcome:m5.audit?.year5Outcome??null,year5DividendOutcomeAdded:m5.audit?.year5DividendOutcomeAdded??0};
+  }
+  const methods5=methods5Raw.filter(m=>m.outcome>0);
   const consensus5=valuationConsensus(methods5,price);
   const canonical5=robustOutcomeBlend(methods5,price,consensus5);
   const fiveYearTotalShareholderValue=canonical5.outcome;
