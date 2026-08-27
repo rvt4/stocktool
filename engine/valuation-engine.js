@@ -152,7 +152,12 @@ function terminalMultipleProfile(stock,forecast,quality,base){
   const marginAdj=clamp((margin-.12)*8,-1.0,2.0);
   const confidenceAdj=(confidence-.60)*2;
   const dilutionPenalty=clamp(dilution*35,0,2.5);
-  return {growth,matureGrowth,growthDurability,maturityGap,maturityPenalty,reinvestmentQuality,durableGrowthCarry,deteriorationRisk,durableQuality,qualityAdj,roicAdj,marginAdj,confidenceAdj,dilutionPenalty};
+  // V12.14: premium terminal valuations require corroboration. A company does not earn an
+  // elite decade-out multiple from growth alone; the premium must also be supported by a
+  // broad quality/reinvestment profile. This keeps ordinary businesses out of the 20s while
+  // preserving room for genuinely exceptional compounders whose growth naturally fades.
+  const premiumEvidence=clamp(.55*durableQuality+.45*reinvestmentQuality,0,1);
+  return {growth,matureGrowth,growthDurability,maturityGap,maturityPenalty,reinvestmentQuality,durableGrowthCarry,deteriorationRisk,durableQuality,premiumEvidence,qualityAdj,roicAdj,marginAdj,confidenceAdj,dilutionPenalty};
 }
 
 function justifiedExitMultiple(kind,stock,forecast,quality,base,cfg){
@@ -163,6 +168,10 @@ function justifiedExitMultiple(kind,stock,forecast,quality,base,cfg){
     // owner-economics anchor. ~10% durable growth with strong economics lands around the
     // mid/high teens; truly elite businesses can retain a low/mid-20s multiple.
     multiple=11.0+p.growthDurability*56+p.qualityAdj*1.15+p.roicAdj*1.05+p.marginAdj*1.10+p.confidenceAdj-p.dilutionPenalty-p.maturityPenalty*.75;
+    // Low/mid-20s FCF exits are reserved for businesses with corroborated premium evidence.
+    // The ceiling rises smoothly rather than switching on a category/ticker-specific rule.
+    const evidenceCeiling=20+clamp((p.premiumEvidence-.62)/.20,0,1)*14;
+    multiple=Math.min(multiple,evidenceCeiling);
     { const a=applyHistoricalMultipleAnchor(stock,'FCF',multiple,8,34,quality); return {...a,profile:p}; }
   }
   if(kind==='EPS'){
