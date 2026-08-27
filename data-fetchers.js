@@ -481,8 +481,28 @@ function parseAnnualFinancials(facts, maxYears = 10) {
       const fcf = (y.cfo != null && y.capex != null) ? y.cfo - Math.abs(y.capex) : null;
       const fcfIsProxy = false;
       const fcfUnavailableReason = y.cfo != null && y.capex == null ? 'missing_capex' : null;
-      const grossMargin = (y.grossProfit != null && y.revenue) ? y.grossProfit / y.revenue
+      // Gross-profit facts can occasionally be attached to a narrower concept/period even
+      // when the revenue fact is consolidated. Reconcile the two accounting identities
+      // (grossProfit / revenue and 1 - costOfRevenue / revenue) instead of trusting one
+      // ratio blindly. This catches cases like ELF where an apparently valid gross-profit
+      // percentage was economically impossible versus the filed cost-of-sales statement.
+      const directGrossMargin = (y.grossProfit != null && y.revenue) ? y.grossProfit / y.revenue : null;
+      const costGrossMargin = (y.costOfRevenue != null && y.revenue && y.costOfRevenue >= 0)
+        ? (y.revenue - y.costOfRevenue) / y.revenue
         : (y.cogs != null && y.revenue) ? (y.revenue - y.cogs) / y.revenue : null;
+      let grossMargin = Number.isFinite(directGrossMargin) ? directGrossMargin : costGrossMargin;
+      if (Number.isFinite(directGrossMargin) && Number.isFinite(costGrossMargin)) {
+        const directPlausible = directGrossMargin >= 0.02 && directGrossMargin <= 0.95;
+        const costPlausible = costGrossMargin >= 0.02 && costGrossMargin <= 0.95;
+        if (!directPlausible && costPlausible) grossMargin = costGrossMargin;
+        else if (directPlausible && costPlausible && Math.abs(directGrossMargin - costGrossMargin) > 0.08) {
+          // Cost-of-revenue is itself a statement identity and is less likely than a
+          // stray GrossProfit fact to represent a sub-segment. Prefer it on a material
+          // disagreement; retain the direct fact when the identities reconcile.
+          grossMargin = costGrossMargin;
+          y.grossMarginReconciled = true;
+        } else if (directPlausible && costPlausible) grossMargin = 0.75 * directGrossMargin + 0.25 * costGrossMargin;
+      }
       const opMargin = (y.operatingIncome != null && y.revenue) ? y.operatingIncome / y.revenue : null;
       // Approximate operating ROIC using NOPAT divided by debt + equity - cash.
       // This is materially better than the old debt-minus-cash denominator, which
