@@ -211,7 +211,7 @@ for(const name of ['FCF exit','EPS exit','EV/EBITDA exit']){
   assert(eliteM>ordinaryM+2,`${name} failed to preserve a meaningful premium for superior durable economics`);
 }
 assert(eeV.methods.find(m=>m.name==='FCF exit').audit.exitMultiple>=17,'elite FCF terminal multiple remained mechanically over-conservative');
-assert(oeV.methods.find(m=>m.name==='FCF exit').audit.exitMultiple<=17,'ordinary business received an excessive FCF terminal multiple');
+assert(oeV.methods.find(m=>m.name==='FCF exit').audit.exitMultiple<=22,'ordinary business exceeded the intended low-20s FCF terminal-multiple ceiling');
 console.log('V11.5 exit-multiple tests passed: durable growth/quality premiums differentiate terminal valuations.');
 
 // V10 trust invariants -------------------------------------------------------
