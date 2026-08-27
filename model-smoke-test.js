@@ -728,3 +728,46 @@ const grossIdentityF=buildForecast(grossIdentity);
 assert(grossIdentityF.forecastBridge.margins.grossMarginStart>.75,'independent cost-of-revenue identity did not repair malformed gross margin');
 assert(grossIdentityF.forecastBridge.margins.grossMarginTarget>.70,'repaired gross margin did not survive into the forward operating model');
 console.log('V12.12 gross-margin reconciliation test passed: cost-of-revenue identity overrides malformed gross-profit tags.');
+
+
+// V12.13 forecast-to-valuation transmission -----------------------------------
+// Reconciled gross economics must not be display-only when detailed expense tags fail.
+// A multi-year gross-to-operating residual bridge may infer only measured leverage, while
+// the reported operating-income history remains the primary anchor.
+const grossResidual=stock({ticker:'GROSS_RESIDUAL',price:100,growth:.12,margin:.16,roic:.20,dilution:0});
+for(const y of grossResidual.financials.years){
+  y.grossProfit=y.revenue*.25; y.grossMargin=.25; y.costOfRevenue=y.revenue*.15;
+  y.researchAndDevelopment=null; y.sellingGeneralAdministrative=null;
+  y.operatingIncome=y.revenue*.10; y.opMargin=.10;
+}
+const grossResidualF=buildForecast(grossResidual);
+assert(grossResidualF.forecastFlags.includes('gross_to_operating_residual_bridge'),'reconciled gross margin did not activate the fallback gross-to-operating bridge');
+assert(Number.isFinite(grossResidualF.forecastBridge.margins.residualOperatingDriverTarget),'fallback residual operating target was not surfaced');
+assert(grossResidualF.forecastBridge.margins.operatingTarget>grossResidualF.forecastBridge.margins.operatingStart,'strong gross economics plus growth failed to transmit into any operating leverage');
+
+// More importantly, valuation itself must be monotonic to better owner economics. Holding
+// revenue, shares, discounting and terminal framework constant, higher sustainable FCF,
+// EPS and EBITDA must increase year-10 shareholder value and expected CAGR.
+const transmissionBase=stock({ticker:'TRANSMISSION',price:100,growth:.10,margin:.14,roic:.20,dilution:0});
+const transmissionF=buildForecast(transmissionBase);
+const transmissionQ=computeQuality(transmissionBase,transmissionF);
+const transmissionV=valuate(transmissionBase,transmissionF,transmissionQ);
+const strongerF=JSON.parse(JSON.stringify(transmissionF));
+for(const r of strongerF.rows){
+  r.fcfPerShare*=1.25;
+  r.fcfMargin*=1.25;
+  r.eps*=1.25;
+  r.netMargin*=1.25;
+  r.ebitda*=1.25;
+  r.ebitdaMargin*=1.25;
+}
+strongerF.marginTargets.fcf*=1.25;
+strongerF.marginTargets.net*=1.25;
+strongerF.marginTargets.ebitda*=1.25;
+strongerF.marginTargets.matureFCF*=1.25;
+strongerF.marginTargets.matureNet*=1.25;
+strongerF.marginTargets.matureEBITDA*=1.25;
+const strongerV=valuate(transmissionBase,strongerF,transmissionQ);
+assert(strongerV.totalShareholderValue>transmissionV.totalShareholderValue*1.12,'materially stronger sustainable owner economics did not materially increase shareholder value');
+assert(strongerV.expectedCAGR>transmissionV.expectedCAGR+.01,'materially stronger sustainable owner economics did not increase expected CAGR');
+console.log('V12.13 transmission tests passed: reconciled gross economics reach operating leverage and stronger owner economics increase valuation/CAGR.');
