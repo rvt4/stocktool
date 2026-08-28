@@ -10,10 +10,11 @@
  *   - Historical analyst consensus is intentionally NOT reconstructed. The backtest
  *     therefore exercises the model's SEC/history fallback path, while live forward
  *     snapshots preserve the complete analyst-assisted production model.
- *   - watchlist.json is today's universe, so this first free backtest has survivorship
- *     bias. It is useful for model calibration, but it is not a clean claim of alpha.
- *   - Realized returns are historical price returns from Stooq, not dividend-inclusive
- *     total returns. The benchmark is measured on the same basis (SPY price return).
+ *   - Historical IWB holdings are required at every snapshot. The robustness backtest
+ *     fails closed if archived membership cannot be retrieved; there is no fallback to
+ *     today's watchlist. Residual survivorship bias can remain for unresolved delistings.
+ *   - Realized returns use Yahoo adjusted close when available (split/dividend adjusted),
+ *     with explicitly flagged Stooq price-only fallback. SPY uses adjusted close.
  *
  * Usage examples:
  *   node backtest.js
@@ -32,7 +33,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.20-robustness-backtest';
+const MODEL_VERSION='simple-v12.21-fail-closed-historical-universe';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -108,45 +109,106 @@ function priorDateCandidates(asOf,days=10){
   for(let i=0;i<=days;i++){const x=new Date(d);x.setUTCDate(x.getUTCDate()-i);out.push(x.toISOString().slice(0,10));}
   return out;
 }
+function parseCsvLine(line){
+  const out=[]; let cur='',quoted=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(ch==='"'){
+      if(quoted&&line[i+1]==='"'){cur+='"';i++;}
+      else quoted=!quoted;
+    } else if(ch===','&&!quoted){out.push(cur);cur='';}
+    else cur+=ch;
+  }
+  out.push(cur);
+  return out.map(v=>v.trim());
+}
+function holdingsFromCsv(text){
+  const lines=String(text||'').replace(/^\uFEFF/,'').split(/\r?\n/);
+  let headerIndex=-1,header=null;
+  for(let i=0;i<Math.min(lines.length,40);i++){
+    const cols=parseCsvLine(lines[i]).map(x=>x.replace(/^"|"$/g,'').trim());
+    if(cols.includes('Ticker')&&cols.includes('Name')&&cols.includes('Sector')&&cols.some(x=>x==='Asset Class')){
+      headerIndex=i;header=cols;break;
+    }
+  }
+  if(headerIndex<0||!header)return [];
+  const ix={ticker:header.indexOf('Ticker'),name:header.indexOf('Name'),sector:header.indexOf('Sector'),asset:header.indexOf('Asset Class')};
+  const holdings=[];
+  for(let i=headerIndex+1;i<lines.length;i++){
+    if(!lines[i]?.trim())continue;
+    const row=parseCsvLine(lines[i]);
+    const rawTicker=String(row[ix.ticker]??'').replace(/^"|"$/g,'').trim();
+    const ticker=rawTicker.toUpperCase().replaceAll('.','-');
+    const name=String(row[ix.name]??'').replace(/^"|"$/g,'').trim();
+    const sector=normalizeSectorName(String(row[ix.sector]??'').replace(/^"|"$/g,'').trim());
+    const assetClass=String(row[ix.asset]??'').replace(/^"|"$/g,'').trim();
+    if(!ticker||ticker==='-'||ticker==='CASH'||/cash|future|swap|currency|collateral/i.test(`${name} ${assetClass}`))continue;
+    if(assetClass&&!/^equity$/i.test(assetClass))continue;
+    if(!/^[A-Z0-9-]{1,10}$/.test(ticker))continue;
+    holdings.push({ticker,sector,name});
+  }
+  return holdings;
+}
+function holdingsFromJson(text){
+  let body=String(text||'').replace(/^\uFEFF/,'');
+  const start=body.indexOf('{'); if(start>0)body=body.slice(start);
+  const json=JSON.parse(body),rows=json?.aaData||[];
+  const holdings=[];
+  for(const row of rows){
+    const ticker=String(row?.[0]??'').trim().toUpperCase().replaceAll('.','-');
+    const name=String(row?.[1]??'').trim(),sector=normalizeSectorName(row?.[2]);
+    const assetClass=String(row?.[3]??'').trim();
+    if(!ticker||ticker==='-'||ticker==='CASH'||/cash|future|swap|currency|collateral/i.test(`${name} ${assetClass}`))continue;
+    if(assetClass&&!/^equity$/i.test(assetClass))continue;
+    if(!/^[A-Z0-9-]{1,10}$/.test(ticker))continue;
+    holdings.push({ticker,sector,name});
+  }
+  return holdings;
+}
 async function fetchIwbHoldingsAsOf(asOf){
+  const attempts=[];
   for(const candidate of priorDateCandidates(asOf,10)){
     const ymd=candidate.replaceAll('-','');
-    const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),25000);
-    try{
-      const url=`${IWB_HOLDINGS_BASE}?tab=all&fileType=json&asOfDate=${ymd}`;
-      const res=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0 FreeScreener/1.0','Accept':'application/json,text/plain,*/*'},signal:ac.signal});
-      if(!res.ok)continue;
-      let text=await res.text();
-      text=text.replace(/^\uFEFF/,'');
-      const start=text.indexOf('{');if(start>0)text=text.slice(start);
-      const json=JSON.parse(text),rows=json?.aaData||[];
-      const holdings=[];
-      for(const row of rows){
-        const ticker=String(row?.[0]??'').trim().toUpperCase().replaceAll('.','-');
-        const name=String(row?.[1]??'').trim(),sector=normalizeSectorName(row?.[2]);
-        const assetClass=String(row?.[3]??'').trim();
-        if(!ticker||ticker==='-'||ticker==='CASH' || /cash|future|swap|currency/i.test(`${name} ${assetClass}`))continue;
-        if(!/^[A-Z0-9-]{1,10}$/.test(ticker))continue;
-        holdings.push({ticker,sector,name});
-      }
-      if(holdings.length>=500)return {requestedAsOf:asOf,sourceAsOf:candidate,holdings};
-    }catch(e){
-      // Try the prior archived business day. Historical-universe failure is non-fatal;
-      // the caller records it and falls back rather than pretending coverage exists.
-    } finally {clearTimeout(timer);}
+    const variants=[
+      {kind:'csv',url:`${IWB_HOLDINGS_BASE}?fileType=csv&fileName=IWB_holdings&dataType=fund&asOfDate=${ymd}`},
+      {kind:'json',url:`${IWB_HOLDINGS_BASE}?fileType=json&tab=all&dataType=fund&asOfDate=${ymd}`}
+    ];
+    for(const variant of variants){
+      const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),30000);
+      try{
+        const res=await fetch(variant.url,{headers:{'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36','Accept':variant.kind==='csv'?'text/csv,text/plain,*/*':'application/json,text/plain,*/*'},signal:ac.signal,redirect:'follow'});
+        const text=await res.text();
+        if(!res.ok){attempts.push({candidate,kind:variant.kind,status:res.status,bytes:text.length});continue;}
+        let holdings=[];
+        try{holdings=variant.kind==='csv'?holdingsFromCsv(text):holdingsFromJson(text);}catch(e){attempts.push({candidate,kind:variant.kind,status:res.status,bytes:text.length,parseError:String(e.message||e)});continue;}
+        attempts.push({candidate,kind:variant.kind,status:res.status,bytes:text.length,holdings:holdings.length});
+        if(holdings.length>=500)return {requestedAsOf:asOf,sourceAsOf:candidate,sourceType:variant.kind,holdings,attempts};
+      }catch(e){attempts.push({candidate,kind:variant.kind,error:String(e?.name||e?.message||e)});}
+      finally{clearTimeout(timer);}
+    }
   }
-  return null;
+  return {requestedAsOf:asOf,holdings:[],attempts};
 }
 async function buildHistoricalUniverse(dates){
-  const byDate=new Map(),coverage=[];
+  const byDate=new Map(),coverage=[],failures=[];
   for(const asOf of dates){
     const snap=await fetchIwbHoldingsAsOf(asOf);
-    if(snap){byDate.set(asOf,new Map(snap.holdings.map(x=>[x.ticker,x])));coverage.push({asOf,sourceAsOf:snap.sourceAsOf,count:snap.holdings.length,status:'iwb_history'});}
-    else coverage.push({asOf,count:0,status:'fallback_current_watchlist'});
+    if(snap.holdings.length>=500){
+      byDate.set(asOf,new Map(snap.holdings.map(x=>[x.ticker,x])));
+      coverage.push({asOf,sourceAsOf:snap.sourceAsOf,sourceType:snap.sourceType,count:snap.holdings.length,status:'iwb_history'});
+    } else {
+      const detail={asOf,count:0,status:'iwb_history_unavailable',attempts:snap.attempts};
+      coverage.push(detail);failures.push(detail);
+    }
     await sleep(150);
   }
+  if(failures.length){
+    const concise=failures.map(f=>`${f.asOf}: ${f.attempts.slice(-2).map(a=>`${a.kind}:${a.status??a.error??'failed'}:${a.holdings??0}`).join(', ')}`).join(' | ');
+    const err=new Error(`Historical IWB membership unavailable for ${failures.length}/${dates.length} snapshot dates. Backtest aborted rather than falling back to today's watchlist. ${concise}`);
+    err.historicalUniverseCoverage=coverage;
+    throw err;
+  }
   const current=new Map(watchlist.map(x=>[x.ticker,x]));
-  for(const asOf of dates)if(!byDate.has(asOf))byDate.set(asOf,new Map(current));
   const union=new Map();
   for(const m of byDate.values())for(const [ticker,x] of m)if(!union.has(ticker))union.set(ticker,{ticker,sector:x.sector||current.get(ticker)?.sector||'Unknown'});
   return {byDate,coverage,union:[...union.values()]};
@@ -363,7 +425,7 @@ function buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory){
   }
   return {
     description:'Annual equal-weight portfolio simulation using split/dividend-adjusted total returns. At each historical year-end, select the highest-ranked stocks meeting the point-in-time Alpha rule, hold for one year, then rebalance. Daily max drawdown uses the daily adjusted-close path of the actual selected holdings. Transaction costs and taxes are excluded.',
-    robustness:{development:'2016-2021 start cohorts',validation:'2022-2025 start cohorts (only completed 1Y outcomes are included)',survivorship:'Point-in-time IWB holdings are used as a free Russell 1000 membership proxy when available. This materially reduces survivorship bias, but does not eliminate it because some former constituents cannot be resolved through current free SEC/ticker mappings.'},
+    robustness:{development:'2016-2021 start cohorts',validation:'2022-2025 start cohorts (only completed 1Y outcomes are included)',survivorship:'Point-in-time IWB holdings are required for every historical snapshot. The official robustness backtest fails closed if archived membership cannot be reconstructed; no current-watchlist fallback is permitted. Residual bias can still remain when former constituents cannot be resolved through current free SEC/ticker mappings.'},
     strategies
   };
 }
@@ -452,11 +514,11 @@ async function main(){
   for(const asOf of dates){const rows=snapshots.get(asOf);rank(rows);flat.push(...rows.map(r=>({...r,asOf})));snapshotOutput.push({asOf,count:rows.length,rows});}
   const output={
     generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,backtestMode:'historical_core_point_in_time',frequency:FREQUENCY,startYear:START,endYear:END,
-    assumptions:{analystEstimates:'excluded_historical_unavailable',universe:'historical_iwb_holdings_survivorship_reduced_with_current_watchlist_fallback',returns:'Yahoo adjusted-close total return where available; Stooq price-only fallback is explicitly flagged',benchmark:'SPY adjusted-close total return',valuationPrice:'raw historical close',secCutoff:'facts must be filed by as-of date'},
-    observations:flat.length,historicalUniverse:{provider:'iShares IWB historical holdings',coverage:historicalUniverse.coverage,uniqueTickers:historicalUniverse.union.length,note:'Point-in-time membership materially reduces current-watchlist survivorship bias. Residual bias remains where former constituents cannot be resolved through free SEC/price sources.'},diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YTotalReturnCAGR'),summary3Y:summarize(flat,'realized3YTotalReturnCAGR'),summary5Y:summarize(flat,'realized5YTotalReturnCAGR'),signalAnalysis:buildSignalAnalysis(flat),portfolioSimulation:buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory),errors:errors.slice(0,500),snapshots:snapshotOutput
+    assumptions:{analystEstimates:'excluded_historical_unavailable',universe:'historical_iwb_holdings_required_fail_closed_no_current_watchlist_fallback',returns:'Yahoo adjusted-close total return where available; Stooq price-only fallback is explicitly flagged',benchmark:'SPY adjusted-close total return',valuationPrice:'raw historical close',secCutoff:'facts must be filed by as-of date'},
+    observations:flat.length,historicalUniverse:{provider:'iShares IWB historical holdings',coverage:historicalUniverse.coverage,uniqueTickers:historicalUniverse.union.length,note:'Point-in-time IWB membership is required for every snapshot; this run cannot silently fall back to the current watchlist. Residual bias can remain where former constituents cannot be resolved through free SEC/price sources.'},diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YTotalReturnCAGR'),summary3Y:summarize(flat,'realized3YTotalReturnCAGR'),summary5Y:summarize(flat,'realized5YTotalReturnCAGR'),signalAnalysis:buildSignalAnalysis(flat),portfolioSimulation:buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory),errors:errors.slice(0,500),snapshots:snapshotOutput
   };
   const p=path.join(__dirname,'data','backtest-results.json'),tmp=p+'.tmp';fs.writeFileSync(tmp,JSON.stringify(output));fs.renameSync(tmp,p);
   console.log(`Done. Wrote ${flat.length} historical observations to data/backtest-results.json.`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,fetchIwbHoldingsAsOf,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,dailyPortfolioRisk,simulateAnnualPortfolio,buildPortfolioSimulation};
+module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseCsvLine,holdingsFromCsv,holdingsFromJson,fetchIwbHoldingsAsOf,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,dailyPortfolioRisk,simulateAnnualPortfolio,buildPortfolioSimulation};

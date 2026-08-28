@@ -777,7 +777,7 @@ console.log('V12.13 transmission tests passed: reconciled gross economics reach 
 // row in the returned Stooq history. The previous comparison accidentally used
 // the target timestamp as the incumbent timestamp, causing every historical
 // snapshot to fail the max-gap check and producing zero backtest observations.
-const {priceOnOrBefore,totalReturnCAGR}=require('./backtest');
+const {priceOnOrBefore,totalReturnCAGR,holdingsFromCsv}=require('./backtest');
 const historicalPriceFixture=[
   {date:'2016-01-04',close:10},
   {date:'2016-12-29',close:19},
@@ -800,3 +800,24 @@ assert.strictEqual(priceOnOrBefore(totalReturnFixture,'2020-12-31'),100,'point-i
 const tr=totalReturnCAGR(totalReturnFixture,'2020-12-31','2021-12-31',1);
 assert(Math.abs(tr-.20)<1e-12,'realized total return did not use adjusted-close series');
 console.log('V12.20 backtest regression passed: valuation uses raw close while realized returns use adjusted close.');
+
+// V12.21 fail-closed historical-universe parser regression -------------------
+// iShares' archival endpoint is most reliable as CSV and includes metadata
+// lines before the actual holdings header. Ensure quoted commas and ticker
+// normalization are handled before the network-backed robustness test runs.
+const iwbCsvFixture=[
+  'iShares Russell 1000 ETF',
+  'Fund Holdings as of,"Dec 30, 2016"',
+  '',
+  'Ticker,Name,Sector,Asset Class,Market Value,Weight (%)',
+  'ABC,"ABC, Inc.",Information Technology,Equity,100,1.0',
+  'BRK.B,Berkshire Hathaway Inc.,Financials,Equity,90,0.9',
+  '-,USD CASH,Cash and/or Derivatives,Cash,10,0.1'
+].join('\n');
+const parsedIwbFixture=holdingsFromCsv(iwbCsvFixture);
+assert.strictEqual(parsedIwbFixture.length,2,'historical IWB CSV parser did not retain the two equity holdings');
+assert.strictEqual(parsedIwbFixture[0].ticker,'ABC','historical IWB CSV parser misread a quoted company name containing a comma');
+assert.strictEqual(parsedIwbFixture[0].sector,'Technology','historical IWB CSV parser did not normalize Information Technology');
+assert.strictEqual(parsedIwbFixture[1].ticker,'BRK-B','historical IWB CSV parser did not normalize dotted tickers');
+console.log('V12.21 backtest regression passed: archival IWB CSV holdings parse and normalize correctly.');
+
