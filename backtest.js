@@ -32,7 +32,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.17-backtest-infrastructure';
+const MODEL_VERSION='simple-v12.17.1-backtest-price-fix';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -81,19 +81,21 @@ function factsAsOf(raw,asOf){
 }
 function priceOnOrBefore(history,date,maxGapDays=12){
   const t=new Date(date).getTime(); let best=null;
-  for(const p of history||[]){const pt=new Date(p.date).getTime();if(pt<=t&&(!best||pt>best.t))best={t,pt,p};}
+  for(const p of history||[]){const pt=new Date(p.date).getTime();if(pt<=t&&(!best||pt>best.pt))best={t,pt,p};}
   if(!best)return null;
   return (best.t-best.pt)/86400000<=maxGapDays?finite(best.p.close):null;
 }
 function addYears(date,years){const d=new Date(date+'T00:00:00Z');d.setUTCFullYear(d.getUTCFullYear()+years);return d.toISOString().slice(0,10);}
 
-function historicalStockFromData(ticker,sector,rawFacts,priceHistory,asOf){
+function historicalStockFromData(ticker,sector,rawFacts,priceHistory,asOf,diagnostics=null){
   const facts=factsAsOf(rawFacts,asOf);
   const years=parseAnnualFinancials(facts);
   const quarters=parseQuarterlyRevenue(facts);
-  if(years.length<2)return null;
+  if(years.length<2){ if(diagnostics) diagnostics.insufficientFinancialHistory++; return null; }
+  if(diagnostics) diagnostics.usableFinancialHistory++;
   const currentPrice=priceOnOrBefore(priceHistory,asOf);
-  if(!(currentPrice>0))return null;
+  if(!(currentPrice>0)){ if(diagnostics) diagnostics.missingHistoricalPrice++; return null; }
+  if(diagnostics) diagnostics.historicalPriceFound++;
   normalizeHistoryForCorporateAction(years,latestDilutedSharesFromFacts(facts));
   const last=years.at(-1)||{};
 
@@ -108,7 +110,8 @@ function historicalStockFromData(ticker,sector,rawFacts,priceHistory,asOf){
     }
   }
   const shares=finite(last.sharesOutTTM);
-  if(!(shares>0))return null;
+  if(!(shares>0)){ if(diagnostics) diagnostics.missingShareCount++; return null; }
+  if(diagnostics) diagnostics.shareCountFound++;
   const marketCap=currentPrice*shares;
   const eps=finite(last.netIncome)!=null?finite(last.netIncome)/shares:null;
   const pe=eps?currentPrice/eps:null;
@@ -180,30 +183,59 @@ async function main(){
   console.log(`Historical core backtest: ${universe.length} tickers × ${dates.length} ${FREQUENCY} dates (${dates[0]} to ${dates.at(-1)}).`);
   console.log('Historical analyst estimates are intentionally excluded to avoid look-ahead bias.');
   const spyHistory=await fetchStooqHistory('SPY',HISTORY_YEARS);
+  if(!spyHistory.length) throw new Error('SPY historical price history was empty; cannot benchmark backtest.');
   const snapshots=new Map(dates.map(d=>[d,[]])); const errors=[];
+  const diagnostics={
+    tickerDateAttempts:0,tickersFetched:0,tickerFetchFailures:0,
+    usableFinancialHistory:0,insufficientFinancialHistory:0,
+    historicalPriceFound:0,missingHistoricalPrice:0,
+    shareCountFound:0,missingShareCount:0,
+    modelRuns:0,modelFailures:0,missingExpectedCAGR:0,modeledObservations:0
+  };
+  const skipExamples=[];
   for(let i=0;i<universe.length;i++){
     const {ticker,sector}=universe[i];
     try{
       const sec=normalizeSecTicker(ticker);
       const [facts,history]=await Promise.all([fetchSecFacts(sec),fetchStooqHistory(sec,HISTORY_YEARS)]);
+      diagnostics.tickersFetched++;
+      if(!history.length && skipExamples.length<20) skipExamples.push({ticker,reason:'empty_stooq_history'});
       for(const asOf of dates){
-        const stock=historicalStockFromData(ticker,sector,facts,history,asOf); if(!stock)continue;
+        diagnostics.tickerDateAttempts++;
+        const before={...diagnostics};
+        const stock=historicalStockFromData(ticker,sector,facts,history,asOf,diagnostics);
+        if(!stock){
+          if(skipExamples.length<20){
+            let reason='historical_stock_unavailable';
+            if(diagnostics.insufficientFinancialHistory>before.insufficientFinancialHistory) reason='insufficient_financial_history';
+            else if(diagnostics.missingHistoricalPrice>before.missingHistoricalPrice) reason='missing_historical_price';
+            else if(diagnostics.missingShareCount>before.missingShareCount) reason='missing_share_count';
+            skipExamples.push({ticker,asOf,reason});
+          }
+          continue;
+        }
         try{
+          diagnostics.modelRuns++;
           const f=buildForecast(stock),q=computeQuality(stock,f),v=valuate(stock,f,q),d=rateStock(stock,f,q,v);
-          if(!Number.isFinite(v.expectedCAGR))continue;
-          const row=compactModel(stock,f,q,v,d); attachRealized(row,history,spyHistory,asOf); snapshots.get(asOf).push(row);
-        }catch(e){errors.push({ticker,asOf,error:e.message});}
+          if(!Number.isFinite(v.expectedCAGR)){ diagnostics.missingExpectedCAGR++; if(skipExamples.length<20)skipExamples.push({ticker,asOf,reason:'missing_expected_cagr'}); continue; }
+          const row=compactModel(stock,f,q,v,d); attachRealized(row,history,spyHistory,asOf); snapshots.get(asOf).push(row); diagnostics.modeledObservations++;
+        }catch(e){diagnostics.modelFailures++;errors.push({ticker,asOf,error:e.message}); if(skipExamples.length<20)skipExamples.push({ticker,asOf,reason:'model_failure',error:e.message});}
       }
-    }catch(e){errors.push({ticker,error:e.message});}
-    if((i+1)%25===0)console.log(`Fetched ${i+1}/${universe.length}; modeled ${[...snapshots.values()].reduce((n,x)=>n+x.length,0)} point-in-time observations.`);
+    }catch(e){diagnostics.tickerFetchFailures++;errors.push({ticker,error:e.message}); if(skipExamples.length<20)skipExamples.push({ticker,reason:'ticker_fetch_failure',error:e.message});}
+    if((i+1)%25===0){
+      console.log(`Fetched ${i+1}/${universe.length}; modeled ${diagnostics.modeledObservations} point-in-time observations.`);
+      console.log(`  diagnostics: attempts=${diagnostics.tickerDateAttempts}, financials=${diagnostics.usableFinancialHistory}, prices=${diagnostics.historicalPriceFound}, shares=${diagnostics.shareCountFound}, modelRuns=${diagnostics.modelRuns}, failures=${diagnostics.modelFailures}`);
+    }
     if(RATE_LIMIT_DELAY_MS>0)await sleep(RATE_LIMIT_DELAY_MS);
   }
+  console.log('Backtest diagnostics:', JSON.stringify(diagnostics));
+  if(skipExamples.length) console.log('Representative skips:', JSON.stringify(skipExamples.slice(0,10)));
   const flat=[]; const snapshotOutput=[];
   for(const asOf of dates){const rows=snapshots.get(asOf);rank(rows);flat.push(...rows.map(r=>({...r,asOf})));snapshotOutput.push({asOf,count:rows.length,rows});}
   const output={
     generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,backtestMode:'historical_core_point_in_time',frequency:FREQUENCY,startYear:START,endYear:END,
     assumptions:{analystEstimates:'excluded_historical_unavailable',universe:'current_watchlist_survivorship_biased',returns:'Stooq price CAGR; dividends not included',benchmark:'SPY price CAGR',secCutoff:'facts must be filed by as-of date'},
-    observations:flat.length,summary1Y:summarize(flat,'realized1YPriceCAGR'),summary3Y:summarize(flat,'realized3YPriceCAGR'),summary5Y:summarize(flat,'realized5YPriceCAGR'),errors:errors.slice(0,500),snapshots:snapshotOutput
+    observations:flat.length,diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YPriceCAGR'),summary3Y:summarize(flat,'realized3YPriceCAGR'),summary5Y:summarize(flat,'realized5YPriceCAGR'),errors:errors.slice(0,500),snapshots:snapshotOutput
   };
   const p=path.join(__dirname,'data','backtest-results.json'),tmp=p+'.tmp';fs.writeFileSync(tmp,JSON.stringify(output));fs.renameSync(tmp,p);
   console.log(`Done. Wrote ${flat.length} historical observations to data/backtest-results.json.`);

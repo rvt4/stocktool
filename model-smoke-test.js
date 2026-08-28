@@ -771,3 +771,20 @@ const strongerV=valuate(transmissionBase,strongerF,transmissionQ);
 assert(strongerV.totalShareholderValue>transmissionV.totalShareholderValue*1.12,'materially stronger sustainable owner economics did not materially increase shareholder value');
 assert(strongerV.expectedCAGR>transmissionV.expectedCAGR+.01,'materially stronger sustainable owner economics did not increase expected CAGR');
 console.log('V12.13 transmission tests passed: reconciled gross economics reach operating leverage and stronger owner economics increase valuation/CAGR.');
+
+// V12.17.1 historical backtest date-selection regression ----------------------
+// priceOnOrBefore must select the latest eligible trading day, not the first
+// row in the returned Stooq history. The previous comparison accidentally used
+// the target timestamp as the incumbent timestamp, causing every historical
+// snapshot to fail the max-gap check and producing zero backtest observations.
+const {priceOnOrBefore}=require('./backtest');
+const historicalPriceFixture=[
+  {date:'2016-01-04',close:10},
+  {date:'2016-12-29',close:19},
+  {date:'2016-12-30',close:20},
+  {date:'2017-01-03',close:21},
+];
+assert.strictEqual(priceOnOrBefore(historicalPriceFixture,'2016-12-31'),20,'historical price selector did not choose the latest trading day on/before as-of date');
+assert.strictEqual(priceOnOrBefore(historicalPriceFixture,'2016-12-29'),19,'historical price selector failed an exact-date match');
+assert.strictEqual(priceOnOrBefore(historicalPriceFixture,'2015-12-31'),null,'historical price selector used a future trading day');
+console.log('V12.17.1 backtest regression passed: historical prices select the latest eligible trading day.');
