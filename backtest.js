@@ -33,7 +33,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.26-openfigi-cusip-universe';
+const MODEL_VERSION='simple-v12.27-nport-effective-start';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -376,6 +376,24 @@ async function buildHistoricalUniverse(dates){
   const current=new Map(watchlist.map(x=>[x.ticker,x]));
   console.log(`Loading point-in-time Russell 1000 proxy membership from SEC N-PORT IWB filings for ${dates.length} snapshot dates...`);
   const loaded=await loadIwbNportSnapshots(dates,current);
+
+  // N-PORT became effective in 2019, but an individual fund's first usable filing can
+  // be later than 2019-01-01. IWB's archive begins at 2019-09-30. Treat snapshots
+  // before the first actually available report as outside the supported backtest era,
+  // rather than calling them data failures. Once the archive begins, however, every
+  // requested snapshot must still resolve or the backtest fails closed.
+  const usableReportDates=[...loaded.byReport.keys()].sort();
+  if(!usableReportDates.length){
+    throw new Error('SEC N-PORT IWB archive contained no usable equity reports after CUSIP mapping.');
+  }
+  const firstUsableReportDate=usableReportDates[0];
+  const effectiveDates=dates.filter(d=>d>=firstUsableReportDate);
+  if(effectiveDates.length!==dates.length){
+    console.log(`Historical universe note: ${dates.length-effectiveDates.length} snapshot(s) before IWB's first usable SEC N-PORT report (${firstUsableReportDate}) excluded.`);
+    dates.splice(0,dates.length,...effectiveDates);
+  }
+  if(!dates.length)throw new Error(`Requested backtest period ends before IWB's first usable SEC N-PORT report (${firstUsableReportDate}).`);
+
   const byDate=new Map(),coverage=[],failures=[];
   for(const asOf of dates){
     const snap=loaded.out.get(asOf);
@@ -392,7 +410,7 @@ async function buildHistoricalUniverse(dates){
   }
   const union=new Map();
   for(const m of byDate.values())for(const [ticker,x] of m)if(!union.has(ticker))union.set(ticker,{ticker,sector:x.sector||current.get(ticker)?.sector||'Unknown'});
-  return {byDate,coverage,union:[...union.values()],provider:'SEC N-PORT IWB holdings + OpenFIGI CUSIP-to-ticker mapping',requestedStart:START,effectiveStart:Number(dates[0].slice(0,4))};
+  return {byDate,coverage,union:[...union.values()],provider:'SEC N-PORT IWB holdings + OpenFIGI CUSIP-to-ticker mapping',requestedStart:START,effectiveStart:Number(dates[0].slice(0,4)),effectiveStartDate:dates[0]};
 }
 
 function historicalStockFromData(ticker,sector,rawFacts,priceHistory,asOf,diagnostics=null){
@@ -694,7 +712,7 @@ async function main(){
   const flat=[]; const snapshotOutput=[];
   for(const asOf of dates){const rows=snapshots.get(asOf);rank(rows);flat.push(...rows.map(r=>({...r,asOf})));snapshotOutput.push({asOf,count:rows.length,rows});}
   const output={
-    generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,backtestMode:'historical_core_point_in_time',frequency:FREQUENCY,requestedStartYear:START,startYear:historicalUniverse.effectiveStart||START,effectiveStartYear:historicalUniverse.effectiveStart||START,endYear:END,
+    generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,backtestMode:'historical_core_point_in_time',frequency:FREQUENCY,requestedStartYear:START,startYear:historicalUniverse.effectiveStart||START,effectiveStartYear:historicalUniverse.effectiveStart||START,effectiveStartDate:historicalUniverse.effectiveStartDate||`${historicalUniverse.effectiveStart||START}-01-01`,endYear:END,
     assumptions:{analystEstimates:'excluded_historical_unavailable',universe:'historical_iwb_holdings_required_fail_closed_no_current_watchlist_fallback',returns:'Yahoo adjusted-close total return where available; Stooq price-only fallback is explicitly flagged',benchmark:'SPY adjusted-close total return',valuationPrice:'raw historical close',secCutoff:'facts must be filed by as-of date'},
     observations:flat.length,historicalUniverse:{provider:historicalUniverse.provider||'SEC N-PORT / IWB',coverage:historicalUniverse.coverage,uniqueTickers:historicalUniverse.union.length,note:'Point-in-time IWB membership is required for every snapshot. SEC N-PORT supplies historical CUSIPs; OpenFIGI maps those CUSIPs to historical/current equity symbols. No current-watchlist membership fallback is permitted. Residual bias can remain for identifiers OpenFIGI cannot resolve or price histories unavailable from free sources.'},diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YTotalReturnCAGR'),summary3Y:summarize(flat,'realized3YTotalReturnCAGR'),summary5Y:summarize(flat,'realized5YTotalReturnCAGR'),signalAnalysis:buildSignalAnalysis(flat),portfolioSimulation:buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory),errors:errors.slice(0,500),snapshots:snapshotOutput
   };
