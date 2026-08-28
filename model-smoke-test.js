@@ -777,7 +777,7 @@ console.log('V12.13 transmission tests passed: reconciled gross economics reach 
 // row in the returned Stooq history. The previous comparison accidentally used
 // the target timestamp as the incumbent timestamp, causing every historical
 // snapshot to fail the max-gap check and producing zero backtest observations.
-const {priceOnOrBefore,totalReturnCAGR,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom}=require('./backtest');
+const {priceOnOrBefore,totalReturnCAGR,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker}=require('./backtest');
 const historicalPriceFixture=[
   {date:'2016-01-04',close:10},
   {date:'2016-12-29',close:19},
@@ -805,14 +805,17 @@ console.log('V12.20 backtest regression passed: valuation uses raw close while r
 // Historical IWB membership now comes from the SEC's public N-PORT filings,
 // avoiding iShares' bot-protected archival endpoint.
 const nportFixture=`<edgarSubmission><formData><genInfo><repPd>2025-03-31</repPd></genInfo><invstOrSecs>
-<invstOrSec><name>ABC, Inc.</name><identifiers><ticker value="ABC"/></identifiers></invstOrSec>
-<invstOrSec><name>Berkshire Hathaway Inc.</name><identifiers><ticker value="BRK.B"/></identifiers></invstOrSec>
-<invstOrSec><name>US Dollar</name><identifiers><ticker value="USD"/></identifiers></invstOrSec>
+<invstOrSec><name>ABC, Inc.</name><assetCat>EC</assetCat><units>NS</units><identifiers><ticker value="ABC"/></identifiers></invstOrSec>
+<invstOrSec><name>Berkshire Hathaway Inc.</name><assetCat>EC</assetCat><units>NS</units><identifiers><ticker value="BRK.B"/></identifiers></invstOrSec>
+<invstOrSec><name>Veralto Corporation</name><title>VERALTO CORP</title><cusip>92338C103</cusip><assetCat>EC</assetCat><units>NS</units><identifiers><isin value="US92338C1036"/></identifiers></invstOrSec>
+<invstOrSec><name>US Dollar</name><assetCat>EC</assetCat><units>NS</units><identifiers><ticker value="USD"/></identifiers></invstOrSec>
 </invstOrSecs></formData></edgarSubmission>`;
 const currentSectorFixture=new Map([['ABC',{sector:'Technology'}],['BRK-B',{sector:'Financials'}]]);
 const parsedNport=parseNportHoldingsXml(nportFixture,currentSectorFixture);
 assert.strictEqual(parsedNport.reportDate,'2025-03-31','N-PORT parser lost report date');
-assert.strictEqual(parsedNport.holdings.length,2,'N-PORT parser did not retain the two equity ticker holdings');
+assert.strictEqual(parsedNport.holdings.length,2,'N-PORT parser did not retain the two directly tickered equity holdings');
+assert.strictEqual(parsedNport.unresolved.length,1,'N-PORT parser did not retain stock CUSIPs when ticker tags were absent');
+assert.strictEqual(parsedNport.unresolved[0].cusip,'92338C103','N-PORT parser lost the historical stock CUSIP');
 assert.strictEqual(parsedNport.holdings[0].ticker,'ABC','N-PORT parser misread ticker attribute');
 assert.strictEqual(parsedNport.holdings[1].ticker,'BRK-B','N-PORT parser did not normalize dotted tickers');
 assert.strictEqual(accessionFromHit({_id:'0001752724-25-118607:primary_doc.xml'}),'0001752724-25-118607','EFTS accession parser failed');
@@ -820,5 +823,7 @@ const atomFixture=`<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom
 const atomParsed=parseSecSeriesAtom(atomFixture);
 assert.strictEqual(atomParsed.length,1,'SEC series Atom parser did not find filing entry');
 assert.strictEqual(atomParsed[0].accession,'0001752724-25-118607','SEC series Atom parser lost accession number');
-console.log('V12.25 backtest regression passed: SEC N-PORT holdings and series-filtered EDGAR Atom accessions parse correctly.');
+assert.strictEqual(chooseOpenFigiTicker({data:[{ticker:'VLTO',marketSector:'Equity',securityType2:'Common Stock',exchCode:'US',compositeFIGI:'BBG01J2W8ZK6'}]}),'VLTO','OpenFIGI mapper did not select a common-stock ticker');
+assert.strictEqual(chooseOpenFigiTicker({data:[{ticker:'ESH26',marketSector:'Equity',securityType2:'Future',exchCode:'US'}]}),null,'OpenFIGI mapper accepted a derivative as an equity constituent');
+console.log('V12.26 backtest regression passed: SEC N-PORT CUSIPs survive parsing and OpenFIGI common-stock ticker selection is guarded.');
 

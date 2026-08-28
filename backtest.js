@@ -33,7 +33,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.25-sec-pacing-diagnostics-universe';
+const MODEL_VERSION='simple-v12.26-openfigi-cusip-universe';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -99,6 +99,7 @@ const IWB_TRUST_CIK='1100663';
 const SEC_EFTS='https://efts.sec.gov/LATEST/search-index';
 const SEC_BROWSE='https://www.sec.gov/cgi-bin/browse-edgar';
 const SEC_ARCHIVES='https://www.sec.gov/Archives/edgar/data';
+const OPENFIGI_MAPPING='https://api.openfigi.com/v3/mapping';
 
 function normalizeSectorName(s){
   const x=String(s||'').trim();
@@ -111,25 +112,44 @@ function normalizeSectorName(s){
 }
 function xmlDecode(x){return String(x||'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");}
 function xmlTag(block,tag){const m=String(block||'').match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`,'i'));return m?xmlDecode(m[1].replace(/<[^>]+>/g,'').trim()):null;}
+function normalizeTickerSymbol(ticker){
+  return String(ticker||'').trim().toUpperCase().replaceAll('.','-');
+}
+function validEquityTicker(ticker){
+  const t=normalizeTickerSymbol(ticker);
+  return !!t&&t!=='-'&&t!=='N/A'&&t!=='USD'&&/^[A-Z0-9-]{1,12}$/.test(t);
+}
 function parseNportHoldingsXml(xml,currentMap=new Map()){
   const text=String(xml||'');
   const reportDate=xmlTag(text,'repPd')||xmlTag(text,'repPdDate')||xmlTag(text,'periodOfReport');
-  const holdings=[];
+  const holdings=[],unresolved=[];
   const blocks=text.match(/<invstOrSec\b[\s\S]*?<\/invstOrSec>/gi)||[];
   for(const block of blocks){
+    const name=xmlTag(block,'name')||'';
+    const title=xmlTag(block,'title')||'';
+    const assetCat=String(xmlTag(block,'assetCat')||'').toUpperCase();
+    const units=String(xmlTag(block,'units')||'').toUpperCase();
+    const cusip=String(xmlTag(block,'cusip')||'').trim().toUpperCase();
+    if(/cash|currency|future|swap|collateral|treasury bill/i.test(`${name} ${title}`))continue;
+    // IWB common-stock positions are reported as equity-category securities.
+    // Derivatives are the rare N-PORT rows that actually carry <ticker>; most
+    // stocks carry CUSIP/ISIN only, so ticker-only parsing incorrectly found 2 rows.
+    if(assetCat&&assetCat!=='EC')continue;
+    if(units&&units!=='NS')continue;
     let ticker=null;
     const attr=block.match(/<ticker\b[^>]*\bvalue=["']([^"']+)["'][^>]*\/?\s*>/i);
     if(attr)ticker=attr[1];
     if(!ticker)ticker=xmlTag(block,'ticker');
-    ticker=String(ticker||'').trim().toUpperCase().replaceAll('.','-');
-    const name=xmlTag(block,'name')||'';
-    if(!ticker||ticker==='-'||ticker==='N/A'||ticker==='USD'||!/^[A-Z0-9-]{1,12}$/.test(ticker))continue;
-    if(/cash|currency|future|swap|collateral|treasury bill/i.test(name))continue;
-    const sector=currentMap.get(ticker)?.sector||'Unknown';
-    holdings.push({ticker,sector,name});
+    ticker=normalizeTickerSymbol(ticker);
+    if(validEquityTicker(ticker)){
+      holdings.push({ticker,sector:currentMap.get(ticker)?.sector||'Unknown',name,title,cusip});
+      continue;
+    }
+    if(/^[A-Z0-9]{8,9}$/.test(cusip)&&cusip!=='N/A')unresolved.push({cusip,name,title,assetCat,units});
   }
   const dedup=[...new Map(holdings.map(h=>[h.ticker,h])).values()];
-  return {reportDate,holdings:dedup};
+  const unresolvedDedup=[...new Map(unresolved.map(h=>[h.cusip,h])).values()];
+  return {reportDate,holdings:dedup,unresolved:unresolvedDedup};
 }
 function accessionFromHit(hit){
   const blob=JSON.stringify(hit||{});
@@ -205,12 +225,75 @@ async function discoverIwbNportFilings(startYear,endYear){
   if(!fallback.length)throw new Error('SEC series feed and EFTS both returned no IWB NPORT-P filings.');
   return fallback;
 }
+let lastOpenFigiRequestAt=0;
+function chooseOpenFigiTicker(result){
+  const rows=result?.data||[];
+  const acceptable=rows.filter(x=>validEquityTicker(x?.ticker)&&String(x?.marketSector||'').toLowerCase()==='equity');
+  const score=x=>{
+    let n=0;
+    const st=String(x?.securityType2||x?.securityType||'').toLowerCase();
+    if(/common stock|reit|depositary receipt|ordinary share/.test(st))n+=5;
+    if(String(x?.exchCode||'').toUpperCase()==='US')n+=3;
+    if(x?.compositeFIGI)n+=1;
+    if(/fund|etf|future|option|warrant/.test(st))n-=10;
+    return n;
+  };
+  acceptable.sort((a,b)=>score(b)-score(a));
+  return acceptable.length?normalizeTickerSymbol(acceptable[0].ticker):null;
+}
+async function openFigiFetchBatch(cusips){
+  const apiKey=String(process.env.OPENFIGI_API_KEY||'').trim();
+  // OpenFIGI is free without a key: 25 requests/minute and up to 10 mapping jobs
+  // per request. A free key is optional and only increases throughput.
+  const minGap=apiKey?300:2500;
+  const jobs=cusips.map(idValue=>({idType:'ID_CUSIP',idValue,marketSecDes:'Equity',includeUnlistedEquities:true}));
+  let lastErr=null;
+  for(let attempt=0;attempt<6;attempt++){
+    const wait=Math.max(0,minGap-(Date.now()-lastOpenFigiRequestAt));
+    if(wait)await sleep(wait);
+    lastOpenFigiRequestAt=Date.now();
+    const headers={'Content-Type':'application/json','Accept':'application/json'};
+    if(apiKey)headers['X-OPENFIGI-APIKEY']=apiKey;
+    try{
+      const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),30000);
+      let res;
+      try{res=await fetch(OPENFIGI_MAPPING,{method:'POST',headers,body:JSON.stringify(jobs),signal:ac.signal});}
+      finally{clearTimeout(timer);}
+      const text=await res.text();
+      if(res.ok){
+        const json=JSON.parse(text);
+        return cusips.map((cusip,i)=>({cusip,ticker:chooseOpenFigiTicker(json?.[i]),raw:json?.[i]}));
+      }
+      lastErr=new Error(`OpenFIGI HTTP ${res.status}`);
+      if(![429,500,502,503,504].includes(res.status))throw lastErr;
+      const retryAfter=Number(res.headers.get('ratelimit-reset')||res.headers.get('retry-after'));
+      await sleep(Number.isFinite(retryAfter)&&retryAfter>0?retryAfter*1000:Math.min(15000,1500*Math.pow(2,attempt)));
+    }catch(e){
+      lastErr=e;
+      if(attempt===5)break;
+      await sleep(Math.min(15000,1500*Math.pow(2,attempt)));
+    }
+  }
+  throw lastErr||new Error('OpenFIGI mapping failed');
+}
+async function mapCusipsToTickers(cusips){
+  const unique=[...new Set((cusips||[]).filter(x=>/^[A-Z0-9]{8,9}$/.test(String(x||''))))];
+  const out=new Map();
+  const apiKey=String(process.env.OPENFIGI_API_KEY||'').trim();
+  const batchSize=apiKey?100:10;
+  for(let i=0;i<unique.length;i+=batchSize){
+    const batch=unique.slice(i,i+batchSize);
+    const mapped=await openFigiFetchBatch(batch);
+    for(const row of mapped)if(validEquityTicker(row.ticker))out.set(row.cusip,row.ticker);
+    if((i+batchSize)%500===0||i+batchSize>=unique.length)console.log(`OpenFIGI CUSIP mapping: ${Math.min(i+batchSize,unique.length)}/${unique.length}, resolved=${out.size}.`);
+  }
+  return out;
+}
 async function loadIwbNportSnapshots(dates,currentMap){
-  const wanted=new Set(dates);
   const accessions=await discoverIwbNportFilings(Number(dates[0].slice(0,4)),Number(dates.at(-1).slice(0,4)));
   console.log(`SEC IWB discovery found ${accessions.length} NPORT-P accession(s).`);
-  const byReport=new Map();
-  let fetched=0,seriesMatches=0,parseTooSmall=0,fetchFailures=0;
+  const rawReports=[];
+  let fetched=0,seriesMatches=0,fetchFailures=0;
   const failureExamples=[];
   for(let i=0;i<accessions.length;i++){
     const acc=accessions[i],compact=acc.replaceAll('-','');
@@ -220,25 +303,45 @@ async function loadIwbNportSnapshots(dates,currentMap){
       if(!xml.includes(IWB_SERIES_ID))continue;
       seriesMatches++;
       const parsed=parseNportHoldingsXml(xml,currentMap);
-      if(parsed.reportDate&&parsed.holdings.length>=500)byReport.set(parsed.reportDate,{accession:acc,...parsed});
-      else{
-        parseTooSmall++;
-        if(failureExamples.length<5)failureExamples.push(`${acc}: report=${parsed.reportDate||'none'}, holdings=${parsed.holdings.length}`);
-      }
+      if(parsed.reportDate)rawReports.push({accession:acc,...parsed});
+      else if(failureExamples.length<5)failureExamples.push(`${acc}: missing report date`);
     }catch(e){
       fetchFailures++;
       if(failureExamples.length<5)failureExamples.push(`${acc}: ${e.message}`);
     }
   }
-  console.log(`SEC IWB archive diagnostics: fetched=${fetched}, seriesMatches=${seriesMatches}, usableReports=${byReport.size}, tooSmall=${parseTooSmall}, fetchFailures=${fetchFailures}.`);
+  const uniqueCusips=[...new Set(rawReports.flatMap(r=>r.unresolved.map(x=>x.cusip)))];
+  console.log(`SEC IWB archive diagnostics: fetched=${fetched}, seriesMatches=${seriesMatches}, reports=${rawReports.length}, unresolvedStockCUSIPs=${uniqueCusips.length}, fetchFailures=${fetchFailures}.`);
+  if(failureExamples.length)console.log(`SEC IWB sample issues: ${failureExamples.join(' | ')}`);
+  if(!rawReports.length)return {byReport:new Map(),out:new Map(),accessions};
+
+  // N-PORT generally omits exchange tickers for cash equities and reports CUSIP/ISIN
+  // instead. Resolve those identifiers with OpenFIGI rather than treating the two
+  // derivative ticker tags in the filing as the whole portfolio.
+  const cusipMap=await mapCusipsToTickers(uniqueCusips);
+  const byReport=new Map();
+  let unresolvedAfterMap=0,tooSmall=0;
+  for(const report of rawReports){
+    const holdings=[...report.holdings];
+    for(const row of report.unresolved){
+      const ticker=cusipMap.get(row.cusip);
+      if(!validEquityTicker(ticker)){unresolvedAfterMap++;continue;}
+      holdings.push({ticker,sector:currentMap.get(ticker)?.sector||'Unknown',name:row.name,title:row.title,cusip:row.cusip});
+    }
+    const dedup=[...new Map(holdings.map(h=>[h.ticker,h])).values()];
+    if(dedup.length>=500)byReport.set(report.reportDate,{accession:report.accession,reportDate:report.reportDate,holdings:dedup});
+    else{
+      tooSmall++;
+      if(failureExamples.length<8)failureExamples.push(`${report.accession}: report=${report.reportDate}, resolvedHoldings=${dedup.length}, rawCUSIPs=${report.unresolved.length}`);
+    }
+  }
+  console.log(`SEC IWB resolved diagnostics: usableReports=${byReport.size}, tooSmall=${tooSmall}, unresolvedCUSIPRows=${unresolvedAfterMap}, mappedUniqueCUSIPs=${cusipMap.size}/${uniqueCusips.length}.`);
   if(failureExamples.length)console.log(`SEC IWB sample issues: ${failureExamples.join(' | ')}`);
   const out=new Map();
   for(const asOf of dates){
     const candidates=[...byReport.keys()].filter(d=>d<=asOf).sort().reverse();
     const exact=byReport.get(asOf);
     const chosen=exact||byReport.get(candidates[0]);
-    // Membership must be fresh enough to represent the requested quarter; never
-    // carry a filing farther than ~100 days because that would hide missing coverage.
     if(chosen){
       const gap=(new Date(asOf)-new Date(chosen.reportDate))/86400000;
       if(gap>=0&&gap<=100)out.set(asOf,chosen);
@@ -275,7 +378,7 @@ async function buildHistoricalUniverse(dates){
   }
   const union=new Map();
   for(const m of byDate.values())for(const [ticker,x] of m)if(!union.has(ticker))union.set(ticker,{ticker,sector:x.sector||current.get(ticker)?.sector||'Unknown'});
-  return {byDate,coverage,union:[...union.values()],provider:'SEC N-PORT / iShares Russell 1000 ETF (IWB)',requestedStart:START,effectiveStart:Number(dates[0].slice(0,4))};
+  return {byDate,coverage,union:[...union.values()],provider:'SEC N-PORT IWB holdings + OpenFIGI CUSIP-to-ticker mapping',requestedStart:START,effectiveStart:Number(dates[0].slice(0,4))};
 }
 
 function historicalStockFromData(ticker,sector,rawFacts,priceHistory,asOf,diagnostics=null){
@@ -579,10 +682,10 @@ async function main(){
   const output={
     generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,backtestMode:'historical_core_point_in_time',frequency:FREQUENCY,requestedStartYear:START,startYear:historicalUniverse.effectiveStart||START,effectiveStartYear:historicalUniverse.effectiveStart||START,endYear:END,
     assumptions:{analystEstimates:'excluded_historical_unavailable',universe:'historical_iwb_holdings_required_fail_closed_no_current_watchlist_fallback',returns:'Yahoo adjusted-close total return where available; Stooq price-only fallback is explicitly flagged',benchmark:'SPY adjusted-close total return',valuationPrice:'raw historical close',secCutoff:'facts must be filed by as-of date'},
-    observations:flat.length,historicalUniverse:{provider:historicalUniverse.provider||'SEC N-PORT / IWB',coverage:historicalUniverse.coverage,uniqueTickers:historicalUniverse.union.length,note:'Point-in-time IWB membership is required for every snapshot; this run cannot silently fall back to the current watchlist. Residual bias can remain where former constituents cannot be resolved through free SEC/price sources.'},diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YTotalReturnCAGR'),summary3Y:summarize(flat,'realized3YTotalReturnCAGR'),summary5Y:summarize(flat,'realized5YTotalReturnCAGR'),signalAnalysis:buildSignalAnalysis(flat),portfolioSimulation:buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory),errors:errors.slice(0,500),snapshots:snapshotOutput
+    observations:flat.length,historicalUniverse:{provider:historicalUniverse.provider||'SEC N-PORT / IWB',coverage:historicalUniverse.coverage,uniqueTickers:historicalUniverse.union.length,note:'Point-in-time IWB membership is required for every snapshot. SEC N-PORT supplies historical CUSIPs; OpenFIGI maps those CUSIPs to historical/current equity symbols. No current-watchlist membership fallback is permitted. Residual bias can remain for identifiers OpenFIGI cannot resolve or price histories unavailable from free sources.'},diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YTotalReturnCAGR'),summary3Y:summarize(flat,'realized3YTotalReturnCAGR'),summary5Y:summarize(flat,'realized5YTotalReturnCAGR'),signalAnalysis:buildSignalAnalysis(flat),portfolioSimulation:buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory),errors:errors.slice(0,500),snapshots:snapshotOutput
   };
   const p=path.join(__dirname,'data','backtest-results.json'),tmp=p+'.tmp';fs.writeFileSync(tmp,JSON.stringify(output));fs.renameSync(tmp,p);
   console.log(`Done. Wrote ${flat.length} historical observations to data/backtest-results.json.`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,dailyPortfolioRisk,simulateAnnualPortfolio,buildPortfolioSimulation};
+module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,dailyPortfolioRisk,simulateAnnualPortfolio,buildPortfolioSimulation};
