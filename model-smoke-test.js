@@ -820,5 +820,5 @@ const atomFixture=`<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom
 const atomParsed=parseSecSeriesAtom(atomFixture);
 assert.strictEqual(atomParsed.length,1,'SEC series Atom parser did not find filing entry');
 assert.strictEqual(atomParsed[0].accession,'0001752724-25-118607','SEC series Atom parser lost accession number');
-console.log('V12.24 backtest regression passed: SEC N-PORT holdings and series-filtered EDGAR Atom accessions parse correctly.');
+console.log('V12.25 backtest regression passed: SEC N-PORT holdings and series-filtered EDGAR Atom accessions parse correctly.');
 

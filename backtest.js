@@ -33,7 +33,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.24-sec-series-feed-universe';
+const MODEL_VERSION='simple-v12.25-sec-pacing-diagnostics-universe';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -149,15 +149,36 @@ function parseSecSeriesAtom(atom){
   }
   return [...new Map(out.map(x=>[x.accession,x])).values()];
 }
+let lastSecRequestAt=0;
 async function secFetchText(url,label='SEC request',accept='application/json,text/xml,text/plain,*/*'){
+  // EDGAR is intentionally conservative about automated traffic. The historical
+  // universe pass can make dozens of archive requests in a short burst, which was
+  // triggering intermittent 503s on GitHub Actions. Pace every SEC request and
+  // retry transient server/rate-limit responses instead of treating them as missing data.
   const ua=process.env.SEC_USER_AGENT||'FreeScreener research contact@example.com';
-  const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),30000);
-  try{
-    const res=await fetch(url,{headers:{'User-Agent':ua,'Accept-Encoding':'gzip, deflate','Accept':accept},signal:ac.signal,redirect:'follow'});
-    const text=await res.text();
-    if(!res.ok)throw new Error(`${label} HTTP ${res.status}`);
-    return text;
-  } finally {clearTimeout(timer);}
+  const retryable=new Set([429,500,502,503,504]);
+  let lastErr=null;
+  for(let attempt=0;attempt<6;attempt++){
+    const now=Date.now();
+    const wait=Math.max(0,275-(now-lastSecRequestAt));
+    if(wait)await sleep(wait);
+    lastSecRequestAt=Date.now();
+    const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),30000);
+    try{
+      const res=await fetch(url,{headers:{'User-Agent':ua,'Accept-Encoding':'gzip, deflate','Accept':accept},signal:ac.signal,redirect:'follow'});
+      const text=await res.text();
+      if(res.ok)return text;
+      lastErr=new Error(`${label} HTTP ${res.status}`);
+      if(!retryable.has(res.status))throw lastErr;
+    }catch(e){
+      lastErr=e;
+      if(attempt===5)break;
+    }finally{clearTimeout(timer);}
+    // Exponential-ish backoff: 1s, 2s, 4s, 8s, 12s. This keeps us well
+    // below SEC fair-access limits when the service is under load.
+    await sleep(Math.min(12000,1000*Math.pow(2,attempt)));
+  }
+  throw lastErr||new Error(`${label} failed after retries`);
 }
 async function discoverIwbNportFilings(startYear,endYear){
   // Use EDGAR's series-filtered browse feed rather than full-text search. EFTS
@@ -187,17 +208,30 @@ async function discoverIwbNportFilings(startYear,endYear){
 async function loadIwbNportSnapshots(dates,currentMap){
   const wanted=new Set(dates);
   const accessions=await discoverIwbNportFilings(Number(dates[0].slice(0,4)),Number(dates.at(-1).slice(0,4)));
+  console.log(`SEC IWB discovery found ${accessions.length} NPORT-P accession(s).`);
   const byReport=new Map();
+  let fetched=0,seriesMatches=0,parseTooSmall=0,fetchFailures=0;
+  const failureExamples=[];
   for(let i=0;i<accessions.length;i++){
     const acc=accessions[i],compact=acc.replaceAll('-','');
     try{
       const xml=await secFetchText(`${SEC_ARCHIVES}/${IWB_TRUST_CIK}/${compact}/primary_doc.xml`,`IWB NPORT ${acc}`);
+      fetched++;
       if(!xml.includes(IWB_SERIES_ID))continue;
+      seriesMatches++;
       const parsed=parseNportHoldingsXml(xml,currentMap);
       if(parsed.reportDate&&parsed.holdings.length>=500)byReport.set(parsed.reportDate,{accession:acc,...parsed});
-    }catch(e){/* one malformed/non-IWB result should not kill discovery */}
-    if(i%8===7)await sleep(120);
+      else{
+        parseTooSmall++;
+        if(failureExamples.length<5)failureExamples.push(`${acc}: report=${parsed.reportDate||'none'}, holdings=${parsed.holdings.length}`);
+      }
+    }catch(e){
+      fetchFailures++;
+      if(failureExamples.length<5)failureExamples.push(`${acc}: ${e.message}`);
+    }
   }
+  console.log(`SEC IWB archive diagnostics: fetched=${fetched}, seriesMatches=${seriesMatches}, usableReports=${byReport.size}, tooSmall=${parseTooSmall}, fetchFailures=${fetchFailures}.`);
+  if(failureExamples.length)console.log(`SEC IWB sample issues: ${failureExamples.join(' | ')}`);
   const out=new Map();
   for(const asOf of dates){
     const candidates=[...byReport.keys()].filter(d=>d<=asOf).sort().reverse();
