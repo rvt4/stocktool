@@ -607,6 +607,49 @@ async function fetchYahooHistory(ticker, years = 5) {
   return out;
 }
 
+async function fetchBacktestHistory(ticker, years = 12) {
+  // Backtests need TWO price concepts at once:
+  //   close         = the actual historical quote used for point-in-time valuation
+  //   adjustedClose = split/dividend-adjusted series used for realized total returns
+  // Yahoo exposes both in one free chart response. Prefer it here so valuation is not
+  // accidentally based on a dividend-adjusted historical quote and performance is not
+  // understated by ignoring distributions. Stooq remains the no-key fallback.
+  try {
+    const symbol = normalizeFinnhubTicker(ticker).replace(/-/g, '-');
+    const now = Math.floor(Date.now() / 1000);
+    const start = new Date();
+    start.setUTCFullYear(start.getUTCFullYear() - Math.max(1, Number(years) || 12));
+    start.setUTCDate(start.getUTCDate() - 15);
+    const period1 = Math.floor(start.getTime() / 1000);
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${now}&interval=1d&events=div%2Csplits&includeAdjustedClose=true`;
+    const res = await fetchWithTimeout(url, { headers: { 'User-Agent': 'Mozilla/5.0 FreeScreener/1.0' } }, `Yahoo backtest history ${ticker}`);
+    if (res.ok) {
+      const json = await res.json();
+      const result = json?.chart?.result?.[0];
+      const ts = result?.timestamp || [];
+      const q = result?.indicators?.quote?.[0] || {};
+      const raw = q.close || [];
+      const adj = result?.indicators?.adjclose?.[0]?.adjclose || [];
+      const out=[];
+      for(let i=0;i<ts.length;i++){
+        const close=Number(raw[i]), adjustedClose=Number(adj[i]);
+        if(!(close>0)) continue;
+        out.push({
+          date:new Date(ts[i]*1000).toISOString().slice(0,10),
+          close,
+          adjustedClose:adjustedClose>0?adjustedClose:close,
+          source:'yahoo'
+        });
+      }
+      if(out.length) return out;
+    }
+  } catch (err) {
+    console.warn(`Yahoo backtest history ${ticker} failed (${err.message}); falling back to Stooq.`);
+  }
+  const stooq=await fetchStooqHistory(ticker,years);
+  return (stooq||[]).map(x=>({...x,adjustedClose:x.close,source:x.source||'stooq_price_only'}));
+}
+
 async function fetchStooqHistory(ticker, years = 5) {
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - years);
@@ -955,7 +998,7 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
 
 const api = {
   fetchSecFacts, parseAnnualFinancials, parseQuarterlyRevenue, recentQuarterYoYGrowth, blendedForwardGrowth,
-  fetchStooqPrice, fetchStooqHistory, fetchYahooHistory,
+  fetchStooqPrice, fetchStooqHistory, fetchYahooHistory, fetchBacktestHistory,
   fetchFinnhubProfile, fetchFinnhubQuote, fetchFinnhubRevenueEstimate,
   buildStockRecord, latestDilutedSharesFromFacts, normalizeHistoryForCorporateAction, shareDenominatorLooksSuspicious, reconcileSharesWithLiveMarketCap, getTickerCikMap, normalizeSecTicker, normalizeFinnhubTicker, fetchWithTimeout,
 };

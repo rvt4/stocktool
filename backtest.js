@@ -24,7 +24,7 @@ const fs=require('fs');
 const path=require('path');
 const {
   fetchSecFacts, parseAnnualFinancials, parseQuarterlyRevenue, recentQuarterYoYGrowth,
-  blendedForwardGrowth, fetchStooqHistory, latestDilutedSharesFromFacts,
+  blendedForwardGrowth, fetchBacktestHistory, latestDilutedSharesFromFacts,
   normalizeHistoryForCorporateAction, normalizeSecTicker
 }=require('./data-fetchers');
 const {buildForecast}=require('./engine/forecast-engine');
@@ -32,7 +32,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.19-portfolio-backtest';
+const MODEL_VERSION='simple-v12.20-robustness-backtest';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -79,13 +79,78 @@ function factsAsOf(raw,asOf){
   }
   return out;
 }
-function priceOnOrBefore(history,date,maxGapDays=12){
+function priceOnOrBefore(history,date,maxGapDays=12,field='close'){
   const t=new Date(date).getTime(); let best=null;
   for(const p of history||[]){const pt=new Date(p.date).getTime();if(pt<=t&&(!best||pt>best.pt))best={t,pt,p};}
   if(!best)return null;
-  return (best.t-best.pt)/86400000<=maxGapDays?finite(best.p.close):null;
+  const v=finite(best.p?.[field]);
+  return (best.t-best.pt)/86400000<=maxGapDays?v:null;
 }
+function totalReturnCAGR(history,startDate,endDate,years){
+  const a=priceOnOrBefore(history,startDate,12,'adjustedClose'),b=priceOnOrBefore(history,endDate,12,'adjustedClose');
+  return a>0&&b>0?cagr(a,b,years):null;
+}
+
 function addYears(date,years){const d=new Date(date+'T00:00:00Z');d.setUTCFullYear(d.getUTCFullYear()+years);return d.toISOString().slice(0,10);}
+
+const IWB_HOLDINGS_BASE='https://www.ishares.com/us/products/239707/ishares-russell-1000-etf/1467271812596.ajax';
+function normalizeSectorName(s){
+  const x=String(s||'').trim();
+  const map={
+    'Information Technology':'Technology','Health Care':'Healthcare','Communication Services':'Communication Services',
+    'Consumer Discretionary':'Consumer Discretionary','Consumer Staples':'Consumer Staples','Financials':'Financials',
+    'Industrials':'Industrials','Energy':'Energy','Materials':'Materials','Real Estate':'Real Estate','Utilities':'Utilities'
+  };
+  return map[x]||x||'Unknown';
+}
+function priorDateCandidates(asOf,days=10){
+  const d=new Date(asOf+'T00:00:00Z'),out=[];
+  for(let i=0;i<=days;i++){const x=new Date(d);x.setUTCDate(x.getUTCDate()-i);out.push(x.toISOString().slice(0,10));}
+  return out;
+}
+async function fetchIwbHoldingsAsOf(asOf){
+  for(const candidate of priorDateCandidates(asOf,10)){
+    const ymd=candidate.replaceAll('-','');
+    const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),25000);
+    try{
+      const url=`${IWB_HOLDINGS_BASE}?tab=all&fileType=json&asOfDate=${ymd}`;
+      const res=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0 FreeScreener/1.0','Accept':'application/json,text/plain,*/*'},signal:ac.signal});
+      if(!res.ok)continue;
+      let text=await res.text();
+      text=text.replace(/^\uFEFF/,'');
+      const start=text.indexOf('{');if(start>0)text=text.slice(start);
+      const json=JSON.parse(text),rows=json?.aaData||[];
+      const holdings=[];
+      for(const row of rows){
+        const ticker=String(row?.[0]??'').trim().toUpperCase().replaceAll('.','-');
+        const name=String(row?.[1]??'').trim(),sector=normalizeSectorName(row?.[2]);
+        const assetClass=String(row?.[3]??'').trim();
+        if(!ticker||ticker==='-'||ticker==='CASH' || /cash|future|swap|currency/i.test(`${name} ${assetClass}`))continue;
+        if(!/^[A-Z0-9-]{1,10}$/.test(ticker))continue;
+        holdings.push({ticker,sector,name});
+      }
+      if(holdings.length>=500)return {requestedAsOf:asOf,sourceAsOf:candidate,holdings};
+    }catch(e){
+      // Try the prior archived business day. Historical-universe failure is non-fatal;
+      // the caller records it and falls back rather than pretending coverage exists.
+    } finally {clearTimeout(timer);}
+  }
+  return null;
+}
+async function buildHistoricalUniverse(dates){
+  const byDate=new Map(),coverage=[];
+  for(const asOf of dates){
+    const snap=await fetchIwbHoldingsAsOf(asOf);
+    if(snap){byDate.set(asOf,new Map(snap.holdings.map(x=>[x.ticker,x])));coverage.push({asOf,sourceAsOf:snap.sourceAsOf,count:snap.holdings.length,status:'iwb_history'});}
+    else coverage.push({asOf,count:0,status:'fallback_current_watchlist'});
+    await sleep(150);
+  }
+  const current=new Map(watchlist.map(x=>[x.ticker,x]));
+  for(const asOf of dates)if(!byDate.has(asOf))byDate.set(asOf,new Map(current));
+  const union=new Map();
+  for(const m of byDate.values())for(const [ticker,x] of m)if(!union.has(ticker))union.set(ticker,{ticker,sector:x.sector||current.get(ticker)?.sector||'Unknown'});
+  return {byDate,coverage,union:[...union.values()]};
+}
 
 function historicalStockFromData(ticker,sector,rawFacts,priceHistory,asOf,diagnostics=null){
   const facts=factsAsOf(rawFacts,asOf);
@@ -166,9 +231,12 @@ function rank(rows){const s=[...rows].sort((a,b)=>(b.investmentScore||0)-(a.inve
 function attachRealized(row,history,spyHistory,asOf){
   for(const n of [1,3,5,10]){
     const end=addYears(asOf,n), endPx=priceOnOrBefore(history,end), spy0=priceOnOrBefore(spyHistory,asOf), spy1=priceOnOrBefore(spyHistory,end);
-    const realized=endPx>0?cagr(row.price,endPx,n):null, bench=spy0>0&&spy1>0?cagr(spy0,spy1,n):null;
-    row[`realized${n}YPriceCAGR`]=realized; row[`spy${n}YPriceCAGR`]=bench;
-    row[`excess${n}YPriceCAGR`]=realized!=null&&bench!=null?realized-bench:null;
+    const priceRealized=endPx>0?cagr(row.price,endPx,n):null, priceBench=spy0>0&&spy1>0?cagr(spy0,spy1,n):null;
+    row[`realized${n}YPriceCAGR`]=priceRealized; row[`spy${n}YPriceCAGR`]=priceBench;
+    row[`excess${n}YPriceCAGR`]=priceRealized!=null&&priceBench!=null?priceRealized-priceBench:null;
+    const totalRealized=totalReturnCAGR(history,asOf,end,n), totalBench=totalReturnCAGR(spyHistory,asOf,end,n);
+    row[`realized${n}YTotalReturnCAGR`]=totalRealized; row[`spy${n}YTotalReturnCAGR`]=totalBench;
+    row[`excess${n}YTotalReturnCAGR`]=totalRealized!=null&&totalBench!=null?totalRealized-totalBench:null;
   }
 }
 function alphaBucket(a){if(!Number.isFinite(a))return 'N/A';if(a>=.10)return '>= +10%';if(a>=.05)return '+5% to +10%';if(a>=0)return '0% to +5%';if(a>=-.05)return '-5% to 0%';return '< -5%';}
@@ -182,7 +250,7 @@ function mean(a){const v=a.filter(Number.isFinite);return v.length?v.reduce((x,y
 function pctTrue(a){return a.length?a.filter(Boolean).length/a.length:null;}
 function percentileSorted(v,p){if(!v.length)return null;const i=(v.length-1)*p,lo=Math.floor(i),hi=Math.ceil(i);return lo===hi?v[lo]:v[lo]+(v[hi]-v[lo])*(i-lo);}
 function outcomeStats(rows,n){
-  const excess=`excess${n}YPriceCAGR`,realized=`realized${n}YPriceCAGR`;
+  const excess=`excess${n}YTotalReturnCAGR`,realized=`realized${n}YTotalReturnCAGR`;
   const v=rows.filter(r=>Number.isFinite(r[excess])&&Number.isFinite(r[realized]));
   return {n:v.length,medianRealized:median(v.map(r=>r[realized])),medianExcess:median(v.map(r=>r[excess])),meanExcess:mean(v.map(r=>r[excess])),beatSpyRate:pctTrue(v.map(r=>r[excess]>0)),hit10Rate:pctTrue(v.map(r=>r[realized]>=.10)),hit15Rate:pctTrue(v.map(r=>r[realized]>=.15))};
 }
@@ -198,11 +266,11 @@ function scoreDeciles(rows,field,n){
 function portfolioStats(years){
   const valid=(years||[]).filter(y=>Number.isFinite(y.portfolioReturn)&&Number.isFinite(y.spyReturn));
   if(!valid.length)return {years:[],yearCount:0};
-  let wealth=1,spyWealth=1,peak=1,maxDrawdown=0;
+  let wealth=1,spyWealth=1,peak=1,maxYearEndDrawdown=0;
   const curve=[];
   for(const y of valid){
     wealth*=1+y.portfolioReturn; spyWealth*=1+y.spyReturn;
-    peak=Math.max(peak,wealth); maxDrawdown=Math.min(maxDrawdown,wealth/peak-1);
+    peak=Math.max(peak,wealth); maxYearEndDrawdown=Math.min(maxYearEndDrawdown,wealth/peak-1);
     curve.push({...y,wealth,spyWealth});
   }
   const n=valid.length;
@@ -212,7 +280,7 @@ function portfolioStats(years){
   return {
     years:curve,yearCount:n,portfolioCAGR,spyCAGR,annualizedExcess:portfolioCAGR-spyCAGR,
     cumulativeReturn:wealth-1,spyCumulativeReturn:spyWealth-1,
-    annualVolatility:Math.sqrt(variance),yearEndMaxDrawdown:maxDrawdown,
+    annualVolatility:Math.sqrt(variance),yearEndMaxDrawdown:maxYearEndDrawdown,
     beatSpyRate:pctTrue(valid.map(y=>y.portfolioReturn>y.spyReturn)),
     positiveYearRate:pctTrue(valid.map(y=>y.portfolioReturn>0)),
     worstYear:valid.reduce((a,b)=>!a||b.portfolioReturn<a.portfolioReturn?b:a,null),
@@ -220,35 +288,82 @@ function portfolioStats(years){
     averageHoldings:mean(valid.map(y=>y.holdings)),finalWealth10k:10000*wealth,spyFinalWealth10k:10000*spyWealth
   };
 }
-function simulateAnnualPortfolio(snapshotOutput,{name,topN=20,minAlpha=.10,requireTopRank=false}={}){
+function seriesPointOnOrAfter(history,date,maxGapDays=12){
+  const t=new Date(date).getTime(); let best=null;
+  for(const p of history||[]){const pt=new Date(p.date).getTime();if(pt>=t&&(!best||pt<best.pt))best={t,pt,p};}
+  if(!best||(best.pt-best.t)/86400000>maxGapDays)return null;
+  return best.p;
+}
+function dailyPortfolioRisk(tickers,startDate,endDate,historyByTicker,spyHistory){
+  const series=[];
+  for(const ticker of tickers){
+    const h=historyByTicker.get(ticker)||[];
+    const start=seriesPointOnOrAfter(h,startDate);
+    if(!(finite(start?.adjustedClose)>0))continue;
+    const points=(h||[]).filter(p=>p.date>=start.date&&p.date<=endDate&&finite(p.adjustedClose)>0);
+    if(points.length<2)continue;
+    series.push({ticker,startPx:finite(start.adjustedClose),byDate:new Map(points.map(p=>[p.date,finite(p.adjustedClose)]))});
+  }
+  const spyStart=seriesPointOnOrAfter(spyHistory,startDate),spyStartPx=finite(spyStart?.adjustedClose);
+  const dates=(spyHistory||[]).filter(p=>p.date>=(spyStart?.date||startDate)&&p.date<=endDate&&finite(p.adjustedClose)>0).map(p=>p.date);
+  if(!series.length||!(spyStartPx>0)||!dates.length)return null;
+  let peak=1,maxDrawdown=0,spyPeak=1,spyMaxDrawdown=0,lastVals=new Map();
+  for(const date of dates){
+    const ratios=[];
+    for(const s of series){const px=s.byDate.get(date);if(px>0)lastVals.set(s.ticker,px);const use=lastVals.get(s.ticker);if(use>0)ratios.push(use/s.startPx);}
+    if(!ratios.length)continue;
+    const wealth=mean(ratios);peak=Math.max(peak,wealth);maxDrawdown=Math.min(maxDrawdown,wealth/peak-1);
+    const spy=priceOnOrBefore(spyHistory,date,5,'adjustedClose');if(spy>0){const sw=spy/spyStartPx;spyPeak=Math.max(spyPeak,sw);spyMaxDrawdown=Math.min(spyMaxDrawdown,sw/spyPeak-1);}
+  }
+  return {dailyMaxDrawdown:maxDrawdown,spyDailyMaxDrawdown:spyMaxDrawdown,seriesCount:series.length};
+}
+function simulateAnnualPortfolio(snapshotOutput,historyByTicker,spyHistory,{name,topN=20,minAlpha=.10,requireTopRank=false}={}){
   const years=[];
   for(const snap of snapshotOutput||[]){
     const eligible=(snap.rows||[])
-      .filter(r=>Number.isFinite(r.realized1YPriceCAGR)&&Number.isFinite(r.spy1YPriceCAGR)&&Number.isFinite(r.expectedAlpha))
+      .filter(r=>Number.isFinite(r.realized1YTotalReturnCAGR)&&Number.isFinite(r.spy1YTotalReturnCAGR)&&Number.isFinite(r.expectedAlpha))
       .filter(r=>r.expectedAlpha>=minAlpha)
       .filter(r=>!requireTopRank||r.rank<=Math.ceil((r.universeSize||snap.rows.length)*.20))
       .sort((a,b)=>(a.rank||Infinity)-(b.rank||Infinity))
       .slice(0,topN);
     if(!eligible.length)continue;
-    const portfolioReturn=mean(eligible.map(r=>r.realized1YPriceCAGR));
-    const spyReturn=median(eligible.map(r=>r.spy1YPriceCAGR));
+    const returns=eligible.map(r=>r.realized1YTotalReturnCAGR),portfolioReturn=mean(returns);
+    const spyReturn=median(eligible.map(r=>r.spy1YTotalReturnCAGR));
+    const sorted=[...returns].sort((a,b)=>a-b),trimmed=sorted.length>2?mean(sorted.slice(0,-1)):mean(sorted);
+    const risk=dailyPortfolioRisk(eligible.map(r=>r.ticker),snap.asOf,addYears(snap.asOf,1),historyByTicker,spyHistory);
     years.push({
       startYear:Number(String(snap.asOf).slice(0,4)),asOf:snap.asOf,holdings:eligible.length,
       portfolioReturn,spyReturn,excessReturn:portfolioReturn-spyReturn,
+      medianHoldingReturn:median(returns),returnExBestHolding:trimmed,
+      dailyMaxDrawdown:risk?.dailyMaxDrawdown??null,spyDailyMaxDrawdown:risk?.spyDailyMaxDrawdown??null,
       tickers:eligible.map(r=>r.ticker)
     });
   }
-  return {name,topN,minAlpha,requireTopRank,...portfolioStats(years)};
+  const stats=portfolioStats(years);
+  stats.dailyMaxDrawdown=years.map(y=>y.dailyMaxDrawdown).filter(Number.isFinite).reduce((m,x)=>Math.min(m,x),0);
+  stats.spyDailyMaxDrawdown=years.map(y=>y.spyDailyMaxDrawdown).filter(Number.isFinite).reduce((m,x)=>Math.min(m,x),0);
+  stats.meanAnnualReturnExBestHolding=mean(years.map(y=>y.returnExBestHolding));
+  stats.meanMedianHoldingReturn=mean(years.map(y=>y.medianHoldingReturn));
+  return {name,topN,minAlpha,requireTopRank,...stats};
 }
-function buildPortfolioSimulation(snapshotOutput){
+function periodStats(strategy,startYear,endYear){
+  const years=(strategy?.years||[]).filter(y=>y.startYear>=startYear&&y.startYear<=endYear);
+  return {...portfolioStats(years),startYear,endYear};
+}
+function buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory){
   const strategies=[
     {name:'Top 10 · Alpha ≥10%',topN:10,minAlpha:.10},
     {name:'Top 20 · Alpha ≥10%',topN:20,minAlpha:.10},
     {name:'Top 30 · Alpha ≥10%',topN:30,minAlpha:.10},
     {name:'Top 20 rank · no Alpha gate',topN:20,minAlpha:-10}
-  ].map(x=>simulateAnnualPortfolio(snapshotOutput,x));
+  ].map(x=>simulateAnnualPortfolio(snapshotOutput,historyByTicker,spyHistory,x));
+  for(const s of strategies){
+    s.development=periodStats(s,2016,2021);
+    s.validation=periodStats(s,2022,2025);
+  }
   return {
-    description:'Annual equal-weight portfolio simulation. At each historical year-end, select the highest-ranked stocks meeting the stated point-in-time Alpha rule, hold for one year, then rebalance. Returns are price-only; transaction costs, taxes and dividends are excluded. Drawdown is measured from year-end portfolio values, not daily lows.',
+    description:'Annual equal-weight portfolio simulation using split/dividend-adjusted total returns. At each historical year-end, select the highest-ranked stocks meeting the point-in-time Alpha rule, hold for one year, then rebalance. Daily max drawdown uses the daily adjusted-close path of the actual selected holdings. Transaction costs and taxes are excluded.',
+    robustness:{development:'2016-2021 start cohorts',validation:'2022-2025 start cohorts (only completed 1Y outcomes are included)',survivorship:'Point-in-time IWB holdings are used as a free Russell 1000 membership proxy when available. This materially reduces survivorship bias, but does not eliminate it because some former constituents cannot be resolved through current free SEC/ticker mappings.'},
     strategies
   };
 }
@@ -269,17 +384,21 @@ function buildSignalAnalysis(rows){
       byCohort:groupedOutcome(rows,r=>String(r.asOf||'').slice(0,4),n).sort((a,b)=>a.bucket.localeCompare(b.bucket))
     };
   }
-  return {description:'Point-in-time signal validation. Excess return is realized stock price CAGR minus SPY price CAGR over the same horizon.',byHorizon};
+  return {description:'Point-in-time signal validation. Excess return is realized split/dividend-adjusted stock total-return CAGR minus SPY total-return CAGR over the same horizon.',byHorizon};
 }
 
 async function main(){
   fs.mkdirSync(path.join(__dirname,'data'),{recursive:true});
-  const dates=snapshotDates(), universe=LIMIT?watchlist.slice(0,LIMIT):watchlist;
-  console.log(`Historical core backtest: ${universe.length} tickers × ${dates.length} ${FREQUENCY} dates (${dates[0]} to ${dates.at(-1)}).`);
+  const dates=snapshotDates();
+  console.log(`Loading point-in-time Russell 1000 proxy membership from historical IWB holdings for ${dates.length} snapshot dates...`);
+  const historicalUniverse=await buildHistoricalUniverse(dates);
+  const universe=LIMIT?historicalUniverse.union.slice(0,LIMIT):historicalUniverse.union;
+  console.log(`Historical core backtest: ${universe.length} unique historical/current tickers across ${dates.length} ${FREQUENCY} dates (${dates[0]} to ${dates.at(-1)}).`);
   console.log('Historical analyst estimates are intentionally excluded to avoid look-ahead bias.');
-  const spyHistory=await fetchStooqHistory('SPY',HISTORY_YEARS);
+  console.log('Historical universe coverage:', JSON.stringify(historicalUniverse.coverage));
+  const spyHistory=await fetchBacktestHistory('SPY',HISTORY_YEARS);
   if(!spyHistory.length) throw new Error('SPY historical price history was empty; cannot benchmark backtest.');
-  const snapshots=new Map(dates.map(d=>[d,[]])); const errors=[];
+  const snapshots=new Map(dates.map(d=>[d,[]])); const errors=[]; const historyByTicker=new Map();
   const diagnostics={
     tickerDateAttempts:0,tickersFetched:0,tickerFetchFailures:0,
     usableFinancialHistory:0,insufficientFinancialHistory:0,
@@ -292,13 +411,17 @@ async function main(){
     const {ticker,sector}=universe[i];
     try{
       const sec=normalizeSecTicker(ticker);
-      const [facts,history]=await Promise.all([fetchSecFacts(sec),fetchStooqHistory(sec,HISTORY_YEARS)]);
+      const [facts,history]=await Promise.all([fetchSecFacts(sec),fetchBacktestHistory(sec,HISTORY_YEARS)]);
+      historyByTicker.set(ticker,history);
       diagnostics.tickersFetched++;
       if(!history.length && skipExamples.length<20) skipExamples.push({ticker,reason:'empty_stooq_history'});
       for(const asOf of dates){
+        const membership=historicalUniverse.byDate.get(asOf);
+        if(!membership?.has(ticker))continue;
         diagnostics.tickerDateAttempts++;
         const before={...diagnostics};
-        const stock=historicalStockFromData(ticker,sector,facts,history,asOf,diagnostics);
+        const asOfSector=membership.get(ticker)?.sector||sector;
+        const stock=historicalStockFromData(ticker,asOfSector,facts,history,asOf,diagnostics);
         if(!stock){
           if(skipExamples.length<20){
             let reason='historical_stock_unavailable';
@@ -329,11 +452,11 @@ async function main(){
   for(const asOf of dates){const rows=snapshots.get(asOf);rank(rows);flat.push(...rows.map(r=>({...r,asOf})));snapshotOutput.push({asOf,count:rows.length,rows});}
   const output={
     generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,backtestMode:'historical_core_point_in_time',frequency:FREQUENCY,startYear:START,endYear:END,
-    assumptions:{analystEstimates:'excluded_historical_unavailable',universe:'current_watchlist_survivorship_biased',returns:'Stooq price CAGR; dividends not included',benchmark:'SPY price CAGR',secCutoff:'facts must be filed by as-of date'},
-    observations:flat.length,diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YPriceCAGR'),summary3Y:summarize(flat,'realized3YPriceCAGR'),summary5Y:summarize(flat,'realized5YPriceCAGR'),signalAnalysis:buildSignalAnalysis(flat),portfolioSimulation:buildPortfolioSimulation(snapshotOutput),errors:errors.slice(0,500),snapshots:snapshotOutput
+    assumptions:{analystEstimates:'excluded_historical_unavailable',universe:'historical_iwb_holdings_survivorship_reduced_with_current_watchlist_fallback',returns:'Yahoo adjusted-close total return where available; Stooq price-only fallback is explicitly flagged',benchmark:'SPY adjusted-close total return',valuationPrice:'raw historical close',secCutoff:'facts must be filed by as-of date'},
+    observations:flat.length,historicalUniverse:{provider:'iShares IWB historical holdings',coverage:historicalUniverse.coverage,uniqueTickers:historicalUniverse.union.length,note:'Point-in-time membership materially reduces current-watchlist survivorship bias. Residual bias remains where former constituents cannot be resolved through free SEC/price sources.'},diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YTotalReturnCAGR'),summary3Y:summarize(flat,'realized3YTotalReturnCAGR'),summary5Y:summarize(flat,'realized5YTotalReturnCAGR'),signalAnalysis:buildSignalAnalysis(flat),portfolioSimulation:buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory),errors:errors.slice(0,500),snapshots:snapshotOutput
   };
   const p=path.join(__dirname,'data','backtest-results.json'),tmp=p+'.tmp';fs.writeFileSync(tmp,JSON.stringify(output));fs.renameSync(tmp,p);
   console.log(`Done. Wrote ${flat.length} historical observations to data/backtest-results.json.`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,snapshotDates,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,simulateAnnualPortfolio,buildPortfolioSimulation};
+module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,fetchIwbHoldingsAsOf,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,dailyPortfolioRisk,simulateAnnualPortfolio,buildPortfolioSimulation};

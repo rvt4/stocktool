@@ -777,7 +777,7 @@ console.log('V12.13 transmission tests passed: reconciled gross economics reach 
 // row in the returned Stooq history. The previous comparison accidentally used
 // the target timestamp as the incumbent timestamp, causing every historical
 // snapshot to fail the max-gap check and producing zero backtest observations.
-const {priceOnOrBefore}=require('./backtest');
+const {priceOnOrBefore,totalReturnCAGR}=require('./backtest');
 const historicalPriceFixture=[
   {date:'2016-01-04',close:10},
   {date:'2016-12-29',close:19},
@@ -788,3 +788,15 @@ assert.strictEqual(priceOnOrBefore(historicalPriceFixture,'2016-12-31'),20,'hist
 assert.strictEqual(priceOnOrBefore(historicalPriceFixture,'2016-12-29'),19,'historical price selector failed an exact-date match');
 assert.strictEqual(priceOnOrBefore(historicalPriceFixture,'2015-12-31'),null,'historical price selector used a future trading day');
 console.log('V12.17.1 backtest regression passed: historical prices select the latest eligible trading day.');
+
+// V12.20 total-return backtest regression -------------------------------------
+// Valuation must continue to use the raw historical close, while realized
+// backtest performance uses adjusted close so splits/dividends are included.
+const totalReturnFixture=[
+  {date:'2020-12-31',close:100,adjustedClose:90},
+  {date:'2021-12-31',close:108,adjustedClose:108},
+];
+assert.strictEqual(priceOnOrBefore(totalReturnFixture,'2020-12-31'),100,'point-in-time valuation price accidentally used adjusted close');
+const tr=totalReturnCAGR(totalReturnFixture,'2020-12-31','2021-12-31',1);
+assert(Math.abs(tr-.20)<1e-12,'realized total return did not use adjusted-close series');
+console.log('V12.20 backtest regression passed: valuation uses raw close while realized returns use adjusted close.');
