@@ -777,7 +777,7 @@ console.log('V12.13 transmission tests passed: reconciled gross economics reach 
 // row in the returned Stooq history. The previous comparison accidentally used
 // the target timestamp as the incumbent timestamp, causing every historical
 // snapshot to fail the max-gap check and producing zero backtest observations.
-const {priceOnOrBefore,totalReturnCAGR,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker}=require('./backtest');
+const {priceOnOrBefore,totalReturnCAGR,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,portfolioStats}=require('./backtest');
 const historicalPriceFixture=[
   {date:'2016-01-04',close:10},
   {date:'2016-12-29',close:19},
@@ -826,4 +826,33 @@ assert.strictEqual(atomParsed[0].accession,'0001752724-25-118607','SEC series At
 assert.strictEqual(chooseOpenFigiTicker({data:[{ticker:'VLTO',marketSector:'Equity',securityType2:'Common Stock',exchCode:'US',compositeFIGI:'BBG01J2W8ZK6'}]}),'VLTO','OpenFIGI mapper did not select a common-stock ticker');
 assert.strictEqual(chooseOpenFigiTicker({data:[{ticker:'ESH26',marketSector:'Equity',securityType2:'Future',exchCode:'US'}]}),null,'OpenFIGI mapper accepted a derivative as an equity constituent');
 console.log('V12.26 backtest regression passed: SEC N-PORT CUSIPs survive parsing and OpenFIGI common-stock ticker selection is guarded.');
+
+// V12.28: the investable portfolio path must use non-overlapping next-rebalance
+// returns, execute after the signal date, annualize quarterly volatility/CAGR, and
+// charge turnover rather than compounding overlapping 1Y cohorts.
+const qHist=[
+  {date:'2025-03-31',adjustedClose:100,close:100},
+  {date:'2025-04-01',adjustedClose:101,close:101},
+  {date:'2025-06-30',adjustedClose:110,close:110},
+  {date:'2025-07-01',adjustedClose:111,close:111}
+];
+const qRet=adjustedReturnBetween(qHist,'2025-03-31','2025-06-30',{executeAfterStart:true});
+assert(Math.abs(qRet.return-(111/101-1))<1e-12,'investable return did not execute after signal date / next rebalance');
+assert.strictEqual(qRet.startTradeDate,'2025-04-01');
+assert.strictEqual(qRet.endTradeDate,'2025-07-01');
+assert(Math.abs(equalWeightTurnover(['A','B'],new Map([['A',.5],['B',.5]])))<1e-12,'unchanged equal-weight portfolio should have zero turnover');
+assert(Math.abs(equalWeightTurnover(['C','D'],new Map([['A',.5],['B',.5]]))-1)<1e-12,'full replacement should have 100% one-way turnover');
+const ew=endWeightsFromReturns(['A','B'],new Map([['A',.10],['B',-.10]]));
+assert(ew.get('A')>ew.get('B')&&Math.abs([...ew.values()].reduce((a,b)=>a+b,0)-1)<1e-12,'ending portfolio weights do not drift/reconcile');
+const qStats=portfolioStats([
+  {portfolioReturn:.10,spyReturn:.05,holdings:10},
+  {portfolioReturn:.00,spyReturn:.02,holdings:10},
+  {portfolioReturn:.05,spyReturn:.03,holdings:10},
+  {portfolioReturn:-.02,spyReturn:.01,holdings:10}
+],{periodsPerYear:4});
+assert(Math.abs(qStats.portfolioCAGR-((1.10*1.00*1.05*.98)-1))<1e-12,'quarterly chronological CAGR is not compounded over one year correctly');
+assert.strictEqual(qStats.periodCount,4);
+assert.strictEqual(qStats.yearCount,1);
+console.log('V12.28 investable-portfolio regression passed: next-day execution, non-overlapping compounding, turnover, and quarterly annualization are enforced.');
+
 

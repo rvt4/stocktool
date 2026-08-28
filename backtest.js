@@ -33,7 +33,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.27-nport-effective-start';
+const MODEL_VERSION='simple-v12.28-investable-quarterly-portfolio';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -93,6 +93,8 @@ function totalReturnCAGR(history,startDate,endDate,years){
 }
 
 function addYears(date,years){const d=new Date(date+'T00:00:00Z');d.setUTCFullYear(d.getUTCFullYear()+years);return d.toISOString().slice(0,10);}
+function addDays(date,days){const d=new Date(date+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);}
+function addMonths(date,months){const d=new Date(date+'T00:00:00Z');d.setUTCMonth(d.getUTCMonth()+months);return d.toISOString().slice(0,10);}
 
 const IWB_SERIES_ID='S000004347';
 const IWB_TRUST_CIK='1100663';
@@ -524,28 +526,29 @@ function scoreDeciles(rows,field,n){
   const cuts=Array.from({length:9},(_,i)=>percentileSorted(vals,(i+1)/10));
   return groupedOutcome(rows,r=>{const x=finite(r[field]);if(x==null)return null;let d=1;while(d<=9&&x>cuts[d-1])d++;return `D${d}`;},n).sort((a,b)=>Number(a.bucket.slice(1))-Number(b.bucket.slice(1)));
 }
-function portfolioStats(years){
-  const valid=(years||[]).filter(y=>Number.isFinite(y.portfolioReturn)&&Number.isFinite(y.spyReturn));
-  if(!valid.length)return {years:[],yearCount:0};
-  let wealth=1,spyWealth=1,peak=1,maxYearEndDrawdown=0;
+function portfolioStats(periods,{periodsPerYear=1}={}){
+  const valid=(periods||[]).filter(y=>Number.isFinite(y.portfolioReturn)&&Number.isFinite(y.spyReturn));
+  if(!valid.length)return {periods:[],years:[],periodCount:0,yearCount:0};
+  let wealth=1,spyWealth=1,peak=1,maxPeriodEndDrawdown=0;
   const curve=[];
   for(const y of valid){
     wealth*=1+y.portfolioReturn; spyWealth*=1+y.spyReturn;
-    peak=Math.max(peak,wealth); maxYearEndDrawdown=Math.min(maxYearEndDrawdown,wealth/peak-1);
+    peak=Math.max(peak,wealth); maxPeriodEndDrawdown=Math.min(maxPeriodEndDrawdown,wealth/peak-1);
     curve.push({...y,wealth,spyWealth});
   }
-  const n=valid.length;
-  const portfolioCAGR=Math.pow(wealth,1/n)-1,spyCAGR=Math.pow(spyWealth,1/n)-1;
+  const n=valid.length,years=n/periodsPerYear;
+  const portfolioCAGR=years>0?Math.pow(wealth,1/years)-1:null;
+  const spyCAGR=years>0?Math.pow(spyWealth,1/years)-1:null;
   const rets=valid.map(y=>y.portfolioReturn),meanRet=mean(rets);
-  const variance=rets.length>1?rets.reduce((s,x)=>s+(x-meanRet)**2,0)/(rets.length-1):0;
+  const variance=rets.length>1?rets.reduce((sum,x)=>sum+(x-meanRet)**2,0)/(rets.length-1):0;
   return {
-    years:curve,yearCount:n,portfolioCAGR,spyCAGR,annualizedExcess:portfolioCAGR-spyCAGR,
+    periods:curve,years:curve,periodCount:n,yearCount:years,portfolioCAGR,spyCAGR,annualizedExcess:portfolioCAGR-spyCAGR,
     cumulativeReturn:wealth-1,spyCumulativeReturn:spyWealth-1,
-    annualVolatility:Math.sqrt(variance),yearEndMaxDrawdown:maxYearEndDrawdown,
+    annualVolatility:Math.sqrt(variance*periodsPerYear),periodEndMaxDrawdown:maxPeriodEndDrawdown,yearEndMaxDrawdown:maxPeriodEndDrawdown,
     beatSpyRate:pctTrue(valid.map(y=>y.portfolioReturn>y.spyReturn)),
-    positiveYearRate:pctTrue(valid.map(y=>y.portfolioReturn>0)),
-    worstYear:valid.reduce((a,b)=>!a||b.portfolioReturn<a.portfolioReturn?b:a,null),
-    bestYear:valid.reduce((a,b)=>!a||b.portfolioReturn>a.portfolioReturn?b:a,null),
+    positivePeriodRate:pctTrue(valid.map(y=>y.portfolioReturn>0)),positiveYearRate:pctTrue(valid.map(y=>y.portfolioReturn>0)),
+    worstPeriod:valid.reduce((a,b)=>!a||b.portfolioReturn<a.portfolioReturn?b:a,null),
+    bestPeriod:valid.reduce((a,b)=>!a||b.portfolioReturn>a.portfolioReturn?b:a,null),
     averageHoldings:mean(valid.map(y=>y.holdings)),finalWealth10k:10000*wealth,spyFinalWealth10k:10000*spyWealth
   };
 }
@@ -555,18 +558,44 @@ function seriesPointOnOrAfter(history,date,maxGapDays=12){
   if(!best||(best.pt-best.t)/86400000>maxGapDays)return null;
   return best.p;
 }
+function adjustedReturnBetween(history,startDate,endDate,{executeAfterStart=true,maxGapDays=12}={}){
+  const startTarget=executeAfterStart?addDays(startDate,1):startDate;
+  const a=seriesPointOnOrAfter(history,startTarget,maxGapDays);
+  const b=seriesPointOnOrAfter(history,addDays(endDate,1),maxGapDays);
+  const ap=finite(a?.adjustedClose),bp=finite(b?.adjustedClose);
+  if(!(ap>0&&bp>0))return null;
+  return {return:bp/ap-1,startPrice:ap,endPrice:bp,startTradeDate:a.date,endTradeDate:b.date};
+}
+function equalWeightTurnover(targetTickers,priorEndWeights){
+  const tickers=[...new Set(targetTickers||[])];
+  if(!tickers.length)return 0;
+  if(!priorEndWeights||!priorEndWeights.size)return 1;
+  const targetW=1/tickers.length,all=new Set([...tickers,...priorEndWeights.keys()]);
+  let gross=0;
+  for(const t of all)gross+=Math.abs((tickers.includes(t)?targetW:0)-(priorEndWeights.get(t)||0));
+  return gross/2;
+}
+function endWeightsFromReturns(tickers,returnsByTicker){
+  const valid=(tickers||[]).filter(t=>Number.isFinite(returnsByTicker.get(t)));
+  if(!valid.length)return new Map();
+  const startW=1/valid.length,raw=new Map();let total=0;
+  for(const t of valid){const v=startW*(1+returnsByTicker.get(t));raw.set(t,v);total+=v;}
+  if(!(total>0))return new Map();
+  return new Map([...raw].map(([t,v])=>[t,v/total]));
+}
 function dailyPortfolioRisk(tickers,startDate,endDate,historyByTicker,spyHistory){
   const series=[];
   for(const ticker of tickers){
     const h=historyByTicker.get(ticker)||[];
-    const start=seriesPointOnOrAfter(h,startDate);
+    const start=seriesPointOnOrAfter(h,addDays(startDate,1));
     if(!(finite(start?.adjustedClose)>0))continue;
-    const points=(h||[]).filter(p=>p.date>=start.date&&p.date<=endDate&&finite(p.adjustedClose)>0);
+    const points=(h||[]).filter(p=>p.date>=start.date&&p.date<=addDays(endDate,7)&&finite(p.adjustedClose)>0);
     if(points.length<2)continue;
     series.push({ticker,startPx:finite(start.adjustedClose),byDate:new Map(points.map(p=>[p.date,finite(p.adjustedClose)]))});
   }
-  const spyStart=seriesPointOnOrAfter(spyHistory,startDate),spyStartPx=finite(spyStart?.adjustedClose);
-  const dates=(spyHistory||[]).filter(p=>p.date>=(spyStart?.date||startDate)&&p.date<=endDate&&finite(p.adjustedClose)>0).map(p=>p.date);
+  const spyStart=seriesPointOnOrAfter(spyHistory,addDays(startDate,1)),spyStartPx=finite(spyStart?.adjustedClose);
+  const spyEnd=seriesPointOnOrAfter(spyHistory,addDays(endDate,1));
+  const dates=(spyHistory||[]).filter(p=>p.date>=(spyStart?.date||startDate)&&p.date<=(spyEnd?.date||endDate)&&finite(p.adjustedClose)>0).map(p=>p.date);
   if(!series.length||!(spyStartPx>0)||!dates.length)return null;
   let peak=1,maxDrawdown=0,spyPeak=1,spyMaxDrawdown=0,lastVals=new Map();
   for(const date of dates){
@@ -578,54 +607,87 @@ function dailyPortfolioRisk(tickers,startDate,endDate,historyByTicker,spyHistory
   }
   return {dailyMaxDrawdown:maxDrawdown,spyDailyMaxDrawdown:spyMaxDrawdown,seriesCount:series.length};
 }
-function simulateAnnualPortfolio(snapshotOutput,historyByTicker,spyHistory,{name,topN=20,minAlpha=.10,requireTopRank=false}={}){
-  const years=[];
-  for(const snap of snapshotOutput||[]){
-    const eligible=(snap.rows||[])
-      .filter(r=>Number.isFinite(r.realized1YTotalReturnCAGR)&&Number.isFinite(r.spy1YTotalReturnCAGR)&&Number.isFinite(r.expectedAlpha))
-      .filter(r=>r.expectedAlpha>=minAlpha)
-      .filter(r=>!requireTopRank||r.rank<=Math.ceil((r.universeSize||snap.rows.length)*.20))
-      .sort((a,b)=>(a.rank||Infinity)-(b.rank||Infinity))
-      .slice(0,topN);
-    if(!eligible.length)continue;
-    const returns=eligible.map(r=>r.realized1YTotalReturnCAGR),portfolioReturn=mean(returns);
-    const spyReturn=median(eligible.map(r=>r.spy1YTotalReturnCAGR));
-    const sorted=[...returns].sort((a,b)=>a-b),trimmed=sorted.length>2?mean(sorted.slice(0,-1)):mean(sorted);
-    const risk=dailyPortfolioRisk(eligible.map(r=>r.ticker),snap.asOf,addYears(snap.asOf,1),historyByTicker,spyHistory);
-    years.push({
-      startYear:Number(String(snap.asOf).slice(0,4)),asOf:snap.asOf,holdings:eligible.length,
-      portfolioReturn,spyReturn,excessReturn:portfolioReturn-spyReturn,
-      medianHoldingReturn:median(returns),returnExBestHolding:trimmed,
-      dailyMaxDrawdown:risk?.dailyMaxDrawdown??null,spyDailyMaxDrawdown:risk?.spyDailyMaxDrawdown??null,
-      tickers:eligible.map(r=>r.ticker)
+function eligibleForStrategy(snap,{topN=20,minAlpha=.10,requireTopRank=false}={}){
+  return (snap?.rows||[])
+    .filter(r=>Number.isFinite(r.expectedAlpha))
+    .filter(r=>r.expectedAlpha>=minAlpha)
+    .filter(r=>!requireTopRank||r.rank<=Math.ceil((r.universeSize||snap.rows.length)*.20))
+    .sort((a,b)=>(a.rank||Infinity)-(b.rank||Infinity))
+    .slice(0,topN);
+}
+function simulateInvestablePortfolio(snapshotOutput,historyByTicker,spyHistory,{name,topN=20,minAlpha=.10,requireTopRank=false,transactionCostBps=10}={}){
+  const snaps=[...(snapshotOutput||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf)));
+  const periods=[];let priorEndWeights=new Map();
+  for(let i=0;i<snaps.length;i++){
+    const snap=snaps[i],endDate=snaps[i+1]?.asOf||addMonths(snap.asOf,3);
+    if(new Date(endDate)>new Date())continue;
+    const selected=eligibleForStrategy(snap,{topN,minAlpha,requireTopRank});
+    if(!selected.length)continue;
+    const stockReturns=new Map();let commonStart=null,commonEnd=null;
+    for(const r of selected){
+      const x=adjustedReturnBetween(historyByTicker.get(r.ticker)||[],snap.asOf,endDate,{executeAfterStart:true});
+      if(!x)continue;stockReturns.set(r.ticker,x.return);commonStart=commonStart||x.startTradeDate;commonEnd=commonEnd||x.endTradeDate;
+    }
+    const tickers=selected.map(r=>r.ticker).filter(t=>stockReturns.has(t));
+    if(!tickers.length)continue;
+    const spy=adjustedReturnBetween(spyHistory,snap.asOf,endDate,{executeAfterStart:true});if(!spy)continue;
+    const grossReturn=mean(tickers.map(t=>stockReturns.get(t)));
+    const turnover=equalWeightTurnover(tickers,priorEndWeights);
+    const transactionCost=turnover*(transactionCostBps/10000);
+    const portfolioReturn=grossReturn-transactionCost;
+    const risk=dailyPortfolioRisk(tickers,snap.asOf,endDate,historyByTicker,spyHistory);
+    periods.push({
+      asOf:snap.asOf,startDate:snap.asOf,endDate,startTradeDate:commonStart||spy.startTradeDate,endTradeDate:commonEnd||spy.endTradeDate,
+      startYear:Number(String(snap.asOf).slice(0,4)),holdings:tickers.length,tickers,
+      grossReturn,portfolioReturn,spyReturn:spy.return,excessReturn:portfolioReturn-spy.return,
+      turnover,transactionCost,transactionCostBps,dailyMaxDrawdown:risk?.dailyMaxDrawdown??null,spyDailyMaxDrawdown:risk?.spyDailyMaxDrawdown??null
     });
+    priorEndWeights=endWeightsFromReturns(tickers,stockReturns);
   }
-  const stats=portfolioStats(years);
-  stats.dailyMaxDrawdown=years.map(y=>y.dailyMaxDrawdown).filter(Number.isFinite).reduce((m,x)=>Math.min(m,x),0);
-  stats.spyDailyMaxDrawdown=years.map(y=>y.spyDailyMaxDrawdown).filter(Number.isFinite).reduce((m,x)=>Math.min(m,x),0);
-  stats.meanAnnualReturnExBestHolding=mean(years.map(y=>y.returnExBestHolding));
-  stats.meanMedianHoldingReturn=mean(years.map(y=>y.medianHoldingReturn));
-  return {name,topN,minAlpha,requireTopRank,...stats};
+  const periodsPerYear=FREQUENCY==='quarterly'?4:1,stats=portfolioStats(periods,{periodsPerYear});
+  stats.dailyMaxDrawdown=periods.map(y=>y.dailyMaxDrawdown).filter(Number.isFinite).reduce((m,x)=>Math.min(m,x),0);
+  stats.spyDailyMaxDrawdown=periods.map(y=>y.spyDailyMaxDrawdown).filter(Number.isFinite).reduce((m,x)=>Math.min(m,x),0);
+  stats.averageTurnover=mean(periods.map(y=>y.turnover));
+  stats.annualizedTurnover=stats.averageTurnover*periodsPerYear;
+  stats.totalTransactionCost=periods.reduce((a,y)=>a+(y.transactionCost||0),0);
+  return {name,topN,minAlpha,requireTopRank,transactionCostBps,rebalanceFrequency:FREQUENCY,...stats};
+}
+// Retain the overlapping one-year cohort test as a diagnostic only. It must never be
+// compounded into a wealth curve because quarterly start cohorts overlap in time.
+function simulateOneYearCohorts(snapshotOutput,{name,topN=20,minAlpha=.10,requireTopRank=false}={}){
+  const cohorts=[];
+  for(const snap of snapshotOutput||[]){
+    const eligible=eligibleForStrategy(snap,{topN,minAlpha,requireTopRank})
+      .filter(r=>Number.isFinite(r.realized1YTotalReturnCAGR)&&Number.isFinite(r.spy1YTotalReturnCAGR));
+    if(!eligible.length)continue;
+    const portfolioReturn=mean(eligible.map(r=>r.realized1YTotalReturnCAGR));
+    const spyReturn=median(eligible.map(r=>r.spy1YTotalReturnCAGR));
+    cohorts.push({asOf:snap.asOf,startYear:Number(String(snap.asOf).slice(0,4)),holdings:eligible.length,portfolioReturn,spyReturn,excessReturn:portfolioReturn-spyReturn});
+  }
+  return {name,cohortCount:cohorts.length,meanPortfolioReturn:mean(cohorts.map(x=>x.portfolioReturn)),meanSpyReturn:mean(cohorts.map(x=>x.spyReturn)),meanExcess:mean(cohorts.map(x=>x.excessReturn)),beatSpyRate:pctTrue(cohorts.map(x=>x.excessReturn>0)),cohorts};
 }
 function periodStats(strategy,startYear,endYear){
-  const years=(strategy?.years||[]).filter(y=>y.startYear>=startYear&&y.startYear<=endYear);
-  return {...portfolioStats(years),startYear,endYear};
+  const periods=(strategy?.periods||strategy?.years||[]).filter(y=>y.startYear>=startYear&&y.startYear<=endYear);
+  return {...portfolioStats(periods,{periodsPerYear:FREQUENCY==='quarterly'?4:1}),startYear,endYear};
 }
 function buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory){
-  const strategies=[
+  const rules=[
     {name:'Top 10 · Alpha ≥10%',topN:10,minAlpha:.10},
     {name:'Top 20 · Alpha ≥10%',topN:20,minAlpha:.10},
     {name:'Top 30 · Alpha ≥10%',topN:30,minAlpha:.10},
     {name:'Top 20 rank · no Alpha gate',topN:20,minAlpha:-10}
-  ].map(x=>simulateAnnualPortfolio(snapshotOutput,historyByTicker,spyHistory,x));
+  ];
+  const transactionCostBps=Math.max(0,finite(process.env.BACKTEST_TRANSACTION_COST_BPS)??10);
+  const strategies=rules.map(x=>simulateInvestablePortfolio(snapshotOutput,historyByTicker,spyHistory,{...x,transactionCostBps}));
   for(const s of strategies){
-    s.development=periodStats(s,2016,2021);
+    s.development=periodStats(s,2019,2021);
     s.validation=periodStats(s,2022,2025);
   }
+  const cohortStrategies=rules.map(x=>simulateOneYearCohorts(snapshotOutput,x));
   return {
-    description:'Annual equal-weight portfolio simulation using split/dividend-adjusted total returns. At each historical year-end, select the highest-ranked stocks meeting the point-in-time Alpha rule, hold for one year, then rebalance. Daily max drawdown uses the daily adjusted-close path of the actual selected holdings. Transaction costs and taxes are excluded.',
-    robustness:{development:'2016-2021 start cohorts',validation:'2022-2025 start cohorts (only completed 1Y outcomes are included)',survivorship:'Point-in-time IWB holdings are required for every historical snapshot. The official robustness backtest fails closed if archived membership cannot be reconstructed; no current-watchlist fallback is permitted. Residual bias can still remain when former constituents cannot be resolved through current free SEC/ticker mappings.'},
-    strategies
+    description:`Chronological ${FREQUENCY} equal-weight portfolio simulation. Signals are frozen at each historical snapshot, trades execute on the first trading day after the snapshot, positions are held only until the next rebalance, and the resulting non-overlapping return stream is compounded against SPY. A ${transactionCostBps} bp one-way trading cost is charged on actual portfolio turnover. Taxes are excluded.`,
+    robustness:{development:'2019-2021 rebalance periods',validation:'2022-2025 rebalance periods',survivorship:'Point-in-time IWB holdings are required for every historical snapshot. No current-watchlist fallback is permitted.',execution:'First trading day after each snapshot; no same-close execution.',transactionCosts:`${transactionCostBps} bp × one-way turnover at each rebalance.`},
+    strategies,cohortStrategies
   };
 }
 
@@ -720,4 +782,4 @@ async function main(){
   console.log(`Done. Wrote ${flat.length} historical observations to data/backtest-results.json.`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,dailyPortfolioRisk,simulateAnnualPortfolio,buildPortfolioSimulation};
+module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateOneYearCohorts,buildPortfolioSimulation};
