@@ -33,7 +33,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.22-legacy-iwb-history-endpoint';
+const MODEL_VERSION='simple-v12.23-sec-nport-historical-universe';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -94,7 +94,11 @@ function totalReturnCAGR(history,startDate,endDate,years){
 
 function addYears(date,years){const d=new Date(date+'T00:00:00Z');d.setUTCFullYear(d.getUTCFullYear()+years);return d.toISOString().slice(0,10);}
 
-const IWB_HOLDINGS_BASE='https://www.ishares.com/us/products/239707/ishares-russell-1000-etf/1467271812596.ajax';
+const IWB_SERIES_ID='S000004347';
+const IWB_TRUST_CIK='1100663';
+const SEC_EFTS='https://efts.sec.gov/LATEST/search-index';
+const SEC_ARCHIVES='https://www.sec.gov/Archives/edgar/data';
+
 function normalizeSectorName(s){
   const x=String(s||'').trim();
   const map={
@@ -104,119 +108,109 @@ function normalizeSectorName(s){
   };
   return map[x]||x||'Unknown';
 }
-function priorDateCandidates(asOf,days=10){
-  const d=new Date(asOf+'T00:00:00Z'),out=[];
-  for(let i=0;i<=days;i++){const x=new Date(d);x.setUTCDate(x.getUTCDate()-i);out.push(x.toISOString().slice(0,10));}
-  return out;
-}
-function parseCsvLine(line){
-  const out=[]; let cur='',quoted=false;
-  for(let i=0;i<line.length;i++){
-    const ch=line[i];
-    if(ch==='"'){
-      if(quoted&&line[i+1]==='"'){cur+='"';i++;}
-      else quoted=!quoted;
-    } else if(ch===','&&!quoted){out.push(cur);cur='';}
-    else cur+=ch;
-  }
-  out.push(cur);
-  return out.map(v=>v.trim());
-}
-function holdingsFromCsv(text){
-  const lines=String(text||'').replace(/^\uFEFF/,'').split(/\r?\n/);
-  let headerIndex=-1,header=null;
-  for(let i=0;i<Math.min(lines.length,40);i++){
-    const cols=parseCsvLine(lines[i]).map(x=>x.replace(/^"|"$/g,'').trim());
-    if(cols.includes('Ticker')&&cols.includes('Name')&&cols.includes('Sector')&&cols.some(x=>x==='Asset Class')){
-      headerIndex=i;header=cols;break;
-    }
-  }
-  if(headerIndex<0||!header)return [];
-  const ix={ticker:header.indexOf('Ticker'),name:header.indexOf('Name'),sector:header.indexOf('Sector'),asset:header.indexOf('Asset Class')};
+function xmlDecode(x){return String(x||'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");}
+function xmlTag(block,tag){const m=String(block||'').match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`,'i'));return m?xmlDecode(m[1].replace(/<[^>]+>/g,'').trim()):null;}
+function parseNportHoldingsXml(xml,currentMap=new Map()){
+  const text=String(xml||'');
+  const reportDate=xmlTag(text,'repPd')||xmlTag(text,'repPdDate')||xmlTag(text,'periodOfReport');
   const holdings=[];
-  for(let i=headerIndex+1;i<lines.length;i++){
-    if(!lines[i]?.trim())continue;
-    const row=parseCsvLine(lines[i]);
-    const rawTicker=String(row[ix.ticker]??'').replace(/^"|"$/g,'').trim();
-    const ticker=rawTicker.toUpperCase().replaceAll('.','-');
-    const name=String(row[ix.name]??'').replace(/^"|"$/g,'').trim();
-    const sector=normalizeSectorName(String(row[ix.sector]??'').replace(/^"|"$/g,'').trim());
-    const assetClass=String(row[ix.asset]??'').replace(/^"|"$/g,'').trim();
-    if(!ticker||ticker==='-'||ticker==='CASH'||/cash|future|swap|currency|collateral/i.test(`${name} ${assetClass}`))continue;
-    if(assetClass&&!/^equity$/i.test(assetClass))continue;
-    if(!/^[A-Z0-9-]{1,10}$/.test(ticker))continue;
+  const blocks=text.match(/<invstOrSec\b[\s\S]*?<\/invstOrSec>/gi)||[];
+  for(const block of blocks){
+    let ticker=null;
+    const attr=block.match(/<ticker\b[^>]*\bvalue=["']([^"']+)["'][^>]*\/?\s*>/i);
+    if(attr)ticker=attr[1];
+    if(!ticker)ticker=xmlTag(block,'ticker');
+    ticker=String(ticker||'').trim().toUpperCase().replaceAll('.','-');
+    const name=xmlTag(block,'name')||'';
+    if(!ticker||ticker==='-'||ticker==='N/A'||ticker==='USD'||!/^[A-Z0-9-]{1,12}$/.test(ticker))continue;
+    if(/cash|currency|future|swap|collateral|treasury bill/i.test(name))continue;
+    const sector=currentMap.get(ticker)?.sector||'Unknown';
     holdings.push({ticker,sector,name});
   }
-  return holdings;
+  const dedup=[...new Map(holdings.map(h=>[h.ticker,h])).values()];
+  return {reportDate,holdings:dedup};
 }
-function holdingsFromJson(text){
-  let body=String(text||'').replace(/^\uFEFF/,'');
-  const start=body.indexOf('{'); if(start>0)body=body.slice(start);
-  const json=JSON.parse(body),rows=json?.aaData||[];
-  const holdings=[];
-  for(const row of rows){
-    const ticker=String(row?.[0]??'').trim().toUpperCase().replaceAll('.','-');
-    const name=String(row?.[1]??'').trim(),sector=normalizeSectorName(row?.[2]);
-    const assetClass=String(row?.[3]??'').trim();
-    if(!ticker||ticker==='-'||ticker==='CASH'||/cash|future|swap|currency|collateral/i.test(`${name} ${assetClass}`))continue;
-    if(assetClass&&!/^equity$/i.test(assetClass))continue;
-    if(!/^[A-Z0-9-]{1,10}$/.test(ticker))continue;
-    holdings.push({ticker,sector,name});
+function accessionFromHit(hit){
+  const blob=JSON.stringify(hit||{});
+  const m=blob.match(/\b\d{10}-\d{2}-\d{6}\b/);
+  return m?m[0]:null;
+}
+async function secFetchText(url,label='SEC request'){
+  const ua=process.env.SEC_USER_AGENT||'FreeScreener research contact@example.com';
+  const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),30000);
+  try{
+    const res=await fetch(url,{headers:{'User-Agent':ua,'Accept-Encoding':'gzip, deflate','Accept':'application/json,text/xml,text/plain,*/*'},signal:ac.signal,redirect:'follow'});
+    const text=await res.text();
+    if(!res.ok)throw new Error(`${label} HTTP ${res.status}`);
+    return text;
+  } finally {clearTimeout(timer);}
+}
+async function discoverIwbNportFilings(startYear,endYear){
+  const params=new URLSearchParams({q:IWB_SERIES_ID,forms:'NPORT-P',dateRange:'custom',startdt:`${Math.max(2019,startYear)}-01-01`,enddt:`${endYear+1}-12-31`,from:'0',size:'100'});
+  const raw=await secFetchText(`${SEC_EFTS}?${params.toString()}`,'SEC EFTS IWB NPORT search');
+  const j=JSON.parse(raw); const hits=j?.hits?.hits||j?.hits||[];
+  const accessions=[...new Set(hits.map(accessionFromHit).filter(Boolean))];
+  if(!accessions.length)throw new Error('SEC EFTS returned no IWB NPORT-P filings.');
+  return accessions;
+}
+async function loadIwbNportSnapshots(dates,currentMap){
+  const wanted=new Set(dates);
+  const accessions=await discoverIwbNportFilings(Number(dates[0].slice(0,4)),Number(dates.at(-1).slice(0,4)));
+  const byReport=new Map();
+  for(let i=0;i<accessions.length;i++){
+    const acc=accessions[i],compact=acc.replaceAll('-','');
+    try{
+      const xml=await secFetchText(`${SEC_ARCHIVES}/${IWB_TRUST_CIK}/${compact}/primary_doc.xml`,`IWB NPORT ${acc}`);
+      if(!xml.includes(IWB_SERIES_ID))continue;
+      const parsed=parseNportHoldingsXml(xml,currentMap);
+      if(parsed.reportDate&&parsed.holdings.length>=500)byReport.set(parsed.reportDate,{accession:acc,...parsed});
+    }catch(e){/* one malformed/non-IWB result should not kill discovery */}
+    if(i%8===7)await sleep(120);
   }
-  return holdings;
-}
-async function fetchIwbHoldingsAsOf(asOf){
-  const attempts=[];
-  for(const candidate of priorDateCandidates(asOf,10)){
-    const ymd=candidate.replaceAll('-','');
-    // iShares' historical archive uses the legacy AJAX JSON endpoint WITHOUT
-    // dataType=fund. Adding dataType=fund returns HTTP 200 with an empty aaData
-    // payload for archival dates on the current site. Keep the legacy JSON request
-    // first because it is the endpoint used by long-running public iShares-history
-    // downloaders; CSV is retained only as a secondary compatibility attempt.
-    const variants=[
-      {kind:'json',url:`${IWB_HOLDINGS_BASE}?fileType=json&tab=all&asOfDate=${ymd}`},
-      {kind:'csv',url:`${IWB_HOLDINGS_BASE}?fileType=csv&fileName=IWB_holdings&asOfDate=${ymd}`}
-    ];
-    for(const variant of variants){
-      const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),30000);
-      try{
-        const res=await fetch(variant.url,{headers:{'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36','Accept':variant.kind==='csv'?'text/csv,text/plain,*/*':'application/json,text/plain,*/*'},signal:ac.signal,redirect:'follow'});
-        const text=await res.text();
-        if(!res.ok){attempts.push({candidate,kind:variant.kind,status:res.status,bytes:text.length});continue;}
-        let holdings=[];
-        try{holdings=variant.kind==='csv'?holdingsFromCsv(text):holdingsFromJson(text);}catch(e){attempts.push({candidate,kind:variant.kind,status:res.status,bytes:text.length,parseError:String(e.message||e)});continue;}
-        attempts.push({candidate,kind:variant.kind,status:res.status,bytes:text.length,holdings:holdings.length});
-        if(holdings.length>=500)return {requestedAsOf:asOf,sourceAsOf:candidate,sourceType:variant.kind,holdings,attempts};
-      }catch(e){attempts.push({candidate,kind:variant.kind,error:String(e?.name||e?.message||e)});}
-      finally{clearTimeout(timer);}
+  const out=new Map();
+  for(const asOf of dates){
+    const candidates=[...byReport.keys()].filter(d=>d<=asOf).sort().reverse();
+    const exact=byReport.get(asOf);
+    const chosen=exact||byReport.get(candidates[0]);
+    // Membership must be fresh enough to represent the requested quarter; never
+    // carry a filing farther than ~100 days because that would hide missing coverage.
+    if(chosen){
+      const gap=(new Date(asOf)-new Date(chosen.reportDate))/86400000;
+      if(gap>=0&&gap<=100)out.set(asOf,chosen);
     }
   }
-  return {requestedAsOf:asOf,holdings:[],attempts};
+  return {byReport,out,accessions};
 }
 async function buildHistoricalUniverse(dates){
-  const byDate=new Map(),coverage=[],failures=[];
-  for(const asOf of dates){
-    const snap=await fetchIwbHoldingsAsOf(asOf);
-    if(snap.holdings.length>=500){
-      byDate.set(asOf,new Map(snap.holdings.map(x=>[x.ticker,x])));
-      coverage.push({asOf,sourceAsOf:snap.sourceAsOf,sourceType:snap.sourceType,count:snap.holdings.length,status:'iwb_history'});
-    } else {
-      const detail={asOf,count:0,status:'iwb_history_unavailable',attempts:snap.attempts};
-      coverage.push(detail);failures.push(detail);
-    }
-    await sleep(150);
-  }
-  if(failures.length){
-    const concise=failures.map(f=>`${f.asOf}: ${f.attempts.slice(-2).map(a=>`${a.kind}:${a.status??a.error??'failed'}:${a.holdings??0}`).join(', ')}`).join(' | ');
-    const err=new Error(`Historical IWB membership unavailable for ${failures.length}/${dates.length} snapshot dates. Backtest aborted rather than falling back to today's watchlist. ${concise}`);
-    err.historicalUniverseCoverage=coverage;
-    throw err;
+  // Free, machine-readable point-in-time IWB holdings are reliably available from
+  // SEC Form N-PORT beginning in 2019. We intentionally do NOT fall back to today's
+  // watchlist for 2016-2018 because that reintroduces survivorship bias.
+  const supported=dates.filter(d=>Number(d.slice(0,4))>=2019);
+  if(!supported.length)throw new Error('Survivorship-reduced historical universe requires 2019 or later (SEC N-PORT era).');
+  if(supported.length!==dates.length){
+    console.log(`Historical universe note: ${dates.length-supported.length} pre-2019 snapshots excluded; free SEC N-PORT point-in-time IWB holdings begin in 2019.`);
+    dates.splice(0,dates.length,...supported);
   }
   const current=new Map(watchlist.map(x=>[x.ticker,x]));
+  console.log(`Loading point-in-time Russell 1000 proxy membership from SEC N-PORT IWB filings for ${dates.length} snapshot dates...`);
+  const loaded=await loadIwbNportSnapshots(dates,current);
+  const byDate=new Map(),coverage=[],failures=[];
+  for(const asOf of dates){
+    const snap=loaded.out.get(asOf);
+    if(snap?.holdings?.length>=500){
+      byDate.set(asOf,new Map(snap.holdings.map(x=>[x.ticker,x])));
+      coverage.push({asOf,sourceAsOf:snap.reportDate,sourceType:'SEC NPORT-P',accession:snap.accession,count:snap.holdings.length,status:'sec_nport_iwb_history'});
+    }else{
+      const detail={asOf,count:0,status:'sec_nport_iwb_history_unavailable'};coverage.push(detail);failures.push(detail);
+    }
+  }
+  if(failures.length){
+    const err=new Error(`SEC N-PORT IWB membership unavailable for ${failures.length}/${dates.length} supported snapshot dates. Backtest aborted; no current-watchlist fallback. Missing: ${failures.map(x=>x.asOf).join(', ')}`);
+    err.historicalUniverseCoverage=coverage;throw err;
+  }
   const union=new Map();
   for(const m of byDate.values())for(const [ticker,x] of m)if(!union.has(ticker))union.set(ticker,{ticker,sector:x.sector||current.get(ticker)?.sector||'Unknown'});
-  return {byDate,coverage,union:[...union.values()]};
+  return {byDate,coverage,union:[...union.values()],provider:'SEC N-PORT / iShares Russell 1000 ETF (IWB)',requestedStart:START,effectiveStart:Number(dates[0].slice(0,4))};
 }
 
 function historicalStockFromData(ticker,sector,rawFacts,priceHistory,asOf,diagnostics=null){
@@ -518,12 +512,12 @@ async function main(){
   const flat=[]; const snapshotOutput=[];
   for(const asOf of dates){const rows=snapshots.get(asOf);rank(rows);flat.push(...rows.map(r=>({...r,asOf})));snapshotOutput.push({asOf,count:rows.length,rows});}
   const output={
-    generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,backtestMode:'historical_core_point_in_time',frequency:FREQUENCY,startYear:START,endYear:END,
+    generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,backtestMode:'historical_core_point_in_time',frequency:FREQUENCY,requestedStartYear:START,startYear:historicalUniverse.effectiveStart||START,effectiveStartYear:historicalUniverse.effectiveStart||START,endYear:END,
     assumptions:{analystEstimates:'excluded_historical_unavailable',universe:'historical_iwb_holdings_required_fail_closed_no_current_watchlist_fallback',returns:'Yahoo adjusted-close total return where available; Stooq price-only fallback is explicitly flagged',benchmark:'SPY adjusted-close total return',valuationPrice:'raw historical close',secCutoff:'facts must be filed by as-of date'},
-    observations:flat.length,historicalUniverse:{provider:'iShares IWB historical holdings',coverage:historicalUniverse.coverage,uniqueTickers:historicalUniverse.union.length,note:'Point-in-time IWB membership is required for every snapshot; this run cannot silently fall back to the current watchlist. Residual bias can remain where former constituents cannot be resolved through free SEC/price sources.'},diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YTotalReturnCAGR'),summary3Y:summarize(flat,'realized3YTotalReturnCAGR'),summary5Y:summarize(flat,'realized5YTotalReturnCAGR'),signalAnalysis:buildSignalAnalysis(flat),portfolioSimulation:buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory),errors:errors.slice(0,500),snapshots:snapshotOutput
+    observations:flat.length,historicalUniverse:{provider:historicalUniverse.provider||'SEC N-PORT / IWB',coverage:historicalUniverse.coverage,uniqueTickers:historicalUniverse.union.length,note:'Point-in-time IWB membership is required for every snapshot; this run cannot silently fall back to the current watchlist. Residual bias can remain where former constituents cannot be resolved through free SEC/price sources.'},diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YTotalReturnCAGR'),summary3Y:summarize(flat,'realized3YTotalReturnCAGR'),summary5Y:summarize(flat,'realized5YTotalReturnCAGR'),signalAnalysis:buildSignalAnalysis(flat),portfolioSimulation:buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory),errors:errors.slice(0,500),snapshots:snapshotOutput
   };
   const p=path.join(__dirname,'data','backtest-results.json'),tmp=p+'.tmp';fs.writeFileSync(tmp,JSON.stringify(output));fs.renameSync(tmp,p);
   console.log(`Done. Wrote ${flat.length} historical observations to data/backtest-results.json.`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseCsvLine,holdingsFromCsv,holdingsFromJson,fetchIwbHoldingsAsOf,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,dailyPortfolioRisk,simulateAnnualPortfolio,buildPortfolioSimulation};
+module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,dailyPortfolioRisk,simulateAnnualPortfolio,buildPortfolioSimulation};
