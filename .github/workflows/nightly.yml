@@ -75,6 +75,11 @@ jobs:
           cp data/results.json "$tmpdir/results.json"
           cp data/validation-report.json "$tmpdir/validation-report.json"
           cp data/screener-diagnostics.json "$tmpdir/screener-diagnostics.json"
+          history_file="data/history/$(date -u +%Y-%m-%d).json"
+          if [ -f "$history_file" ]; then
+            mkdir -p "$tmpdir/history"
+            cp "$history_file" "$tmpdir/history/"
+          fi
 
           publish_attempt=1
           max_attempts=3
@@ -91,10 +96,15 @@ jobs:
             cp "$tmpdir/results.json" data/results.json
             cp "$tmpdir/validation-report.json" data/validation-report.json
             cp "$tmpdir/screener-diagnostics.json" data/screener-diagnostics.json
+            if [ -d "$tmpdir/history" ]; then
+              mkdir -p data/history
+              cp "$tmpdir/history/"*.json data/history/
+            fi
 
             git add data/results.json
             git add data/validation-report.json
             git add data/screener-diagnostics.json
+            if [ -d data/history ]; then git add data/history/*.json; fi
 
             if git diff --staged --quiet; then
               echo "Generated outputs already match current main; nothing to publish."
