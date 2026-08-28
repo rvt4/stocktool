@@ -33,7 +33,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.28-investable-quarterly-portfolio';
+const MODEL_VERSION='simple-v12.29-thesis-hold-portfolio';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -652,6 +652,58 @@ function simulateInvestablePortfolio(snapshotOutput,historyByTicker,spyHistory,{
   stats.totalTransactionCost=periods.reduce((a,y)=>a+(y.transactionCost||0),0);
   return {name,topN,minAlpha,requireTopRank,transactionCostBps,rebalanceFrequency:FREQUENCY,...stats};
 }
+
+function isBuyRating(r){return ['Buy','Strong Buy','Exceptional Buy'].includes(String(r?.rating||''));}
+function thesisSellReason(current,entry,{sellExpectedCAGR=.08}={}){
+  if(!current)return 'universe_or_model_exit';
+  if(String(current.modelSupport||'')==='unsupported')return 'model_support_lost';
+  if(Number.isFinite(current.expectedCAGR)&&current.expectedCAGR<sellExpectedCAGR)return 'forward_return_below_hold_floor';
+  const q0=finite(entry?.qualityScore),q=finite(current.qualityScore);
+  if(q0!=null&&q!=null&&q<60&&q<=q0-15)return 'quality_thesis_deteriorated';
+  const p0=finite(entry?.protectionScore),pr=finite(current.protectionScore);
+  if(p0!=null&&pr!=null&&pr<50&&pr<=p0-20)return 'protection_thesis_deteriorated';
+  if(Number.isFinite(current.forecastConfidence)&&current.forecastConfidence<40)return 'forecast_support_deteriorated';
+  return null;
+}
+function thesisBuyCandidates(snap,held,{minAlpha=.10}={}){
+  return (snap?.rows||[]).filter(r=>!held.has(r.ticker)&&isBuyRating(r)&&Number.isFinite(r.expectedAlpha)&&r.expectedAlpha>=minAlpha)
+    .sort((a,b)=>(a.rank||Infinity)-(b.rank||Infinity));
+}
+function simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name='Thesis hold',topN=20,minAlpha=.10,sellExpectedCAGR=.08,transactionCostBps=10}={}){
+  const snaps=[...(snapshotOutput||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf)));
+  let weights=new Map(),entries=new Map(),cash=1,totalSells=0,totalBuys=0,holdingQuarterSum=0,closedHolds=0;
+  const periods=[],sellReasons={};
+  for(let i=0;i<snaps.length;i++){
+    const snap=snaps[i],next=snaps[i+1]; if(!next)break;
+    const rowMap=new Map((snap.rows||[]).map(r=>[r.ticker,r]));
+    let turnover=0,freed=0,sells=[];
+    // Existing positions are reviewed, not mechanically reranked. Missing membership/model
+    // is treated as an exit because the historical strategy can no longer verify the thesis.
+    for(const [t,w] of [...weights]){
+      const reason=thesisSellReason(rowMap.get(t),entries.get(t),{sellExpectedCAGR});
+      if(reason){weights.delete(t);freed+=w;turnover+=w;sells.push({ticker:t,reason});sellReasons[reason]=(sellReasons[reason]||0)+1;totalSells++;const e=entries.get(t);if(e){holdingQuarterSum+=i-e.snapshotIndex;closedHolds++;}entries.delete(t);}
+    }
+    cash+=freed;
+    const vacancies=Math.max(0,topN-weights.size),cands=thesisBuyCandidates(snap,new Set(weights.keys()),{minAlpha}).slice(0,vacancies);
+    if(cands.length&&cash>0){const each=cash/cands.length;for(const r of cands){weights.set(r.ticker,each);entries.set(r.ticker,{...r,snapshotIndex:i,entryAsOf:snap.asOf});turnover+=each;totalBuys++;}cash=0;}
+    // If fewer than topN qualifying ideas exist, residual capital stays in cash rather than
+    // weakening the purchase hurdle simply to remain fully invested.
+    const stockReturns=new Map(); let commonStart=null,commonEnd=null;
+    for(const [t] of weights){const x=adjustedReturnBetween(historyByTicker.get(t)||[],snap.asOf,next.asOf,{executeAfterStart:true});if(x){stockReturns.set(t,x.return);commonStart=commonStart||x.startTradeDate;commonEnd=commonEnd||x.endTradeDate;}}
+    const spy=adjustedReturnBetween(spyHistory,snap.asOf,next.asOf,{executeAfterStart:true});if(!spy)continue;
+    let grossReturn=0,endTotal=cash;
+    for(const [t,w] of weights){const rr=stockReturns.get(t);const end=w*(1+(Number.isFinite(rr)?rr:0));grossReturn+=w*(Number.isFinite(rr)?rr:0);weights.set(t,end);endTotal+=end;}
+    if(endTotal>0){for(const [t,w] of weights)weights.set(t,w/endTotal);cash/=endTotal;}
+    const transactionCost=turnover*(transactionCostBps/10000),portfolioReturn=grossReturn-transactionCost;
+    const risk=dailyPortfolioRisk([...weights.keys()],snap.asOf,next.asOf,historyByTicker,spyHistory);
+    periods.push({asOf:snap.asOf,startDate:snap.asOf,endDate:next.asOf,startTradeDate:commonStart||spy.startTradeDate,endTradeDate:commonEnd||spy.endTradeDate,startYear:Number(snap.asOf.slice(0,4)),holdings:weights.size,tickers:[...weights.keys()],cashWeight:cash,grossReturn,portfolioReturn,spyReturn:spy.return,excessReturn:portfolioReturn-spy.return,turnover,transactionCost,transactionCostBps,buys:cands.map(r=>r.ticker),sells,dailyMaxDrawdown:risk?.dailyMaxDrawdown??null});
+  }
+  const stats=portfolioStats(periods,{periodsPerYear:4});
+  stats.dailyMaxDrawdown=periods.map(x=>x.dailyMaxDrawdown).filter(Number.isFinite).reduce((m,x)=>Math.min(m,x),0);
+  stats.averageTurnover=mean(periods.map(x=>x.turnover));stats.annualizedTurnover=stats.averageTurnover*4;stats.totalBuys=totalBuys;stats.totalSells=totalSells;stats.sellReasons=sellReasons;stats.averageClosedHoldingYears=closedHolds?holdingQuarterSum/closedHolds/4:null;stats.endingHoldings=weights.size;stats.endingCashWeight=cash;
+  return {name,topN,minAlpha,sellExpectedCAGR,transactionCostBps,reviewFrequency:FREQUENCY,philosophy:'buy_strict_hold_loose_sell_on_return_or_thesis_break',...stats};
+}
+
 // Retain the overlapping one-year cohort test as a diagnostic only. It must never be
 // compounded into a wealth curve because quarterly start cohorts overlap in time.
 function simulateOneYearCohorts(snapshotOutput,{name,topN=20,minAlpha=.10,requireTopRank=false}={}){
@@ -684,10 +736,13 @@ function buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory){
     s.validation=periodStats(s,2022,2025);
   }
   const cohortStrategies=rules.map(x=>simulateOneYearCohorts(snapshotOutput,x));
+  const thesisHoldStrategies=[10,20,30].map(topN=>simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name:`Thesis hold · max ${topN}`,topN,minAlpha:.10,sellExpectedCAGR:.08,transactionCostBps}));
+  for(const s of thesisHoldStrategies){s.development=periodStats(s,2019,2021);s.validation=periodStats(s,2022,2025);}
   return {
-    description:`Chronological ${FREQUENCY} equal-weight portfolio simulation. Signals are frozen at each historical snapshot, trades execute on the first trading day after the snapshot, positions are held only until the next rebalance, and the resulting non-overlapping return stream is compounded against SPY. A ${transactionCostBps} bp one-way trading cost is charged on actual portfolio turnover. Taxes are excluded.`,
-    robustness:{development:'2019-2021 rebalance periods',validation:'2022-2025 rebalance periods',survivorship:'Point-in-time IWB holdings are required for every historical snapshot. No current-watchlist fallback is permitted.',execution:'First trading day after each snapshot; no same-close execution.',transactionCosts:`${transactionCostBps} bp × one-way turnover at each rebalance.`},
-    strategies,cohortStrategies
+    description:`Chronological ${FREQUENCY} portfolio tests. Mechanical strategies rebalance each snapshot. Thesis-hold strategies buy only qualifying Buy/Strong Buy/Exceptional Buy names with Alpha >=10%, then keep them through rerankings until expected CAGR falls below 8% or model evidence indicates material thesis deterioration. Trades execute after the snapshot and ${transactionCostBps} bp one-way costs are charged.`,
+    thesisHoldRules:{buy:'Buy/Strong Buy/Exceptional Buy + expected Alpha >=10%; fill only open slots by rank',hold:'Do not sell merely because rank changes or a better-ranked stock appears',valuationSell:'Expected CAGR <8%',fundamentalSell:'Model support lost, quality falls >=15 points to <60, protection falls >=20 points to <50, or forecast confidence <40',cash:'If no qualifying replacement exists, proceeds remain in cash',reviewFrequency:FREQUENCY},
+    robustness:{development:'2019-2021 review periods',validation:'2022-2025 review periods',survivorship:'Point-in-time IWB holdings are required for every historical snapshot. No current-watchlist fallback is permitted.',execution:'First trading day after each snapshot; no same-close execution.',transactionCosts:`${transactionCostBps} bp × one-way turnover.`},
+    strategies,thesisHoldStrategies,cohortStrategies
   };
 }
 
@@ -782,4 +837,4 @@ async function main(){
   console.log(`Done. Wrote ${flat.length} historical observations to data/backtest-results.json.`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateOneYearCohorts,buildPortfolioSimulation};
+module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,simulateOneYearCohorts,buildPortfolioSimulation};

@@ -777,7 +777,7 @@ console.log('V12.13 transmission tests passed: reconciled gross economics reach 
 // row in the returned Stooq history. The previous comparison accidentally used
 // the target timestamp as the incumbent timestamp, causing every historical
 // snapshot to fail the max-gap check and producing zero backtest observations.
-const {priceOnOrBefore,totalReturnCAGR,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,portfolioStats}=require('./backtest');
+const {priceOnOrBefore,totalReturnCAGR,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,portfolioStats,thesisSellReason}=require('./backtest');
 const historicalPriceFixture=[
   {date:'2016-01-04',close:10},
   {date:'2016-12-29',close:19},
@@ -856,3 +856,14 @@ assert.strictEqual(qStats.yearCount,1);
 console.log('V12.28 investable-portfolio regression passed: next-day execution, non-overlapping compounding, turnover, and quarterly annualization are enforced.');
 
 
+
+
+// V12.29 thesis-hold policy regression ---------------------------------------
+// Buy and hold use intentionally different hurdles. Rank changes alone are not
+// a sell signal; valuation exhaustion and material thesis deterioration are.
+const thesisEntry={expectedCAGR:.20,qualityScore:82,protectionScore:80,forecastConfidence:85,modelSupport:'full'};
+assert.strictEqual(thesisSellReason({expectedCAGR:.12,qualityScore:78,protectionScore:76,forecastConfidence:80,modelSupport:'full'},thesisEntry),null,'healthy holding was sold merely after its return profile moderated');
+assert.strictEqual(thesisSellReason({expectedCAGR:.079,qualityScore:82,protectionScore:80,forecastConfidence:85,modelSupport:'full'},thesisEntry),'forward_return_below_hold_floor','valuation sell floor was not enforced');
+assert.strictEqual(thesisSellReason({expectedCAGR:.14,qualityScore:55,protectionScore:80,forecastConfidence:85,modelSupport:'full'},thesisEntry),'quality_thesis_deteriorated','material quality deterioration did not break the thesis');
+assert.strictEqual(thesisSellReason({expectedCAGR:.14,qualityScore:80,protectionScore:45,forecastConfidence:85,modelSupport:'full'},thesisEntry),'protection_thesis_deteriorated','material protection deterioration did not break the thesis');
+console.log('V12.29 thesis-hold regression passed: holdings survive reranking and moderate valuation changes but exit on exhausted returns or a broken thesis.');
