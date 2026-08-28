@@ -573,16 +573,61 @@ async function fetchStooqPrice(ticker) {
   return { date: cols[0], close: parseFloat(cols[6]) };
 }
 
+async function fetchYahooHistory(ticker, years = 5) {
+  // Free/no-key fallback for environments where Stooq returns an empty CSV (this
+  // currently happens intermittently from GitHub-hosted runners). Yahoo's chart
+  // endpoint is used only for historical daily prices; no analyst data is pulled.
+  const symbol = normalizeFinnhubTicker(ticker).replace(/-/g, '-');
+  const now = Math.floor(Date.now() / 1000);
+  const start = new Date();
+  start.setUTCFullYear(start.getUTCFullYear() - Math.max(1, Number(years) || 5));
+  // Add a small buffer so year-end/weekend snapshots still find the prior session.
+  start.setUTCDate(start.getUTCDate() - 10);
+  const period1 = Math.floor(start.getTime() / 1000);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${now}&interval=1d&events=div%2Csplits&includeAdjustedClose=true`;
+  const res = await fetchWithTimeout(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 FreeScreener/1.0' }
+  }, `Yahoo history ${ticker}`);
+  if (!res.ok) return [];
+  const json = await res.json();
+  const result = json?.chart?.result?.[0];
+  const timestamps = result?.timestamp || [];
+  const quote = result?.indicators?.quote?.[0] || {};
+  const adj = result?.indicators?.adjclose?.[0]?.adjclose || [];
+  const closes = quote.close || [];
+  const out = [];
+  for (let i = 0; i < timestamps.length; i++) {
+    // Prefer adjusted close for return continuity across splits/dividends only when
+    // available; otherwise fall back to raw close. Historical valuation uses the
+    // same series consistently for entry and exit prices.
+    const px = Number.isFinite(Number(adj[i])) ? Number(adj[i]) : Number(closes[i]);
+    if (!(px > 0)) continue;
+    out.push({ date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10), close: px });
+  }
+  return out;
+}
+
 async function fetchStooqHistory(ticker, years = 5) {
-  const symbol = `${ticker.toLowerCase()}.us`;
-  const res = await fetchWithTimeout(`https://stooq.com/q/d/l/?s=${symbol}&i=d`, {}, `Stooq history ${ticker}`);
-  const csv = await res.text();
-  const rows = csv.trim().split('\n').slice(1).map(r => r.split(','));
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - years);
-  return rows
-    .filter(r => new Date(r[0]) >= cutoff)
-    .map(r => ({ date: r[0], close: parseFloat(r[4]) }));
+  try {
+    const symbol = `${ticker.toLowerCase()}.us`;
+    const res = await fetchWithTimeout(`https://stooq.com/q/d/l/?s=${symbol}&i=d`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 FreeScreener/1.0' }
+    }, `Stooq history ${ticker}`);
+    const csv = await res.text();
+    const rows = csv.trim().split(/\r?\n/).slice(1).map(r => r.split(','));
+    const parsed = rows
+      .filter(r => r.length >= 5 && /^\d{4}-\d{2}-\d{2}$/.test(String(r[0] || '')))
+      .filter(r => new Date(`${r[0]}T00:00:00Z`) >= cutoff)
+      .map(r => ({ date: r[0], close: parseFloat(r[4]) }))
+      .filter(r => Number.isFinite(r.close) && r.close > 0);
+    if (parsed.length) return parsed;
+    console.warn(`Stooq history ${ticker} returned no usable rows; falling back to Yahoo.`);
+  } catch (err) {
+    console.warn(`Stooq history ${ticker} failed (${err.message}); falling back to Yahoo.`);
+  }
+  return fetchYahooHistory(ticker, years);
 }
 
 // --- Finnhub free tier: profile + quote only (no paid estimates endpoints) ---
@@ -910,7 +955,7 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
 
 const api = {
   fetchSecFacts, parseAnnualFinancials, parseQuarterlyRevenue, recentQuarterYoYGrowth, blendedForwardGrowth,
-  fetchStooqPrice, fetchStooqHistory,
+  fetchStooqPrice, fetchStooqHistory, fetchYahooHistory,
   fetchFinnhubProfile, fetchFinnhubQuote, fetchFinnhubRevenueEstimate,
   buildStockRecord, latestDilutedSharesFromFacts, normalizeHistoryForCorporateAction, shareDenominatorLooksSuspicious, reconcileSharesWithLiveMarketCap, getTickerCikMap, normalizeSecTicker, normalizeFinnhubTicker, fetchWithTimeout,
 };
