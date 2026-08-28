@@ -228,14 +228,28 @@ async function discoverIwbNportFilings(startYear,endYear){
 let lastOpenFigiRequestAt=0;
 function chooseOpenFigiTicker(result){
   const rows=result?.data||[];
-  const acceptable=rows.filter(x=>validEquityTicker(x?.ticker)&&String(x?.marketSector||'').toLowerCase()==='equity');
+  // OpenFIGI's marketSector can still be "Equity" for equity-index futures and
+  // other derivative instruments. Do not merely down-rank those rows: reject
+  // them outright so a CUSIP can never resolve to something like ESH26.
+  const prohibited=/future|option|warrant|swap|forward|right|preferred|convertible|bond|note|debt|fund|etf|etn|closed-end|open-end/i;
+  const preferred=/common stock|ordinary share|reit|depositary receipt|adr|gdr/i;
+  const acceptable=rows.filter(x=>{
+    if(!validEquityTicker(x?.ticker))return false;
+    if(String(x?.marketSector||'').toLowerCase()!=='equity')return false;
+    const st=String(x?.securityType2||x?.securityType||'').trim();
+    if(prohibited.test(st))return false;
+    // If OpenFIGI supplies a security type, require it to look like an actual
+    // common-equity instrument. Blank types are retained as a lower-confidence
+    // fallback because some older CUSIPs have sparse metadata.
+    if(st&&!preferred.test(st))return false;
+    return true;
+  });
   const score=x=>{
     let n=0;
     const st=String(x?.securityType2||x?.securityType||'').toLowerCase();
-    if(/common stock|reit|depositary receipt|ordinary share/.test(st))n+=5;
+    if(preferred.test(st))n+=5;
     if(String(x?.exchCode||'').toUpperCase()==='US')n+=3;
     if(x?.compositeFIGI)n+=1;
-    if(/fund|etf|future|option|warrant/.test(st))n-=10;
     return n;
   };
   acceptable.sort((a,b)=>score(b)-score(a));
