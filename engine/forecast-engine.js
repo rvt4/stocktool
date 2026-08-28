@@ -83,6 +83,7 @@ function buildGrowthForecast(stock,years,cfg){
   // V12.5: explicit consensus should be the primary near-term underwriting input.
   // History is a cross-check, not a 25-55% drag on a well-covered inflecting business.
   const analystWeight=clamp(0.62+Math.min(analysts,30)/120,0.62,0.87);
+  const analystWeightYear2=Math.min(.80,analystWeight+.05);
 
   // Detect a likely acquisition / divestiture / accounting step change. We keep the new
   // revenue base, but do not teach the model that the one-time jump is organic growth.
@@ -96,7 +97,7 @@ function buildGrowthForecast(stock,years,cfg){
   if(a1!=null){ y1=weightedAverage([[a1,analystWeight],[historicalAnchor,1-analystWeight]]); }
   else { y1=weightedAverage([[momentum,.60],[historicalAnchor,.40]]); }
   let y2;
-  if(a2!=null){ y2=weightedAverage([[a2,Math.min(.80,analystWeight+.05)],[historicalAnchor,1-Math.min(.80,analystWeight+.05)]]); }
+  if(a2!=null){ y2=weightedAverage([[a2,analystWeightYear2],[historicalAnchor,1-analystWeightYear2]]); }
   else { y2=weightedAverage([[y1,.55],[historicalAnchor,.45]]); }
 
   if(structuralStepUp||structuralStepDown){
@@ -190,7 +191,7 @@ function buildGrowthForecast(stock,years,cfg){
   }
   const analystCoverage=(a1!=null?1:0)+(a2!=null?1:0);
   const forecastReliabilityScore=Math.round(100*clamp(.20+.35*historyReliability+.25*(analystCoverage/2)+.20*clamp(analysts/20,0,1)-((structuralStepUp||structuralStepDown)?.10:0),.20,.95));
-  return {growthPath,y1,y2,matureGrowth,year5Growth,historicalAnchor,recentAnnual,recentQuarter,qualityHint,reinvestmentPersistence,analystWeight,structuralStepUp,structuralStepDown,analystUsed:a1!=null||a2!=null,historyReliability,histDispersion,forecastReliabilityScore};
+  return {growthPath,y1,y2,matureGrowth,year5Growth,historicalAnchor,recentAnnual,recentQuarter,qualityHint,reinvestmentPersistence,analystWeight,analystWeightYear2,directAnalystYears:2,structuralStepUp,structuralStepDown,analystUsed:a1!=null||a2!=null,historyReliability,histDispersion,forecastReliabilityScore};
 }
 
 function buildMarginForecast(stock,years,cfg,growthInfo){
@@ -959,7 +960,7 @@ function buildForecast(stock){
   const sustainableGrowth=median([growth.y1,growth.y2,growth.historicalAnchor].filter(Number.isFinite))??growth.y1;
   const category=classifyCategory(stock,sustainableGrowth,growth.qualityHint,Number(stock.valuation?.dividendYield)||0);
   const forecastBridge={
-    revenue:{model:growth.y1,analystCurrent:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthCurrentYear??stock.analystEstimates?.revenueGrowthFwd),analystNext:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthNextYear),recentQuarter:growth.recentQuarter,recentAnnual:growth.recentAnnual,historicalNormalized:growth.historicalAnchor,terminalOperatingGrowth:growth.year5Growth,analystWeight:growth.analystWeight,structuralStepUp:growth.structuralStepUp,structuralStepDown:growth.structuralStepDown},
+    revenue:{model:growth.y1,analystCurrent:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthCurrentYear??stock.analystEstimates?.revenueGrowthFwd),analystNext:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthNextYear),recentQuarter:growth.recentQuarter,recentAnnual:growth.recentAnnual,historicalNormalized:growth.historicalAnchor,terminalOperatingGrowth:growth.year5Growth,analystWeight:growth.analystWeight,analystWeightYear1:growth.analystWeight,analystWeightYear2:growth.analystWeightYear2,directAnalystYears:growth.directAnalystYears,structuralStepUp:growth.structuralStepUp,structuralStepDown:growth.structuralStepDown},
     margins:{fcfStart:margins.currentFCF,fcfNormalized:margins.rawFCF,fcfTarget:margins.targetFCF,fcfMatureTarget:margins.matureTargetFCF,operatingStart:margins.currentOperating,operatingTarget:margins.targetOperating,operatingMatureTarget:margins.matureOperating,ebitdaStart:margins.currentEBITDA,ebitdaNormalized:margins.rawEBITDA,ebitdaTarget:margins.targetEBITDA,ebitdaMatureTarget:margins.matureTargetEBITDA,netStart:margins.currentNet,netNormalized:margins.currentNet,gaapNetNormalized:margins.rawNet,netTarget:margins.targetNet,netMatureTarget:margins.matureTargetNet,cfoStart:margins.currentCFO,cfoTarget:margins.targetCFO,cfoMatureTarget:margins.matureCFO,capexStart:margins.currentCapex,capexTarget:margins.targetCapex,capexMatureTarget:margins.matureCapex,incrementalFCFMargin:margins.incrementalFCFMargin,incrementalOperatingMargin:margins.incrementalOperatingMargin,analystMarginGrowth:margins.analystMarginGrowth,analystMarginDelta:margins.analystMarginDelta,expansionVotes:margins.expansionVotes,compressionVotes:margins.compressionVotes,fcfTrend:margins.fcfTrend,operatingTrend:margins.opTrend,grossMarginTrend:margins.grossTrend,operatingLeverageAdjustment:margins.leverageSignal,abnormalCapexCycle:margins.abnormalCapexCycle,reportedFCFMargin:margins.reportedFCFMargin,normalizedCapexMargin:margins.normalizedCapexMargin,cycleNormalizedFCFMargin:margins.cycleNormalizedFCFMargin,maintenanceCapexMargin:margins.maintenanceCapexMargin,growthReinvestmentShare:margins.growthReinvestmentShare,matureGrowthReinvestmentShare:margins.matureGrowthReinvestmentShare,matureCapexMargin:margins.matureCapex,normalizedCFOMargin:margins.normalizedCFO,cashEconomicsTarget:margins.cashEconomicsTarget,profitabilityConsistencyApplied:margins.profitabilityConsistencyApplied,structuralCapitalLightCashConversion:margins.structuralCapitalLightCashConversion,recurringFcfCfoRatio:margins.recurringFcfCfoRatio,fcfCeiling:margins.fcfCeiling,crossMarginCoherenceApplied:margins.crossMarginCoherenceApplied,unexplainedFcfCompressionPrevented:margins.unexplainedFcfCompressionPrevented,broadCashCompressionEvidence:margins.broadCashCompressionEvidence,temporaryMarginReset:margins.temporaryMarginReset,
       normalizedTaxRate:margins.normalizedTaxRate,gaapNetStart:margins.gaapCurrentNet,gaapNetTarget:margins.gaapTargetNet,gaapNetMatureTarget:margins.gaapMatureTargetNet,
       earningsNormalizationAddbackStart:margins.currentNormalizationAddback,earningsNormalizationAddbackTarget:margins.targetNormalizationAddback,earningsNormalizationAddbackMature:margins.matureNormalizationAddback,
