@@ -777,7 +777,7 @@ console.log('V12.13 transmission tests passed: reconciled gross economics reach 
 // row in the returned Stooq history. The previous comparison accidentally used
 // the target timestamp as the incumbent timestamp, causing every historical
 // snapshot to fail the max-gap check and producing zero backtest observations.
-const {priceOnOrBefore,totalReturnCAGR,parseNportHoldingsXml,accessionFromHit}=require('./backtest');
+const {priceOnOrBefore,totalReturnCAGR,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom}=require('./backtest');
 const historicalPriceFixture=[
   {date:'2016-01-04',close:10},
   {date:'2016-12-29',close:19},
@@ -816,5 +816,9 @@ assert.strictEqual(parsedNport.holdings.length,2,'N-PORT parser did not retain t
 assert.strictEqual(parsedNport.holdings[0].ticker,'ABC','N-PORT parser misread ticker attribute');
 assert.strictEqual(parsedNport.holdings[1].ticker,'BRK-B','N-PORT parser did not normalize dotted tickers');
 assert.strictEqual(accessionFromHit({_id:'0001752724-25-118607:primary_doc.xml'}),'0001752724-25-118607','EFTS accession parser failed');
-console.log('V12.23 backtest regression passed: SEC N-PORT IWB holdings and EFTS accession IDs parse correctly.');
+const atomFixture=`<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><entry><title>NPORT-P - iShares Russell 1000 ETF</title><updated>2025-05-23T15:30:51-04:00</updated><link href="https://www.sec.gov/Archives/edgar/data/1100663/000175272425118607/0001752724-25-118607-index.htm"/></entry></feed>`;
+const atomParsed=parseSecSeriesAtom(atomFixture);
+assert.strictEqual(atomParsed.length,1,'SEC series Atom parser did not find filing entry');
+assert.strictEqual(atomParsed[0].accession,'0001752724-25-118607','SEC series Atom parser lost accession number');
+console.log('V12.24 backtest regression passed: SEC N-PORT holdings and series-filtered EDGAR Atom accessions parse correctly.');
 

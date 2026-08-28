@@ -33,7 +33,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.23-sec-nport-historical-universe';
+const MODEL_VERSION='simple-v12.24-sec-series-feed-universe';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -97,6 +97,7 @@ function addYears(date,years){const d=new Date(date+'T00:00:00Z');d.setUTCFullYe
 const IWB_SERIES_ID='S000004347';
 const IWB_TRUST_CIK='1100663';
 const SEC_EFTS='https://efts.sec.gov/LATEST/search-index';
+const SEC_BROWSE='https://www.sec.gov/cgi-bin/browse-edgar';
 const SEC_ARCHIVES='https://www.sec.gov/Archives/edgar/data';
 
 function normalizeSectorName(s){
@@ -135,23 +136,53 @@ function accessionFromHit(hit){
   const m=blob.match(/\b\d{10}-\d{2}-\d{6}\b/);
   return m?m[0]:null;
 }
-async function secFetchText(url,label='SEC request'){
+function parseSecSeriesAtom(atom){
+  const text=String(atom||'');
+  const out=[];
+  const entries=text.match(/<entry\b[\s\S]*?<\/entry>/gi)||[];
+  for(const entry of entries){
+    const href=(entry.match(/<link\b[^>]*href=["']([^"']+)["'][^>]*\/?\s*>/i)||[])[1]||'';
+    const accession=accessionFromHit(href)||accessionFromHit(entry);
+    const updated=(entry.match(/<updated>([^<]+)<\/updated>/i)||[])[1]||null;
+    const title=(entry.match(/<title[^>]*>([\s\S]*?)<\/title>/i)||[])[1]||'';
+    if(accession)out.push({accession,updated,title:xmlDecode(title)});
+  }
+  return [...new Map(out.map(x=>[x.accession,x])).values()];
+}
+async function secFetchText(url,label='SEC request',accept='application/json,text/xml,text/plain,*/*'){
   const ua=process.env.SEC_USER_AGENT||'FreeScreener research contact@example.com';
   const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),30000);
   try{
-    const res=await fetch(url,{headers:{'User-Agent':ua,'Accept-Encoding':'gzip, deflate','Accept':'application/json,text/xml,text/plain,*/*'},signal:ac.signal,redirect:'follow'});
+    const res=await fetch(url,{headers:{'User-Agent':ua,'Accept-Encoding':'gzip, deflate','Accept':accept},signal:ac.signal,redirect:'follow'});
     const text=await res.text();
     if(!res.ok)throw new Error(`${label} HTTP ${res.status}`);
     return text;
   } finally {clearTimeout(timer);}
 }
 async function discoverIwbNportFilings(startYear,endYear){
+  // Use EDGAR's series-filtered browse feed rather than full-text search. EFTS
+  // does not reliably index Series IDs inside investment-company submissions,
+  // which previously yielded zero IWB accessions even though the filings exist.
+  const url=new URL(SEC_BROWSE);
+  url.searchParams.set('action','getcompany');
+  url.searchParams.set('CIK',IWB_SERIES_ID);
+  url.searchParams.set('type','NPORT-P');
+  url.searchParams.set('owner','exclude');
+  url.searchParams.set('count','100');
+  url.searchParams.set('output','atom');
+  const raw=await secFetchText(url.toString(),'SEC EDGAR IWB series feed','application/atom+xml,application/xml,text/xml,*/*');
+  const entries=parseSecSeriesAtom(raw);
+  const accessions=entries.map(x=>x.accession).filter(Boolean);
+  if(accessions.length)return [...new Set(accessions)];
+
+  // Defensive fallback only: keep EFTS as a secondary discovery route. It may
+  // work in some SEC deployments, but series-feed discovery is authoritative.
   const params=new URLSearchParams({q:IWB_SERIES_ID,forms:'NPORT-P',dateRange:'custom',startdt:`${Math.max(2019,startYear)}-01-01`,enddt:`${endYear+1}-12-31`,from:'0',size:'100'});
-  const raw=await secFetchText(`${SEC_EFTS}?${params.toString()}`,'SEC EFTS IWB NPORT search');
-  const j=JSON.parse(raw); const hits=j?.hits?.hits||j?.hits||[];
-  const accessions=[...new Set(hits.map(accessionFromHit).filter(Boolean))];
-  if(!accessions.length)throw new Error('SEC EFTS returned no IWB NPORT-P filings.');
-  return accessions;
+  const eft=await secFetchText(`${SEC_EFTS}?${params.toString()}`,'SEC EFTS IWB NPORT fallback');
+  const j=JSON.parse(eft); const hits=j?.hits?.hits||j?.hits||[];
+  const fallback=[...new Set(hits.map(accessionFromHit).filter(Boolean))];
+  if(!fallback.length)throw new Error('SEC series feed and EFTS both returned no IWB NPORT-P filings.');
+  return fallback;
 }
 async function loadIwbNportSnapshots(dates,currentMap){
   const wanted=new Set(dates);
@@ -520,4 +551,4 @@ async function main(){
   console.log(`Done. Wrote ${flat.length} historical observations to data/backtest-results.json.`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,dailyPortfolioRisk,simulateAnnualPortfolio,buildPortfolioSimulation};
+module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,dailyPortfolioRisk,simulateAnnualPortfolio,buildPortfolioSimulation};
