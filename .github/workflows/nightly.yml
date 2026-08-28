@@ -1,57 +1,32 @@
 name: Nightly Screener Run
-
 on:
   schedule:
     - cron: '0 6 * * *'
   workflow_dispatch: {}
-
 permissions:
   contents: write
-
-# Prevent scheduled/manual runs of this workflow from overlapping.
-concurrency:
-  group: stocktool-screener
-  cancel-in-progress: false
-
 jobs:
   fetch-analyst-estimates:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+        with: { python-version: '3.12' }
       - run: pip install yfinance requests
       - name: Refresh analyst cache
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: python fetch_analyst_estimates.py
-
   run-screener:
     runs-on: ubuntu-latest
     needs: fetch-analyst-estimates
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: main
-
-      # The analyst-refresh job can take time. Re-sync immediately before the
-      # expensive screener run so we always model from the newest main branch.
-      - name: Sync latest main
-        run: |
-          set -euo pipefail
-          git fetch origin main
-          git reset --hard origin/main
-
       - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
+        with: { node-version: '20' }
       - name: Verify model invariants
         run: node model-smoke-test.js
-
       - name: Run simplified screener
         env:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
@@ -59,68 +34,10 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
         run: node run-screener.js
-
-      - name: Commit and publish results
+      - name: Commit results
         run: |
-          set -euo pipefail
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-
-          echo "Generated results timestamp:"
-          node -e "const r=require('./data/results.json'); console.log(r.generatedAt, r.count, r.modelVersion)"
-
-          # Preserve this run's generated artifacts before syncing main again.
-          # This avoids ever trying to text-merge giant generated JSON files.
-          tmpdir="$(mktemp -d)"
-          cp data/results.json "$tmpdir/results.json"
-          cp data/validation-report.json "$tmpdir/validation-report.json"
-          cp data/screener-diagnostics.json "$tmpdir/screener-diagnostics.json"
-          history_file="data/history/$(date -u +%Y-%m-%d).json"
-          if [ -f "$history_file" ]; then
-            mkdir -p "$tmpdir/history"
-            cp "$history_file" "$tmpdir/history/"
-          fi
-
-          publish_attempt=1
-          max_attempts=3
-
-          while [ "$publish_attempt" -le "$max_attempts" ]; do
-            echo "Publish attempt $publish_attempt/$max_attempts"
-
-            # Move onto the latest main, preserving any code or other changes
-            # that landed while the ~30 minute screener was running.
-            git fetch origin main
-            git reset --hard origin/main
-
-            # Re-apply only this run's generated outputs on top of latest main.
-            cp "$tmpdir/results.json" data/results.json
-            cp "$tmpdir/validation-report.json" data/validation-report.json
-            cp "$tmpdir/screener-diagnostics.json" data/screener-diagnostics.json
-            if [ -d "$tmpdir/history" ]; then
-              mkdir -p data/history
-              cp "$tmpdir/history/"*.json data/history/
-            fi
-
-            git add data/results.json
-            git add data/validation-report.json
-            git add data/screener-diagnostics.json
-            if [ -d data/history ]; then git add data/history/*.json; fi
-
-            if git diff --staged --quiet; then
-              echo "Generated outputs already match current main; nothing to publish."
-              exit 0
-            fi
-
-            git commit -m "Nightly screener update $(date -u +%Y-%m-%d)"
-
-            if git push origin HEAD:main; then
-              echo "Screener results published successfully."
-              exit 0
-            fi
-
-            echo "Push was rejected because main moved again. Retrying on latest main..."
-            publish_attempt=$((publish_attempt + 1))
-          done
-
-          echo "ERROR: Could not publish screener results after $max_attempts attempts because main kept changing."
-          exit 1
+          git add data/results.json data/validation-report.json data/screener-diagnostics.json data/history/
+          git diff --staged --quiet || git commit -m "Nightly screener update $(date -u +%Y-%m-%d)"
+          git push

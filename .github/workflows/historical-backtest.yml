@@ -1,0 +1,66 @@
+name: Historical Core Backtest
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_year:
+        description: 'First historical year'
+        required: true
+        default: '2016'
+      end_year:
+        description: 'Last historical year'
+        required: true
+        default: '2025'
+      frequency:
+        description: 'Snapshot frequency (annual or quarterly)'
+        required: true
+        default: 'annual'
+        type: choice
+        options:
+          - annual
+          - quarterly
+      ticker_limit:
+        description: 'Ticker limit (0 = all)'
+        required: true
+        default: '0'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: historical-core-backtest
+  cancel-in-progress: false
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify model invariants
+        run: node model-smoke-test.js
+
+      - name: Run historical core backtest
+        env:
+          BACKTEST_START: ${{ inputs.start_year }}
+          BACKTEST_END: ${{ inputs.end_year }}
+          BACKTEST_FREQUENCY: ${{ inputs.frequency }}
+          BACKTEST_LIMIT: ${{ inputs.ticker_limit }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: node backtest.js
+
+      - name: Commit backtest results
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add data/backtest-results.json
+          git diff --staged --quiet || git commit -m "Historical backtest update $(date -u +%Y-%m-%d)"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
