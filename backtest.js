@@ -32,7 +32,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.18-backtest-signal-analysis';
+const MODEL_VERSION='simple-v12.19-portfolio-backtest';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -195,6 +195,64 @@ function scoreDeciles(rows,field,n){
   const cuts=Array.from({length:9},(_,i)=>percentileSorted(vals,(i+1)/10));
   return groupedOutcome(rows,r=>{const x=finite(r[field]);if(x==null)return null;let d=1;while(d<=9&&x>cuts[d-1])d++;return `D${d}`;},n).sort((a,b)=>Number(a.bucket.slice(1))-Number(b.bucket.slice(1)));
 }
+function portfolioStats(years){
+  const valid=(years||[]).filter(y=>Number.isFinite(y.portfolioReturn)&&Number.isFinite(y.spyReturn));
+  if(!valid.length)return {years:[],yearCount:0};
+  let wealth=1,spyWealth=1,peak=1,maxDrawdown=0;
+  const curve=[];
+  for(const y of valid){
+    wealth*=1+y.portfolioReturn; spyWealth*=1+y.spyReturn;
+    peak=Math.max(peak,wealth); maxDrawdown=Math.min(maxDrawdown,wealth/peak-1);
+    curve.push({...y,wealth,spyWealth});
+  }
+  const n=valid.length;
+  const portfolioCAGR=Math.pow(wealth,1/n)-1,spyCAGR=Math.pow(spyWealth,1/n)-1;
+  const rets=valid.map(y=>y.portfolioReturn),meanRet=mean(rets);
+  const variance=rets.length>1?rets.reduce((s,x)=>s+(x-meanRet)**2,0)/(rets.length-1):0;
+  return {
+    years:curve,yearCount:n,portfolioCAGR,spyCAGR,annualizedExcess:portfolioCAGR-spyCAGR,
+    cumulativeReturn:wealth-1,spyCumulativeReturn:spyWealth-1,
+    annualVolatility:Math.sqrt(variance),yearEndMaxDrawdown:maxDrawdown,
+    beatSpyRate:pctTrue(valid.map(y=>y.portfolioReturn>y.spyReturn)),
+    positiveYearRate:pctTrue(valid.map(y=>y.portfolioReturn>0)),
+    worstYear:valid.reduce((a,b)=>!a||b.portfolioReturn<a.portfolioReturn?b:a,null),
+    bestYear:valid.reduce((a,b)=>!a||b.portfolioReturn>a.portfolioReturn?b:a,null),
+    averageHoldings:mean(valid.map(y=>y.holdings)),finalWealth10k:10000*wealth,spyFinalWealth10k:10000*spyWealth
+  };
+}
+function simulateAnnualPortfolio(snapshotOutput,{name,topN=20,minAlpha=.10,requireTopRank=false}={}){
+  const years=[];
+  for(const snap of snapshotOutput||[]){
+    const eligible=(snap.rows||[])
+      .filter(r=>Number.isFinite(r.realized1YPriceCAGR)&&Number.isFinite(r.spy1YPriceCAGR)&&Number.isFinite(r.expectedAlpha))
+      .filter(r=>r.expectedAlpha>=minAlpha)
+      .filter(r=>!requireTopRank||r.rank<=Math.ceil((r.universeSize||snap.rows.length)*.20))
+      .sort((a,b)=>(a.rank||Infinity)-(b.rank||Infinity))
+      .slice(0,topN);
+    if(!eligible.length)continue;
+    const portfolioReturn=mean(eligible.map(r=>r.realized1YPriceCAGR));
+    const spyReturn=median(eligible.map(r=>r.spy1YPriceCAGR));
+    years.push({
+      startYear:Number(String(snap.asOf).slice(0,4)),asOf:snap.asOf,holdings:eligible.length,
+      portfolioReturn,spyReturn,excessReturn:portfolioReturn-spyReturn,
+      tickers:eligible.map(r=>r.ticker)
+    });
+  }
+  return {name,topN,minAlpha,requireTopRank,...portfolioStats(years)};
+}
+function buildPortfolioSimulation(snapshotOutput){
+  const strategies=[
+    {name:'Top 10 · Alpha ≥10%',topN:10,minAlpha:.10},
+    {name:'Top 20 · Alpha ≥10%',topN:20,minAlpha:.10},
+    {name:'Top 30 · Alpha ≥10%',topN:30,minAlpha:.10},
+    {name:'Top 20 rank · no Alpha gate',topN:20,minAlpha:-10}
+  ].map(x=>simulateAnnualPortfolio(snapshotOutput,x));
+  return {
+    description:'Annual equal-weight portfolio simulation. At each historical year-end, select the highest-ranked stocks meeting the stated point-in-time Alpha rule, hold for one year, then rebalance. Returns are price-only; transaction costs, taxes and dividends are excluded. Drawdown is measured from year-end portfolio values, not daily lows.',
+    strategies
+  };
+}
+
 function buildSignalAnalysis(rows){
   const horizons=[1,3,5];
   const metrics=['expectedAlpha','investmentScore','qualityScore','moatScore','capitalAllocationScore','compounderScore','growthQualityScore','pricingPowerScore','protectionScore','forecastConfidence','valuationConfidence','marginOfSafety'];
@@ -272,10 +330,10 @@ async function main(){
   const output={
     generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,backtestMode:'historical_core_point_in_time',frequency:FREQUENCY,startYear:START,endYear:END,
     assumptions:{analystEstimates:'excluded_historical_unavailable',universe:'current_watchlist_survivorship_biased',returns:'Stooq price CAGR; dividends not included',benchmark:'SPY price CAGR',secCutoff:'facts must be filed by as-of date'},
-    observations:flat.length,diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YPriceCAGR'),summary3Y:summarize(flat,'realized3YPriceCAGR'),summary5Y:summarize(flat,'realized5YPriceCAGR'),signalAnalysis:buildSignalAnalysis(flat),errors:errors.slice(0,500),snapshots:snapshotOutput
+    observations:flat.length,diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YPriceCAGR'),summary3Y:summarize(flat,'realized3YPriceCAGR'),summary5Y:summarize(flat,'realized5YPriceCAGR'),signalAnalysis:buildSignalAnalysis(flat),portfolioSimulation:buildPortfolioSimulation(snapshotOutput),errors:errors.slice(0,500),snapshots:snapshotOutput
   };
   const p=path.join(__dirname,'data','backtest-results.json'),tmp=p+'.tmp';fs.writeFileSync(tmp,JSON.stringify(output));fs.renameSync(tmp,p);
   console.log(`Done. Wrote ${flat.length} historical observations to data/backtest-results.json.`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,snapshotDates,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis};
+module.exports={factsAsOf,priceOnOrBefore,snapshotDates,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,simulateAnnualPortfolio,buildPortfolioSimulation};
