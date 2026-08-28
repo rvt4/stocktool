@@ -1,0 +1,212 @@
+'use strict';
+/**
+ * FreeScreener point-in-time historical CORE backtest.
+ *
+ * Purpose:
+ *   Re-run today's model architecture on historical dates using only SEC facts that
+ *   had actually been filed by each as-of date plus historical market prices.
+ *
+ * Important limitations (published in the output too):
+ *   - Historical analyst consensus is intentionally NOT reconstructed. The backtest
+ *     therefore exercises the model's SEC/history fallback path, while live forward
+ *     snapshots preserve the complete analyst-assisted production model.
+ *   - watchlist.json is today's universe, so this first free backtest has survivorship
+ *     bias. It is useful for model calibration, but it is not a clean claim of alpha.
+ *   - Realized returns are historical price returns from Stooq, not dividend-inclusive
+ *     total returns. The benchmark is measured on the same basis (SPY price return).
+ *
+ * Usage examples:
+ *   node backtest.js
+ *   BACKTEST_START=2018 BACKTEST_END=2025 BACKTEST_FREQUENCY=annual node backtest.js
+ *   BACKTEST_FREQUENCY=quarterly BACKTEST_LIMIT=100 node backtest.js
+ */
+const fs=require('fs');
+const path=require('path');
+const {
+  fetchSecFacts, parseAnnualFinancials, parseQuarterlyRevenue, recentQuarterYoYGrowth,
+  blendedForwardGrowth, fetchStooqHistory, latestDilutedSharesFromFacts,
+  normalizeHistoryForCorporateAction, normalizeSecTicker
+}=require('./data-fetchers');
+const {buildForecast}=require('./engine/forecast-engine');
+const {computeQuality}=require('./engine/quality-engine');
+const {valuate}=require('./engine/valuation-engine');
+const {rateStock}=require('./engine/rating-engine');
+
+const MODEL_VERSION='simple-v12.17-backtest-infrastructure';
+const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
+const START=Number(process.env.BACKTEST_START||2016);
+const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
+const FREQUENCY=String(process.env.BACKTEST_FREQUENCY||'annual').toLowerCase();
+const LIMIT=Math.max(0,Number(process.env.BACKTEST_LIMIT||0));
+const RATE_LIMIT_DELAY_MS=Number(process.env.BACKTEST_RATE_LIMIT_DELAY_MS||350);
+const HISTORY_YEARS=Math.max(12,new Date().getUTCFullYear()-START+2);
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+function finite(v){const n=Number(v);return Number.isFinite(n)?n:null;}
+function cagr(a,b,n){return a>0&&b>0&&n>0?Math.pow(b/a,1/n)-1:null;}
+function median(a){const v=a.filter(Number.isFinite).sort((x,y)=>x-y);if(!v.length)return null;const m=Math.floor(v.length/2);return v.length%2?v[m]:(v[m-1]+v[m])/2;}
+function isoDate(d){return new Date(d).toISOString().slice(0,10);}
+
+function snapshotDates(){
+  const out=[];
+  for(let y=START;y<=END;y++){
+    if(FREQUENCY==='quarterly'){
+      for(const md of ['03-31','06-30','09-30','12-31'])out.push(`${y}-${md}`);
+    }else out.push(`${y}-12-31`);
+  }
+  return out.filter(d=>new Date(d)<=new Date());
+}
+
+// Keep only facts that were publicly filed by the simulated date. This is the core
+// look-ahead-bias guardrail. We also reject facts whose period ends after the date.
+function factsAsOf(raw,asOf){
+  const cutoff=String(asOf);
+  const out={...raw,facts:{}};
+  for(const [taxonomy,tags] of Object.entries(raw?.facts||{})){
+    out.facts[taxonomy]={};
+    for(const [tag,obj] of Object.entries(tags||{})){
+      const units={};
+      for(const [unit,arr] of Object.entries(obj?.units||{})){
+        units[unit]=(arr||[]).filter(x=>{
+          if(x?.filed&&String(x.filed)>cutoff)return false;
+          if(x?.end&&String(x.end)>cutoff)return false;
+          // If a fact lacks a filing date, require a conservative reporting lag.
+          if(!x?.filed&&x?.end){const lag=(new Date(cutoff)-new Date(x.end))/86400000;if(lag<45)return false;}
+          return true;
+        });
+      }
+      out.facts[taxonomy][tag]={...obj,units};
+    }
+  }
+  return out;
+}
+function priceOnOrBefore(history,date,maxGapDays=12){
+  const t=new Date(date).getTime(); let best=null;
+  for(const p of history||[]){const pt=new Date(p.date).getTime();if(pt<=t&&(!best||pt>best.t))best={t,pt,p};}
+  if(!best)return null;
+  return (best.t-best.pt)/86400000<=maxGapDays?finite(best.p.close):null;
+}
+function addYears(date,years){const d=new Date(date+'T00:00:00Z');d.setUTCFullYear(d.getUTCFullYear()+years);return d.toISOString().slice(0,10);}
+
+function historicalStockFromData(ticker,sector,rawFacts,priceHistory,asOf){
+  const facts=factsAsOf(rawFacts,asOf);
+  const years=parseAnnualFinancials(facts);
+  const quarters=parseQuarterlyRevenue(facts);
+  if(years.length<2)return null;
+  const currentPrice=priceOnOrBefore(priceHistory,asOf);
+  if(!(currentPrice>0))return null;
+  normalizeHistoryForCorporateAction(years,latestDilutedSharesFromFacts(facts));
+  const last=years.at(-1)||{};
+
+  // Historical runs cannot use today's market-cap reconciliation. Prefer reported
+  // diluted shares; repair only with NI / diluted EPS when those two filed facts agree.
+  if(Number(last.netIncome)!==0&&Number.isFinite(Number(last.dilutedEPS))&&Math.abs(Number(last.dilutedEPS))>1e-6){
+    const implied=Math.abs(Number(last.netIncome)/Number(last.dilutedEPS));
+    const reported=Number(last.sharesOutTTM);
+    const mismatch=reported>0&&implied>0?Math.max(reported/implied,implied/reported):null;
+    if(implied>1e5&&implied<1e12&&(!reported||(mismatch!=null&&mismatch>=3.5))){
+      last.sharesOutTTM=implied; last.sharesSource='historical_net_income_div_diluted_eps_repair';
+    }
+  }
+  const shares=finite(last.sharesOutTTM);
+  if(!(shares>0))return null;
+  const marketCap=currentPrice*shares;
+  const eps=finite(last.netIncome)!=null?finite(last.netIncome)/shares:null;
+  const pe=eps?currentPrice/eps:null;
+  const ev=marketCap+(finite(last.longTermDebt)||0)-(finite(last.cash)||0);
+  const evEbitda=finite(last.ebitda)>0?ev/finite(last.ebitda):null;
+  const dividendYield=finite(last.dividendPerShare)>0?finite(last.dividendPerShare)/currentPrice:0;
+  const fcfYield=finite(last.fcf)!=null&&marketCap>0?finite(last.fcf)/marketCap:null;
+  for(const y of years)y.debtToEbitda=finite(y.longTermDebt)!=null&&finite(y.ebitda)>0?finite(y.longTermDebt)/finite(y.ebitda):null;
+
+  let growthYear1=null;
+  if(years.length>=2){
+    const lookback=Math.min(3,years.length-1), first=years[years.length-1-lookback];
+    const trailing=first.revenue>0?Math.pow(last.revenue/first.revenue,1/lookback)-1:null;
+    growthYear1=blendedForwardGrowth(trailing,recentQuarterYoYGrowth(quarters));
+  }
+  const revenueSource=String(last.revenueSource||'');
+  const financialLikeRevenue=/PremiumsEarnedNet|InvestmentIncomeInterestAndDividend|InterestAndDividendIncomeOperating|InterestIncomeExpenseNonoperatingNet|RevenuesNetOfInterestExpense/i.test(revenueSource);
+  const nciIncomeShare=finite(last.noncontrollingIncomeShare),nci=finite(last.noncontrollingInterest),eq=finite(last.stockholdersEquity);
+  const nciBalanceShare=nci!=null&&eq!=null&&Math.abs(eq)+Math.abs(nci)>0?Math.abs(nci)/(Math.abs(eq)+Math.abs(nci)):null;
+  const materialNci=(nciIncomeShare!=null&&nciIncomeShare>=.20)||(nciBalanceShare!=null&&nciBalanceShare>=.20);
+  return {
+    ticker,sector:sector||'Unknown',asOf,
+    financials:{years,dataQuality:{
+      revenueProxyYears:years.filter(y=>y.revenueIsProxy).length,
+      fcfProxyYears:years.filter(y=>y.fcfIsProxy).length,
+      missingCapexYears:years.filter(y=>y.fcfUnavailableReason==='missing_capex').length,
+      missingEbitdaYears:years.filter(y=>y.operatingIncome!=null&&y.ebitda==null).length,
+      shareDenominatorReliable:true,shareDenominatorReason:'point_in_time_sec_or_eps',financialLikeRevenue,
+      materialNoncontrollingInterest:materialNci,noncontrollingIncomeShare:nciIncomeShare,
+      noncontrollingBalanceShare:nciBalanceShare,latestRevenueSource:revenueSource||null
+    }},
+    valuation:{pe,forwardPe:pe,evEbitda,fcfYield,marketCap,ev,dividendYield,growthSource:'point_in_time_sec_history'},
+    growthYear1,analystEstimates:null,price:{current:currentPrice},quarterly:quarters,
+    corporateActionNormalization:null,shareCountReconciliation:{reliable:true,applied:false,reason:'historical_point_in_time'},
+    historicalMultiples:{evEbitda:[],forwardPe:[]},earningsCallText:null
+  };
+}
+
+function compactModel(stock,f,q,v,d){return {
+  ticker:stock.ticker,sector:stock.sector,price:stock.price.current,rating:d.rating,
+  investmentScore:d.investmentScore,expectedCAGR:v.expectedCAGR,expectedAlpha:d.expectedAlpha,
+  fiveYearExpectedCAGR:v.fiveYearExpectedCAGR,bearCAGR:v.bearCAGR,bullCAGR:v.bullCAGR,
+  fairValue:v.fairValueEstimate,buyPrice:v.requiredReturnBuyPrice,marginOfSafety:v.marginOfSafety,
+  qualityScore:q.qualityScore,moatScore:q.moatScore,pricingPowerScore:q.pricingPowerScore,
+  capitalAllocationScore:q.capitalAllocationScore,forecastConfidence:f.forecastReliabilityScore,
+  valuationConfidence:v.valuationConfidenceScore,methodAgreement:v.methodAgreementScore,
+  methodCount:(v.methods||[]).length,independentEvidenceFamilies:v.independentMethodCount,
+  modelSupport:v.modelSupport
+};}
+function rank(rows){const s=[...rows].sort((a,b)=>(b.investmentScore||0)-(a.investmentScore||0));s.forEach((x,i)=>x.rank=i+1);rows.forEach(x=>x.universeSize=rows.length);}
+function attachRealized(row,history,spyHistory,asOf){
+  for(const n of [1,3,5,10]){
+    const end=addYears(asOf,n), endPx=priceOnOrBefore(history,end), spy0=priceOnOrBefore(spyHistory,asOf), spy1=priceOnOrBefore(spyHistory,end);
+    const realized=endPx>0?cagr(row.price,endPx,n):null, bench=spy0>0&&spy1>0?cagr(spy0,spy1,n):null;
+    row[`realized${n}YPriceCAGR`]=realized; row[`spy${n}YPriceCAGR`]=bench;
+    row[`excess${n}YPriceCAGR`]=realized!=null&&bench!=null?realized-bench:null;
+  }
+}
+function alphaBucket(a){if(!Number.isFinite(a))return 'N/A';if(a>=.10)return '>= +10%';if(a>=.05)return '+5% to +10%';if(a>=0)return '0% to +5%';if(a>=-.05)return '-5% to 0%';return '< -5%';}
+function summarize(rows,field='realized1YPriceCAGR'){
+  const valid=rows.filter(r=>Number.isFinite(r[field]));
+  const by=(keyFn)=>Object.entries(valid.reduce((m,r)=>{const k=keyFn(r);(m[k]??=[]).push(r[field]);return m;},{})).map(([bucket,v])=>({bucket,n:v.length,median:median(v),mean:v.reduce((a,b)=>a+b,0)/v.length}));
+  return {n:valid.length,byRating:by(r=>r.rating),byAlpha:by(r=>alphaBucket(r.expectedAlpha)),byRankQuintile:by(r=>`Q${Math.min(5,Math.ceil((r.rank/r.universeSize)*5))}`)};
+}
+
+async function main(){
+  fs.mkdirSync(path.join(__dirname,'data'),{recursive:true});
+  const dates=snapshotDates(), universe=LIMIT?watchlist.slice(0,LIMIT):watchlist;
+  console.log(`Historical core backtest: ${universe.length} tickers × ${dates.length} ${FREQUENCY} dates (${dates[0]} to ${dates.at(-1)}).`);
+  console.log('Historical analyst estimates are intentionally excluded to avoid look-ahead bias.');
+  const spyHistory=await fetchStooqHistory('SPY',HISTORY_YEARS);
+  const snapshots=new Map(dates.map(d=>[d,[]])); const errors=[];
+  for(let i=0;i<universe.length;i++){
+    const {ticker,sector}=universe[i];
+    try{
+      const sec=normalizeSecTicker(ticker);
+      const [facts,history]=await Promise.all([fetchSecFacts(sec),fetchStooqHistory(sec,HISTORY_YEARS)]);
+      for(const asOf of dates){
+        const stock=historicalStockFromData(ticker,sector,facts,history,asOf); if(!stock)continue;
+        try{
+          const f=buildForecast(stock),q=computeQuality(stock,f),v=valuate(stock,f,q),d=rateStock(stock,f,q,v);
+          if(!Number.isFinite(v.expectedCAGR))continue;
+          const row=compactModel(stock,f,q,v,d); attachRealized(row,history,spyHistory,asOf); snapshots.get(asOf).push(row);
+        }catch(e){errors.push({ticker,asOf,error:e.message});}
+      }
+    }catch(e){errors.push({ticker,error:e.message});}
+    if((i+1)%25===0)console.log(`Fetched ${i+1}/${universe.length}; modeled ${[...snapshots.values()].reduce((n,x)=>n+x.length,0)} point-in-time observations.`);
+    if(RATE_LIMIT_DELAY_MS>0)await sleep(RATE_LIMIT_DELAY_MS);
+  }
+  const flat=[]; const snapshotOutput=[];
+  for(const asOf of dates){const rows=snapshots.get(asOf);rank(rows);flat.push(...rows.map(r=>({...r,asOf})));snapshotOutput.push({asOf,count:rows.length,rows});}
+  const output={
+    generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,backtestMode:'historical_core_point_in_time',frequency:FREQUENCY,startYear:START,endYear:END,
+    assumptions:{analystEstimates:'excluded_historical_unavailable',universe:'current_watchlist_survivorship_biased',returns:'Stooq price CAGR; dividends not included',benchmark:'SPY price CAGR',secCutoff:'facts must be filed by as-of date'},
+    observations:flat.length,summary1Y:summarize(flat,'realized1YPriceCAGR'),summary3Y:summarize(flat,'realized3YPriceCAGR'),summary5Y:summarize(flat,'realized5YPriceCAGR'),errors:errors.slice(0,500),snapshots:snapshotOutput
+  };
+  const p=path.join(__dirname,'data','backtest-results.json'),tmp=p+'.tmp';fs.writeFileSync(tmp,JSON.stringify(output));fs.renameSync(tmp,p);
+  console.log(`Done. Wrote ${flat.length} historical observations to data/backtest-results.json.`);
+}
+if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
+module.exports={factsAsOf,priceOnOrBefore,snapshotDates,historicalStockFromData,alphaBucket,summarize};
