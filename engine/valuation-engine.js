@@ -386,6 +386,14 @@ function methodReliability(stock,forecast,kind,base,future,quality){
     reasons.push('profitability_fallback');
   } else if(kind==='FINANCIAL_EPS'){
     reliability*=.90;
+  } else if(kind==='FINANCIAL_BOOK'){
+    const equitySeries=years.slice(-5).map(y=>finite(y?.stockholdersEquity)).filter(x=>x>0);
+    reliability*=equitySeries.length>=3?.90:.72;
+    if(equitySeries.length<2)reasons.push('limited_book_value_history');
+  } else if(kind==='FINANCIAL_RI'){
+    const equitySeries=years.slice(-5).map(y=>finite(y?.stockholdersEquity)).filter(x=>x>0);
+    reliability*=equitySeries.length>=3?.86:.68;
+    if(equitySeries.length<2)reasons.push('limited_book_value_history');
   }
 
   const b=finite(base), f=finite(future);
@@ -404,7 +412,7 @@ function methodReliability(stock,forecast,kind,base,future,quality){
 // lens (and vice versa), while remaining completely ticker-agnostic.
 function valuationArchetype(stock,forecast,quality,base){
   const dq=stock.financials?.dataQuality||{};
-  if(dq.financialLikeRevenue===true)return {name:'financial-earnings',weights:{FINANCIAL_EPS:1},minimum:{FINANCIAL_EPS:.28}};
+  if(dq.financialLikeRevenue===true)return {name:'financial-multi-lens',weights:{FINANCIAL_EPS:.50,FINANCIAL_BOOK:.27,FINANCIAL_RI:.23},minimum:{FINANCIAL_EPS:.28,FINANCIAL_BOOK:.24,FINANCIAL_RI:.24}};
   const category=forecast.category||'Value';
   const growth=clamp(forecast.year5OperatingGrowth??forecast.rows?.at(-1)?.revenueGrowth??forecast.sustainableGrowth??0,0,.30);
   const q=clamp((quality?.qualityScore??50)/100,0,1);
@@ -437,7 +445,10 @@ function archetypeMethodWeight(archetype,kind,reliability){
   // V12.4's hard floors often collapsed otherwise modelable companies to one method,
   // making the answer both less robust and excessively dependent on a single conservative
   // lens. Keep truly weak methods out, but taper borderline methods smoothly.
-  if(reliability<.18)return 0;
+  // Reliability is already floored at 0.12 by methodReliability. Preserve a genuinely
+  // modelable low-confidence lens at a small weight instead of collapsing the company to
+  // one method; consensus/outlier logic and valuation confidence handle the uncertainty.
+  if(reliability<.12)return 0;
   const support=clamp(reliability/Math.max(floor,.18),.35,1);
   return w*support;
 }
@@ -613,7 +624,60 @@ function valuate(stock,forecast,quality){
       const justified=.45*fundamentalPE+.55*(cfg.basePE+growthPremium+qualityPremium);
       const m=boundedExit(currentPE,justified,7,growthFinancial?36:22);
       const rel=methodReliability(stock,forecast,'FINANCIAL_EPS',epsBase,futureEPS,quality);
-      addMethod(methods,{name:'Normalized EPS exit',target:futureEPS*m,weight:1,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:futureEPS,normalizedEPSBase:epsBase,epsGrowth,epsGrowthPath:epsPath,matureEpsGrowth,reliabilityReasons:rel.reasons}});
+      const epsWeight=archetypeMethodWeight(archetype,'FINANCIAL_EPS',rel.score);
+      addMethod(methods,{name:'Normalized EPS exit',target:futureEPS*m,weight:epsWeight,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:futureEPS,normalizedEPSBase:epsBase,epsGrowth,epsGrowthPath:epsPath,matureEpsGrowth,reliabilityReasons:rel.reasons}});
+
+      // Financial companies should not be forced into a single P/E lens. Common equity is
+      // already available from SEC Company Facts, so use it as a second economic anchor.
+      // We intentionally avoid generic FCF/EV-EBITDA here: deposits, lending assets and
+      // financing liabilities are operating inputs for a financial business.
+      const commonEquity=finite(last.stockholdersEquity);
+      const bookShares=finite(last.sharesOutTTM)>0?finite(last.sharesOutTTM):shares0;
+      const bookPerShare=commonEquity>0&&bookShares>0?commonEquity/bookShares:null;
+      if(bookPerShare>0){
+        const currentPB=safeMultiple(price/bookPerShare,.45,6);
+        const bookPath=[]; let bvps=bookPerShare, eps=epsBase;
+        for(let i=0;i<HORIZON_YEARS;i++){
+          eps*=1+epsPath[i];
+          const dps=finite(rows[i]?.dividendPerShare)||0;
+          bvps=Math.max(.01,bvps+Math.max(0,eps-dps));
+          bookPath.push(bvps);
+        }
+        const futureBVPS=bookPath.at(-1), year5BVPS=bookPath[Math.min(4,bookPath.length-1)];
+        const terminalROE=futureBVPS>0?futureEPS/futureBVPS:null;
+        const justifiedPB=Number.isFinite(terminalROE)
+          ?clamp(1+(terminalROE-intrinsicRate)/Math.max(.055,intrinsicRate-stableG),.65,growthFinancial?4.5:3.0)
+          :clamp(cfg.basePE/12,.65,2.5);
+        const pb=boundedExit(currentPB,justifiedPB,.65,growthFinancial?4.5:3.0);
+        const bookRel=methodReliability(stock,forecast,'FINANCIAL_BOOK',bookPerShare,futureBVPS,quality);
+        const bookWeight=archetypeMethodWeight(archetype,'FINANCIAL_BOOK',bookRel.score);
+        if(bookWeight>0)addMethod(methods,{name:'Book / ROE exit',target:futureBVPS*pb,weight:bookWeight,reliability:bookRel.score,price,family:'book',audit:{exitMultiple:pb,currentMultiple:currentPB,metric:futureBVPS,currentBookPerShare:bookPerShare,terminalROE,year5Outcome:year5BVPS*pb,reliabilityReasons:bookRel.reasons}});
+
+        // Residual-income valuation is a third lens built from beginning common book value
+        // plus the present value of earnings earned above the required return on equity.
+        // It is particularly useful when conventional industrial cash-flow definitions are
+        // misleading, and it does not require a ticker-specific override.
+        const costEquity=Math.max(.09,intrinsicRate);
+        let riPV=0, riBV=bookPerShare, riEPS=epsBase, year5RIFair=null;
+        for(let i=0;i<HORIZON_YEARS;i++){
+          riEPS*=1+epsPath[i];
+          const residual=riEPS-costEquity*riBV;
+          riPV+=residual/Math.pow(1+costEquity,i+1);
+          const dps=finite(rows[i]?.dividendPerShare)||0;
+          riBV=Math.max(.01,riBV+Math.max(0,riEPS-dps));
+          if(i===4)year5RIFair=bookPerShare+riPV;
+        }
+        const terminalResidual=riEPS-costEquity*riBV;
+        const riTerminalGrowth=clamp(stableG,.005,costEquity-.045);
+        const terminalRI=terminalResidual*(1+riTerminalGrowth)/Math.max(.045,costEquity-riTerminalGrowth);
+        const residualIncomeFair=bookPerShare+riPV+terminalRI/Math.pow(1+costEquity,HORIZON_YEARS);
+        if(residualIncomeFair>0){
+          const riTarget=residualIncomeFair*Math.pow(1+intrinsicRate,HORIZON_YEARS);
+          const riRel=methodReliability(stock,forecast,'FINANCIAL_RI',bookPerShare,riBV,quality);
+          const riWeight=archetypeMethodWeight(archetype,'FINANCIAL_RI',riRel.score);
+          if(riWeight>0)addMethod(methods,{name:'Residual income',target:riTarget,weight:riWeight,reliability:riRel.score,price,family:'book',cashFlowInclusive:true,audit:{fairValueToday:residualIncomeFair,costOfEquity:costEquity,terminalGrowth:riTerminalGrowth,currentBookPerShare:bookPerShare,terminalBookPerShare:riBV,terminalROE,year5Value:year5RIFair,reliabilityReasons:riRel.reasons}});
+        }
+      }
     }
   } else {
     const normFCF=base.fcfPerShare, normEPS=base.eps, normEBITDA=base.ebitda;
@@ -717,7 +781,8 @@ function valuate(stock,forecast,quality){
     const terminalMult=finite(m.audit?.exitMultiple);
     const kind=/EPS exit/i.test(m.name)?'EPS':(/FCF exit/i.test(m.name)?'FCF':(/EV\/EBITDA exit/i.test(m.name)?'EBITDA':null));
     const mult=kind?horizonExitMultiple(kind,terminalMult,forecast,quality):terminalMult; let target5=null;
-    if(m.name==='10Y DCF') target5=finite(m.audit?.year5Value);
+    if(m.name==='10Y DCF'||m.name==='Residual income') target5=finite(m.audit?.year5Value);
+    else if(m.name==='Book / ROE exit') target5=finite(m.audit?.year5Outcome);
     else if(/EPS exit/i.test(m.name)&&mult>0&&finite(y5.eps)>0) target5=y5.eps*mult;
     else if(/FCF exit/i.test(m.name)&&mult>0&&finite(y5.fcfPerShare)>0) target5=y5.fcfPerShare*mult;
     else if(/EV\/EBITDA exit/i.test(m.name)&&mult>0&&finite(y5.ebitda)>0&&finite(y5.shares)>0){const eq=y5.ebitda*mult-netDebt;target5=eq>0?eq/y5.shares:null;}
@@ -767,7 +832,7 @@ function valuate(stock,forecast,quality){
   const forecastRel=clamp((forecast.forecastReliabilityScore??quality.confidenceScore??50)/100,.20,.95);
   const agreementForConfidence=Number.isFinite(agreement)?agreement:50;
   let valuationConfidence=Math.round(clamp(.45*(quality.confidenceScore||50)+.25*(forecastRel*100)+.30*agreementForConfidence,0,100));
-  if(methods.length===1) valuationConfidence=Math.min(valuationConfidence,55);
+  if(methods.length===1) valuationConfidence=Math.min(valuationConfidence,50);
   else if(independentMethodCount===1) valuationConfidence=Math.min(valuationConfidence,68);
   else if(independentMethodCount===2) valuationConfidence=Math.min(valuationConfidence,82);
 
@@ -878,13 +943,19 @@ function valuate(stock,forecast,quality){
   const valuationGap=fair>0&&price>0?fair/price-1:null;
   let modelSupport='standard', modelSupportReason=null;
   if(financialLike&&methods.length>0){
-    // Banks, insurers and mortgage REITs need book value/ROTCE, capital, reserve or
-    // distributable-earnings inputs that the free generic dataset does not reliably
-    // provide. A lone normalized-EPS exit can remain visible as a reference valuation,
-    // but it must not masquerade as decision-grade multi-method evidence.
-    modelSupport='limited';
-    modelSupportReason='Financial-style business is supported by normalized EPS only; specialized book-value/capital/ROTCE or distributable-earnings evidence is unavailable';
-    valuationConfidence=Math.min(valuationConfidence,50);
+    // Financial businesses now use earnings plus common-book/residual-income lenses when
+    // the SEC balance sheet supports them. Still cap confidence below a fully specialized
+    // bank/insurer model because regulatory capital, ROTCE and reserve detail are absent.
+    const financialFamilies=new Set(methods.map(m=>m.family));
+    if(financialFamilies.size<2){
+      modelSupport='limited';
+      modelSupportReason='Financial-style business has only one supported valuation family from the available free data';
+      valuationConfidence=Math.min(valuationConfidence,50);
+    } else {
+      modelSupport='standard';
+      modelSupportReason='Financial-style business is cross-checked with normalized earnings and common-book/residual-income valuation; specialized regulatory-capital detail remains unavailable';
+      valuationConfidence=Math.min(valuationConfidence,82);
+    }
   }
   if(stock.sector==='Real Estate'){modelSupport='limited';modelSupportReason='REIT/real-estate specialized FFO-NAV metrics are not available in the free-data model';valuationConfidence=Math.min(valuationConfidence,50);}
   if(!shareDenominatorUsable){modelSupport='unsupported';modelSupportReason='Share-count denominator failed independent reconciliation';valuationConfidence=Math.min(valuationConfidence,20);}
