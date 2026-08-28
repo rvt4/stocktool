@@ -33,7 +33,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.21-fail-closed-historical-universe';
+const MODEL_VERSION='simple-v12.22-legacy-iwb-history-endpoint';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -169,9 +169,14 @@ async function fetchIwbHoldingsAsOf(asOf){
   const attempts=[];
   for(const candidate of priorDateCandidates(asOf,10)){
     const ymd=candidate.replaceAll('-','');
+    // iShares' historical archive uses the legacy AJAX JSON endpoint WITHOUT
+    // dataType=fund. Adding dataType=fund returns HTTP 200 with an empty aaData
+    // payload for archival dates on the current site. Keep the legacy JSON request
+    // first because it is the endpoint used by long-running public iShares-history
+    // downloaders; CSV is retained only as a secondary compatibility attempt.
     const variants=[
-      {kind:'csv',url:`${IWB_HOLDINGS_BASE}?fileType=csv&fileName=IWB_holdings&dataType=fund&asOfDate=${ymd}`},
-      {kind:'json',url:`${IWB_HOLDINGS_BASE}?fileType=json&tab=all&dataType=fund&asOfDate=${ymd}`}
+      {kind:'json',url:`${IWB_HOLDINGS_BASE}?fileType=json&tab=all&asOfDate=${ymd}`},
+      {kind:'csv',url:`${IWB_HOLDINGS_BASE}?fileType=csv&fileName=IWB_holdings&asOfDate=${ymd}`}
     ];
     for(const variant of variants){
       const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),30000);

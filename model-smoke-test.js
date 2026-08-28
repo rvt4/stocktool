@@ -819,5 +819,5 @@ assert.strictEqual(parsedIwbFixture.length,2,'historical IWB CSV parser did not 
 assert.strictEqual(parsedIwbFixture[0].ticker,'ABC','historical IWB CSV parser misread a quoted company name containing a comma');
 assert.strictEqual(parsedIwbFixture[0].sector,'Technology','historical IWB CSV parser did not normalize Information Technology');
 assert.strictEqual(parsedIwbFixture[1].ticker,'BRK-B','historical IWB CSV parser did not normalize dotted tickers');
-console.log('V12.21 backtest regression passed: archival IWB CSV holdings parse and normalize correctly.');
+console.log('V12.22 backtest regression passed: archival IWB holdings parse and normalize correctly.');
 
