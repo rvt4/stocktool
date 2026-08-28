@@ -32,7 +32,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.17.1-backtest-price-fix';
+const MODEL_VERSION='simple-v12.18-backtest-signal-analysis';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -156,7 +156,8 @@ function compactModel(stock,f,q,v,d){return {
   fiveYearExpectedCAGR:v.fiveYearExpectedCAGR,bearCAGR:v.bearCAGR,bullCAGR:v.bullCAGR,
   fairValue:v.fairValueEstimate,buyPrice:v.requiredReturnBuyPrice,marginOfSafety:v.marginOfSafety,
   qualityScore:q.qualityScore,moatScore:q.moatScore,pricingPowerScore:q.pricingPowerScore,
-  capitalAllocationScore:q.capitalAllocationScore,forecastConfidence:f.forecastReliabilityScore,
+  capitalAllocationScore:q.capitalAllocationScore,compounderScore:q.compounderScore,growthQualityScore:q.growthQualityScore,
+  protectionScore:q.protectionScore,forecastConfidence:f.forecastReliabilityScore,
   valuationConfidence:v.valuationConfidenceScore,methodAgreement:v.methodAgreementScore,
   methodCount:(v.methods||[]).length,independentEvidenceFamilies:v.independentMethodCount,
   modelSupport:v.modelSupport
@@ -175,6 +176,42 @@ function summarize(rows,field='realized1YPriceCAGR'){
   const valid=rows.filter(r=>Number.isFinite(r[field]));
   const by=(keyFn)=>Object.entries(valid.reduce((m,r)=>{const k=keyFn(r);(m[k]??=[]).push(r[field]);return m;},{})).map(([bucket,v])=>({bucket,n:v.length,median:median(v),mean:v.reduce((a,b)=>a+b,0)/v.length}));
   return {n:valid.length,byRating:by(r=>r.rating),byAlpha:by(r=>alphaBucket(r.expectedAlpha)),byRankQuintile:by(r=>`Q${Math.min(5,Math.ceil((r.rank/r.universeSize)*5))}`)};
+}
+
+function mean(a){const v=a.filter(Number.isFinite);return v.length?v.reduce((x,y)=>x+y,0)/v.length:null;}
+function pctTrue(a){return a.length?a.filter(Boolean).length/a.length:null;}
+function percentileSorted(v,p){if(!v.length)return null;const i=(v.length-1)*p,lo=Math.floor(i),hi=Math.ceil(i);return lo===hi?v[lo]:v[lo]+(v[hi]-v[lo])*(i-lo);}
+function outcomeStats(rows,n){
+  const excess=`excess${n}YPriceCAGR`,realized=`realized${n}YPriceCAGR`;
+  const v=rows.filter(r=>Number.isFinite(r[excess])&&Number.isFinite(r[realized]));
+  return {n:v.length,medianRealized:median(v.map(r=>r[realized])),medianExcess:median(v.map(r=>r[excess])),meanExcess:mean(v.map(r=>r[excess])),beatSpyRate:pctTrue(v.map(r=>r[excess]>0)),hit10Rate:pctTrue(v.map(r=>r[realized]>=.10)),hit15Rate:pctTrue(v.map(r=>r[realized]>=.15))};
+}
+function groupedOutcome(rows,keyFn,n){
+  const groups={}; for(const r of rows){const k=keyFn(r);if(k==null)continue;(groups[k]??=[]).push(r);}
+  return Object.entries(groups).map(([bucket,v])=>({bucket,...outcomeStats(v,n)}));
+}
+function scoreDeciles(rows,field,n){
+  const vals=rows.map(r=>finite(r[field])).filter(Number.isFinite).sort((a,b)=>a-b); if(vals.length<10)return [];
+  const cuts=Array.from({length:9},(_,i)=>percentileSorted(vals,(i+1)/10));
+  return groupedOutcome(rows,r=>{const x=finite(r[field]);if(x==null)return null;let d=1;while(d<=9&&x>cuts[d-1])d++;return `D${d}`;},n).sort((a,b)=>Number(a.bucket.slice(1))-Number(b.bucket.slice(1)));
+}
+function buildSignalAnalysis(rows){
+  const horizons=[1,3,5];
+  const metrics=['expectedAlpha','investmentScore','qualityScore','moatScore','capitalAllocationScore','compounderScore','growthQualityScore','pricingPowerScore','protectionScore','forecastConfidence','valuationConfidence','marginOfSafety'];
+  const byHorizon={};
+  for(const n of horizons){
+    byHorizon[n]={
+      overall:outcomeStats(rows,n),
+      alphaBuckets:groupedOutcome(rows,r=>alphaBucket(r.expectedAlpha),n),
+      rankDeciles:groupedOutcome(rows,r=>`D${Math.min(10,Math.max(1,Math.ceil((r.rank/r.universeSize)*10)))}`,n).sort((a,b)=>Number(a.bucket.slice(1))-Number(b.bucket.slice(1))),
+      ratings:groupedOutcome(rows,r=>r.rating,n),
+      metrics:Object.fromEntries(metrics.map(m=>[m,scoreDeciles(rows,m,n)])),
+      alphaRank:groupedOutcome(rows,r=>{const a=finite(r.expectedAlpha);if(a==null)return null;const ab=a>=.10?'Alpha >=10%':a>=.05?'Alpha 5-10%':a>=0?'Alpha 0-5%':'Alpha <0%';const rd=Math.min(10,Math.max(1,Math.ceil((r.rank/r.universeSize)*10)));const rb=rd<=2?'Top 20% rank':rd<=5?'Rank 21-50%':'Bottom 50% rank';return `${ab} | ${rb}`;},n),
+      alphaQualityConfidence:groupedOutcome(rows,r=>{const a=finite(r.expectedAlpha),q=finite(r.qualityScore),fc=finite(r.forecastConfidence),vc=finite(r.valuationConfidence);if([a,q,fc,vc].some(x=>x==null))return null;return a>=.05&&q>=75&&fc>=75&&vc>=70?'Alpha>=5 + Q>=75 + Conf strong':a>=.05?'Alpha>=5 other':'Alpha<5';},n),
+      byCohort:groupedOutcome(rows,r=>String(r.asOf||'').slice(0,4),n).sort((a,b)=>a.bucket.localeCompare(b.bucket))
+    };
+  }
+  return {description:'Point-in-time signal validation. Excess return is realized stock price CAGR minus SPY price CAGR over the same horizon.',byHorizon};
 }
 
 async function main(){
@@ -235,10 +272,10 @@ async function main(){
   const output={
     generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,backtestMode:'historical_core_point_in_time',frequency:FREQUENCY,startYear:START,endYear:END,
     assumptions:{analystEstimates:'excluded_historical_unavailable',universe:'current_watchlist_survivorship_biased',returns:'Stooq price CAGR; dividends not included',benchmark:'SPY price CAGR',secCutoff:'facts must be filed by as-of date'},
-    observations:flat.length,diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YPriceCAGR'),summary3Y:summarize(flat,'realized3YPriceCAGR'),summary5Y:summarize(flat,'realized5YPriceCAGR'),errors:errors.slice(0,500),snapshots:snapshotOutput
+    observations:flat.length,diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YPriceCAGR'),summary3Y:summarize(flat,'realized3YPriceCAGR'),summary5Y:summarize(flat,'realized5YPriceCAGR'),signalAnalysis:buildSignalAnalysis(flat),errors:errors.slice(0,500),snapshots:snapshotOutput
   };
   const p=path.join(__dirname,'data','backtest-results.json'),tmp=p+'.tmp';fs.writeFileSync(tmp,JSON.stringify(output));fs.renameSync(tmp,p);
   console.log(`Done. Wrote ${flat.length} historical observations to data/backtest-results.json.`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,snapshotDates,historicalStockFromData,alphaBucket,summarize};
+module.exports={factsAsOf,priceOnOrBefore,snapshotDates,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis};
