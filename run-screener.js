@@ -10,13 +10,14 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { buildStockRecord } = require('./data-fetchers');
+const { buildStockRecord, fetchBacktestHistory } = require('./data-fetchers');
 const { buildForecast } = require('./engine/forecast-engine');
 const { computeQuality } = require('./engine/quality-engine');
 const { valuate } = require('./engine/valuation-engine');
 const { rateStock } = require('./engine/rating-engine');
 const { validateUniverse } = require('./engine/validation');
 const { writeProspectiveSnapshot } = require('./engine/history-snapshot');
+const { livePortfolioGuidance } = require('./engine/portfolio-policy');
 
 const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'),'utf8'));
 const RATE_LIMIT_DELAY_MS = Number(process.env.RATE_LIMIT_DELAY_MS || 1100);
@@ -121,6 +122,36 @@ function rank(stocks){
   stocks.forEach(s=>s.globalUniverseSize=stocks.length);
 }
 
+
+function addMonths(date,months){const d=new Date(`${date}T00:00:00Z`);d.setUTCMonth(d.getUTCMonth()+months);return d.toISOString().slice(0,10);}
+function priceOnOrBefore(history,date,maxGapDays=20,field='adjustedClose'){
+  const target=new Date(`${date}T23:59:59Z`).getTime(); let best=null;
+  for(const row of history||[]){const t=new Date(`${row.date}T00:00:00Z`).getTime();if(t<=target&&(!best||t>best.t)){const px=Number(row[field]??row.close);if(px>0)best={t,px};}}
+  if(!best)return null; return (target-best.t)/86400000<=maxGapDays?best.px:null;
+}
+function trailingAdjustedReturn(history,asOf,months){const a=priceOnOrBefore(history,addMonths(asOf,-months),20,'adjustedClose'),b=priceOnOrBefore(history,asOf,12,'adjustedClose');return a>0&&b>0?b/a-1:null;}
+function liveMomentum(history,spyHistory){
+  const last=(history||[]).at(-1); if(!last)return {strong:false,stock3:null,stock6:null,stock12:null,spy6:null,spy12:null,rel6:null,rel12:null};
+  const asOf=last.date,stock3=trailingAdjustedReturn(history,asOf,3),stock6=trailingAdjustedReturn(history,asOf,6),stock12=trailingAdjustedReturn(history,asOf,12),spy6=trailingAdjustedReturn(spyHistory,asOf,6),spy12=trailingAdjustedReturn(spyHistory,asOf,12);
+  const rel6=Number.isFinite(stock6)&&Number.isFinite(spy6)?stock6-spy6:null,rel12=Number.isFinite(stock12)&&Number.isFinite(spy12)?stock12-spy12:null;
+  const strong=Number.isFinite(stock3)&&stock3>0&&Number.isFinite(rel6)&&rel6>0&&Number.isFinite(rel12)&&rel12>0&&(rel6>=.05||rel12>=.05);
+  return {asOf,strong,stock3,stock6,stock12,spy6,spy12,rel6,rel12};
+}
+function applyLivePortfolioPolicy(stocks){
+  for(const s of stocks){
+    const g=livePortfolioGuidance(s,s.momentum||{});
+    s.portfolioPolicy=g;
+    s.portfolioAction=g.portfolioAction;
+    s.newPositionAction=g.newPositionAction;
+    s.existingHolderAction=g.existingHolderAction;
+    s.suggestedInitialWeight=g.suggestedInitialWeight;
+    s.rideWinner=g.existingHolderAction==='RIDE WINNER';
+    s.decisionDashboard=s.decisionDashboard||{};
+    s.decisionDashboard.positionTier=g.entryEligible?(g.suggestedInitialWeight>=.08?'High conviction':g.suggestedInitialWeight>=.05?'Core':'Starter'):(g.strongMomentum?'Ride winner':'No new position');
+    s.decisionDashboard.suggestedWeight=Number.isFinite(g.suggestedInitialWeight)?`${(g.suggestedInitialWeight*100).toFixed(0)}% initial`:(g.strongMomentum?'Let winner run':'—');
+  }
+}
+
 function writeJson(file,obj){const p=path.join(__dirname,'data',file);const tmp=p+'.tmp';fs.writeFileSync(tmp,JSON.stringify(obj));fs.renameSync(tmp,p);}
 
 async function run(){
@@ -137,14 +168,18 @@ async function run(){
   }
   console.log(`Coverage: ${records.length}/${watchlist.length} (${(records.length/watchlist.length*100).toFixed(1)}%).`);
 
+  const spyHistory=await fetchBacktestHistory('SPY',2).catch(()=>[]);
+  if(!spyHistory.length)console.warn('SPY history unavailable: live Ride Winner momentum will fail closed.');
   const stocks=[];
   for(const stock of records){
-    const forecast=buildForecast(stock); const quality=computeQuality(stock,forecast); const valuation=valuate(stock,forecast,quality); const decision=rateStock(stock,forecast,quality,valuation); stocks.push(flattenRecord(stock,forecast,quality,valuation,decision));
+    const forecast=buildForecast(stock); const quality=computeQuality(stock,forecast); const valuation=valuate(stock,forecast,quality); const decision=rateStock(stock,forecast,quality,valuation);
+    const rec=flattenRecord(stock,forecast,quality,valuation,decision); rec.momentum=liveMomentum(stock.priceHistory||[],spyHistory); stocks.push(rec);
   }
   rank(stocks);
+  applyLivePortfolioPolicy(stocks);
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.17-backtest-infrastructure',stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.33-live-portfolio-policy',stocks}; writeJson('results.json',output);
   const historyFile=writeProspectiveSnapshot(__dirname,output);
   if(historyFile) console.log(`Saved prospective backtest snapshot: ${path.relative(__dirname,historyFile)}`);
   diag.finishedAt=new Date().toISOString();diag.scored=stocks.length;writeJson('screener-diagnostics.json',diag);

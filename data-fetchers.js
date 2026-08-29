@@ -852,7 +852,7 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   const [facts, quote, priceHistory, finnhubRevGrowth] = await Promise.all([
     fetchSecFacts(secTicker),
     fetchFinnhubQuote(finnhubTicker).catch(() => null),
-    fetchStooqHistory(secTicker, 5).catch(() => []),
+    fetchBacktestHistory(secTicker, 2).catch(() => []),
     fetchFinnhubRevenueEstimate(finnhubTicker).catch(() => null),
   ]);
 
@@ -986,6 +986,7 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
     growthYear1, // carried through to the valuation pass
     analystEstimates: analystEstimate,
     price: { current: currentPrice },
+    priceHistory,
     quarterly: quarters,
     corporateActionNormalization,
     shareCountReconciliation,

@@ -914,3 +914,24 @@ assert.strictEqual(thesisSellReason({expectedCAGR:.03,qualityScore:82,protection
 assert.strictEqual(thesisSellReason({expectedCAGR:.03,qualityScore:82,protectionScore:80,forecastConfidence:85,modelSupport:'full'},thesisEntry,{rideMomentum:true,momentum:{strong:false}}),'low_return_momentum_broken','low-return holding survived after momentum privilege broke');
 assert.strictEqual(thesisSellReason({expectedCAGR:.03,qualityScore:55,protectionScore:80,forecastConfidence:85,modelSupport:'full'},thesisEntry,{rideMomentum:true,momentum:mom}),'quality_thesis_deteriorated','momentum improperly overrode a broken fundamental thesis');
 console.log('V12.32 Ride Winner regression passed: stretched winners can run on relative momentum, but momentum cannot override a broken thesis.');
+
+// V12.33 live portfolio-policy regression ------------------------------------
+// The live screener must publish the same Top-25/15% entry sizing and Ride Winner
+// momentum logic used by the historical thesis-hold backtest.
+const {
+  thesisEntryEligible:liveEntryEligible,
+  thesisTargetWeight:liveTargetWeight,
+  isStrongWinnerMomentum,
+  livePortfolioGuidance,
+}=require('./engine/portfolio-policy');
+const liveCandidate={overallRank:7,expectedCAGR:.17,forecastReliabilityScore:88,valuationConfidenceScore:84,qualityScore:86,downsideProtectionScore:80,modelSupport:'standard'};
+assert.strictEqual(liveEntryEligible(liveCandidate),true,'live policy rejected a Top-25 stock with >=15% expected CAGR');
+assert(liveTargetWeight(liveCandidate)>=.07&&liveTargetWeight(liveCandidate)<=.10,'live conviction sizing drifted from thesis-hold sizing bands');
+const liveRideMomentum={stock3:.08,rel6:.06,rel12:.03};
+assert.strictEqual(isStrongWinnerMomentum(liveRideMomentum),true,'live Ride Winner momentum test drifted from the backtest rule');
+const liveRide=livePortfolioGuidance({...liveCandidate,overallRank:40,expectedCAGR:.04},liveRideMomentum);
+assert.strictEqual(liveRide.newPositionAction,'PASS','valuation-stretched winner was incorrectly opened as a new position');
+assert.strictEqual(liveRide.existingHolderAction,'RIDE WINNER','live policy failed to ride an existing valuation-stretched winner with strong momentum');
+const liveExit=livePortfolioGuidance({...liveCandidate,overallRank:40,expectedCAGR:.04},{stock3:-.02,rel6:-.01,rel12:.02});
+assert.strictEqual(liveExit.existingHolderAction,'SELL / REDUCE','live policy failed to exit after Ride Winner momentum broke');
+console.log('V12.33 live portfolio-policy regression passed: Top-25/15% entries, conviction sizing, and Ride Winner holder guidance match the backtested framework.');
