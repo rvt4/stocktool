@@ -777,7 +777,7 @@ console.log('V12.13 transmission tests passed: reconciled gross economics reach 
 // row in the returned Stooq history. The previous comparison accidentally used
 // the target timestamp as the incumbent timestamp, causing every historical
 // snapshot to fail the max-gap check and producing zero backtest observations.
-const {priceOnOrBefore,totalReturnCAGR,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,portfolioStats,thesisSellReason,thesisEntryEligible,thesisTargetWeight}=require('./backtest');
+const {priceOnOrBefore,totalReturnCAGR,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,portfolioStats,thesisSellReason,thesisEntryEligible,thesisTargetWeight,buildSellDecisionAudit}=require('./backtest');
 const historicalPriceFixture=[
   {date:'2016-01-04',close:10},
   {date:'2016-12-29',close:19},
@@ -873,3 +873,21 @@ assert(thesisTargetWeight(thesisEntry)<=.10,'initial position sizing exceeded 10
 assert.strictEqual(thesisSellReason({expectedCAGR:.14,qualityScore:55,protectionScore:80,forecastConfidence:85,modelSupport:'full'},thesisEntry),'quality_thesis_deteriorated','material quality deterioration did not break the thesis');
 assert.strictEqual(thesisSellReason({expectedCAGR:.14,qualityScore:80,protectionScore:45,forecastConfidence:85,modelSupport:'full'},thesisEntry),'protection_thesis_deteriorated','material protection deterioration did not break the thesis');
 console.log('V12.30 sized thesis-hold regression passed: Top-25/15% entries, conviction sizing, loose holds, and 6% valuation exits are enforced.');
+
+
+// V12.31 thesis-hold sell-decision audit regression -------------------------
+// A sell audit must follow the sold stock forward without look-ahead and compare
+// it with both SPY and same-review replacement buys.
+const auditStrategy={periods:[{asOf:'2020-01-01',sells:[{ticker:'OLD',reason:'forward_return_below_hold_floor'}],buyTrades:[{ticker:'NEW',weight:.08}]}]};
+const auditHist=new Map([
+  ['OLD',[{date:'2020-01-02',adjustedClose:100,close:100},{date:'2021-01-04',adjustedClose:110,close:110}]],
+  ['NEW',[{date:'2020-01-02',adjustedClose:100,close:100},{date:'2021-01-04',adjustedClose:120,close:120}]]
+]);
+const auditSpy=[{date:'2020-01-02',adjustedClose:100,close:100},{date:'2021-01-04',adjustedClose:105,close:105}];
+const sellAudit=buildSellDecisionAudit(auditStrategy,auditHist,auditSpy,{horizons:[1]});
+assert.strictEqual(sellAudit.events.length,1,'sell-decision audit lost a historical exit');
+assert(Math.abs(sellAudit.events[0].horizons[1].soldCAGR-.10)<1e-12,'sell-decision audit mismeasured sold-stock forward CAGR');
+assert(Math.abs(sellAudit.events[0].horizons[1].spyCAGR-.05)<1e-12,'sell-decision audit mismeasured SPY comparator');
+assert(Math.abs(sellAudit.events[0].horizons[1].replacementCAGR-.20)<1e-12,'sell-decision audit mismeasured replacement basket');
+assert(sellAudit.events[0].horizons[1].replacementVsSold>.09,'sell-decision audit did not capture replacement opportunity cost');
+console.log('V12.31 sell-decision audit regression passed: sold stocks, SPY, and replacement buys are followed forward consistently.');
