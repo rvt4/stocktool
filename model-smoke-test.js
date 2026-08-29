@@ -777,7 +777,7 @@ console.log('V12.13 transmission tests passed: reconciled gross economics reach 
 // row in the returned Stooq history. The previous comparison accidentally used
 // the target timestamp as the incumbent timestamp, causing every historical
 // snapshot to fail the max-gap check and producing zero backtest observations.
-const {priceOnOrBefore,totalReturnCAGR,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,portfolioStats,thesisSellReason,thesisEntryEligible,thesisTargetWeight,buildSellDecisionAudit}=require('./backtest');
+const {priceOnOrBefore,totalReturnCAGR,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,portfolioStats,thesisSellReason,winnerMomentum,thesisEntryEligible,thesisTargetWeight,buildSellDecisionAudit}=require('./backtest');
 const historicalPriceFixture=[
   {date:'2016-01-04',close:10},
   {date:'2016-12-29',close:19},
@@ -891,3 +891,26 @@ assert(Math.abs(sellAudit.events[0].horizons[1].spyCAGR-.05)<1e-12,'sell-decisio
 assert(Math.abs(sellAudit.events[0].horizons[1].replacementCAGR-.20)<1e-12,'sell-decision audit mismeasured replacement basket');
 assert(sellAudit.events[0].horizons[1].replacementVsSold>.09,'sell-decision audit did not capture replacement opportunity cost');
 console.log('V12.31 sell-decision audit regression passed: sold stocks, SPY, and replacement buys are followed forward consistently.');
+
+
+// V12.32 Ride Winner momentum regression ------------------------------------
+// A valuation-stretched holding may keep running only when its recent absolute
+// return is positive and it is beating SPY over both 6M and 12M windows.
+const momHist=new Map([['WIN',[
+  {date:'2024-03-31',close:100,adjustedClose:100},
+  {date:'2024-09-30',close:120,adjustedClose:120},
+  {date:'2024-12-31',close:130,adjustedClose:130},
+  {date:'2025-03-31',close:145,adjustedClose:145}
+]]]);
+const momSpy=[
+  {date:'2024-03-31',close:100,adjustedClose:100},
+  {date:'2024-09-30',close:108,adjustedClose:108},
+  {date:'2024-12-31',close:112,adjustedClose:112},
+  {date:'2025-03-31',close:115,adjustedClose:115}
+];
+const mom=winnerMomentum('WIN','2025-03-31',momHist,momSpy);
+assert.strictEqual(mom.strong,true,'strong relative winner was not granted Ride Winner status');
+assert.strictEqual(thesisSellReason({expectedCAGR:.03,qualityScore:82,protectionScore:80,forecastConfidence:85,modelSupport:'full'},thesisEntry,{rideMomentum:true,momentum:mom}),null,'strong momentum did not override the low-return valuation exit');
+assert.strictEqual(thesisSellReason({expectedCAGR:.03,qualityScore:82,protectionScore:80,forecastConfidence:85,modelSupport:'full'},thesisEntry,{rideMomentum:true,momentum:{strong:false}}),'low_return_momentum_broken','low-return holding survived after momentum privilege broke');
+assert.strictEqual(thesisSellReason({expectedCAGR:.03,qualityScore:55,protectionScore:80,forecastConfidence:85,modelSupport:'full'},thesisEntry,{rideMomentum:true,momentum:mom}),'quality_thesis_deteriorated','momentum improperly overrode a broken fundamental thesis');
+console.log('V12.32 Ride Winner regression passed: stretched winners can run on relative momentum, but momentum cannot override a broken thesis.');

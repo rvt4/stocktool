@@ -33,7 +33,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.31-sized-thesis-hold-sell-audit';
+const MODEL_VERSION='simple-v12.32-ride-winner-momentum';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -668,34 +668,60 @@ function thesisTargetWeight(r,{maxInitialWeight=.10}={}){
   else if(avg!=null&&avg<65)w-=.01;
   return Math.max(.02,Math.min(maxInitialWeight,w));
 }
-function thesisSellReason(current,entry,{sellExpectedCAGR=.06}={}){
+function trailingAdjustedReturn(history,asOf,months){
+  const a=priceOnOrBefore(history,addMonths(asOf,-months),20,'adjustedClose');
+  const b=priceOnOrBefore(history,asOf,12,'adjustedClose');
+  if(!(a>0&&b>0))return null;
+  return b/a-1;
+}
+function winnerMomentum(ticker,asOf,historyByTicker,spyHistory){
+  const h=historyByTicker?.get(ticker)||[];
+  const stock3=trailingAdjustedReturn(h,asOf,3),stock6=trailingAdjustedReturn(h,asOf,6),stock12=trailingAdjustedReturn(h,asOf,12);
+  const spy6=trailingAdjustedReturn(spyHistory,asOf,6),spy12=trailingAdjustedReturn(spyHistory,asOf,12);
+  const rel6=Number.isFinite(stock6)&&Number.isFinite(spy6)?stock6-spy6:null;
+  const rel12=Number.isFinite(stock12)&&Number.isFinite(spy12)?stock12-spy12:null;
+  // A valuation-stretched winner earns a ride only when its recent tape is still
+  // healthy and it is outperforming the market over both medium and long windows.
+  // Requiring one of those relative spreads to be >=5 points avoids treating a
+  // barely-positive drift as a momentum trend.
+  const strong=Number.isFinite(stock3)&&stock3>0&&Number.isFinite(rel6)&&rel6>0&&Number.isFinite(rel12)&&rel12>0&&(rel6>=.05||rel12>=.05);
+  return {strong,stock3,stock6,stock12,spy6,spy12,rel6,rel12};
+}
+function thesisSellReason(current,entry,{sellExpectedCAGR=.06,rideMomentum=false,momentum=null}={}){
   // Missing universe membership/model coverage is NOT a sell signal. A real owner
   // would keep the shares until the thesis can be evaluated again.
   if(!current)return null;
   if(String(current.modelSupport||'')==='unsupported')return null;
-  if(Number.isFinite(current.expectedCAGR)&&current.expectedCAGR<sellExpectedCAGR)return 'forward_return_below_hold_floor';
   const q0=finite(entry?.qualityScore),q=finite(current.qualityScore);
   if(q0!=null&&q!=null&&q<60&&q<=q0-15)return 'quality_thesis_deteriorated';
   const p0=finite(entry?.protectionScore),pr=finite(current.protectionScore);
   if(p0!=null&&pr!=null&&pr<50&&pr<=p0-20)return 'protection_thesis_deteriorated';
   if(Number.isFinite(current.forecastConfidence)&&current.forecastConfidence<40)return 'forecast_support_deteriorated';
+  if(Number.isFinite(current.expectedCAGR)&&current.expectedCAGR<sellExpectedCAGR){
+    if(rideMomentum&&momentum?.strong)return null;
+    return rideMomentum?'low_return_momentum_broken':'forward_return_below_hold_floor';
+  }
   return null;
 }
 function thesisBuyCandidates(snap,held,{minExpectedCAGR=.15,maxRank=25}={}){
   return (snap?.rows||[]).filter(r=>!held.has(r.ticker)&&thesisEntryEligible(r,{minExpectedCAGR,maxRank}))
     .sort((a,b)=>(a.rank||Infinity)-(b.rank||Infinity));
 }
-function simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name='Sized thesis hold',topN=20,minExpectedCAGR=.15,maxRank=25,sellExpectedCAGR=.06,maxInitialWeight=.10,transactionCostBps=10}={}){
+function simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name='Sized thesis hold',topN=20,minExpectedCAGR=.15,maxRank=25,sellExpectedCAGR=.06,maxInitialWeight=.10,rideMomentum=false,transactionCostBps=10}={}){
   const snaps=[...(snapshotOutput||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf)));
-  let weights=new Map(),entries=new Map(),cash=1,totalSells=0,totalBuys=0,totalAdds=0,holdingQuarterSum=0,closedHolds=0;
+  let weights=new Map(),entries=new Map(),cash=1,totalSells=0,totalBuys=0,totalAdds=0,totalRideReviews=0,holdingQuarterSum=0,closedHolds=0;
   const periods=[],sellReasons={};
   for(let i=0;i<snaps.length;i++){
     const snap=snaps[i],next=snaps[i+1]; if(!next)break;
     const rowMap=new Map((snap.rows||[]).map(r=>[r.ticker,r]));
     let turnover=0,freed=0,sells=[],buys=[],adds=[],buyTrades=[],addTrades=[];
+    const rides=[];
     for(const [t,w] of [...weights]){
-      const reason=thesisSellReason(rowMap.get(t),entries.get(t),{sellExpectedCAGR});
-      if(reason){weights.delete(t);freed+=w;turnover+=w;sells.push({ticker:t,reason});sellReasons[reason]=(sellReasons[reason]||0)+1;totalSells++;const e=entries.get(t);if(e){holdingQuarterSum+=i-e.snapshotIndex;closedHolds++;}entries.delete(t);}
+      const current=rowMap.get(t);
+      const momentum=rideMomentum&&Number.isFinite(current?.expectedCAGR)&&current.expectedCAGR<sellExpectedCAGR?winnerMomentum(t,snap.asOf,historyByTicker,spyHistory):null;
+      const reason=thesisSellReason(current,entries.get(t),{sellExpectedCAGR,rideMomentum,momentum});
+      if(!reason&&momentum?.strong){rides.push({ticker:t,expectedCAGR:current.expectedCAGR,...momentum});totalRideReviews++;}
+      if(reason){weights.delete(t);freed+=w;turnover+=w;sells.push({ticker:t,reason,momentum});sellReasons[reason]=(sellReasons[reason]||0)+1;totalSells++;const e=entries.get(t);if(e){holdingQuarterSum+=i-e.snapshotIndex;closedHolds++;}entries.delete(t);}
     }
     cash+=freed;
     // Add new positions by conviction-sized target rather than equal weighting. Existing
@@ -726,12 +752,12 @@ function simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{
     if(endTotal>0){for(const [t,w] of weights)weights.set(t,w/endTotal);cash/=endTotal;}
     const transactionCost=turnover*(transactionCostBps/10000),portfolioReturn=grossReturn-transactionCost;
     const risk=dailyPortfolioRisk([...weights.keys()],snap.asOf,next.asOf,historyByTicker,spyHistory);
-    periods.push({asOf:snap.asOf,startDate:snap.asOf,endDate:next.asOf,startTradeDate:commonStart||spy.startTradeDate,endTradeDate:commonEnd||spy.endTradeDate,startYear:Number(snap.asOf.slice(0,4)),holdings:weights.size,tickers:[...weights.keys()],cashWeight:cash,grossReturn,portfolioReturn,spyReturn:spy.return,excessReturn:portfolioReturn-spy.return,turnover,transactionCost,transactionCostBps,buys,adds,buyTrades,addTrades,sells,dailyMaxDrawdown:risk?.dailyMaxDrawdown??null});
+    periods.push({asOf:snap.asOf,startDate:snap.asOf,endDate:next.asOf,startTradeDate:commonStart||spy.startTradeDate,endTradeDate:commonEnd||spy.endTradeDate,startYear:Number(snap.asOf.slice(0,4)),holdings:weights.size,tickers:[...weights.keys()],cashWeight:cash,grossReturn,portfolioReturn,spyReturn:spy.return,excessReturn:portfolioReturn-spy.return,turnover,transactionCost,transactionCostBps,buys,adds,rides,buyTrades,addTrades,sells,dailyMaxDrawdown:risk?.dailyMaxDrawdown??null});
   }
   const stats=portfolioStats(periods,{periodsPerYear:4});
   stats.dailyMaxDrawdown=periods.map(x=>x.dailyMaxDrawdown).filter(Number.isFinite).reduce((m,x)=>Math.min(m,x),0);
-  stats.averageTurnover=mean(periods.map(x=>x.turnover));stats.annualizedTurnover=stats.averageTurnover*4;stats.totalBuys=totalBuys;stats.totalAdds=totalAdds;stats.totalSells=totalSells;stats.sellReasons=sellReasons;stats.averageClosedHoldingYears=closedHolds?holdingQuarterSum/closedHolds/4:null;stats.endingHoldings=weights.size;stats.endingCashWeight=cash;
-  return {name,topN,minExpectedCAGR,maxRank,sellExpectedCAGR,maxInitialWeight,transactionCostBps,reviewFrequency:FREQUENCY,philosophy:'15pct_cagr_top25_conviction_sized_buy_hold_loose',...stats};
+  stats.averageTurnover=mean(periods.map(x=>x.turnover));stats.annualizedTurnover=stats.averageTurnover*4;stats.totalBuys=totalBuys;stats.totalAdds=totalAdds;stats.totalSells=totalSells;stats.totalRideReviews=totalRideReviews;stats.sellReasons=sellReasons;stats.averageClosedHoldingYears=closedHolds?holdingQuarterSum/closedHolds/4:null;stats.endingHoldings=weights.size;stats.endingCashWeight=cash;
+  return {name,topN,minExpectedCAGR,maxRank,sellExpectedCAGR,maxInitialWeight,rideMomentum,transactionCostBps,reviewFrequency:FREQUENCY,philosophy:rideMomentum?'15pct_cagr_top25_sized_ride_winners':'15pct_cagr_top25_conviction_sized_buy_hold_loose',...stats};
 }
 
 function forwardCAGRFromSignal(history,startDate,years){
@@ -823,11 +849,15 @@ function buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory){
     s.validation=periodStats(s,2022,2025);
   }
   const cohortStrategies=rules.map(x=>simulateOneYearCohorts(snapshotOutput,x));
-  const thesisHoldStrategies=[10,15].map(topN=>simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name:`Sized thesis hold · max ${topN}`,topN,minExpectedCAGR:.15,maxRank:25,sellExpectedCAGR:.06,maxInitialWeight:.10,transactionCostBps}));
+  const thesisHoldStrategies=[
+    simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name:'Control · hard <6% sell · max 15',topN:15,minExpectedCAGR:.15,maxRank:25,sellExpectedCAGR:.06,maxInitialWeight:.10,rideMomentum:false,transactionCostBps}),
+    simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name:'Ride winners · max 10',topN:10,minExpectedCAGR:.15,maxRank:25,sellExpectedCAGR:.06,maxInitialWeight:.10,rideMomentum:true,transactionCostBps}),
+    simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name:'Ride winners · max 15',topN:15,minExpectedCAGR:.15,maxRank:25,sellExpectedCAGR:.06,maxInitialWeight:.10,rideMomentum:true,transactionCostBps})
+  ];
   for(const s of thesisHoldStrategies){s.development=periodStats(s,2019,2021);s.validation=periodStats(s,2022,2025);s.sellDecisionAudit=buildSellDecisionAudit(s,historyByTicker,spyHistory);}
   return {
-    description:`Chronological ${FREQUENCY} portfolio tests. Mechanical strategies rebalance each snapshot. Sized thesis-hold strategies allow up to 15 holdings and can buy any Top-25 name with expected CAGR >=15% without requiring the extra 20% MOS entry hurdle; initial size is conviction-based (roughly 2-10%), winners are not mechanically trimmed, and holdings exit only below 6% expected CAGR or on material thesis deterioration. Trades execute after the snapshot and ${transactionCostBps} bp one-way costs are charged.`,
-    thesisHoldRules:{buy:'Expected CAGR >=15% + overall rank <=25; the extra 20% MOS/Buy rating is not required',sizing:'Initial target 3/5/6/8/10% by rank bands, nudged +/-1 point by evidence; max initial size 10%. Existing winners are not trimmed back to target.',hold:'Do not sell merely because rank changes, a better-ranked stock appears, IWB membership changes, or model coverage is temporarily unavailable',valuationSell:'Expected CAGR <6%',fundamentalSell:'Quality falls >=15 points to <60, protection falls >=20 points to <50, or forecast confidence <40',cash:'If no qualifying opportunity exists, residual capital remains in cash',reviewFrequency:FREQUENCY},
+    description:`Chronological ${FREQUENCY} portfolio tests. Mechanical strategies rebalance each snapshot. The primary thesis strategy buys Top-25 names at >=15% expected CAGR, conviction-sizes them, and lets valuation-stretched winners keep running while their price momentum remains strong. The old hard <6% valuation exit is retained as a control. Trades execute after the snapshot and ${transactionCostBps} bp one-way costs are charged.`,
+    thesisHoldRules:{buy:'Expected CAGR >=15% + overall rank <=25; the extra 20% MOS/Buy rating is not required',sizing:'Initial target 3/5/6/8/10% by rank bands, nudged +/-1 point by evidence; max initial size 10%. Existing winners are not trimmed back to target.',hold:'Do not sell merely because rank changes, a better-ranked stock appears, IWB membership changes, or model coverage is temporarily unavailable',rideWinner:'When expected CAGR falls below 6%, keep holding if 3M stock return is positive, 6M and 12M relative returns versus SPY are both positive, and at least one relative window leads SPY by >=5 points.',valuationSell:'Below 6% expected CAGR becomes a valuation warning. Sell only when the Ride Winner momentum test is not/ceases to be satisfied.',fundamentalSell:'Quality falls >=15 points to <60, protection falls >=20 points to <50, or forecast confidence <40; fundamental thesis breaks override momentum.',cash:'If no qualifying opportunity exists, residual capital remains in cash',reviewFrequency:FREQUENCY},
     robustness:{development:'2019-2021 review periods',validation:'2022-2025 review periods',survivorship:'Point-in-time IWB holdings are required for every historical snapshot. No current-watchlist fallback is permitted.',execution:'First trading day after each snapshot; no same-close execution.',transactionCosts:`${transactionCostBps} bp × one-way turnover.`},
     strategies,thesisHoldStrategies,cohortStrategies
   };
@@ -924,4 +954,4 @@ async function main(){
   console.log(`Done. Wrote ${flat.length} historical observations to data/backtest-results.json.`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,buildPortfolioSimulation};
+module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,buildPortfolioSimulation};
