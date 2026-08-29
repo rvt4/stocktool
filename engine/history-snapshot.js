@@ -10,7 +10,10 @@ function compact(s){return {
   qualityScore:finite(s.qualityScore),moatScore:finite(s.moatScore),pricingPowerScore:finite(s.pricingPowerV2Score),
   capitalAllocationScore:finite(s.capitalAllocationScore),forecastConfidence:finite(s.forecastReliabilityScore??s.forecastConfidenceScore),
   valuationConfidence:finite(s.valuationConfidenceScore),methodAgreement:finite(s.methodAgreementScore),methodCount:finite(s.methodCount),
-  independentEvidenceFamilies:finite(s.independentMethodCount),modelSupport:s.modelSupport||null
+  independentEvidenceFamilies:finite(s.independentMethodCount),modelSupport:s.modelSupport||null,
+  portfolioAction:s.portfolioAction||null,newPositionAction:s.newPositionAction||null,existingHolderAction:s.existingHolderAction||null,
+  suggestedInitialWeight:finite(s.suggestedInitialWeight),rideWinner:s.rideWinner===true,
+  momentumRel6:finite(s.momentum?.rel6),momentumRel12:finite(s.momentum?.rel12)
 };}
 function writeProspectiveSnapshot(root,output){
   if(!output?.generatedAt||!Array.isArray(output.stocks))return null;
