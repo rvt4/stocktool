@@ -97,6 +97,27 @@ async function fetchSecFacts(ticker) {
   return res.json();
 }
 
+async function fetchSecSubmissions(ticker) {
+  const map = await getTickerCikMap();
+  const cik = map[normalizeSecTicker(ticker)];
+  if (!cik) return null;
+  const res = await fetchWithTimeout(`https://data.sec.gov/submissions/CIK${cik}.json`, { headers: SEC_HEADERS }, 15000);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+function classifyCompanyMetadata(facts, submissions, fallbackSector = 'Unknown') {
+  const sic = String(submissions?.sic || '').trim() || null;
+  const industry = String(submissions?.sicDescription || '').trim() || null;
+  const name = String(facts?.entityName || submissions?.name || '').trim() || null;
+  // SEC SIC 2834/2835/2836 captures pharmaceutical preparations, diagnostics and
+  // biological products. Treat these as the user's broader biotech/pharma circle-of-
+  // competence exclusion; the raw industry remains visible so nothing is hidden.
+  const isBiopharma = ['2834','2835','2836'].includes(sic) || /biolog|biotech|pharmaceutical|diagnostic substance/i.test(industry || '');
+  return { name, sector: fallbackSector || 'Unknown', industry, sic, isBiopharma };
+}
+
+
 
 // Extract recent quarterly revenue points from 10-Q filings (same JSON we already
 // fetched for annual data — no extra API call). Used to capture *current* growth
@@ -849,8 +870,9 @@ function reconcileSharesWithLiveMarketCap(years, currentPrice, profile) {
 async function buildStockRecord(ticker, sector, analystEstimate = null) {
   const secTicker = normalizeSecTicker(ticker);
   const finnhubTicker = normalizeFinnhubTicker(ticker);
-  const [facts, quote, priceHistory, finnhubRevGrowth] = await Promise.all([
+  const [facts, submissions, quote, priceHistory, finnhubRevGrowth] = await Promise.all([
     fetchSecFacts(secTicker),
+    fetchSecSubmissions(secTicker).catch(() => null),
     fetchFinnhubQuote(finnhubTicker).catch(() => null),
     fetchBacktestHistory(secTicker, 2).catch(() => []),
     fetchFinnhubRevenueEstimate(finnhubTicker).catch(() => null),
@@ -955,9 +977,14 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
     ? Math.abs(nciBalance) / (Math.abs(parentEquity) + Math.abs(nciBalance)) : null;
   const materialNoncontrollingInterest = (Number.isFinite(nciIncomeShare) && nciIncomeShare >= 0.20) || (Number.isFinite(nciBalanceShare) && nciBalanceShare >= 0.20);
 
+  const metadata = classifyCompanyMetadata(facts, submissions, sector || 'Unknown');
   const stockShell = {
     ticker,
-    sector: sector || 'Unknown',
+    name: metadata.name || ticker,
+    sector: metadata.sector,
+    industry: metadata.industry,
+    sic: metadata.sic,
+    isBiopharma: metadata.isBiopharma,
     financials: { years, dataQuality: {
       revenueProxyYears: years.filter(y => y.revenueIsProxy).length,
       fcfProxyYears: years.filter(y => y.fcfIsProxy).length,
@@ -998,7 +1025,7 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
 }
 
 const api = {
-  fetchSecFacts, parseAnnualFinancials, parseQuarterlyRevenue, recentQuarterYoYGrowth, blendedForwardGrowth,
+  fetchSecFacts, fetchSecSubmissions, classifyCompanyMetadata, parseAnnualFinancials, parseQuarterlyRevenue, recentQuarterYoYGrowth, blendedForwardGrowth,
   fetchStooqPrice, fetchStooqHistory, fetchYahooHistory, fetchBacktestHistory,
   fetchFinnhubProfile, fetchFinnhubQuote, fetchFinnhubRevenueEstimate,
   buildStockRecord, latestDilutedSharesFromFacts, normalizeHistoryForCorporateAction, shareDenominatorLooksSuspicious, reconcileSharesWithLiveMarketCap, getTickerCikMap, normalizeSecTicker, normalizeFinnhubTicker, fetchWithTimeout,

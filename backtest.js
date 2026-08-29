@@ -24,7 +24,7 @@
 const fs=require('fs');
 const path=require('path');
 const {
-  fetchSecFacts, parseAnnualFinancials, parseQuarterlyRevenue, recentQuarterYoYGrowth,
+  fetchSecFacts, fetchSecSubmissions, classifyCompanyMetadata, parseAnnualFinancials, parseQuarterlyRevenue, recentQuarterYoYGrowth,
   blendedForwardGrowth, fetchBacktestHistory, latestDilutedSharesFromFacts,
   normalizeHistoryForCorporateAction, normalizeSecTicker
 }=require('./data-fetchers');
@@ -33,7 +33,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.32-ride-winner-momentum';
+const MODEL_VERSION='simple-v12.34-size-industry-robustness';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -479,7 +479,7 @@ function historicalStockFromData(ticker,sector,rawFacts,priceHistory,asOf,diagno
 }
 
 function compactModel(stock,f,q,v,d){return {
-  ticker:stock.ticker,sector:stock.sector,price:stock.price.current,rating:d.rating,
+  ticker:stock.ticker,name:stock.name||stock.ticker,sector:stock.sector,industry:stock.industry||null,sic:stock.sic||null,isBiopharma:!!stock.isBiopharma,marketCap:stock.valuation?.marketCap??null,price:stock.price.current,rating:d.rating,
   investmentScore:d.investmentScore,expectedCAGR:v.expectedCAGR,expectedAlpha:d.expectedAlpha,
   fiveYearExpectedCAGR:v.fiveYearExpectedCAGR,bearCAGR:v.bearCAGR,bullCAGR:v.bullCAGR,
   fairValue:v.fairValueEstimate,buyPrice:v.requiredReturnBuyPrice,marginOfSafety:v.marginOfSafety,
@@ -653,8 +653,8 @@ function simulateInvestablePortfolio(snapshotOutput,historyByTicker,spyHistory,{
   return {name,topN,minAlpha,requireTopRank,transactionCostBps,rebalanceFrequency:FREQUENCY,...stats};
 }
 
-function thesisEntryEligible(r,{minExpectedCAGR=.15,maxRank=25}={}){
-  return !!r&&Number.isFinite(r.expectedCAGR)&&r.expectedCAGR>=minExpectedCAGR&&Number.isFinite(r.rank)&&r.rank<=maxRank&&String(r.modelSupport||'')!=='unsupported';
+function thesisEntryEligible(r,{minExpectedCAGR=.15,maxRank=25,minMarketCap=0,excludeBiopharma=false}={}){
+  return !!r&&Number.isFinite(r.expectedCAGR)&&r.expectedCAGR>=minExpectedCAGR&&Number.isFinite(r.rank)&&r.rank<=maxRank&&String(r.modelSupport||'')!=='unsupported'&&(!minMarketCap||(Number.isFinite(r.marketCap)&&r.marketCap>=minMarketCap))&&(!excludeBiopharma||!r.isBiopharma);
 }
 function thesisTargetWeight(r,{maxInitialWeight=.10}={}){
   // Transparent conviction sizing: rank establishes the base size, while unusually
@@ -703,11 +703,11 @@ function thesisSellReason(current,entry,{sellExpectedCAGR=.06,rideMomentum=false
   }
   return null;
 }
-function thesisBuyCandidates(snap,held,{minExpectedCAGR=.15,maxRank=25}={}){
-  return (snap?.rows||[]).filter(r=>!held.has(r.ticker)&&thesisEntryEligible(r,{minExpectedCAGR,maxRank}))
+function thesisBuyCandidates(snap,held,{minExpectedCAGR=.15,maxRank=25,minMarketCap=0,excludeBiopharma=false}={}){
+  return (snap?.rows||[]).filter(r=>!held.has(r.ticker)&&thesisEntryEligible(r,{minExpectedCAGR,maxRank,minMarketCap,excludeBiopharma}))
     .sort((a,b)=>(a.rank||Infinity)-(b.rank||Infinity));
 }
-function simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name='Sized thesis hold',topN=20,minExpectedCAGR=.15,maxRank=25,sellExpectedCAGR=.06,maxInitialWeight=.10,rideMomentum=false,transactionCostBps=10}={}){
+function simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name='Sized thesis hold',topN=20,minExpectedCAGR=.15,maxRank=25,minMarketCap=0,excludeBiopharma=false,sellExpectedCAGR=.06,maxInitialWeight=.10,rideMomentum=false,transactionCostBps=10}={}){
   const snaps=[...(snapshotOutput||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf)));
   let weights=new Map(),entries=new Map(),cash=1,totalSells=0,totalBuys=0,totalAdds=0,totalRideReviews=0,holdingQuarterSum=0,closedHolds=0;
   const periods=[],sellReasons={};
@@ -727,7 +727,7 @@ function simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{
     // Add new positions by conviction-sized target rather than equal weighting. Existing
     // winners are never trimmed back to target merely because they appreciated.
     const vacancies=Math.max(0,topN-weights.size);
-    const cands=thesisBuyCandidates(snap,new Set(weights.keys()),{minExpectedCAGR,maxRank}).slice(0,vacancies);
+    const cands=thesisBuyCandidates(snap,new Set(weights.keys()),{minExpectedCAGR,maxRank,minMarketCap,excludeBiopharma}).slice(0,vacancies);
     for(const r of cands){
       if(cash<=1e-9)break;
       const target=thesisTargetWeight(r,{maxInitialWeight}),amt=Math.min(cash,target);
@@ -737,7 +737,7 @@ function simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{
     // A qualifying holding may be topped up toward today's justified target when cash is
     // available, but never sold down to target. This allows conviction to affect sizing
     // without creating mechanical rebalancing turnover.
-    const addable=[...weights.keys()].map(t=>rowMap.get(t)).filter(r=>thesisEntryEligible(r,{minExpectedCAGR,maxRank})).sort((a,b)=>(a.rank||Infinity)-(b.rank||Infinity));
+    const addable=[...weights.keys()].map(t=>rowMap.get(t)).filter(r=>thesisEntryEligible(r,{minExpectedCAGR,maxRank,minMarketCap,excludeBiopharma})).sort((a,b)=>(a.rank||Infinity)-(b.rank||Infinity));
     for(const r of addable){
       if(cash<=1e-9)break;
       const cur=weights.get(r.ticker)||0,target=thesisTargetWeight(r,{maxInitialWeight});
@@ -757,7 +757,7 @@ function simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{
   const stats=portfolioStats(periods,{periodsPerYear:4});
   stats.dailyMaxDrawdown=periods.map(x=>x.dailyMaxDrawdown).filter(Number.isFinite).reduce((m,x)=>Math.min(m,x),0);
   stats.averageTurnover=mean(periods.map(x=>x.turnover));stats.annualizedTurnover=stats.averageTurnover*4;stats.totalBuys=totalBuys;stats.totalAdds=totalAdds;stats.totalSells=totalSells;stats.totalRideReviews=totalRideReviews;stats.sellReasons=sellReasons;stats.averageClosedHoldingYears=closedHolds?holdingQuarterSum/closedHolds/4:null;stats.endingHoldings=weights.size;stats.endingCashWeight=cash;
-  return {name,topN,minExpectedCAGR,maxRank,sellExpectedCAGR,maxInitialWeight,rideMomentum,transactionCostBps,reviewFrequency:FREQUENCY,philosophy:rideMomentum?'15pct_cagr_top25_sized_ride_winners':'15pct_cagr_top25_conviction_sized_buy_hold_loose',...stats};
+  return {name,topN,minExpectedCAGR,maxRank,minMarketCap,excludeBiopharma,sellExpectedCAGR,maxInitialWeight,rideMomentum,transactionCostBps,reviewFrequency:FREQUENCY,philosophy:rideMomentum?'15pct_cagr_top25_sized_ride_winners':'15pct_cagr_top25_conviction_sized_buy_hold_loose',...stats};
 }
 
 function forwardCAGRFromSignal(history,startDate,years){
@@ -852,7 +852,11 @@ function buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory){
   const thesisHoldStrategies=[
     simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name:'Control · hard <6% sell · max 15',topN:15,minExpectedCAGR:.15,maxRank:25,sellExpectedCAGR:.06,maxInitialWeight:.10,rideMomentum:false,transactionCostBps}),
     simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name:'Ride winners · max 10',topN:10,minExpectedCAGR:.15,maxRank:25,sellExpectedCAGR:.06,maxInitialWeight:.10,rideMomentum:true,transactionCostBps}),
-    simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name:'Ride winners · max 15',topN:15,minExpectedCAGR:.15,maxRank:25,sellExpectedCAGR:.06,maxInitialWeight:.10,rideMomentum:true,transactionCostBps})
+    simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name:'Ride winners · max 15',topN:15,minExpectedCAGR:.15,maxRank:25,sellExpectedCAGR:.06,maxInitialWeight:.10,rideMomentum:true,transactionCostBps}),
+    simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name:'Ride winners · max 15 · $2B+',topN:15,minExpectedCAGR:.15,maxRank:25,minMarketCap:2e9,sellExpectedCAGR:.06,maxInitialWeight:.10,rideMomentum:true,transactionCostBps}),
+    simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name:'Ride winners · max 15 · $5B+',topN:15,minExpectedCAGR:.15,maxRank:25,minMarketCap:5e9,sellExpectedCAGR:.06,maxInitialWeight:.10,rideMomentum:true,transactionCostBps}),
+    simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name:'Ride winners · max 15 · $10B+',topN:15,minExpectedCAGR:.15,maxRank:25,minMarketCap:1e10,sellExpectedCAGR:.06,maxInitialWeight:.10,rideMomentum:true,transactionCostBps}),
+    simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name:'Ride winners · max 15 · ex-biotech/pharma',topN:15,minExpectedCAGR:.15,maxRank:25,excludeBiopharma:true,sellExpectedCAGR:.06,maxInitialWeight:.10,rideMomentum:true,transactionCostBps})
   ];
   for(const s of thesisHoldStrategies){s.development=periodStats(s,2019,2021);s.validation=periodStats(s,2022,2025);s.sellDecisionAudit=buildSellDecisionAudit(s,historyByTicker,spyHistory);}
   return {
@@ -906,7 +910,7 @@ async function main(){
     const {ticker,sector}=universe[i];
     try{
       const sec=normalizeSecTicker(ticker);
-      const [facts,history]=await Promise.all([fetchSecFacts(sec),fetchBacktestHistory(sec,HISTORY_YEARS)]);
+      const [facts,submissions,history]=await Promise.all([fetchSecFacts(sec),fetchSecSubmissions(sec).catch(()=>null),fetchBacktestHistory(sec,HISTORY_YEARS)]);
       historyByTicker.set(ticker,history);
       diagnostics.tickersFetched++;
       if(!history.length && skipExamples.length<20) skipExamples.push({ticker,reason:'empty_stooq_history'});
@@ -917,6 +921,7 @@ async function main(){
         const before={...diagnostics};
         const asOfSector=membership.get(ticker)?.sector||sector;
         const stock=historicalStockFromData(ticker,asOfSector,facts,history,asOf,diagnostics);
+        if(stock){ const meta=classifyCompanyMetadata(facts,submissions,asOfSector); stock.name=meta.name||ticker; stock.industry=meta.industry; stock.sic=meta.sic; stock.isBiopharma=meta.isBiopharma; }
         if(!stock){
           if(skipExamples.length<20){
             let reason='historical_stock_unavailable';

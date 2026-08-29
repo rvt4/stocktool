@@ -82,7 +82,7 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
   };
 
   return {
-    ticker:stock.ticker, sector:stock.sector, category:forecast.category, rating:decision.rating,
+    ticker:stock.ticker, name:stock.name||stock.ticker, sector:stock.sector, industry:stock.industry||null, sic:stock.sic||null, isBiopharma:!!stock.isBiopharma, marketCap:stock.valuation?.marketCap??null, category:forecast.category, rating:decision.rating,
     currentPrice:stock.price?.current??null,
     expectedReturn:valuation.expectedCAGR, expectedCAGR:valuation.expectedCAGR, expectedAlpha:decision.expectedAlpha,
     bearCAGR:valuation.bearCAGR, baseCAGR:valuation.baseCAGR, bullCAGR:valuation.bullCAGR,
@@ -179,7 +179,7 @@ async function run(){
   applyLivePortfolioPolicy(stocks);
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.33-live-portfolio-policy',stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.34-company-metadata-filters',stocks}; writeJson('results.json',output);
   const historyFile=writeProspectiveSnapshot(__dirname,output);
   if(historyFile) console.log(`Saved prospective backtest snapshot: ${path.relative(__dirname,historyFile)}`);
   diag.finishedAt=new Date().toISOString();diag.scored=stocks.length;writeJson('screener-diagnostics.json',diag);
