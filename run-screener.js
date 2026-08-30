@@ -87,7 +87,7 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
     expectedReturn:valuation.expectedCAGR, expectedCAGR:valuation.expectedCAGR, expectedAlpha:decision.expectedAlpha,
     bearCAGR:valuation.bearCAGR, baseCAGR:valuation.baseCAGR, bullCAGR:valuation.bullCAGR,
     confidenceScore:valuation.valuationConfidenceScore??quality.confidenceScore, valuationConfidenceScore:valuation.valuationConfidenceScore??quality.confidenceScore, businessDataConfidenceScore:quality.confidenceScore, marginOfSafety:valuation.marginOfSafety, premiumToFairValue:valuation.premiumToFairValue, requiredMOS:decision.requiredMOS,
-    investmentScore:decision.investmentScore, qualityScore:quality.qualityScore, moatScore:quality.moatScore, capitalAllocationScore:quality.capitalAllocationScore,
+    investmentScore:decision.investmentScore, opportunityScore:decision.opportunityScore, opportunityQualityScore:decision.opportunityQualityScore, activatedQualityScore:decision.activatedQualityScore, qualityActivation:decision.qualityActivation, reliabilityScore:decision.reliabilityScore, qualityScore:quality.qualityScore, moatScore:quality.moatScore, capitalAllocationScore:quality.capitalAllocationScore,
     compounderScore:quality.compounderScore, growthQuality:quality.growthQualityScore, growthQualityScore:quality.growthQualityScore, pricingPowerV2Score:quality.pricingPowerScore, downsideProtectionScore:quality.protectionScore,
     qualifiesForBuyList:decision.qualifiesForBuyList, meetsInvestorBuyPrice:decision.meetsInvestorBuyPrice, meetsHurdlePrice:decision.meetsHurdlePrice, evidenceScore:decision.evidenceScore,
     fairValueEstimate:valuation.fairValueEstimate, intrinsicDiscountRate:valuation.intrinsicDiscountRate, hurdleReturnPrice:valuation.hurdleReturnPrice, requiredReturnBuyPrice:valuation.requiredReturnBuyPrice, investorMarginOfSafety:valuation.investorMarginOfSafety, fairValueDiscountRate:valuation.fairValueDiscountRate, valuationGap:valuation.valuationGap, fiveYearPriceTarget:valuation.fiveYearPriceTarget, tenYearPriceTarget:valuation.tenYearPriceTarget, fiveYearTotalShareholderValue:valuation.fiveYearTotalShareholderValue, fiveYearExpectedCAGR:valuation.fiveYearExpectedCAGR, tenYearExpectedCAGR:valuation.tenYearExpectedCAGR, horizonYears:valuation.horizonYears, totalShareholderValue:valuation.totalShareholderValue, cumulativeDividends:valuation.cumulativeDividends,
@@ -206,7 +206,7 @@ async function run(){
   enforceMutuallyExclusiveShareClasses(stocks);
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.36-factor-lab-share-class-dedupe',stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.37-opportunity-first-ranking',stocks}; writeJson('results.json',output);
   const historyFile=writeProspectiveSnapshot(__dirname,output);
   if(historyFile) console.log(`Saved prospective backtest snapshot: ${path.relative(__dirname,historyFile)}`);
   diag.finishedAt=new Date().toISOString();diag.scored=stocks.length;writeJson('screener-diagnostics.json',diag);

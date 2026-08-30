@@ -33,7 +33,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.36-factor-lab-share-class-dedupe';
+const MODEL_VERSION='simple-v12.37-opportunity-first-ranking';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -480,7 +480,7 @@ function historicalStockFromData(ticker,sector,rawFacts,priceHistory,asOf,diagno
 
 function compactModel(stock,f,q,v,d){return {
   ticker:stock.ticker,name:stock.name||stock.ticker,sector:stock.sector,industry:stock.industry||null,sic:stock.sic||null,isBiopharma:!!stock.isBiopharma,marketCap:stock.valuation?.marketCap??null,price:stock.price.current,rating:d.rating,
-  investmentScore:d.investmentScore,expectedCAGR:v.expectedCAGR,expectedAlpha:d.expectedAlpha,
+  investmentScore:d.investmentScore,opportunityScore:d.opportunityScore,opportunityQualityScore:d.opportunityQualityScore,activatedQualityScore:d.activatedQualityScore,qualityActivation:d.qualityActivation,reliabilityScore:d.reliabilityScore,expectedCAGR:v.expectedCAGR,expectedAlpha:d.expectedAlpha,
   fiveYearExpectedCAGR:v.fiveYearExpectedCAGR,bearCAGR:v.bearCAGR,bullCAGR:v.bullCAGR,
   fairValue:v.fairValueEstimate,buyPrice:v.requiredReturnBuyPrice,marginOfSafety:v.marginOfSafety,
   qualityScore:q.qualityScore,moatScore:q.moatScore,pricingPowerScore:q.pricingPowerScore,
@@ -921,7 +921,10 @@ const FACTOR_LAB_SPECS=[
   {key:'expectedAlpha',label:'Expected alpha',higherBetter:true},
   {key:'expectedCAGR',label:'Expected CAGR',higherBetter:true},
   {key:'marginOfSafety',label:'Margin of safety',higherBetter:true},
-  {key:'investmentScore',label:'Investment score',higherBetter:true},
+  {key:'investmentScore',label:'Hierarchical rank score',higherBetter:true},
+  {key:'opportunityScore',label:'Opportunity score',higherBetter:true},
+  {key:'opportunityQualityScore',label:'Opportunity quality',higherBetter:true},
+  {key:'reliabilityScore',label:'Reliability modifier',higherBetter:true},
   {key:'qualityScore',label:'Quality',higherBetter:true},
   {key:'moatScore',label:'Moat',higherBetter:true},
   {key:'pricingPowerScore',label:'Pricing power',higherBetter:true},
