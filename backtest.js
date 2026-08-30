@@ -33,7 +33,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.35-backtest-generalization';
+const MODEL_VERSION='simple-v12.36-factor-lab-share-class-dedupe';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -607,13 +607,28 @@ function dailyPortfolioRisk(tickers,startDate,endDate,historyByTicker,spyHistory
   }
   return {dailyMaxDrawdown:maxDrawdown,spyDailyMaxDrawdown:spyMaxDrawdown,seriesCount:series.length};
 }
+function economicSecurityGroup(ticker){
+  const t=String(ticker||'').toUpperCase();
+  if(t==='GOOG'||t==='GOOGL')return 'ALPHABET';
+  return t;
+}
+function dedupeEconomicSecurities(rows){
+  const out=[],seen=new Set();
+  for(const r of rows||[]){
+    const g=economicSecurityGroup(r?.ticker);
+    if(!g||seen.has(g))continue;
+    seen.add(g);out.push(r);
+  }
+  return out;
+}
+
 function eligibleForStrategy(snap,{topN=20,minAlpha=.10,requireTopRank=false}={}){
-  return (snap?.rows||[])
+  const ranked=(snap?.rows||[])
     .filter(r=>Number.isFinite(r.expectedAlpha))
     .filter(r=>r.expectedAlpha>=minAlpha)
     .filter(r=>!requireTopRank||r.rank<=Math.ceil((r.universeSize||snap.rows.length)*.20))
-    .sort((a,b)=>(a.rank||Infinity)-(b.rank||Infinity))
-    .slice(0,topN);
+    .sort((a,b)=>(a.rank||Infinity)-(b.rank||Infinity));
+  return dedupeEconomicSecurities(ranked).slice(0,topN);
 }
 function simulateInvestablePortfolio(snapshotOutput,historyByTicker,spyHistory,{name,topN=20,minAlpha=.10,requireTopRank=false,transactionCostBps=10}={}){
   const snaps=[...(snapshotOutput||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf)));
@@ -705,8 +720,10 @@ function thesisSellReason(current,entry,{sellExpectedCAGR=.06,rideMomentum=false
 }
 function thesisBuyCandidates(snap,held,{minExpectedCAGR=.15,maxRank=25,minMarketCap=0,excludeBiopharma=false,excludedTickers=null}={}){
   const excluded=excludedTickers instanceof Set?excludedTickers:new Set(excludedTickers||[]);
-  return (snap?.rows||[]).filter(r=>!held.has(r.ticker)&&!excluded.has(r.ticker)&&thesisEntryEligible(r,{minExpectedCAGR,maxRank,minMarketCap,excludeBiopharma}))
+  const heldGroups=new Set([...held].map(economicSecurityGroup));
+  const ranked=(snap?.rows||[]).filter(r=>!held.has(r.ticker)&&!excluded.has(r.ticker)&&!heldGroups.has(economicSecurityGroup(r.ticker))&&thesisEntryEligible(r,{minExpectedCAGR,maxRank,minMarketCap,excludeBiopharma}))
     .sort((a,b)=>(a.rank||Infinity)-(b.rank||Infinity));
+  return dedupeEconomicSecurities(ranked);
 }
 function simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name='Sized thesis hold',topN=20,minExpectedCAGR=.15,maxRank=25,minMarketCap=0,excludeBiopharma=false,sellExpectedCAGR=.06,maxInitialWeight=.10,rideMomentum=false,transactionCostBps=10,excludedTickers=null,computeDailyRisk=true}={}){
   const snaps=[...(snapshotOutput||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf)));
@@ -740,7 +757,7 @@ function simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{
     // A qualifying holding may be topped up toward today's justified target when cash is
     // available, but never sold down to target. This allows conviction to affect sizing
     // without creating mechanical rebalancing turnover.
-    const addable=[...weights.keys()].map(t=>rowMap.get(t)).filter(r=>r&&!excluded.has(r.ticker)&&thesisEntryEligible(r,{minExpectedCAGR,maxRank,minMarketCap,excludeBiopharma})).sort((a,b)=>(a.rank||Infinity)-(b.rank||Infinity));
+    const addable=dedupeEconomicSecurities([...weights.keys()].map(t=>rowMap.get(t)).filter(r=>r&&!excluded.has(r.ticker)&&thesisEntryEligible(r,{minExpectedCAGR,maxRank,minMarketCap,excludeBiopharma})).sort((a,b)=>(a.rank||Infinity)-(b.rank||Infinity)));
     for(const r of addable){
       if(cash<=1e-9)break;
       const cur=weights.get(r.ticker)||0,target=thesisTargetWeight(r,{maxInitialWeight});
@@ -900,6 +917,58 @@ function buildScoreGeneralization(rows,n=1){
   return {description:`Per-snapshot model-rank deciles using ${n}Y realized total-return excess. D1 is the model's highest-ranked 10%. Development and validation are reported separately.`,development:{years:'2019-2021',...calc(split(2019,2021))},validation:{years:'2022-2025',...calc(split(2022,2025))}};
 }
 
+const FACTOR_LAB_SPECS=[
+  {key:'expectedAlpha',label:'Expected alpha',higherBetter:true},
+  {key:'expectedCAGR',label:'Expected CAGR',higherBetter:true},
+  {key:'marginOfSafety',label:'Margin of safety',higherBetter:true},
+  {key:'investmentScore',label:'Investment score',higherBetter:true},
+  {key:'qualityScore',label:'Quality',higherBetter:true},
+  {key:'moatScore',label:'Moat',higherBetter:true},
+  {key:'pricingPowerScore',label:'Pricing power',higherBetter:true},
+  {key:'capitalAllocationScore',label:'Capital allocation',higherBetter:true},
+  {key:'compounderScore',label:'Compounder',higherBetter:true},
+  {key:'growthQualityScore',label:'Growth quality',higherBetter:true},
+  {key:'protectionScore',label:'Protection',higherBetter:true},
+  {key:'forecastConfidence',label:'Forecast confidence',higherBetter:true},
+  {key:'valuationConfidence',label:'Valuation confidence',higherBetter:true},
+  {key:'methodAgreement',label:'Method agreement',higherBetter:true},
+  {key:'methodCount',label:'Valuation method count',higherBetter:true},
+  {key:'independentEvidenceFamilies',label:'Independent evidence families',higherBetter:true},
+];
+function factorValue(r,key){
+  const aliases={forecastConfidence:['forecastConfidence','forecastReliabilityScore','forecastConfidenceScore'],valuationConfidence:['valuationConfidence','valuationConfidenceScore','confidenceScore'],methodAgreement:['methodAgreement','methodAgreementScore'],methodCount:['methodCount','independentMethodCount'],independentEvidenceFamilies:['independentEvidenceFamilies','independentMethodCount']};
+  for(const k of aliases[key]||[key]){const v=finite(r?.[k]);if(v!=null)return v;}
+  return null;
+}
+function assignFactorDeciles(rows,spec){
+  const byDate=new Map();
+  for(const r of rows||[]){const v=factorValue(r,spec.key);if(v==null)continue;const k=String(r.asOf||'');if(!byDate.has(k))byDate.set(k,[]);byDate.get(k).push({r,v});}
+  const out=[];
+  for(const arr of byDate.values()){
+    arr.sort((a,b)=>spec.higherBetter?(b.v-a.v):(a.v-b.v));
+    const n=arr.length;
+    arr.forEach((x,i)=>out.push({...x.r,_factorDecile:Math.min(10,Math.max(1,Math.floor(i*10/Math.max(1,n))+1)),_factorValue:x.v}));
+  }
+  return out;
+}
+function factorDiagnostics(rows,spec,horizon=1){
+  const ranked=assignFactorDeciles(rows,spec);
+  const d=groupedOutcome(ranked,r=>`D${r._factorDecile}`,horizon).sort((a,b)=>Number(a.bucket.slice(1))-Number(b.bucket.slice(1)));
+  const m=monotonicitySummary(d),d1=d.find(x=>x.bucket==='D1'),d10=d.find(x=>x.bucket==='D10');
+  return {key:spec.key,label:spec.label,n:ranked.filter(r=>Number.isFinite(r[`excess${horizon}YTotalReturnCAGR`])).length,d1MeanExcess:d1?.meanExcess??null,d10MeanExcess:d10?.meanExcess??null,d1VsD10MeanSpread:Number.isFinite(d1?.meanExcess)&&Number.isFinite(d10?.meanExcess)?d1.meanExcess-d10.meanExcess:null,d1MedianExcess:d1?.medianExcess??null,d1BeatSpyRate:d1?.beatSpyRate??null,slopePerDecile:m.slopePerDecile,spearmanLikeCorrelation:m.spearmanLikeCorrelation,deciles:d};
+}
+function buildPredictivePowerLab(rows,horizon=1){
+  const year=r=>Number(String(r.asOf||'').slice(0,4));
+  const dev=(rows||[]).filter(r=>year(r)>=2019&&year(r)<=2021),val=(rows||[]).filter(r=>year(r)>=2022&&year(r)<=2025);
+  const runSet=rs=>FACTOR_LAB_SPECS.map(spec=>factorDiagnostics(rs,spec,horizon));
+  const conditionalSets=[
+    {key:'alpha_ge_10',label:'Expected alpha ≥10%',filter:r=>finite(r.expectedAlpha)!=null&&r.expectedAlpha>=.10},
+    {key:'alpha_ge_10_top20pct',label:'Expected alpha ≥10% + top-20% overall rank',filter:r=>finite(r.expectedAlpha)!=null&&r.expectedAlpha>=.10&&finite(r.rank)!=null&&finite(r.universeSize)!=null&&r.rank<=Math.ceil(r.universeSize*.20)},
+  ];
+  const conditionals=conditionalSets.map(c=>({key:c.key,label:c.label,development:runSet(dev.filter(c.filter)),validation:runSet(val.filter(c.filter))}));
+  return {description:`Predictive-power laboratory using point-in-time, within-snapshot factor deciles and ${horizon}Y realized total-return excess vs SPY. D1 is the factor's most attractive decile. D1>D10, negative decile slope/correlation, and validation persistence are desirable. Conditional tests ask whether quality/evidence factors add value after expected-return gating.`,horizonYears:horizon,developmentYears:'2019-2021',validationYears:'2022-2025',factors:FACTOR_LAB_SPECS.map(x=>({key:x.key,label:x.label,higherBetter:x.higherBetter})),development:runSet(dev),validation:runSet(val),conditionals};
+}
+
 function buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory){
   const rules=[
     {name:'Top 10 · Alpha ≥10%',topN:10,minAlpha:.10},
@@ -929,7 +998,7 @@ function buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory){
   const contributionRobustness=leaveWinnersOut(snapshotOutput,historyByTicker,spyHistory,primaryThesis,{transactionCostBps});
   return {
     description:`Chronological ${FREQUENCY} portfolio tests. Mechanical strategies rebalance each snapshot. The primary thesis strategy buys Top-25 names at >=15% expected CAGR, conviction-sizes them, and lets valuation-stretched winners keep running while their price momentum remains strong. The old hard <6% valuation exit is retained as a control. Trades execute after the snapshot and ${transactionCostBps} bp one-way costs are charged.`,
-    thesisHoldRules:{buy:'Expected CAGR >=15% + overall rank <=25; the extra 20% MOS/Buy rating is not required',sizing:'Initial target 3/5/6/8/10% by rank bands, nudged +/-1 point by evidence; max initial size 10%. Existing winners are not trimmed back to target.',hold:'Do not sell merely because rank changes, a better-ranked stock appears, IWB membership changes, or model coverage is temporarily unavailable',rideWinner:'When expected CAGR falls below 6%, keep holding if 3M stock return is positive, 6M and 12M relative returns versus SPY are both positive, and at least one relative window leads SPY by >=5 points.',valuationSell:'Below 6% expected CAGR becomes a valuation warning. Sell only when the Ride Winner momentum test is not/ceases to be satisfied.',fundamentalSell:'Quality falls >=15 points to <60, protection falls >=20 points to <50, or forecast confidence <40; fundamental thesis breaks override momentum.',cash:'If no qualifying opportunity exists, residual capital remains in cash',reviewFrequency:FREQUENCY},
+    thesisHoldRules:{buy:'Expected CAGR >=15% + overall rank <=25; the extra 20% MOS/Buy rating is not required',sizing:'Initial target 3/5/6/8/10% by rank bands, nudged +/-1 point by evidence; max initial size 10%. Existing winners are not trimmed back to target.',hold:'Do not sell merely because rank changes, a better-ranked stock appears, IWB membership changes, or model coverage is temporarily unavailable',rideWinner:'When expected CAGR falls below 6%, keep holding if 3M stock return is positive, 6M and 12M relative returns versus SPY are both positive, and at least one relative window leads SPY by >=5 points.',valuationSell:'Below 6% expected CAGR becomes a valuation warning. Sell only when the Ride Winner momentum test is not/ceases to be satisfied.',fundamentalSell:'Quality falls >=15 points to <60, protection falls >=20 points to <50, or forecast confidence <40; fundamental thesis breaks override momentum.',cash:'If no qualifying opportunity exists, residual capital remains in cash',reviewFrequency:FREQUENCY,shareClassRule:'Economically equivalent Alphabet share classes are mutually exclusive: if both GOOG and GOOGL qualify, only the better-ranked class may be purchased.'},
     robustness:{development:'2019-2021 review periods',validation:'2022-2025 review periods',survivorship:'Point-in-time IWB holdings are required for every historical snapshot. No current-watchlist fallback is permitted.',execution:'First trading day after each snapshot; no same-close execution.',transactionCosts:`${transactionCostBps} bp × one-way turnover.`},
     strategies,thesisHoldStrategies,cohortStrategies,parameterStability,contributionRobustness
   };
@@ -1021,10 +1090,10 @@ async function main(){
   const output={
     generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,backtestMode:'historical_core_point_in_time',frequency:FREQUENCY,requestedStartYear:START,startYear:historicalUniverse.effectiveStart||START,effectiveStartYear:historicalUniverse.effectiveStart||START,effectiveStartDate:historicalUniverse.effectiveStartDate||`${historicalUniverse.effectiveStart||START}-01-01`,endYear:END,
     assumptions:{analystEstimates:'excluded_historical_unavailable',universe:'historical_iwb_holdings_required_fail_closed_no_current_watchlist_fallback',returns:'Yahoo adjusted-close total return where available; Stooq price-only fallback is explicitly flagged',benchmark:'SPY adjusted-close total return',valuationPrice:'raw historical close',secCutoff:'facts must be filed by as-of date'},
-    observations:flat.length,historicalUniverse:{provider:historicalUniverse.provider||'SEC N-PORT / IWB',coverage:historicalUniverse.coverage,uniqueTickers:historicalUniverse.union.length,note:'Point-in-time IWB membership is required for every snapshot. SEC N-PORT supplies historical CUSIPs; OpenFIGI maps those CUSIPs to historical/current equity symbols. No current-watchlist membership fallback is permitted. Residual bias can remain for identifiers OpenFIGI cannot resolve or price histories unavailable from free sources.'},diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YTotalReturnCAGR'),summary3Y:summarize(flat,'realized3YTotalReturnCAGR'),summary5Y:summarize(flat,'realized5YTotalReturnCAGR'),signalAnalysis:buildSignalAnalysis(flat),portfolioSimulation:buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory),errors:errors.slice(0,500),snapshots:snapshotOutput
+    observations:flat.length,historicalUniverse:{provider:historicalUniverse.provider||'SEC N-PORT / IWB',coverage:historicalUniverse.coverage,uniqueTickers:historicalUniverse.union.length,note:'Point-in-time IWB membership is required for every snapshot. SEC N-PORT supplies historical CUSIPs; OpenFIGI maps those CUSIPs to historical/current equity symbols. No current-watchlist membership fallback is permitted. Residual bias can remain for identifiers OpenFIGI cannot resolve or price histories unavailable from free sources.'},diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YTotalReturnCAGR'),summary3Y:summarize(flat,'realized3YTotalReturnCAGR'),summary5Y:summarize(flat,'realized5YTotalReturnCAGR'),signalAnalysis:buildSignalAnalysis(flat),predictivePowerLab:buildPredictivePowerLab(flat,1),portfolioSimulation:buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory),errors:errors.slice(0,500),snapshots:snapshotOutput
   };
   const p=path.join(__dirname,'data','backtest-results.json'),tmp=p+'.tmp';fs.writeFileSync(tmp,JSON.stringify(output));fs.renameSync(tmp,p);
   console.log(`Done. Wrote ${flat.length} historical observations to data/backtest-results.json.`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,contributionConcentration,leaveWinnersOut,buildParameterStability,monotonicitySummary,buildScoreGeneralization,buildPortfolioSimulation};
+module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,contributionConcentration,leaveWinnersOut,buildParameterStability,monotonicitySummary,buildScoreGeneralization,buildPredictivePowerLab,buildPortfolioSimulation,economicSecurityGroup,dedupeEconomicSecurities};

@@ -137,6 +137,32 @@ function liveMomentum(history,spyHistory){
   const strong=Number.isFinite(stock3)&&stock3>0&&Number.isFinite(rel6)&&rel6>0&&Number.isFinite(rel12)&&rel12>0&&(rel6>=.05||rel12>=.05);
   return {asOf,strong,stock3,stock6,stock12,spy6,spy12,rel6,rel12};
 }
+function economicSecurityGroup(ticker){
+  const t=String(ticker||'').toUpperCase();
+  if(t==='GOOG'||t==='GOOGL')return 'ALPHABET';
+  return t;
+}
+function enforceMutuallyExclusiveShareClasses(stocks){
+  const byGroup=new Map();
+  for(const s of stocks||[]){const g=economicSecurityGroup(s.ticker);if(!byGroup.has(g))byGroup.set(g,[]);byGroup.get(g).push(s);}
+  for(const group of byGroup.values()){
+    if(group.length<2)continue;
+    const actionable=group.filter(s=>s.newPositionAction==='BUY').sort((a,b)=>(a.overallRank||Infinity)-(b.overallRank||Infinity)||(b.expectedCAGR||-Infinity)-(a.expectedCAGR||-Infinity));
+    if(actionable.length<2)continue;
+    const keep=actionable[0];
+    for(const s of actionable.slice(1)){
+      s.newPositionAction='PASS';
+      s.portfolioAction=s.existingHolderAction||'HOLD';
+      s.suggestedInitialWeight=null;
+      s.shareClassDuplicateOf=keep.ticker;
+      s.portfolioPolicy={...(s.portfolioPolicy||{}),newPositionAction:'PASS',portfolioAction:s.portfolioAction,suggestedInitialWeight:null,shareClassDuplicateOf:keep.ticker,holderReason:`Do not open ${s.ticker} while ${keep.ticker} is the preferred Alphabet share class; they represent the same underlying company.`};
+      s.decisionDashboard=s.decisionDashboard||{};
+      s.decisionDashboard.positionTier='Duplicate share class — no new position';
+      s.decisionDashboard.suggestedWeight='—';
+    }
+  }
+}
+
 function applyLivePortfolioPolicy(stocks){
   for(const s of stocks){
     const g=livePortfolioGuidance(s,s.momentum||{});
@@ -177,9 +203,10 @@ async function run(){
   }
   rank(stocks);
   applyLivePortfolioPolicy(stocks);
+  enforceMutuallyExclusiveShareClasses(stocks);
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.34-company-metadata-filters',stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.36-factor-lab-share-class-dedupe',stocks}; writeJson('results.json',output);
   const historyFile=writeProspectiveSnapshot(__dirname,output);
   if(historyFile) console.log(`Saved prospective backtest snapshot: ${path.relative(__dirname,historyFile)}`);
   diag.finishedAt=new Date().toISOString();diag.scored=stocks.length;writeJson('screener-diagnostics.json',diag);
