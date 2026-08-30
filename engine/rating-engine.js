@@ -14,10 +14,8 @@ function rateStock(stock,forecast,quality,v){
   const methodCount=(v.methods||[]).length, independent=v.independentMethodCount??methodCount;
   const forecastConf=forecast.forecastReliabilityScore??rawConf;
 
-  // The recommendation contract is intentionally stricter than the valuation contract:
-  // a stock is not a Buy until today's price is at/below the 15% CAGR hurdle price AFTER
-  // the investor's additional 20% margin of safety. Stocks that are attractive but have
-  // not reached that entry price are Watch, not Buy.
+  // Recommendation contract: a stock is not a Buy until today's price is at/below
+  // the 15% CAGR hurdle price AFTER the investor's additional 20% margin of safety.
   let rating='Unrated';
   if(!Number.isFinite(c)||!Number.isFinite(mos)) rating='Unrated';
   else if(c<0) rating='Sell';
@@ -28,8 +26,9 @@ function rateStock(stock,forecast,quality,v){
   else if((c>=.15||meetsHurdlePrice)&&mos>0) rating='Watch';
   else rating='Hold';
 
-  // Trust guardrails. Fragile valuation architecture can remain useful for research,
-  // but cannot become an actionable Buy solely because its point estimate is large.
+  // Trust guardrails remain recommendation gates. They intentionally do not become
+  // large additive ranking weights: the validation lab showed that evidence/confidence
+  // is most useful after an attractive expected-return opportunity already exists.
   if(v.modelSupport==='unsupported') rating='Unrated';
   if(v.modelSupport==='limited'&&['Buy','Strong Buy','Exceptional Buy'].includes(rating)) rating='Watch';
   if(forecastConf<45&&['Buy','Strong Buy','Exceptional Buy'].includes(rating)) rating='Watch';
@@ -37,32 +36,56 @@ function rateStock(stock,forecast,quality,v){
   if(stock.sector!=='Financials'&&methodCount===1&&['Buy','Strong Buy','Exceptional Buy'].includes(rating)) rating='Watch';
   if(agreement<35&&['Buy','Strong Buy','Exceptional Buy'].includes(rating)) rating='Watch';
 
-  // Evidence-adjusted research score. Expected upside matters, but corroboration,
-  // business quality and forecast reliability matter more than a fragile headline CAGR.
-  const agreementFactor=clamp((Number.isFinite(agreement)?agreement:50)/100,.25,1);
-  const breadthFactor=clamp(independent/3,.20,1);
-  const forecastFactor=clamp(forecastConf/100,.30,1);
-  const confidenceFactor=clamp(conf/100,.30,1);
-  const evidenceFactor=clamp(.32*confidenceFactor+.24*forecastFactor+.28*breadthFactor+.16*agreementFactor,.20,1);
+  // v12.37 hierarchical ranking architecture.
+  // 1) Opportunity comes first. Expected CAGR is deliberately dominant; MOS and entry
+  //    readiness add context without allowing a wonderful-but-expensive company to win.
+  const returnScore=Number.isFinite(c)?clamp((c-.04)/.20,0,1)*100:0; // 4% -> 0, 24% -> 100
+  const mosScore=Number.isFinite(mos)?clamp(mos/.35,0,1)*100:0;
+  const entryScore=meetsFinalBuyPrice?100:meetsHurdlePrice?70:(Number.isFinite(c)&&c>=.15&&mos>0?45:15);
+  const opportunityScore=.78*returnScore+.17*mosScore+.05*entryScore;
 
-  const returnScore=clamp((c+.02)/.24,0,1)*100;
-  const fairValueScore=clamp((mos+.05)/.40,0,1)*100;
-  // Entry readiness is deliberately binary-ish: reaching the MOS-adjusted buy price is
-  // meaningful, while merely reaching the raw 15% hurdle price is useful but not a Buy.
-  const entryScore=meetsFinalBuyPrice?100:meetsHurdlePrice?65:(c>=.15&&mos>0?45:20);
-  const rawInvestment=.20*returnScore+.08*fairValueScore+.30*q+.10*(quality.moatScore||50)+.12*forecastConf+.10*conf+.10*entryScore;
-  let evidenceMultiplier=.50+.50*evidenceFactor;
-  if(independent===1)evidenceMultiplier*=.86;
-  if(v.modelSupport==='limited')evidenceMultiplier*=.82;
-  if(v.cyclicalBusiness)evidenceMultiplier*=.92;
-  const investmentScore=Number.isFinite(c)?Math.round(clamp(rawInvestment*evidenceMultiplier,0,100)):0;
+  // 2) Business quality differentiates genuinely attractive opportunities. The weights
+  //    are intentionally broad/economic rather than optimized to the validation sample.
+  const opportunityQualityScore=
+      .20*(quality.qualityScore||50)
+    + .20*(quality.growthQualityScore||50)
+    + .18*(quality.moatScore||50)
+    + .15*(quality.compounderScore||50)
+    + .10*(quality.pricingPowerScore||50)
+    + .10*(quality.capitalAllocationScore||50)
+    + .07*(quality.protectionScore||50);
+
+  // Quality influence ramps in only as expected return becomes compelling. This avoids
+  // rewarding quality by itself when price leaves too little prospective return.
+  // 13% CAGR -> no quality tilt; 20% CAGR -> full quality tilt; smooth in between.
+  const qualityActivation=Number.isFinite(c)?clamp((c-.13)/.07,0,1):0;
+  const activatedQuality=50+qualityActivation*(opportunityQualityScore-50);
+
+  // 3) Reliability is a small modifier, not a primary source of rank. Existing hard
+  //    recommendation guardrails above still block fragile valuations from becoming Buys.
+  const breadthScore=clamp(independent/3,0,1)*100;
+  const reliabilityScore=.50*forecastConf+.25*conf+.15*agreement+.10*breadthScore;
+  const reliabilityMultiplier=.985+.03*clamp(reliabilityScore/100,0,1); // only +/-1.5%
+
+  let rawInvestment=(.78*opportunityScore+.22*activatedQuality)*reliabilityMultiplier;
+  if(v.modelSupport==='limited') rawInvestment*=.94;
+  if(v.modelSupport==='unsupported') rawInvestment=0;
+  const investmentScore=Number.isFinite(c)?Math.round(clamp(rawInvestment,0,100)):0;
+
+  // Retain a diagnostic evidence score for UI/auditing, but do not let it dominate rank.
+  const evidenceScore=Math.round(clamp(.40*forecastConf+.25*conf+.20*breadthScore+.15*agreement,0,100));
 
   return {
     rating,requiredMOS:req,investmentScore,
+    opportunityScore:Math.round(clamp(opportunityScore,0,100)),
+    opportunityQualityScore:Math.round(clamp(opportunityQualityScore,0,100)),
+    activatedQualityScore:Math.round(clamp(activatedQuality,0,100)),
+    qualityActivation,
+    reliabilityScore:Math.round(clamp(reliabilityScore,0,100)),
     qualifiesForBuyList:['Buy','Strong Buy','Exceptional Buy'].includes(rating),
     meetsInvestorBuyPrice:meetsFinalBuyPrice,
     meetsHurdlePrice,
-    evidenceScore:Math.round(evidenceFactor*100),
+    evidenceScore,
     expectedAlpha:Number.isFinite(c)?c-.10:null
   };
 }
