@@ -33,7 +33,7 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 
-const MODEL_VERSION='simple-v12.37-opportunity-first-ranking';
+const MODEL_VERSION='simple-v12.37-opportunity-first-ranking-challenger-lab';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -972,6 +972,80 @@ function buildPredictivePowerLab(rows,horizon=1){
   return {description:`Predictive-power laboratory using point-in-time, within-snapshot factor deciles and ${horizon}Y realized total-return excess vs SPY. D1 is the factor's most attractive decile. D1>D10, negative decile slope/correlation, and validation persistence are desirable. Conditional tests ask whether quality/evidence factors add value after expected-return gating.`,horizonYears:horizon,developmentYears:'2019-2021',validationYears:'2022-2025',factors:FACTOR_LAB_SPECS.map(x=>({key:x.key,label:x.label,higherBetter:x.higherBetter})),development:runSet(dev),validation:runSet(val),conditionals};
 }
 
+
+// Frozen five-model challenger test. Every challenger uses the SAME expected-alpha >=10%
+// eligible universe, so quality only gets credit when it improves ordering after the
+// expected-return hurdle has already been cleared. Scores are built from within-snapshot
+// percentile ranks to avoid scale artifacts; no weights are optimized to the backtest.
+const CHALLENGER_SPECS=[
+  {key:'alpha_only',label:'A · Expected Alpha only'},
+  {key:'alpha_quality',label:'B · 50% Alpha + 50% Quality'},
+  {key:'alpha_growth_quality',label:'C · 50% Alpha + 50% Growth Quality'},
+  {key:'alpha_quality_basket',label:'D · 50% Alpha + 50% quality basket'},
+  {key:'hierarchical_v1237',label:'E · Current v12.37 hierarchical score'},
+];
+function percentileRanks(values){
+  const valid=values.map((v,i)=>({v:finite(v),i})).filter(x=>x.v!=null).sort((a,b)=>b.v-a.v);
+  const out=Array(values.length).fill(null),n=valid.length;
+  let j=0;
+  while(j<n){
+    let k=j+1; while(k<n&&valid[k].v===valid[j].v)k++;
+    const avgRank=(j+(k-1))/2,score=n<=1?1:1-(avgRank/(n-1));
+    for(let z=j;z<k;z++)out[valid[z].i]=score;
+    j=k;
+  }
+  return out;
+}
+function challengerRows(rows){
+  const byDate=new Map();
+  for(const r of rows||[]){
+    if((finite(r.expectedAlpha)??-Infinity)<.10)continue;
+    const k=String(r.asOf||''); if(!byDate.has(k))byDate.set(k,[]); byDate.get(k).push(r);
+  }
+  const out=[];
+  for(const arr of byDate.values()){
+    const alpha=percentileRanks(arr.map(r=>r.expectedAlpha));
+    const quality=percentileRanks(arr.map(r=>r.qualityScore));
+    const growth=percentileRanks(arr.map(r=>r.growthQualityScore));
+    const moat=percentileRanks(arr.map(r=>r.moatScore));
+    const compounder=percentileRanks(arr.map(r=>r.compounderScore));
+    const current=percentileRanks(arr.map(r=>r.investmentScore));
+    arr.forEach((r,i)=>{
+      const basket=[quality[i],moat[i],growth[i],compounder[i]].filter(Number.isFinite);
+      const basketScore=basket.length?mean(basket):null;
+      const scores={
+        alpha_only:alpha[i],
+        alpha_quality:Number.isFinite(alpha[i])&&Number.isFinite(quality[i])?.5*alpha[i]+.5*quality[i]:null,
+        alpha_growth_quality:Number.isFinite(alpha[i])&&Number.isFinite(growth[i])?.5*alpha[i]+.5*growth[i]:null,
+        alpha_quality_basket:Number.isFinite(alpha[i])&&Number.isFinite(basketScore)?.5*alpha[i]+.5*basketScore:null,
+        hierarchical_v1237:current[i],
+      };
+      out.push({...r,_challengerScores:scores});
+    });
+  }
+  return out;
+}
+function challengerDiagnostics(rows,spec,horizon=1){
+  const prepared=challengerRows(rows).filter(r=>Number.isFinite(r._challengerScores?.[spec.key]));
+  const byDate=new Map();
+  for(const r of prepared){const k=String(r.asOf||'');if(!byDate.has(k))byDate.set(k,[]);byDate.get(k).push(r);}
+  const ranked=[];
+  for(const arr of byDate.values()){
+    arr.sort((a,b)=>b._challengerScores[spec.key]-a._challengerScores[spec.key]);
+    const n=arr.length;
+    arr.forEach((r,i)=>ranked.push({...r,_challengerDecile:Math.min(10,Math.max(1,Math.floor(i*10/Math.max(1,n))+1))}));
+  }
+  const d=groupedOutcome(ranked,r=>`D${r._challengerDecile}`,horizon).sort((a,b)=>Number(a.bucket.slice(1))-Number(b.bucket.slice(1)));
+  const m=monotonicitySummary(d),d1=d.find(x=>x.bucket==='D1'),d10=d.find(x=>x.bucket==='D10');
+  return {key:spec.key,label:spec.label,n:ranked.filter(r=>Number.isFinite(r[`excess${horizon}YTotalReturnCAGR`])).length,d1MeanExcess:d1?.meanExcess??null,d10MeanExcess:d10?.meanExcess??null,d1VsD10MeanSpread:Number.isFinite(d1?.meanExcess)&&Number.isFinite(d10?.meanExcess)?d1.meanExcess-d10.meanExcess:null,d1MedianExcess:d1?.medianExcess??null,d1BeatSpyRate:d1?.beatSpyRate??null,slopePerDecile:m.slopePerDecile,spearmanLikeCorrelation:m.spearmanLikeCorrelation,deciles:d};
+}
+function buildChallengerLab(rows,horizon=1){
+  const year=r=>Number(String(r.asOf||'').slice(0,4));
+  const dev=(rows||[]).filter(r=>year(r)>=2019&&year(r)<=2021),val=(rows||[]).filter(r=>year(r)>=2022&&year(r)<=2025);
+  const run=rs=>CHALLENGER_SPECS.map(spec=>challengerDiagnostics(rs,spec,horizon));
+  return {description:'Frozen challenger comparison on one common eligible universe: Expected Alpha >=10%. A is the return-only baseline; B/C/D add simple, predeclared quality terms; E is the current v12.37 score. All blends use within-snapshot percentiles and fixed 50/50 weights. No parameter search or validation tuning is performed.',horizonYears:horizon,eligibility:'expectedAlpha >= 10%',developmentYears:'2019-2021',validationYears:'2022-2025',models:CHALLENGER_SPECS,development:run(dev),validation:run(val)};
+}
+
 function buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory){
   const rules=[
     {name:'Top 10 · Alpha ≥10%',topN:10,minAlpha:.10},
@@ -1093,7 +1167,7 @@ async function main(){
   const output={
     generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,backtestMode:'historical_core_point_in_time',frequency:FREQUENCY,requestedStartYear:START,startYear:historicalUniverse.effectiveStart||START,effectiveStartYear:historicalUniverse.effectiveStart||START,effectiveStartDate:historicalUniverse.effectiveStartDate||`${historicalUniverse.effectiveStart||START}-01-01`,endYear:END,
     assumptions:{analystEstimates:'excluded_historical_unavailable',universe:'historical_iwb_holdings_required_fail_closed_no_current_watchlist_fallback',returns:'Yahoo adjusted-close total return where available; Stooq price-only fallback is explicitly flagged',benchmark:'SPY adjusted-close total return',valuationPrice:'raw historical close',secCutoff:'facts must be filed by as-of date'},
-    observations:flat.length,historicalUniverse:{provider:historicalUniverse.provider||'SEC N-PORT / IWB',coverage:historicalUniverse.coverage,uniqueTickers:historicalUniverse.union.length,note:'Point-in-time IWB membership is required for every snapshot. SEC N-PORT supplies historical CUSIPs; OpenFIGI maps those CUSIPs to historical/current equity symbols. No current-watchlist membership fallback is permitted. Residual bias can remain for identifiers OpenFIGI cannot resolve or price histories unavailable from free sources.'},diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YTotalReturnCAGR'),summary3Y:summarize(flat,'realized3YTotalReturnCAGR'),summary5Y:summarize(flat,'realized5YTotalReturnCAGR'),signalAnalysis:buildSignalAnalysis(flat),predictivePowerLab:buildPredictivePowerLab(flat,1),portfolioSimulation:buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory),errors:errors.slice(0,500),snapshots:snapshotOutput
+    observations:flat.length,historicalUniverse:{provider:historicalUniverse.provider||'SEC N-PORT / IWB',coverage:historicalUniverse.coverage,uniqueTickers:historicalUniverse.union.length,note:'Point-in-time IWB membership is required for every snapshot. SEC N-PORT supplies historical CUSIPs; OpenFIGI maps those CUSIPs to historical/current equity symbols. No current-watchlist membership fallback is permitted. Residual bias can remain for identifiers OpenFIGI cannot resolve or price histories unavailable from free sources.'},diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YTotalReturnCAGR'),summary3Y:summarize(flat,'realized3YTotalReturnCAGR'),summary5Y:summarize(flat,'realized5YTotalReturnCAGR'),signalAnalysis:buildSignalAnalysis(flat),predictivePowerLab:buildPredictivePowerLab(flat,1),challengerLab:buildChallengerLab(flat,1),portfolioSimulation:buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory),errors:errors.slice(0,500),snapshots:snapshotOutput
   };
   const p=path.join(__dirname,'data','backtest-results.json'),tmp=p+'.tmp';fs.writeFileSync(tmp,JSON.stringify(output));fs.renameSync(tmp,p);
   console.log(`Done. Wrote ${flat.length} historical observations to data/backtest-results.json.`);
