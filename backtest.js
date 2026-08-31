@@ -32,8 +32,9 @@ const {buildForecast}=require('./engine/forecast-engine');
 const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
+const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 
-const MODEL_VERSION='simple-v12.37-opportunity-first-ranking-challenger-lab';
+const MODEL_VERSION='simple-v12.38-alpha-gated-quality-basket-ranking';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -490,7 +491,7 @@ function compactModel(stock,f,q,v,d){return {
   methodCount:(v.methods||[]).length,independentEvidenceFamilies:v.independentMethodCount,
   modelSupport:v.modelSupport
 };}
-function rank(rows){const s=[...rows].sort((a,b)=>(b.investmentScore||0)-(a.investmentScore||0));s.forEach((x,i)=>x.rank=i+1);rows.forEach(x=>x.universeSize=rows.length);}
+function rank(rows){applyModelDRanking(rows,{rankField:'rank',universeSizeField:'universeSize'});}
 function attachRealized(row,history,spyHistory,asOf){
   for(const n of [1,3,5,10]){
     const end=addYears(asOf,n), endPx=priceOnOrBefore(history,end), spy0=priceOnOrBefore(spyHistory,asOf), spy1=priceOnOrBefore(spyHistory,end);
@@ -921,7 +922,8 @@ const FACTOR_LAB_SPECS=[
   {key:'expectedAlpha',label:'Expected alpha',higherBetter:true},
   {key:'expectedCAGR',label:'Expected CAGR',higherBetter:true},
   {key:'marginOfSafety',label:'Margin of safety',higherBetter:true},
-  {key:'investmentScore',label:'Hierarchical rank score',higherBetter:true},
+  {key:'rankScore',label:'Model D rank score',higherBetter:true},
+  {key:'investmentScore',label:'Legacy v12.37 hierarchical score',higherBetter:true},
   {key:'opportunityScore',label:'Opportunity score',higherBetter:true},
   {key:'opportunityQualityScore',label:'Opportunity quality',higherBetter:true},
   {key:'reliabilityScore',label:'Reliability modifier',higherBetter:true},
@@ -981,21 +983,9 @@ const CHALLENGER_SPECS=[
   {key:'alpha_only',label:'A · Expected Alpha only'},
   {key:'alpha_quality',label:'B · 50% Alpha + 50% Quality'},
   {key:'alpha_growth_quality',label:'C · 50% Alpha + 50% Growth Quality'},
-  {key:'alpha_quality_basket',label:'D · 50% Alpha + 50% quality basket'},
-  {key:'hierarchical_v1237',label:'E · Current v12.37 hierarchical score'},
+  {key:'alpha_quality_basket',label:'D · 50% Alpha + 50% quality basket · LIVE v12.38'},
+  {key:'hierarchical_v1237',label:'E · Legacy v12.37 hierarchical score'},
 ];
-function percentileRanks(values){
-  const valid=values.map((v,i)=>({v:finite(v),i})).filter(x=>x.v!=null).sort((a,b)=>b.v-a.v);
-  const out=Array(values.length).fill(null),n=valid.length;
-  let j=0;
-  while(j<n){
-    let k=j+1; while(k<n&&valid[k].v===valid[j].v)k++;
-    const avgRank=(j+(k-1))/2,score=n<=1?1:1-(avgRank/(n-1));
-    for(let z=j;z<k;z++)out[valid[z].i]=score;
-    j=k;
-  }
-  return out;
-}
 function challengerRows(rows){
   const byDate=new Map();
   for(const r of rows||[]){
@@ -1043,7 +1033,7 @@ function buildChallengerLab(rows,horizon=1){
   const year=r=>Number(String(r.asOf||'').slice(0,4));
   const dev=(rows||[]).filter(r=>year(r)>=2019&&year(r)<=2021),val=(rows||[]).filter(r=>year(r)>=2022&&year(r)<=2025);
   const run=rs=>CHALLENGER_SPECS.map(spec=>challengerDiagnostics(rs,spec,horizon));
-  return {description:'Frozen challenger comparison on one common eligible universe: Expected Alpha >=10%. A is the return-only baseline; B/C/D add simple, predeclared quality terms; E is the current v12.37 score. All blends use within-snapshot percentiles and fixed 50/50 weights. No parameter search or validation tuning is performed.',horizonYears:horizon,eligibility:'expectedAlpha >= 10%',developmentYears:'2019-2021',validationYears:'2022-2025',models:CHALLENGER_SPECS,development:run(dev),validation:run(val)};
+  return {description:'Frozen challenger comparison on one common eligible universe: Expected Alpha >=10%. A is the return-only baseline; B/C/D add simple, predeclared quality terms; E is the legacy v12.37 score; D is the promoted live v12.38 ranking rule. All blends use within-snapshot percentiles and fixed 50/50 weights. No parameter search or validation tuning is performed.',horizonYears:horizon,eligibility:'expectedAlpha >= 10%',developmentYears:'2019-2021',validationYears:'2022-2025',models:CHALLENGER_SPECS,development:run(dev),validation:run(val)};
 }
 
 function buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory){

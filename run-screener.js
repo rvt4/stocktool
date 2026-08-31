@@ -18,6 +18,7 @@ const { rateStock } = require('./engine/rating-engine');
 const { validateUniverse } = require('./engine/validation');
 const { writeProspectiveSnapshot } = require('./engine/history-snapshot');
 const { livePortfolioGuidance } = require('./engine/portfolio-policy');
+const { applyModelDRanking, compareRank } = require('./engine/ranking-engine');
 
 const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'),'utf8'));
 const RATE_LIMIT_DELAY_MS = Number(process.env.RATE_LIMIT_DELAY_MS || 1100);
@@ -114,12 +115,14 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
 }
 
 function rank(stocks){
-  const sorted=[...stocks].sort((a,b)=>(b.investmentScore||0)-(a.investmentScore||0)); sorted.forEach((s,i)=>s.overallRank=i+1);
+  // v12.38: Expected Alpha >=10% is the opportunity gate. Eligible names are ordered
+  // by the exact frozen Model-D blend; below-gate names remain behind them and are
+  // ordered by expected return, so business quality cannot rescue an inadequate return.
+  applyModelDRanking(stocks,{rankField:'overallRank',universeSizeField:'globalUniverseSize'});
   const q=[...stocks].sort((a,b)=>(b.qualityScore||0)-(a.qualityScore||0)); q.forEach((s,i)=>s.qualityRank=i+1);
   const o=[...stocks].sort((a,b)=>(b.expectedReturn||-99)-(a.expectedReturn||-99)); o.forEach((s,i)=>s.opportunityRank=i+1);
   const groups={}; for(const s of stocks)(groups[s.category]??=[]).push(s);
-  for(const g of Object.values(groups)){g.sort((a,b)=>(b.investmentScore||0)-(a.investmentScore||0));g.forEach((s,i)=>{s.categoryRank=i+1;s.categoryUniverseSize=g.length;});}
-  stocks.forEach(s=>s.globalUniverseSize=stocks.length);
+  for(const g of Object.values(groups)){g.sort(compareRank);g.forEach((s,i)=>{s.categoryRank=i+1;s.categoryUniverseSize=g.length;});}
 }
 
 
@@ -206,7 +209,7 @@ async function run(){
   enforceMutuallyExclusiveShareClasses(stocks);
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.37-opportunity-first-ranking',stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.38-alpha-gated-quality-basket-ranking',stocks}; writeJson('results.json',output);
   const historyFile=writeProspectiveSnapshot(__dirname,output);
   if(historyFile) console.log(`Saved prospective backtest snapshot: ${path.relative(__dirname,historyFile)}`);
   diag.finishedAt=new Date().toISOString();diag.scored=stocks.length;writeJson('screener-diagnostics.json',diag);
