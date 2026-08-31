@@ -933,5 +933,5 @@ const liveRide=livePortfolioGuidance({...liveCandidate,overallRank:40,expectedCA
 assert.strictEqual(liveRide.newPositionAction,'PASS','valuation-stretched winner was incorrectly opened as a new position');
 assert.strictEqual(liveRide.existingHolderAction,'RIDE WINNER','live policy failed to ride an existing valuation-stretched winner with strong momentum');
 const liveExit=livePortfolioGuidance({...liveCandidate,overallRank:40,expectedCAGR:.04},{stock3:-.02,rel6:-.01,rel12:.02});
-assert.strictEqual(liveExit.existingHolderAction,'SELL / REDUCE','live policy failed to exit after Ride Winner momentum broke');
-console.log('V12.33 live portfolio-policy regression passed: Top-25/15% entries, conviction sizing, and Ride Winner holder guidance match the backtested framework.');
+assert.strictEqual(liveExit.existingHolderAction,'HOLD — VALUATION WATCH','live policy incorrectly turned low expected return into a thesis sell');
+console.log('V12.39 live portfolio-policy regression passed: entry logic is unchanged and valuation/forecast weakness no longer masquerades as a thesis sell.');
