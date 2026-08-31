@@ -43,15 +43,15 @@ function livePortfolioGuidance(r,momentum,{minExpectedCAGR=.15,maxRank=25,sellEx
     existingHolderAction='REVIEW';
     holderReason='Model support is currently insufficient for an actionable portfolio decision.';
   }else if(forecast!=null&&forecast<40){
-    existingHolderAction='SELL — THESIS';
-    holderReason='Forecast support has deteriorated below the thesis-hold floor.';
+    existingHolderAction='ROTATION WATCH';
+    holderReason='Forecast support is weak. This is not a thesis SELL by itself; review the holding against a genuinely eligible replacement before rotating capital.';
   }else if(c!=null&&c<sellExpectedCAGR){
     if(strongMomentum){
       existingHolderAction='RIDE WINNER';
       holderReason='Valuation is stretched, but 3M momentum is positive and the stock still leads SPY over both 6M and 12M windows.';
     }else{
-      existingHolderAction='SELL / REDUCE';
-      holderReason='Expected CAGR is below 6% and the Ride Winner momentum privilege is not satisfied.';
+      existingHolderAction='HOLD — VALUATION WATCH';
+      holderReason='Expected CAGR is below 6%, but low expected return alone is not a thesis SELL. Hold unless the business thesis breaks; consider rotation only when a superior eligible opportunity exists.';
     }
   }
 
