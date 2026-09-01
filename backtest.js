@@ -34,7 +34,7 @@ const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 
-const MODEL_VERSION='simple-v12.40-portfolio-construction-lab';
+const MODEL_VERSION='simple-v12.40.1-portfolio-construction-lab';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -396,6 +396,23 @@ async function buildHistoricalUniverse(dates){
     dates.splice(0,dates.length,...effectiveDates);
   }
   if(!dates.length)throw new Error(`Requested backtest period ends before IWB's first usable SEC N-PORT report (${firstUsableReportDate}).`);
+
+  // A requested calendar endpoint can be later than the latest N-PORT report that is
+  // safely usable under the 100-day staleness rule. That is a trailing data-availability
+  // boundary, not an interior coverage failure. Exclude only those unavailable tail
+  // snapshots; never substitute today's watchlist. Any missing date *inside* the usable
+  // historical span still fails closed below.
+  const resolvableDates=dates.filter(d=>loaded.out.get(d)?.holdings?.length>=500);
+  if(!resolvableDates.length){
+    throw new Error('SEC N-PORT IWB archive could not resolve any requested snapshot date with at least 500 holdings.');
+  }
+  const lastResolvableDate=resolvableDates.at(-1);
+  const tailTrimmedDates=dates.filter(d=>d<=lastResolvableDate);
+  if(tailTrimmedDates.length!==dates.length){
+    const excluded=dates.filter(d=>d>lastResolvableDate);
+    console.log(`Historical universe note: ${excluded.length} trailing snapshot(s) after the latest safely resolvable IWB membership date (${lastResolvableDate}) excluded: ${excluded.join(', ')}.`);
+    dates.splice(0,dates.length,...tailTrimmedDates);
+  }
 
   const byDate=new Map(),coverage=[],failures=[];
   for(const asOf of dates){
