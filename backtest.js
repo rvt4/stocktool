@@ -34,7 +34,7 @@ const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 
-const MODEL_VERSION='simple-v12.39-sell-vs-rotate-policy';
+const MODEL_VERSION='simple-v12.40-portfolio-construction-lab';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -584,26 +584,30 @@ function endWeightsFromReturns(tickers,returnsByTicker){
   if(!(total>0))return new Map();
   return new Map([...raw].map(([t,v])=>[t,v/total]));
 }
-function dailyPortfolioRisk(tickers,startDate,endDate,historyByTicker,spyHistory){
+function dailyPortfolioRisk(tickersOrWeights,startDate,endDate,historyByTicker,spyHistory){
+  const weighted=tickersOrWeights instanceof Map;
+  const positions=weighted?[...tickersOrWeights.entries()].map(([ticker,weight])=>({ticker,weight})):(tickersOrWeights||[]).map(ticker=>({ticker,weight:null}));
+  const equalWeight=!weighted&&positions.length?1/positions.length:0;
   const series=[];
-  for(const ticker of tickers){
-    const h=historyByTicker.get(ticker)||[];
+  for(const pos of positions){
+    const ticker=pos.ticker,h=historyByTicker.get(ticker)||[];
     const start=seriesPointOnOrAfter(h,addDays(startDate,1));
     if(!(finite(start?.adjustedClose)>0))continue;
     const points=(h||[]).filter(p=>p.date>=start.date&&p.date<=addDays(endDate,7)&&finite(p.adjustedClose)>0);
     if(points.length<2)continue;
-    series.push({ticker,startPx:finite(start.adjustedClose),byDate:new Map(points.map(p=>[p.date,finite(p.adjustedClose)]))});
+    series.push({ticker,weight:weighted?(finite(pos.weight)||0):equalWeight,startPx:finite(start.adjustedClose),byDate:new Map(points.map(p=>[p.date,finite(p.adjustedClose)]))});
   }
   const spyStart=seriesPointOnOrAfter(spyHistory,addDays(startDate,1)),spyStartPx=finite(spyStart?.adjustedClose);
   const spyEnd=seriesPointOnOrAfter(spyHistory,addDays(endDate,1));
   const dates=(spyHistory||[]).filter(p=>p.date>=(spyStart?.date||startDate)&&p.date<=(spyEnd?.date||endDate)&&finite(p.adjustedClose)>0).map(p=>p.date);
   if(!series.length||!(spyStartPx>0)||!dates.length)return null;
+  const investedWeight=series.reduce((a,x)=>a+x.weight,0),cashWeight=Math.max(0,1-investedWeight);
   let peak=1,maxDrawdown=0,spyPeak=1,spyMaxDrawdown=0,lastVals=new Map();
   for(const date of dates){
-    const ratios=[];
-    for(const s of series){const px=s.byDate.get(date);if(px>0)lastVals.set(s.ticker,px);const use=lastVals.get(s.ticker);if(use>0)ratios.push(use/s.startPx);}
-    if(!ratios.length)continue;
-    const wealth=mean(ratios);peak=Math.max(peak,wealth);maxDrawdown=Math.min(maxDrawdown,wealth/peak-1);
+    let wealth=cashWeight,seenWeight=0;
+    for(const s of series){const px=s.byDate.get(date);if(px>0)lastVals.set(s.ticker,px);const use=lastVals.get(s.ticker);if(use>0){wealth+=s.weight*(use/s.startPx);seenWeight+=s.weight;}}
+    if(!(seenWeight>0))continue;
+    peak=Math.max(peak,wealth);maxDrawdown=Math.min(maxDrawdown,wealth/peak-1);
     const spy=priceOnOrBefore(spyHistory,date,5,'adjustedClose');if(spy>0){const sw=spy/spyStartPx;spyPeak=Math.max(spyPeak,sw);spyMaxDrawdown=Math.min(spyMaxDrawdown,sw/spyPeak-1);}
   }
   return {dailyMaxDrawdown:maxDrawdown,spyDailyMaxDrawdown:spyMaxDrawdown,seriesCount:series.length};
@@ -652,9 +656,11 @@ function simulateInvestablePortfolio(snapshotOutput,historyByTicker,spyHistory,{
     const transactionCost=turnover*(transactionCostBps/10000);
     const portfolioReturn=grossReturn-transactionCost;
     const risk=dailyPortfolioRisk(tickers,snap.asOf,endDate,historyByTicker,spyHistory);
+    const sectorCounts={};for(const r of selected.filter(r=>tickers.includes(r.ticker))){const sk=String(r.sector||'Unknown');sectorCounts[sk]=(sectorCounts[sk]||0)+1;}
+    const maxSectorWeight=tickers.length&&Object.keys(sectorCounts).length?Math.max(...Object.values(sectorCounts))/tickers.length:0;
     periods.push({
       asOf:snap.asOf,startDate:snap.asOf,endDate,startTradeDate:commonStart||spy.startTradeDate,endTradeDate:commonEnd||spy.endTradeDate,
-      startYear:Number(String(snap.asOf).slice(0,4)),holdings:tickers.length,tickers,
+      startYear:Number(String(snap.asOf).slice(0,4)),holdings:tickers.length,tickers,cashWeight:0,maxHoldingWeight:tickers.length?1/tickers.length:0,maxSectorWeight,
       grossReturn,portfolioReturn,spyReturn:spy.return,excessReturn:portfolioReturn-spy.return,
       turnover,transactionCost,transactionCostBps,dailyMaxDrawdown:risk?.dailyMaxDrawdown??null,spyDailyMaxDrawdown:risk?.spyDailyMaxDrawdown??null
     });
@@ -665,6 +671,9 @@ function simulateInvestablePortfolio(snapshotOutput,historyByTicker,spyHistory,{
   stats.spyDailyMaxDrawdown=periods.map(y=>y.spyDailyMaxDrawdown).filter(Number.isFinite).reduce((m,x)=>Math.min(m,x),0);
   stats.averageTurnover=mean(periods.map(y=>y.turnover));
   stats.annualizedTurnover=stats.averageTurnover*periodsPerYear;
+  stats.averageCashWeight=0;
+  stats.maxObservedHoldingWeight=periods.length?Math.max(...periods.map(y=>y.maxHoldingWeight||0)):0;
+  stats.maxObservedSectorWeight=periods.length?Math.max(...periods.map(y=>y.maxSectorWeight||0)):0;
   stats.totalTransactionCost=periods.reduce((a,y)=>a+(y.transactionCost||0),0);
   return {name,topN,minAlpha,requireTopRank,transactionCostBps,rebalanceFrequency:FREQUENCY,...stats};
 }
@@ -726,10 +735,10 @@ function thesisBuyCandidates(snap,held,{minExpectedCAGR=.15,maxRank=25,minMarket
     .sort((a,b)=>(a.rank||Infinity)-(b.rank||Infinity));
   return dedupeEconomicSecurities(ranked);
 }
-function simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name='Sized thesis hold',topN=20,minExpectedCAGR=.15,maxRank=25,minMarketCap=0,excludeBiopharma=false,sellExpectedCAGR=.06,maxInitialWeight=.10,rideMomentum=false,sellPolicy='current',lowReturnConfirmations=1,forecastConfirmations=1,rotationMinExpectedCAGR=.15,transactionCostBps=10,excludedTickers=null,computeDailyRisk=true}={}){
+function simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name='Sized thesis hold',topN=20,minExpectedCAGR=.15,maxRank=25,minMarketCap=0,excludeBiopharma=false,sellExpectedCAGR=.06,maxInitialWeight=.10,rideMomentum=false,sellPolicy='current',lowReturnConfirmations=1,forecastConfirmations=1,rotationMinExpectedCAGR=.15,transactionCostBps=10,excludedTickers=null,computeDailyRisk=true,initialDeploymentCap=1,sectorPurchaseCap=1,hardHoldingCap=1,scaleInitialBatch=false}={}){
   const snaps=[...(snapshotOutput||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf)));
   const excluded=excludedTickers instanceof Set?excludedTickers:new Set(excludedTickers||[]);
-  let weights=new Map(),entries=new Map(),reviewState=new Map(),cash=1,totalSells=0,totalRotations=0,totalThesisSells=0,totalBuys=0,totalAdds=0,totalRideReviews=0,holdingQuarterSum=0,closedHolds=0;
+  let weights=new Map(),entries=new Map(),reviewState=new Map(),cash=1,totalSells=0,totalRotations=0,totalThesisSells=0,totalBuys=0,totalAdds=0,totalTrims=0,totalRideReviews=0,holdingQuarterSum=0,closedHolds=0,initialized=false;
   const periods=[],sellReasons={};
   for(let i=0;i<snaps.length;i++){
     const snap=snaps[i],next=snaps[i+1]; if(!next)break;
@@ -773,26 +782,54 @@ function simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{
       if(reason){weights.delete(t);freed+=w;turnover+=w;const exitType=reason.startsWith('rotation_')?'ROTATE':'SELL';sells.push({ticker:t,reason,exitType,momentum,confirmations:{...st}});sellReasons[reason]=(sellReasons[reason]||0)+1;totalSells++;if(exitType==='ROTATE')totalRotations++;else totalThesisSells++;const e=entries.get(t);if(e){holdingQuarterSum+=i-e.snapshotIndex;closedHolds++;}entries.delete(t);reviewState.delete(t);}
     }
     cash+=freed;
-    // Add new positions by conviction-sized target rather than equal weighting. Existing
-    // winners are never trimmed back to target merely because they appreciated.
+    // The practical-construction challenger lets winners run, but applies only a very
+    // high hard concentration guardrail. This is not routine rebalancing: nothing is
+    // trimmed merely for drifting above its entry target.
+    const trims=[];
+    if(Number.isFinite(hardHoldingCap)&&hardHoldingCap<1){
+      for(const [t,w] of [...weights]){
+        if(w<=hardHoldingCap)continue;
+        const amt=w-hardHoldingCap;
+        weights.set(t,hardHoldingCap);cash+=amt;turnover+=amt;totalTrims++;trims.push({ticker:t,weight:amt,reason:'hard_concentration_cap'});
+      }
+    }
+    const sectorKey=r=>String(r?.sector||'Unknown');
+    const sectorWeight=sector=>{
+      let total=0;
+      for(const [t,w] of weights){const r=rowMap.get(t)||entries.get(t);if(sectorKey(r)===sector)total+=w;}
+      return total;
+    };
+    // Add new positions by conviction-sized target rather than equal weighting. The
+    // optional starter rule deploys only a predeclared fraction on the first review and
+    // spreads that deployment across all selected names instead of filling slots one by one.
     const vacancies=Math.max(0,topN-weights.size);
     const cands=thesisBuyCandidates(snap,new Set(weights.keys()),{minExpectedCAGR,maxRank,minMarketCap,excludeBiopharma,excludedTickers:excluded}).slice(0,vacancies);
-    for(const r of cands){
-      if(cash<=1e-9)break;
-      const target=thesisTargetWeight(r,{maxInitialWeight}),amt=Math.min(cash,target);
-      if(amt<.005)break;
-      weights.set(r.ticker,amt);entries.set(r.ticker,{...r,snapshotIndex:i,entryAsOf:snap.asOf});reviewState.set(r.ticker,{lowReturn:0,forecastWeak:0});cash-=amt;turnover+=amt;totalBuys++;buys.push(r.ticker);buyTrades.push({ticker:r.ticker,weight:amt,targetWeight:target,rank:r.rank,expectedCAGR:r.expectedCAGR});
+    const firstBatch=!initialized&&weights.size===0&&cands.length>0;
+    const rawTargets=cands.map(r=>thesisTargetWeight(r,{maxInitialWeight}));
+    const rawTotal=rawTargets.reduce((a,b)=>a+b,0);
+    const batchScale=firstBatch&&scaleInitialBatch&&rawTotal>0?Math.min(1,Math.max(0,initialDeploymentCap)/rawTotal):1;
+    for(let ci=0;ci<cands.length;ci++){
+      const r=cands[ci]; if(cash<=1e-9)break;
+      const target=rawTargets[ci]*batchScale;
+      const sector=sectorKey(r),sectorRoom=Number.isFinite(sectorPurchaseCap)?Math.max(0,sectorPurchaseCap-sectorWeight(sector)):cash;
+      const deploymentRoom=firstBatch?Math.max(0,initialDeploymentCap-(1-cash)):cash;
+      const amt=Math.min(cash,target,sectorRoom,deploymentRoom);
+      if(amt<.005)continue;
+      weights.set(r.ticker,amt);entries.set(r.ticker,{...r,snapshotIndex:i,entryAsOf:snap.asOf});reviewState.set(r.ticker,{lowReturn:0,forecastWeak:0});cash-=amt;turnover+=amt;totalBuys++;buys.push(r.ticker);buyTrades.push({ticker:r.ticker,weight:amt,targetWeight:target,rank:r.rank,expectedCAGR:r.expectedCAGR,sector});
     }
+    if(firstBatch)initialized=true;
     // A qualifying holding may be topped up toward today's justified target when cash is
-    // available, but never sold down to target. This allows conviction to affect sizing
-    // without creating mechanical rebalancing turnover.
-    const addable=dedupeEconomicSecurities([...weights.keys()].map(t=>rowMap.get(t)).filter(r=>r&&!excluded.has(r.ticker)&&thesisEntryEligible(r,{minExpectedCAGR,maxRank,minMarketCap,excludeBiopharma})).sort((a,b)=>(a.rank||Infinity)-(b.rank||Infinity)));
+    // available. Sector caps apply to purchases only; existing winners are not forcibly
+    // sold because their sector or stock weight later drifts higher.
+    const addable=firstBatch?[]:dedupeEconomicSecurities([...weights.keys()].map(t=>rowMap.get(t)).filter(r=>r&&!excluded.has(r.ticker)&&thesisEntryEligible(r,{minExpectedCAGR,maxRank,minMarketCap,excludeBiopharma})).sort((a,b)=>(a.rank||Infinity)-(b.rank||Infinity)));
     for(const r of addable){
       if(cash<=1e-9)break;
       const cur=weights.get(r.ticker)||0,target=thesisTargetWeight(r,{maxInitialWeight});
-      const amt=Math.min(cash,Math.max(0,target-cur));
-      if(amt>=.005){weights.set(r.ticker,cur+amt);cash-=amt;turnover+=amt;totalAdds++;adds.push(r.ticker);addTrades.push({ticker:r.ticker,weight:amt,targetWeight:target,rank:r.rank,expectedCAGR:r.expectedCAGR});}
+      const sector=sectorKey(r),sectorRoom=Number.isFinite(sectorPurchaseCap)?Math.max(0,sectorPurchaseCap-sectorWeight(sector)):cash;
+      const amt=Math.min(cash,Math.max(0,target-cur),sectorRoom);
+      if(amt>=.005){weights.set(r.ticker,cur+amt);cash-=amt;turnover+=amt;totalAdds++;adds.push(r.ticker);addTrades.push({ticker:r.ticker,weight:amt,targetWeight:target,rank:r.rank,expectedCAGR:r.expectedCAGR,sector});}
     }
+    const periodStartWeights=new Map(weights);
     const stockReturns=new Map(); let commonStart=null,commonEnd=null;
     for(const [t] of weights){const x=adjustedReturnBetween(historyByTicker.get(t)||[],snap.asOf,next.asOf,{executeAfterStart:true});if(x){stockReturns.set(t,x.return);commonStart=commonStart||x.startTradeDate;commonEnd=commonEnd||x.endTradeDate;}}
     const spy=adjustedReturnBetween(spyHistory,snap.asOf,next.asOf,{executeAfterStart:true});if(!spy)continue;
@@ -807,13 +844,15 @@ function simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{
     const cashActiveContribution=cash*(0-spy.return);
     if(endTotal>0){for(const [t,w] of weights)weights.set(t,w/endTotal);cash/=endTotal;}
     const transactionCost=turnover*(transactionCostBps/10000),portfolioReturn=grossReturn-transactionCost;
-    const risk=computeDailyRisk?dailyPortfolioRisk([...weights.keys()],snap.asOf,next.asOf,historyByTicker,spyHistory):null;
-    periods.push({asOf:snap.asOf,startDate:snap.asOf,endDate:next.asOf,startTradeDate:commonStart||spy.startTradeDate,endTradeDate:commonEnd||spy.endTradeDate,startYear:Number(snap.asOf.slice(0,4)),holdings:weights.size,tickers:[...weights.keys()],cashWeight:cash,grossReturn,portfolioReturn,spyReturn:spy.return,excessReturn:portfolioReturn-spy.return,turnover,transactionCost,transactionCostBps,buys,adds,rides,buyTrades,addTrades,sells,tickerContributions,cashActiveContribution,dailyMaxDrawdown:risk?.dailyMaxDrawdown??null});
+    const risk=computeDailyRisk?dailyPortfolioRisk(periodStartWeights,snap.asOf,next.asOf,historyByTicker,spyHistory):null;
+    const endSectorWeights={};for(const [t,w] of weights){const r=rowMap.get(t)||entries.get(t);const sk=String(r?.sector||'Unknown');endSectorWeights[sk]=(endSectorWeights[sk]||0)+w;}
+    const maxHoldingWeight=weights.size?Math.max(...weights.values()):0,maxSectorWeight=Object.keys(endSectorWeights).length?Math.max(...Object.values(endSectorWeights)):0;
+    periods.push({asOf:snap.asOf,startDate:snap.asOf,endDate:next.asOf,startTradeDate:commonStart||spy.startTradeDate,endTradeDate:commonEnd||spy.endTradeDate,startYear:Number(snap.asOf.slice(0,4)),holdings:weights.size,tickers:[...weights.keys()],cashWeight:cash,maxHoldingWeight,maxSectorWeight,sectorWeights:endSectorWeights,grossReturn,portfolioReturn,spyReturn:spy.return,excessReturn:portfolioReturn-spy.return,turnover,transactionCost,transactionCostBps,buys,adds,trims,rides,buyTrades,addTrades,sells,tickerContributions,cashActiveContribution,dailyMaxDrawdown:risk?.dailyMaxDrawdown??null});
   }
   const stats=portfolioStats(periods,{periodsPerYear:4});
   stats.dailyMaxDrawdown=periods.map(x=>x.dailyMaxDrawdown).filter(Number.isFinite).reduce((m,x)=>Math.min(m,x),0);
-  stats.averageTurnover=mean(periods.map(x=>x.turnover));stats.annualizedTurnover=stats.averageTurnover*4;stats.totalBuys=totalBuys;stats.totalAdds=totalAdds;stats.totalSells=totalSells;stats.totalThesisSells=totalThesisSells;stats.totalRotations=totalRotations;stats.totalRideReviews=totalRideReviews;stats.sellReasons=sellReasons;stats.averageClosedHoldingYears=closedHolds?holdingQuarterSum/closedHolds/4:null;stats.endingHoldings=weights.size;stats.endingCashWeight=cash;
-  return {name,topN,minExpectedCAGR,maxRank,minMarketCap,excludeBiopharma,sellExpectedCAGR,maxInitialWeight,rideMomentum,sellPolicy,lowReturnConfirmations,forecastConfirmations,rotationMinExpectedCAGR,transactionCostBps,reviewFrequency:FREQUENCY,philosophy:rideMomentum?'15pct_cagr_top25_sized_ride_winners':'15pct_cagr_top25_conviction_sized_buy_hold_loose',...stats};
+  stats.averageTurnover=mean(periods.map(x=>x.turnover));stats.annualizedTurnover=stats.averageTurnover*4;stats.averageCashWeight=mean(periods.map(x=>x.cashWeight));stats.maxObservedHoldingWeight=periods.length?Math.max(...periods.map(x=>x.maxHoldingWeight||0)):0;stats.maxObservedSectorWeight=periods.length?Math.max(...periods.map(x=>x.maxSectorWeight||0)):0;stats.totalBuys=totalBuys;stats.totalAdds=totalAdds;stats.totalTrims=totalTrims;stats.totalSells=totalSells;stats.totalThesisSells=totalThesisSells;stats.totalRotations=totalRotations;stats.totalRideReviews=totalRideReviews;stats.sellReasons=sellReasons;stats.averageClosedHoldingYears=closedHolds?holdingQuarterSum/closedHolds/4:null;stats.endingHoldings=weights.size;stats.endingCashWeight=cash;
+  return {name,topN,minExpectedCAGR,maxRank,minMarketCap,excludeBiopharma,sellExpectedCAGR,maxInitialWeight,rideMomentum,sellPolicy,lowReturnConfirmations,forecastConfirmations,rotationMinExpectedCAGR,transactionCostBps,initialDeploymentCap,sectorPurchaseCap,hardHoldingCap,scaleInitialBatch,reviewFrequency:FREQUENCY,philosophy:rideMomentum?'15pct_cagr_top25_sized_ride_winners':'15pct_cagr_top25_conviction_sized_buy_hold_loose',...stats};
 }
 
 function forwardCAGRFromSignal(history,startDate,years){
@@ -1108,13 +1147,27 @@ function buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory){
   ];
   for(const s of sellRotateChallengers){s.development=periodStats(s,2019,2021);s.validation=periodStats(s,2022,2025);s.sellDecisionAudit=buildSellDecisionAudit(s,historyByTicker,spyHistory);}
   const sellRotateLab={description:'Frozen v12.39 SELL-vs-ROTATE challenger. D is the unchanged v12.38 control. E permits only quality/protection thesis breaks. F also permits a forecast-weak holding to rotate only after two weak reviews, only after its expected CAGR falls below the 15% entry hurdle, and only when a different Top-25 >=15% expected-CAGR replacement exists. Low expected return or extreme valuation alone is never a SELL in E/F. No parameter search is performed.',developmentYears:'2019-2021',validationYears:'2022-2025',challengers:sellRotateChallengers};
+  // v12.40: one frozen real-world portfolio-construction challenger. The simple Top-10
+  // mechanical strategy is the control. The practical arm uses the already-validated
+  // v12.38 entry rank and strict-thesis ownership policy, but changes only construction:
+  // 12 slots, conviction/evidence sizing, 80% starter deployment, 30% sector purchase cap,
+  // additions only while the holding still clears the entry rule, and a 20% hard stock cap.
+  // No sector is forced into the portfolio and no position is trimmed back to its entry target.
+  const simplePortfolioControl=strategies.find(x=>x.name==='Top 10 · Alpha ≥10%')||strategies[0];
+  const practicalPortfolio=simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name:'B · Practical 12-stock owner portfolio',topN:12,minExpectedCAGR:.15,maxRank:25,sellExpectedCAGR:.06,maxInitialWeight:.10,rideMomentum:false,sellPolicy:'strict_thesis_only',forecastConfirmations:2,initialDeploymentCap:.80,sectorPurchaseCap:.30,hardHoldingCap:.20,scaleInitialBatch:true,transactionCostBps,computeDailyRisk:true});
+  practicalPortfolio.development=periodStats(practicalPortfolio,2019,2021);practicalPortfolio.validation=periodStats(practicalPortfolio,2022,2025);practicalPortfolio.sellDecisionAudit=buildSellDecisionAudit(practicalPortfolio,historyByTicker,spyHistory);
+  const portfolioConstructionLab={
+    description:'Frozen v12.40 portfolio-construction challenger. A is the existing equal-weight Top-10 Alpha>=10% quarterly rebalance. B uses the frozen v12.38 Model-D/Top-25 >=15% expected-CAGR entry rule plus strict-thesis ownership: 12 slots, confidence-aware conviction sizing, 80% initial deployment, 30% sector cap on purchases, 10% max initial stock size, 20% hard stock concentration cap, additions only while a holding still qualifies, no forced sector diversification, no rank-based rotation, and residual cash when opportunities are insufficient. No construction parameter search is performed.',
+    developmentYears:'2019-2021',validationYears:'2022-2025',
+    challengers:[simplePortfolioControl,practicalPortfolio]
+  };
   const parameterStability=buildParameterStability(snapshotOutput,historyByTicker,spyHistory,{transactionCostBps});
   const contributionRobustness=leaveWinnersOut(snapshotOutput,historyByTicker,spyHistory,primaryThesis,{transactionCostBps});
   return {
     description:`Chronological ${FREQUENCY} portfolio tests. Mechanical strategies rebalance each snapshot. The primary thesis strategy buys Top-25 names at >=15% expected CAGR, conviction-sizes them, and lets valuation-stretched winners keep running while their price momentum remains strong. The old hard <6% valuation exit is retained as a control. Trades execute after the snapshot and ${transactionCostBps} bp one-way costs are charged.`,
     thesisHoldRules:{buy:'Expected CAGR >=15% + overall rank <=25; the extra 20% MOS/Buy rating is not required',sizing:'Initial target 3/5/6/8/10% by rank bands, nudged +/-1 point by evidence; max initial size 10%. Existing winners are not trimmed back to target.',hold:'Do not sell merely because rank changes, a better-ranked stock appears, IWB membership changes, or model coverage is temporarily unavailable',rideWinner:'When expected CAGR falls below 6%, keep holding if 3M stock return is positive, 6M and 12M relative returns versus SPY are both positive, and at least one relative window leads SPY by >=5 points.',valuationSell:'Below 6% expected CAGR becomes a valuation warning. Sell only when the Ride Winner momentum test is not/ceases to be satisfied.',fundamentalSell:'Quality falls >=15 points to <60, protection falls >=20 points to <50, or forecast confidence <40; fundamental thesis breaks override momentum.',cash:'If no qualifying opportunity exists, residual capital remains in cash',reviewFrequency:FREQUENCY,shareClassRule:'Economically equivalent Alphabet share classes are mutually exclusive: if both GOOG and GOOGL qualify, only the better-ranked class may be purchased.'},
     robustness:{development:'2019-2021 review periods',validation:'2022-2025 review periods',survivorship:'Point-in-time IWB holdings are required for every historical snapshot. No current-watchlist fallback is permitted.',execution:'First trading day after each snapshot; no same-close execution.',transactionCosts:`${transactionCostBps} bp × one-way turnover.`},
-    strategies,thesisHoldStrategies,sellHoldLab,sellRotateLab,cohortStrategies,parameterStability,contributionRobustness
+    strategies,thesisHoldStrategies,sellHoldLab,sellRotateLab,portfolioConstructionLab,cohortStrategies,parameterStability,contributionRobustness
   };
 }
 
