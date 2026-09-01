@@ -1188,6 +1188,52 @@ function buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory){
   };
 }
 
+function compactPeriodStats(x){
+  if(!x||typeof x!=='object')return x||null;
+  const keys=['periodCount','yearCount','portfolioCAGR','spyCAGR','annualizedExcess','cumulativeReturn','spyCumulativeReturn','annualVolatility','periodEndMaxDrawdown','yearEndMaxDrawdown','dailyMaxDrawdown','spyDailyMaxDrawdown','beatSpyRate','positivePeriodRate','positiveYearRate','averageHoldings','averageCashWeight','averageTurnover','annualizedTurnover','finalWealth10k','spyFinalWealth10k','maxObservedStockWeight','maxObservedSectorWeight','totalBuys','totalAdds','totalSells','totalThesisSells','totalRotations','totalHardCapTrims','totalTransactionCost'];
+  return Object.fromEntries(keys.filter(k=>x[k]!==undefined).map(k=>[k,x[k]]));
+}
+function compactStrategy(x){
+  if(!x||typeof x!=='object')return null;
+  const configKeys=['name','topN','minAlpha','minExpectedCAGR','maxRank','sellExpectedCAGR','maxInitialWeight','initialDeploymentCap','sectorPurchaseCap','hardHoldingCap','sellPolicy','transactionCostBps','reviewFrequency','philosophy'];
+  const out=Object.fromEntries(configKeys.filter(k=>x[k]!==undefined).map(k=>[k,x[k]]));
+  Object.assign(out,compactPeriodStats(x));
+  if(x.development)out.development=compactPeriodStats(x.development);
+  if(x.validation)out.validation=compactPeriodStats(x.validation);
+  if(x.sellReasons)out.sellReasons=x.sellReasons;
+  if(x.sellDecisionAudit){
+    const a=x.sellDecisionAudit;
+    out.sellDecisionAudit={};
+    for(const k of ['sellCount','auditedSells','missedWinnerRate','meanSoldVsSpy','meanReplacementVsSold','medianSoldVsSpy','medianReplacementVsSold','byHorizon'])if(a[k]!==undefined)out.sellDecisionAudit[k]=a[k];
+  }
+  return out;
+}
+function compactLab(lab){
+  if(!lab||typeof lab!=='object')return lab||null;
+  const out={};
+  for(const k of ['description','developmentYears','validationYears'])if(lab[k]!==undefined)out[k]=lab[k];
+  if(Array.isArray(lab.challengers))out.challengers=lab.challengers.map(compactStrategy);
+  return out;
+}
+function buildBacktestSummary(output){
+  const p=output.portfolioSimulation||{};
+  return {
+    generatedAt:output.generatedAt,modelVersion:output.modelVersion,backtestMode:output.backtestMode,frequency:output.frequency,
+    requestedStartYear:output.requestedStartYear,startYear:output.startYear,effectiveStartYear:output.effectiveStartYear,effectiveStartDate:output.effectiveStartDate,endYear:output.endYear,
+    assumptions:output.assumptions,observations:output.observations,historicalUniverse:output.historicalUniverse,diagnostics:output.diagnostics,
+    summary1Y:output.summary1Y,summary3Y:output.summary3Y,summary5Y:output.summary5Y,
+    challengerLab:output.challengerLab,
+    portfolioSimulation:{
+      description:p.description,thesisHoldRules:p.thesisHoldRules,robustness:p.robustness,
+      strategies:(p.strategies||[]).map(compactStrategy),thesisHoldStrategies:(p.thesisHoldStrategies||[]).map(compactStrategy),
+      sellHoldLab:compactLab(p.sellHoldLab),sellRotateLab:compactLab(p.sellRotateLab),portfolioConstructionLab:compactLab(p.portfolioConstructionLab),
+      cohortStrategies:(p.cohortStrategies||[]).map(x=>({name:x.name,cohortCount:x.cohortCount,meanPortfolioReturn:x.meanPortfolioReturn,meanSpyReturn:x.meanSpyReturn,meanExcess:x.meanExcess,beatSpyRate:x.beatSpyRate})),
+      parameterStability:p.parameterStability?{description:p.parameterStability.description,portfolioSizes:p.parameterStability.portfolioSizes,cagrGates:p.parameterStability.cagrGates,rankCaps:p.parameterStability.rankCaps,cellCount:p.parameterStability.cellCount,positiveValidationRate:p.parameterStability.positiveValidationRate,medianValidationExcess:p.parameterStability.medianValidationExcess}:null,
+      contributionRobustness:p.contributionRobustness
+    }
+  };
+}
+
 function buildSignalAnalysis(rows){
   const horizons=[1,3,5];
   const metrics=['expectedAlpha','investmentScore','qualityScore','moatScore','capitalAllocationScore','compounderScore','growthQualityScore','pricingPowerScore','protectionScore','forecastConfidence','valuationConfidence','marginOfSafety'];
@@ -1277,7 +1323,9 @@ async function main(){
     observations:flat.length,historicalUniverse:{provider:historicalUniverse.provider||'SEC N-PORT / IWB',coverage:historicalUniverse.coverage,uniqueTickers:historicalUniverse.union.length,note:'Point-in-time IWB membership is required for every snapshot. SEC N-PORT supplies historical CUSIPs; OpenFIGI maps those CUSIPs to historical/current equity symbols. No current-watchlist membership fallback is permitted. Residual bias can remain for identifiers OpenFIGI cannot resolve or price histories unavailable from free sources.'},diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YTotalReturnCAGR'),summary3Y:summarize(flat,'realized3YTotalReturnCAGR'),summary5Y:summarize(flat,'realized5YTotalReturnCAGR'),signalAnalysis:buildSignalAnalysis(flat),predictivePowerLab:buildPredictivePowerLab(flat,1),challengerLab:buildChallengerLab(flat,1),portfolioSimulation:buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory),errors:errors.slice(0,500),snapshots:snapshotOutput
   };
   const p=path.join(__dirname,'data','backtest-results.json'),tmp=p+'.tmp';fs.writeFileSync(tmp,JSON.stringify(output));fs.renameSync(tmp,p);
+  const summary=buildBacktestSummary(output),sp=path.join(__dirname,'data','backtest-summary.json'),stmp=sp+'.tmp';fs.writeFileSync(stmp,JSON.stringify(summary,null,2));fs.renameSync(stmp,sp);
   console.log(`Done. Wrote ${flat.length} historical observations to data/backtest-results.json.`);
+  console.log(`Wrote compact analysis output to data/backtest-summary.json (${(fs.statSync(sp).size/1024).toFixed(1)} KiB).`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
 module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,contributionConcentration,leaveWinnersOut,buildParameterStability,monotonicitySummary,buildScoreGeneralization,buildPredictivePowerLab,buildPortfolioSimulation,economicSecurityGroup,dedupeEconomicSecurities};
