@@ -2,11 +2,11 @@
 
 // v12.38 live ranking architecture.
 // The backtest challenger was frozen before promotion and showed that, once Expected
-// Alpha >= 10%, a simple 50/50 blend of Expected Alpha percentile and an equal-weight
+// Alpha >= 5% on the new 15% hurdle scale (same >=20% expected-CAGR gate), a simple 50/50 blend of Expected Alpha percentile and an equal-weight
 // Quality/Moat/Growth-Quality/Compounder percentile basket generalized better than the
 // v12.37 hierarchical score. This module implements that exact cross-sectional rule.
 
-const ALPHA_GATE = 0.10;
+const ALPHA_GATE = 0.05;
 
 function finite(v){
   const n=Number(v);
@@ -38,8 +38,8 @@ function qualityValue(row,key){
   return finite(row[key]);
 }
 
-function buildModelDScores(rows){
-  const eligible=(rows||[]).filter(r=>(finite(r.expectedAlpha)??-Infinity)>=ALPHA_GATE);
+function buildModelDScores(rows,{alphaGate=ALPHA_GATE}={}){
+  const eligible=(rows||[]).filter(r=>(finite(r.expectedAlpha)??-Infinity)>=alphaGate);
   if(!eligible.length) return eligible;
 
   const alpha=percentileRanks(eligible.map(r=>r.expectedAlpha));
@@ -84,14 +84,14 @@ function compareRank(a,b){
   return String(a.ticker||'').localeCompare(String(b.ticker||''));
 }
 
-function applyModelDRanking(rows,{rankField='overallRank',universeSizeField='globalUniverseSize'}={}){
+function applyModelDRanking(rows,{rankField='overallRank',universeSizeField='globalUniverseSize',alphaGate=ALPHA_GATE}={}){
   for(const r of rows||[]){
     r.rankEligible=false;
     r.rankScore=null;
     r.rankAlphaPercentile=null;
     r.rankQualityBasketPercentile=null;
   }
-  buildModelDScores(rows||[]);
+  buildModelDScores(rows||[],{alphaGate});
   const sorted=[...(rows||[])].sort(compareRank);
   sorted.forEach((r,i)=>{r[rankField]=i+1;});
   if(universeSizeField) for(const r of rows||[]) r[universeSizeField]=(rows||[]).length;

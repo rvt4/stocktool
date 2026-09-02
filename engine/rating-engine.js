@@ -1,5 +1,5 @@
 'use strict';
-const { clamp }=require('./config');
+const { clamp, INVESTOR_ALPHA_HURDLE }=require('./config');
 
 function requiredMOS(){return .20;}
 
@@ -86,7 +86,7 @@ function rateStock(stock,forecast,quality,v){
     meetsInvestorBuyPrice:meetsFinalBuyPrice,
     meetsHurdlePrice,
     evidenceScore,
-    expectedAlpha:Number.isFinite(c)?c-.10:null
+    expectedAlpha:Number.isFinite(c)?c-INVESTOR_ALPHA_HURDLE:null
   };
 }
 module.exports={rateStock,requiredMOS};

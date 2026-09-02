@@ -3,7 +3,7 @@
 function finite(v){const n=Number(v);return Number.isFinite(n)?n:null;}
 function mean(xs){return xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null;}
 
-function thesisEntryEligible(r,{minExpectedCAGR=.15,maxRank=25}={}){
+function thesisEntryEligible(r,{minExpectedCAGR=.20,maxRank=25}={}){
   const c=finite(r?.expectedCAGR??r?.expectedReturn);
   const rank=finite(r?.rank??r?.overallRank);
   return c!=null&&c>=minExpectedCAGR&&rank!=null&&rank<=maxRank&&String(r?.modelSupport||'')!=='unsupported';
@@ -29,7 +29,7 @@ function isStrongWinnerMomentum(momentum){
   return stock3!=null&&stock3>0&&rel6!=null&&rel6>0&&rel12!=null&&rel12>0&&(rel6>=.05||rel12>=.05);
 }
 
-function livePortfolioGuidance(r,momentum,{minExpectedCAGR=.15,maxRank=25,sellExpectedCAGR=.06,maxInitialWeight=.10}={}){
+function livePortfolioGuidance(r,momentum,{minExpectedCAGR=.20,maxRank=25,sellExpectedCAGR=.06,maxInitialWeight=.10}={}){
   const c=finite(r?.expectedCAGR??r?.expectedReturn);
   const forecast=finite(r?.forecastConfidence??r?.forecastReliabilityScore??r?.forecastConfidenceScore);
   const supported=String(r?.modelSupport||'')!=='unsupported';
