@@ -114,7 +114,7 @@ function renderBacktestSummary(r){
  latestBacktest=r;
  const lab=r?.longTermOwnerLab;
  const el=$('backtest');
- if(!lab){el.hidden=false;el.innerHTML='<b>Long-Term Owner Backtest</b><div class="owner-empty">No v12.41 longTermOwnerLab found. Run the updated Historical Backtest first.</div>';return}
+ if(!lab){el.hidden=false;el.innerHTML='<b>Long-Term Owner Backtest</b><div class="owner-empty">No v12.42 longTermOwnerLab found. Run the updated Historical Backtest first.</div>';return}
  const y3=lab.horizons?.['3Y']?.overall||{}, y5=lab.horizons?.['5Y']?.overall||{}, f3=lab.fixedHold15?.['3Y']||{}, f5=lab.fixedHold15?.['5Y']||{};
  const tickerName=t=>window.tickerMap?.get(String(t).toUpperCase())?.name||t;
  const cohortBlock=(horizon)=>{
@@ -125,15 +125,33 @@ function renderBacktestSummary(r){
    return `<div class="owner-controls"><label>Historical starting portfolio: <select class="cohort-select" data-years="${years}">${options}</select></label></div>${cohortHtml}`;
  };
  el.hidden=false;
- el.innerHTML=`<div class="owner-title"><div><h2>v12.41 Long-Term Owner Backtest</h2><div class="muted">${esc(r.effectiveStartDate||r.startYear)}–${esc(r.endYear)} · ${esc(r.frequency||'quarterly')} snapshots · ${r.observations||0} modeled observations</div></div><div><span class="owner-pill">${esc(r.modelVersion||'')}</span></div></div>
- <div class="owner-rule"><b>What this tests:</b> buy up to 15 of the highest-ranked stocks with Rank ≤25, Alpha ≥10% and Expected CAGR ≥15%, then hold the original basket unchanged for 3 or 5 years. <b>There are no rank-based sells in v12.41.</b> A blank Sold column therefore means the stock was not sold by this test; the checkpoint is a measurement date, not a sell order.</div>
+ el.innerHTML=`<div class="owner-title"><div><h2>v12.42 Long-Term Owner + Robustness Audit</h2><div class="muted">${esc(r.effectiveStartDate||r.startYear)}–${esc(r.endYear)} · ${esc(r.frequency||'quarterly')} snapshots · ${r.observations||0} modeled observations</div></div><div><span class="owner-pill">${esc(r.modelVersion||'')}</span></div></div>
+ <div class="owner-rule"><b>What this tests:</b> buy up to 15 of the highest-ranked stocks with Rank ≤25, Alpha ≥10% and Expected CAGR ≥15%, then hold the original basket unchanged for 3 or 5 years. <b>There are no rank-based sells in this owner test.</b> A blank Sold column therefore means the stock was not sold by this test; the checkpoint is a measurement date, not a sell order.</div>
  <div class="owner-kpis"><div class="owner-kpi"><small>5Y 15-stock CAGR</small><b class="${cls(f5.meanPortfolioCAGR)}">${fmtPct(f5.meanPortfolioCAGR)}</b></div><div class="owner-kpi"><small>5Y SPY CAGR</small><b>${fmtPct(f5.meanSpyCAGR)}</b></div><div class="owner-kpi"><small>5Y excess</small><b class="${cls(f5.meanExcessCAGR)}">${fmtPct(f5.meanExcessCAGR)}</b></div><div class="owner-kpi"><small>5Y cohorts beating SPY</small><b>${fmtPct(f5.beatSpyRate,0)}</b></div><div class="owner-kpi"><small>Individual 5Y beat rate</small><b>${fmtPct(y5.beatSpyRate,0)}</b></div><div class="owner-kpi"><small>Individual 5Y median CAGR</small><b>${fmtPct(y5.medianStockCAGR)}</b></div></div>
  <div class="owner-note"><b>3-year check:</b> ${fmtPct(f3.meanPortfolioCAGR)} portfolio CAGR vs ${fmtPct(f3.meanSpyCAGR)} SPY (${fmtPct(f3.meanExcessCAGR)} excess; ${fmtPct(f3.beatSpyRate,0)} of cohorts beat SPY). <b>5-year check:</b> ${fmtPct(f5.meanPortfolioCAGR)} vs ${fmtPct(f5.meanSpyCAGR)} (${fmtPct(f5.meanExcessCAGR)} excess; ${fmtPct(f5.beatSpyRate,0)} beat SPY). Individual qualifying stocks: ${y3.n||0} completed 3Y observations and ${y5.n||0} completed 5Y observations.</div>
  <details class="bt-more" open><summary>5-year historical portfolios</summary>${cohortBlock('5Y')}</details>
  <details class="bt-more"><summary>3-year historical portfolios</summary>${cohortBlock('3Y')}</details>
+ <details class="bt-more" open><summary>Robustness & independence audit</summary>${robustnessBreakdown(lab)}</details>
  <details class="bt-more"><summary>Long-term results by style, rank and Alpha</summary>${longTermBreakdown(lab)}</details>`;
  el.querySelectorAll('.cohort-select').forEach(sel=>sel.addEventListener('change',()=>{const years=sel.dataset.years;el.querySelectorAll('.cohort-'+years).forEach((x,i)=>x.hidden=i!==Number(sel.value))}));
 }
+function robustnessBreakdown(lab){
+ const a=lab?.robustnessAudit||{};
+ const block=(label,x)=>{
+   if(!x)return '';
+   const n=x.nonOverlapping||{},u=x.firstSignalPerSecurity||{},r=x.recurrence||{},w=x.winnerRemoval||{},sb=x.securityBootstrap||{},cb=x.startYearClusterBootstrap||{};
+   const recurring=(r.mostRecurring||[]).map(z=>`${esc(z.security)} ${fmtPct(z.slotShare,0)}`).join(' · ');
+   const regimes=(x.regimeSlices||[]).map(z=>`<tr><td>${esc(z.period)}</td><td>${z.cohortCount||0}</td><td>${fmtPct(z.meanPortfolioCAGR)}</td><td>${fmtPct(z.meanSpyCAGR)}</td><td class="${cls(z.meanExcessCAGR)}">${fmtPct(z.meanExcessCAGR)}</td><td>${fmtPct(z.beatSpyRate,0)}</td></tr>`).join('');
+   return `<h3 class="bt-subhead">${esc(label)} robustness</h3>
+   <div class="owner-kpis"><div class="owner-kpi"><small>Non-overlap cohorts</small><b>${n.count??0}</b></div><div class="owner-kpi"><small>Non-overlap excess</small><b class="${cls(n.meanExcessCAGR)}">${fmtPct(n.meanExcessCAGR)}</b></div><div class="owner-kpi"><small>Unique first signals</small><b>${u.uniqueSecurities??u.n??0}</b></div><div class="owner-kpi"><small>First-signal beat SPY</small><b>${fmtPct(u.beatSpyRate,0)}</b></div><div class="owner-kpi"><small>Top-5 slot share</small><b>${fmtPct(r.top5SlotShare,0)}</b></div><div class="owner-kpi"><small>Top-10 slot share</small><b>${fmtPct(r.top10SlotShare,0)}</b></div></div>
+   <div class="owner-note"><b>Winner dependence:</b> full portfolio ${fmtPct(w.full?.meanCAGR)} CAGR / ${fmtPct(w.full?.meanExcess)} excess; remove each cohort's best stock → ${fmtPct(w.removeBest1?.meanCAGR)} / ${fmtPct(w.removeBest1?.meanExcess)}; remove best 3 → ${fmtPct(w.removeBest3?.meanCAGR)} / ${fmtPct(w.removeBest3?.meanExcess)}. <b>Recurring names:</b> ${recurring||'—'}.</div>
+   <div class="owner-note"><b>Unique-security bootstrap:</b> mean excess ${fmtPct(sb.meanExcess)}, 95% interval ${fmtPct(sb.ci95Low)} to ${fmtPct(sb.ci95High)}, ${fmtPct(sb.probabilityMeanExcessPositive,0)} of resamples positive. <b>Start-year cluster bootstrap:</b> ${cb.startYearBlocks??0} year blocks, 95% interval ${fmtPct(cb.ci95Low)} to ${fmtPct(cb.ci95High)}. These intervals quantify sampling uncertainty; they do not create pre-2019 regimes.</div>
+   <div class="bt-scroll"><table class="owner-table"><thead><tr><th>Start regime</th><th>Cohorts</th><th>Portfolio CAGR</th><th>SPY CAGR</th><th>Excess</th><th>Beat SPY</th></tr></thead><tbody>${regimes}</tbody></table></div>`;
+ };
+ if(!a['3Y']&&!a['5Y'])return '<div class="owner-empty">No robustness audit found. Run the v12.42 Historical Backtest.</div>';
+ return `<div class="owner-rule"><b>How to read this:</b> the stock-selection rule is frozen. This section asks whether the result survives duplicate-name removal, overlapping-cohort correction, winner removal, and coarse time-block uncertainty. It does not optimize any thresholds.</div>${block('5-year',a['5Y'])}${block('3-year',a['3Y'])}`;
+}
+
 function longTermBreakdown(lab){
  const h=lab?.horizons?.['5Y']||{};
  const mini=(title,rows)=>`<h3 class="bt-subhead">${esc(title)}</h3><div class="bt-scroll"><table class="owner-table"><thead><tr><th>Group</th><th>N</th><th>Mean CAGR</th><th>Median CAGR</th><th>Excess CAGR</th><th>Beat SPY</th><th>≥15% CAGR</th><th>Loss rate</th></tr></thead><tbody>${(rows||[]).map(x=>`<tr><td>${esc(x.bucket)}</td><td>${x.n??0}</td><td>${fmtPct(x.meanStockCAGR)}</td><td>${fmtPct(x.medianStockCAGR)}</td><td class="${cls(x.meanExcessCAGR)}">${fmtPct(x.meanExcessCAGR)}</td><td>${fmtPct(x.beatSpyRate,0)}</td><td>${fmtPct(x.hit15CAGRRate,0)}</td><td>${fmtPct(x.lossRate,0)}</td></tr>`).join('')}</tbody></table></div>`;

@@ -34,7 +34,7 @@ const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 
-const MODEL_VERSION='simple-v12.41-long-term-owner-lab';
+const MODEL_VERSION='simple-v12.42-owner-robustness-audit';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -1133,6 +1133,20 @@ function longTermOwnerGrouped(rows,keyFn,horizon){
   for(const r of rows||[]){const k=keyFn(r);if(k==null||k==='')continue;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r);}
   return [...groups.entries()].map(([bucket,rs])=>({bucket,...longTermOwnerOutcomeStats(rs,horizon)}));
 }
+function equalWeightFixedHoldCAGR(rows,horizon){
+  const f=`realized${horizon}YTotalReturnCAGR`;
+  const vals=(rows||[]).map(r=>r[f]).filter(Number.isFinite);
+  if(!vals.length)return null;
+  // Exact equal-weight buy-and-hold terminal wealth, then annualize. Arithmetic
+  // averaging of individual CAGRs is not the same thing as portfolio CAGR.
+  const terminal=mean(vals.map(x=>Math.pow(Math.max(0,1+x),horizon)));
+  return terminal>=0?Math.pow(terminal,1/horizon)-1:null;
+}
+function cohortSpyCAGR(rows,horizon){
+  const f=`spy${horizon}YTotalReturnCAGR`;
+  const vals=(rows||[]).map(r=>r[f]).filter(Number.isFinite);
+  return vals.length?mean(vals):null;
+}
 function fixedHoldCohorts(snapshotOutput,{topN=15,minAlpha=.10,minExpectedCAGR=.15,maxRank=25,horizons=[3,5]}={}){
   const out={};
   for(const horizon of horizons){
@@ -1141,18 +1155,77 @@ function fixedHoldCohorts(snapshotOutput,{topN=15,minAlpha=.10,minExpectedCAGR=.
       const eligible=dedupeEconomicSecurities((snap.rows||[]).filter(r=>Number.isFinite(r.expectedAlpha)&&r.expectedAlpha>=minAlpha&&Number.isFinite(r.expectedCAGR)&&r.expectedCAGR>=minExpectedCAGR&&Number.isFinite(r.rank)&&r.rank<=maxRank&&String(r.modelSupport||'')!=='unsupported').sort((a,b)=>a.rank-b.rank)).slice(0,topN);
       const valid=eligible.filter(r=>Number.isFinite(r[`realized${horizon}YTotalReturnCAGR`])&&Number.isFinite(r[`spy${horizon}YTotalReturnCAGR`]));
       if(!valid.length)continue;
-      const stockCAGR=mean(valid.map(r=>r[`realized${horizon}YTotalReturnCAGR`]));
-      const spyCAGR=mean(valid.map(r=>r[`spy${horizon}YTotalReturnCAGR`]));
-      cohorts.push({asOf:snap.asOf,holdings:valid.length,stockCAGR,spyCAGR,excessCAGR:stockCAGR-spyCAGR,beatSpy:stockCAGR>spyCAGR,hit15:stockCAGR>=.15,tickers:valid.map(r=>r.ticker)});
+      const stockCAGR=equalWeightFixedHoldCAGR(valid,horizon);
+      const spyCAGR=cohortSpyCAGR(valid,horizon);
+      cohorts.push({asOf:snap.asOf,holdings:valid.length,stockCAGR,spyCAGR,excessCAGR:stockCAGR-spyCAGR,beatSpy:stockCAGR>spyCAGR,hit15:stockCAGR>=.15,tickers:valid.map(r=>r.ticker),members:valid.map(r=>({ticker:r.ticker,cagr:r[`realized${horizon}YTotalReturnCAGR`]}))});
     }
     out[`${horizon}Y`]={horizonYears:horizon,cohortCount:cohorts.length,meanHoldings:mean(cohorts.map(x=>x.holdings)),meanPortfolioCAGR:mean(cohorts.map(x=>x.stockCAGR)),medianPortfolioCAGR:median(cohorts.map(x=>x.stockCAGR)),meanSpyCAGR:mean(cohorts.map(x=>x.spyCAGR)),meanExcessCAGR:mean(cohorts.map(x=>x.excessCAGR)),medianExcessCAGR:median(cohorts.map(x=>x.excessCAGR)),beatSpyRate:cohorts.length?cohorts.filter(x=>x.beatSpy).length/cohorts.length:null,hit15CAGRRate:cohorts.length?cohorts.filter(x=>x.hit15).length/cohorts.length:null,cohorts};
   }
   return out;
 }
+function nonOverlappingCohorts(cohorts,horizon){
+  const sorted=[...(cohorts||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf)));
+  const out=[];let nextAllowed='0000-00-00';
+  for(const c of sorted){if(String(c.asOf)<nextAllowed)continue;out.push(c);nextAllowed=addYears(c.asOf,horizon);}
+  return {count:out.length,starts:out.map(x=>x.asOf),meanPortfolioCAGR:mean(out.map(x=>x.stockCAGR)),meanSpyCAGR:mean(out.map(x=>x.spyCAGR)),meanExcessCAGR:mean(out.map(x=>x.excessCAGR)),beatSpyRate:out.length?out.filter(x=>x.beatSpy).length/out.length:null};
+}
+function firstSignalPerSecurity(rows,horizon){
+  const f=`realized${horizon}YTotalReturnCAGR`,sf=`spy${horizon}YTotalReturnCAGR`,ef=`excess${horizon}YTotalReturnCAGR`;
+  const seen=new Set(),chosen=[];
+  for(const r of [...(rows||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf))||a.rank-b.rank)){
+    const g=economicSecurityGroup(r.ticker);if(seen.has(g)||!Number.isFinite(r[f])||!Number.isFinite(r[sf])||!Number.isFinite(r[ef]))continue;
+    seen.add(g);chosen.push(r);
+  }
+  return {uniqueSecurities:chosen.length,...longTermOwnerOutcomeStats(chosen,horizon)};
+}
+function recurrenceAudit(cohorts){
+  const counts=new Map(),total=(cohorts||[]).reduce((a,c)=>a+(c.tickers||[]).length,0);
+  for(const c of cohorts||[])for(const t of c.tickers||[]){const g=economicSecurityGroup(t);counts.set(g,(counts.get(g)||0)+1);}
+  const ranked=[...counts.entries()].sort((a,b)=>b[1]-a[1]);
+  const share=n=>total?ranked.slice(0,n).reduce((a,x)=>a+x[1],0)/total:null;
+  return {totalPortfolioSlots:total,uniqueEconomicSecurities:ranked.length,top5SlotShare:share(5),top10SlotShare:share(10),mostRecurring:ranked.slice(0,10).map(([security,appearances])=>({security,appearances,slotShare:total?appearances/total:null}))};
+}
+function winnerRemovalAudit(cohorts,horizon){
+  const calc=(c,removeN)=>{
+    const ms=[...(c.members||[])].sort((a,b)=>b.cagr-a.cagr).slice(removeN);
+    if(!ms.length)return null;
+    const terminal=mean(ms.map(x=>Math.pow(Math.max(0,1+x.cagr),horizon)));
+    return Math.pow(terminal,1/horizon)-1;
+  };
+  const rows=(cohorts||[]).map(c=>({asOf:c.asOf,full:c.stockCAGR,minusTop1:calc(c,1),minusTop3:calc(c,3),spy:c.spyCAGR}));
+  const summarize=k=>({meanCAGR:mean(rows.map(x=>x[k]).filter(Number.isFinite)),meanExcess:mean(rows.filter(x=>Number.isFinite(x[k])&&Number.isFinite(x.spy)).map(x=>x[k]-x.spy)),beatSpyRate:rows.length?rows.filter(x=>Number.isFinite(x[k])&&x[k]>x.spy).length/rows.filter(x=>Number.isFinite(x[k])).length:null});
+  return {cohortCount:rows.length,full:summarize('full'),removeBest1:summarize('minusTop1'),removeBest3:summarize('minusTop3')};
+}
+function makeRng(seed=1242){let x=seed>>>0;return()=>{x=(1664525*x+1013904223)>>>0;return x/4294967296;};}
+function percentile(xs,p){const a=xs.filter(Number.isFinite).sort((x,y)=>x-y);if(!a.length)return null;const i=(a.length-1)*p,lo=Math.floor(i),hi=Math.ceil(i);return lo===hi?a[lo]:a[lo]+(a[hi]-a[lo])*(i-lo);}
+function securityBootstrap(firstRows,horizon,reps=5000){
+  const ef=`excess${horizon}YTotalReturnCAGR`,vals=(firstRows||[]).map(r=>r[ef]).filter(Number.isFinite);if(!vals.length)return {n:0};
+  const rng=makeRng(1242+horizon),means=[];
+  for(let b=0;b<reps;b++){let z=0;for(let i=0;i<vals.length;i++)z+=vals[Math.floor(rng()*vals.length)];means.push(z/vals.length);}
+  return {n:vals.length,reps,meanExcess:mean(vals),ci95Low:percentile(means,.025),ci95High:percentile(means,.975),probabilityMeanExcessPositive:means.filter(x=>x>0).length/means.length,note:'Resamples unique economic securities from their first qualifying signal. This addresses repeated-name inflation but does not create missing historical market regimes.'};
+}
+function startYearClusterBootstrap(cohorts,reps=5000){
+  const groups=new Map();for(const c of cohorts||[]){const y=String(c.asOf).slice(0,4);if(!groups.has(y))groups.set(y,[]);groups.get(y).push(c.excessCAGR);}
+  const blocks=[...groups.entries()].map(([year,x])=>({year,meanExcess:mean(x)}));if(!blocks.length)return {startYearBlocks:0};
+  const rng=makeRng(4200+blocks.length),means=[];
+  for(let b=0;b<reps;b++){let z=0;for(let i=0;i<blocks.length;i++)z+=blocks[Math.floor(rng()*blocks.length)].meanExcess;means.push(z/blocks.length);}
+  return {startYearBlocks:blocks.length,years:blocks.map(x=>x.year),reps,meanBlockExcess:mean(blocks.map(x=>x.meanExcess)),ci95Low:percentile(means,.025),ci95High:percentile(means,.975),probabilityMeanExcessPositive:means.filter(x=>x>0).length/means.length,note:'Cluster bootstrap over calendar start years. With very few completed 5Y start-year blocks, this interval is intentionally coarse and should not be treated as a full regime-robust confidence interval.'};
+}
+function regimeSlice(cohorts){
+  const groups=[['2019-2020',c=>Number(String(c.asOf).slice(0,4))<=2020],['2021',c=>String(c.asOf).startsWith('2021')],['2022+',c=>Number(String(c.asOf).slice(0,4))>=2022]];
+  return groups.map(([label,fn])=>{const x=(cohorts||[]).filter(fn);return {period:label,cohortCount:x.length,meanPortfolioCAGR:mean(x.map(c=>c.stockCAGR)),meanSpyCAGR:mean(x.map(c=>c.spyCAGR)),meanExcessCAGR:mean(x.map(c=>c.excessCAGR)),beatSpyRate:x.length?x.filter(c=>c.beatSpy).length/x.length:null};});
+}
+function buildOwnerRobustnessAudit(eligible,fixedHold15){
+  const out={description:'v12.42 independence/robustness audit of the frozen v12.41 owner selection rule. No ranking, Alpha, CAGR, or entry thresholds are retuned.',methodologyNotes:['Fixed-hold portfolio CAGR uses exact equal-weight terminal wealth, not the arithmetic mean of member CAGRs.','Non-overlapping cohorts expose how little independent time evidence is available.','First-signal analysis counts each economic security once.','Winner-removal tests ask whether results survive without the strongest holdings.','Bootstraps quantify sampling uncertainty but cannot manufacture pre-2019 market regimes.']};
+  for(const h of [3,5]){
+    const key=`${h}Y`,cohorts=fixedHold15?.[key]?.cohorts||[];
+    const seen=new Set(),first=[];
+    for(const r of [...eligible].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf))||a.rank-b.rank)){const g=economicSecurityGroup(r.ticker);if(seen.has(g)||!Number.isFinite(r[`excess${h}YTotalReturnCAGR`]))continue;seen.add(g);first.push(r);}
+    out[key]={nonOverlapping:nonOverlappingCohorts(cohorts,h),firstSignalPerSecurity:firstSignalPerSecurity(eligible,h),recurrence:recurrenceAudit(cohorts),winnerRemoval:winnerRemovalAudit(cohorts,h),securityBootstrap:securityBootstrap(first,h),startYearClusterBootstrap:startYearClusterBootstrap(cohorts),regimeSlices:regimeSlice(cohorts)};
+  }
+  return out;
+}
 function buildLongTermOwnerLab(rows,snapshotOutput){
-  // Frozen v12.41 test built around the intended use case: buy only unusually
-  // attractive names, then judge the original purchase over multi-year horizons.
-  // No quarterly rank-based selling is simulated here.
   const eligible=(rows||[]).filter(r=>Number.isFinite(r.expectedAlpha)&&r.expectedAlpha>=.10&&Number.isFinite(r.expectedCAGR)&&r.expectedCAGR>=.15&&Number.isFinite(r.rank)&&r.rank<=25&&String(r.modelSupport||'')!=='unsupported');
   const horizons={};
   for(const h of [1,3,5]){
@@ -1165,13 +1238,13 @@ function buildLongTermOwnerLab(rows,snapshotOutput){
       byDividend:longTermOwnerGrouped(eligible,r=>(finite(r.dividendYield)||0)>=.03?'Yield >=3%':(finite(r.dividendYield)||0)>=.01?'Yield 1-3%':'Yield <1%',h)
     };
   }
+  const fixedHold15=fixedHoldCohorts(snapshotOutput,{topN:15,minAlpha:.10,minExpectedCAGR:.15,maxRank:25,horizons:[3,5]});
   return {
-    description:'Frozen v12.41 long-term-owner test. Entry requires live Model-D rank <=25, expected Alpha >=10%, expected CAGR >=15%, and supported valuation. Outcomes are measured from the original purchase signal with no rank-based selling. Fixed-hold cohorts take up to the 15 best eligible economic securities at each snapshot, equal-weight them conceptually, and hold unchanged for 3 or 5 years. This tests whether StockTool identifies businesses worth owning for years rather than optimizing quarterly turnover.',
+    description:'Frozen long-term-owner test. Entry requires live Model-D rank <=25, expected Alpha >=10%, expected CAGR >=15%, and supported valuation. Outcomes are measured from the original purchase signal with no rank-based selling. Fixed-hold cohorts take up to the 15 best eligible economic securities at each snapshot, equal-weight them, and hold unchanged for 3 or 5 years.',
     intendedUse:'Approximately 15 growth/value/dividend holdings; high hurdle to buy; 5+ year ownership intent; quarterly thesis review; rank changes alone are not a sell signal.',
     entryRule:{maxRank:25,minExpectedAlpha:.10,minExpectedCAGR:.15,modelSupport:'supported_or_limited',portfolioTarget:15},
-    eligibleObservations:eligible.length,
-    horizons,
-    fixedHold15:fixedHoldCohorts(snapshotOutput,{topN:15,minAlpha:.10,minExpectedCAGR:.15,maxRank:25,horizons:[3,5]})
+    eligibleObservations:eligible.length,horizons,fixedHold15,
+    robustnessAudit:buildOwnerRobustnessAudit(eligible,fixedHold15)
   };
 }
 
@@ -1384,4 +1457,4 @@ async function main(){
   console.log(`Wrote compact analysis output to data/backtest-summary.json (${(fs.statSync(sp).size/1024).toFixed(1)} KiB).`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,contributionConcentration,leaveWinnersOut,buildParameterStability,monotonicitySummary,buildScoreGeneralization,buildPredictivePowerLab,buildLongTermOwnerLab,fixedHoldCohorts,buildPortfolioSimulation,economicSecurityGroup,dedupeEconomicSecurities};
+module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,contributionConcentration,leaveWinnersOut,buildParameterStability,monotonicitySummary,buildScoreGeneralization,buildPredictivePowerLab,buildLongTermOwnerLab,buildOwnerRobustnessAudit,fixedHoldCohorts,buildPortfolioSimulation,economicSecurityGroup,dedupeEconomicSecurities};
