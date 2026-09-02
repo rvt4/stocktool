@@ -34,7 +34,7 @@ const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 
-const MODEL_VERSION='simple-v12.43-owner-exit-lab';
+const MODEL_VERSION='simple-v12.44-alpha-exit-weighting-lab';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -1321,6 +1321,111 @@ function buildOwnerExitLab(eligible,snapshotOutput,historyByTicker,spyHistory,fi
   });
   return {description:'v12.43 frozen 5-year owner exit lab. Entry ranking and thresholds are unchanged. Thesis-break rules use deterioration from the original purchase quality/protection baseline. When a rule sells, proceeds move to SPY for the remainder of the original 5-year horizon so the test isolates the exit decision instead of adding a cash-timing bet.',horizonYears:5,entryRuleFrozen:true,thresholds:{qualityBreak:'quality falls >=15 points from entry and is <60',protectionBreak:'protection falls >=20 points from entry and is <50',confirmation:'two consecutive quarterly reviews satisfy either thesis-break condition'},rules};
 }
+
+
+const ALPHA_EXIT_RULES=[
+  {key:'never_sell',label:'A · Never sell (5Y hold control)',threshold:null,confirmations:0},
+  {key:'alpha_below_10_2q',label:'B · Alpha <10% · 2 reviews',threshold:.10,confirmations:2},
+  {key:'alpha_below_5_2q',label:'C · Alpha <5% · 2 reviews',threshold:.05,confirmations:2},
+  {key:'alpha_below_0_2q',label:'D · Alpha <0% · 2 reviews',threshold:0,confirmations:2},
+  {key:'alpha_below_0_4q',label:'E · Alpha <0% · 4 reviews',threshold:0,confirmations:4}
+];
+function ownerAlphaExitSignal(reviews,rule){
+  if(rule.threshold==null||!rule.confirmations)return null;
+  let streak=0;
+  for(const x of reviews||[]){
+    const a=finite(x.row?.expectedAlpha);
+    streak=Number.isFinite(a)&&a<rule.threshold?streak+1:0;
+    if(streak>=rule.confirmations)return {asOf:x.asOf,row:x.row,reason:`expected_alpha_below_${Math.round(rule.threshold*100)}pct_${rule.confirmations}_reviews`,expectedAlpha:a,streak};
+  }
+  return null;
+}
+function evaluateOwnerAlphaExit(entry,entryAsOf,rule,reviewIndex,historyByTicker,spyHistory,horizon=5){
+  const endDate=addYears(entryAsOf,horizon),group=economicSecurityGroup(entry.ticker);
+  const reviews=(reviewIndex.get(group)||[]).filter(x=>String(x.asOf)>String(entryAsOf)&&String(x.asOf)<String(endDate));
+  const signal=ownerAlphaExitSignal(reviews,rule);
+  const history=historyForEconomicSecurity(entry.ticker,historyByTicker);if(!history)return null;
+  const hold=adjustedReturnBetween(history,entryAsOf,endDate,{executeAfterStart:true});
+  const spyFull=adjustedReturnBetween(spyHistory,entryAsOf,endDate,{executeAfterStart:true});
+  if(!hold||!spyFull)return null;
+  const holdWealth=1+hold.return,holdCAGR=Math.pow(Math.max(0,holdWealth),1/horizon)-1,spyCAGR=Math.pow(Math.max(0,1+spyFull.return),1/horizon)-1;
+  if(!signal)return {ticker:entry.ticker,security:group,entryDate:entryAsOf,exitDate:null,reason:null,triggered:false,entryAlpha:finite(entry.expectedAlpha),exitAlpha:null,yearsHeld:horizon,holdCAGR,strategyCAGR:holdCAGR,deltaVsHoldCAGR:0,spyCAGR,postExitStockCAGR:null,postExitSpyCAGR:null,postExitExcessCAGR:null,improvedVsHold:false};
+  const pre=adjustedReturnBetween(history,entryAsOf,signal.asOf,{executeAfterStart:true});
+  const spyAfter=adjustedReturnBetween(spyHistory,signal.asOf,endDate,{executeAfterStart:true});
+  const stockAfter=adjustedReturnBetween(history,signal.asOf,endDate,{executeAfterStart:true});
+  if(!pre||!spyAfter)return null;
+  const strategyWealth=(1+pre.return)*(1+spyAfter.return),strategyCAGR=Math.pow(Math.max(0,strategyWealth),1/horizon)-1;
+  const postYears=yearsBetweenDates(signal.asOf,endDate);
+  const postStockCAGR=stockAfter&&postYears>0?Math.pow(Math.max(0,1+stockAfter.return),1/postYears)-1:null;
+  const postSpyCAGR=postYears>0?Math.pow(Math.max(0,1+spyAfter.return),1/postYears)-1:null;
+  return {ticker:entry.ticker,security:group,entryDate:entryAsOf,exitDate:signal.asOf,reason:signal.reason,triggered:true,entryAlpha:finite(entry.expectedAlpha),exitAlpha:finite(signal.row?.expectedAlpha),yearsHeld:yearsBetweenDates(entryAsOf,signal.asOf),holdCAGR,strategyCAGR,deltaVsHoldCAGR:strategyCAGR-holdCAGR,spyCAGR,postExitStockCAGR:postStockCAGR,postExitSpyCAGR:postSpyCAGR,postExitExcessCAGR:Number.isFinite(postStockCAGR)&&Number.isFinite(postSpyCAGR)?postStockCAGR-postSpyCAGR:null,improvedVsHold:strategyCAGR>holdCAGR};
+}
+function ownerAlphaExitPortfolioComparison(fixedHold5,entryLookup,rule,reviewIndex,historyByTicker,spyHistory){
+  const cohorts=[];
+  for(const c of fixedHold5?.cohorts||[]){
+    const evals=[];
+    for(const t of c.tickers||[]){const entry=entryLookup.get(`${c.asOf}|${economicSecurityGroup(t)}`);if(!entry)continue;const e=evaluateOwnerAlphaExit(entry,c.asOf,rule,reviewIndex,historyByTicker,spyHistory,5);if(e)evals.push(e);}
+    if(!evals.length)continue;
+    const wealth=mean(evals.map(x=>Math.pow(Math.max(0,1+x.strategyCAGR),5))),holdWealth=mean(evals.map(x=>Math.pow(Math.max(0,1+x.holdCAGR),5)));
+    const portfolioCAGR=Math.pow(Math.max(0,wealth),1/5)-1,holdCAGR=Math.pow(Math.max(0,holdWealth),1/5)-1,spyCAGR=mean(evals.map(x=>x.spyCAGR));
+    cohorts.push({asOf:c.asOf,holdings:evals.length,portfolioCAGR,holdCAGR,deltaVsHoldCAGR:portfolioCAGR-holdCAGR,spyCAGR,excessCAGR:portfolioCAGR-spyCAGR,sellCount:evals.filter(x=>x.triggered).length,sales:evals.filter(x=>x.triggered)});
+  }
+  return {cohortCount:cohorts.length,meanPortfolioCAGR:mean(cohorts.map(x=>x.portfolioCAGR)),medianPortfolioCAGR:median(cohorts.map(x=>x.portfolioCAGR)),meanHoldCAGR:mean(cohorts.map(x=>x.holdCAGR)),meanDeltaVsHoldCAGR:mean(cohorts.map(x=>x.deltaVsHoldCAGR)),meanSpyCAGR:mean(cohorts.map(x=>x.spyCAGR)),meanExcessCAGR:mean(cohorts.map(x=>x.excessCAGR)),beatSpyRate:cohorts.length?cohorts.filter(x=>x.portfolioCAGR>x.spyCAGR).length/cohorts.length:null,totalSales:cohorts.reduce((a,x)=>a+x.sellCount,0),averageSalesPerCohort:mean(cohorts.map(x=>x.sellCount)),worstCohort:cohorts.reduce((a,b)=>!a||b.portfolioCAGR<a.portfolioCAGR?b:a,null),cohorts};
+}
+function buildOwnerAlphaExitLab(eligible,snapshotOutput,historyByTicker,spyHistory,fixedHold15){
+  const reviewIndex=buildOwnerReviewIndex(snapshotOutput),entryLookup=new Map();
+  for(const r of eligible||[])entryLookup.set(`${r.asOf}|${economicSecurityGroup(r.ticker)}`,r);
+  const first=[];const seen=new Set();
+  for(const r of [...(eligible||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf))||(finite(a.rank)??9999)-(finite(b.rank)??9999))){const g=economicSecurityGroup(r.ticker);if(seen.has(g)||!Number.isFinite(r.realized5YTotalReturnCAGR))continue;seen.add(g);first.push(r);}
+  const rules=ALPHA_EXIT_RULES.map(rule=>{
+    const evals=first.map(r=>evaluateOwnerAlphaExit(r,r.asOf,rule,reviewIndex,historyByTicker,spyHistory,5)).filter(Boolean);
+    return {key:rule.key,label:rule.label,threshold:rule.threshold,confirmations:rule.confirmations,firstSignalAudit:summarizeOwnerExitEvaluations(evals),portfolioAudit:ownerAlphaExitPortfolioComparison(fixedHold15?.['5Y'],entryLookup,rule,reviewIndex,historyByTicker,spyHistory)};
+  });
+  return {description:'v12.44 frozen Alpha exit lab. The owner entry rule and 15-stock selection are unchanged. Only sell logic changes. A sale requires current expected Alpha to remain below a predeclared threshold for consecutive quarterly reviews; proceeds then move to SPY through the original 5-year endpoint.',horizonYears:5,entryRuleFrozen:true,rules};
+}
+function alphaSizingTarget(alpha){
+  if(!Number.isFinite(alpha))return 4.5;
+  if(alpha>=.40)return 8.5;if(alpha>=.30)return 7.5;if(alpha>=.20)return 6.5;if(alpha>=.15)return 5.5;return 4.5;
+}
+function ownerConviction01(r){
+  const xs=[r.qualityScore,r.moatScore,r.growthQualityScore,r.compounderScore,r.forecastConfidence,r.valuationConfidence].map(finite).filter(Number.isFinite).map(x=>Math.max(0,Math.min(100,x))/100);
+  return xs.length?mean(xs):.5;
+}
+function normalizeRawWeights(items,rawFn){
+  const raw=items.map(r=>Math.max(.0001,rawFn(r))),sum=raw.reduce((a,b)=>a+b,0);
+  return raw.map(x=>x/sum);
+}
+function weightedHoldCAGR(items,weights,horizon=5){
+  let terminal=0;for(let i=0;i<items.length;i++){const c=items[i][`realized${horizon}YTotalReturnCAGR`];if(!Number.isFinite(c))continue;terminal+=weights[i]*Math.pow(Math.max(0,1+c),horizon);}return Math.pow(Math.max(0,terminal),1/horizon)-1;
+}
+function weightingWinnerRemoval(items,weights,horizon=5,removeN=1){
+  const idx=items.map((r,i)=>({i,c:r[`realized${horizon}YTotalReturnCAGR`]})).filter(x=>Number.isFinite(x.c)).sort((a,b)=>b.c-a.c).slice(removeN).map(x=>x.i);
+  const sum=idx.reduce((a,i)=>a+weights[i],0);if(!idx.length||sum<=0)return null;
+  let terminal=0;for(const i of idx)terminal+=(weights[i]/sum)*Math.pow(Math.max(0,1+items[i][`realized${horizon}YTotalReturnCAGR`]),horizon);
+  return Math.pow(Math.max(0,terminal),1/horizon)-1;
+}
+function buildOwnerWeightingLab(snapshotOutput){
+  const specs=[
+    {key:'equal',label:'A · Equal weight',raw:r=>1},
+    {key:'alpha_mild',label:'B · Mild Alpha weighting',raw:r=>alphaSizingTarget(finite(r.expectedAlpha))},
+    {key:'conviction_mild',label:'C · Mild Alpha + conviction weighting',raw:r=>alphaSizingTarget(finite(r.expectedAlpha))*(.85+.30*ownerConviction01(r))}
+  ];
+  const results=[];
+  for(const spec of specs){
+    const cohorts=[];
+    for(const snap of snapshotOutput||[]){
+      const eligible=dedupeEconomicSecurities((snap.rows||[]).filter(r=>Number.isFinite(r.expectedAlpha)&&r.expectedAlpha>=.10&&Number.isFinite(r.expectedCAGR)&&r.expectedCAGR>=.15&&Number.isFinite(r.rank)&&r.rank<=25&&String(r.modelSupport||'')!=='unsupported').sort((a,b)=>a.rank-b.rank)).slice(0,15);
+      const items=eligible.filter(r=>Number.isFinite(r.realized5YTotalReturnCAGR)&&Number.isFinite(r.spy5YTotalReturnCAGR));if(!items.length)continue;
+      const weights=normalizeRawWeights(items,spec.raw),portfolioCAGR=weightedHoldCAGR(items,weights,5),spyCAGR=cohortSpyCAGR(items,5);
+      const terminalVals=items.map((r,i)=>weights[i]*Math.pow(Math.max(0,1+r.realized5YTotalReturnCAGR),5)),terminalTotal=terminalVals.reduce((a,b)=>a+b,0);
+      const terminalWeights=terminalVals.map(x=>terminalTotal>0?x/terminalTotal:0);
+      cohorts.push({asOf:snap.asOf,holdings:items.length,portfolioCAGR,spyCAGR,excessCAGR:portfolioCAGR-spyCAGR,beatSpy:portfolioCAGR>spyCAGR,initialMinWeight:Math.min(...weights),initialMaxWeight:Math.max(...weights),terminalMaxWeight:Math.max(...terminalWeights),removeBest1CAGR:weightingWinnerRemoval(items,weights,5,1),removeBest3CAGR:weightingWinnerRemoval(items,weights,5,3),allocations:items.map((r,i)=>({ticker:r.ticker,rank:r.rank,expectedAlpha:r.expectedAlpha,qualityScore:r.qualityScore,forecastConfidence:r.forecastConfidence,valuationConfidence:r.valuationConfidence,initialWeight:weights[i],realized5YCAGR:r.realized5YTotalReturnCAGR,terminalWeight:terminalWeights[i]}))});
+    }
+    const meanSpy=mean(cohorts.map(c=>c.spyCAGR));
+    results.push({key:spec.key,label:spec.label,cohortCount:cohorts.length,meanPortfolioCAGR:mean(cohorts.map(c=>c.portfolioCAGR)),medianPortfolioCAGR:median(cohorts.map(c=>c.portfolioCAGR)),meanSpyCAGR:meanSpy,meanExcessCAGR:mean(cohorts.map(c=>c.excessCAGR)),beatSpyRate:cohorts.length?cohorts.filter(c=>c.beatSpy).length/cohorts.length:null,worstCohort:cohorts.reduce((a,b)=>!a||b.portfolioCAGR<a.portfolioCAGR?b:a,null),meanInitialMaxWeight:mean(cohorts.map(c=>c.initialMaxWeight)),meanTerminalMaxWeight:mean(cohorts.map(c=>c.terminalMaxWeight)),meanRemoveBest1CAGR:mean(cohorts.map(c=>c.removeBest1CAGR)),meanRemoveBest1Excess:mean(cohorts.map(c=>c.removeBest1CAGR-c.spyCAGR)),meanRemoveBest3CAGR:mean(cohorts.map(c=>c.removeBest3CAGR)),meanRemoveBest3Excess:mean(cohorts.map(c=>c.removeBest3CAGR-c.spyCAGR)),cohorts});
+  }
+  return {description:'v12.44 frozen 5-year weighting lab. Every method owns the exact same up-to-15 stocks selected by the frozen owner rule and never sells them during the 5-year horizon. Only initial weights differ.',methods:{equal:'Equal weight.',alpha_mild:'Alpha bucket targets of 4.5/5.5/6.5/7.5/8.5 for entry Alpha 10-15/15-20/20-30/30-40/40%+, normalized to 100%.',conviction_mild:'The same mild Alpha target multiplied by a bounded 0.85-1.15 conviction adjustment using available quality, moat, growth quality, compounder, forecast-confidence and valuation-confidence scores, then normalized to 100%.'},results};
+}
 function buildLongTermOwnerLab(rows,snapshotOutput,historyByTicker=null,spyHistory=null){
   const eligible=(rows||[]).filter(r=>Number.isFinite(r.expectedAlpha)&&r.expectedAlpha>=.10&&Number.isFinite(r.expectedCAGR)&&r.expectedCAGR>=.15&&Number.isFinite(r.rank)&&r.rank<=25&&String(r.modelSupport||'')!=='unsupported');
   const horizons={};
@@ -1341,7 +1446,9 @@ function buildLongTermOwnerLab(rows,snapshotOutput,historyByTicker=null,spyHisto
     entryRule:{maxRank:25,minExpectedAlpha:.10,minExpectedCAGR:.15,modelSupport:'supported_or_limited',portfolioTarget:15},
     eligibleObservations:eligible.length,horizons,fixedHold15,
     robustnessAudit:buildOwnerRobustnessAudit(eligible,fixedHold15),
-    exitLab:historyByTicker&&spyHistory?buildOwnerExitLab(eligible,snapshotOutput,historyByTicker,spyHistory,fixedHold15):null
+    exitLab:historyByTicker&&spyHistory?buildOwnerExitLab(eligible,snapshotOutput,historyByTicker,spyHistory,fixedHold15):null,
+    alphaExitLab:historyByTicker&&spyHistory?buildOwnerAlphaExitLab(eligible,snapshotOutput,historyByTicker,spyHistory,fixedHold15):null,
+    weightingLab:buildOwnerWeightingLab(snapshotOutput)
   };
 }
 
@@ -1554,4 +1661,4 @@ async function main(){
   console.log(`Wrote compact analysis output to data/backtest-summary.json (${(fs.statSync(sp).size/1024).toFixed(1)} KiB).`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,contributionConcentration,leaveWinnersOut,buildParameterStability,monotonicitySummary,buildScoreGeneralization,buildPredictivePowerLab,buildLongTermOwnerLab,buildOwnerRobustnessAudit,buildOwnerExitLab,fixedHoldCohorts,buildPortfolioSimulation,economicSecurityGroup,dedupeEconomicSecurities};
+module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,contributionConcentration,leaveWinnersOut,buildParameterStability,monotonicitySummary,buildScoreGeneralization,buildPredictivePowerLab,buildLongTermOwnerLab,buildOwnerRobustnessAudit,buildOwnerExitLab,buildOwnerAlphaExitLab,buildOwnerWeightingLab,fixedHoldCohorts,buildPortfolioSimulation,economicSecurityGroup,dedupeEconomicSecurities};
