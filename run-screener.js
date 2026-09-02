@@ -115,7 +115,7 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
 }
 
 function rank(stocks){
-  // v12.38: Expected Alpha >=10% is the opportunity gate. Eligible names are ordered
+  // v12.45: Expected Alpha >=5% on the 15% hurdle scale is the opportunity gate (same >=20% expected CAGR as the validated v12.38 gate). Eligible names are ordered
   // by the exact frozen Model-D blend; below-gate names remain behind them and are
   // ordered by expected return, so business quality cannot rescue an inadequate return.
   applyModelDRanking(stocks,{rankField:'overallRank',universeSizeField:'globalUniverseSize'});

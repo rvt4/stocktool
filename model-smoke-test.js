@@ -924,8 +924,8 @@ const {
   isStrongWinnerMomentum,
   livePortfolioGuidance,
 }=require('./engine/portfolio-policy');
-const liveCandidate={overallRank:7,expectedCAGR:.17,forecastReliabilityScore:88,valuationConfidenceScore:84,qualityScore:86,downsideProtectionScore:80,modelSupport:'standard'};
-assert.strictEqual(liveEntryEligible(liveCandidate),true,'live policy rejected a Top-25 stock with >=15% expected CAGR');
+const liveCandidate={overallRank:7,expectedCAGR:.22,forecastReliabilityScore:88,valuationConfidenceScore:84,qualityScore:86,downsideProtectionScore:80,modelSupport:'standard'};
+assert.strictEqual(liveEntryEligible(liveCandidate),true,'live policy rejected a Top-25 stock with >=20% expected CAGR');
 assert(liveTargetWeight(liveCandidate)>=.07&&liveTargetWeight(liveCandidate)<=.10,'live conviction sizing drifted from thesis-hold sizing bands');
 const liveRideMomentum={stock3:.08,rel6:.06,rel12:.03};
 assert.strictEqual(isStrongWinnerMomentum(liveRideMomentum),true,'live Ride Winner momentum test drifted from the backtest rule');
@@ -935,3 +935,14 @@ assert.strictEqual(liveRide.existingHolderAction,'RIDE WINNER','live policy fail
 const liveExit=livePortfolioGuidance({...liveCandidate,overallRank:40,expectedCAGR:.04},{stock3:-.02,rel6:-.01,rel12:.02});
 assert.strictEqual(liveExit.existingHolderAction,'HOLD — VALUATION WATCH','live policy incorrectly turned low expected return into a thesis sell');
 console.log('V12.39 live portfolio-policy regression passed: entry logic is unchanged and valuation/forecast weakness no longer masquerades as a thesis sell.');
+
+// V12.45 Alpha semantics regression ------------------------------------------
+const {INVESTOR_ALPHA_HURDLE}=require('./engine/config');
+const {ALPHA_GATE,applyModelDRanking}=require('./engine/ranking-engine');
+assert.strictEqual(INVESTOR_ALPHA_HURDLE,.15,'Expected Alpha hurdle is not 15%');
+assert.strictEqual(ALPHA_GATE,.05,'Model-D gate should preserve the validated >=20% expected-CAGR hurdle after Alpha rebasing');
+const alphaProbe=rateStock({price:{current:100},sector:'Technology'},{forecastReliabilityScore:80},{qualityScore:80,growthQualityScore:80,moatScore:80,compounderScore:80,pricingPowerScore:80,capitalAllocationScore:80,protectionScore:80,confidenceScore:80},{expectedCAGR:.22,marginOfSafety:.2,requiredReturnBuyPrice:90,hurdleReturnPrice:110,methodAgreementScore:80,valuationConfidenceScore:80,methods:[1,2,3],independentMethodCount:3,modelSupport:'standard'});
+assert(Math.abs(alphaProbe.expectedAlpha-.07)<1e-12,'22% expected CAGR should equal +7% Alpha on a 15% hurdle');
+const rankProbe=[{ticker:'A',expectedAlpha:.049,expectedCAGR:.199,qualityScore:90,moatScore:90,growthQualityScore:90,compounderScore:90,investmentScore:90},{ticker:'B',expectedAlpha:.051,expectedCAGR:.201,qualityScore:60,moatScore:60,growthQualityScore:60,compounderScore:60,investmentScore:60}];
+applyModelDRanking(rankProbe);assert.strictEqual(rankProbe.find(x=>x.ticker==='B').rankEligible,true);assert.strictEqual(rankProbe.find(x=>x.ticker==='A').rankEligible,false);
+console.log('V12.45 Alpha regression passed: Alpha uses the 15% hurdle and the live gate preserves >=20% expected CAGR.');

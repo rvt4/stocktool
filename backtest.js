@@ -34,7 +34,7 @@ const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 
-const MODEL_VERSION='simple-v12.44-alpha-exit-weighting-lab';
+const MODEL_VERSION='simple-v12.45-15pct-alpha-decomposed-exit-lab';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -501,6 +501,9 @@ function compactModel(stock,f,q,v,d){return {
   investmentScore:d.investmentScore,opportunityScore:d.opportunityScore,opportunityQualityScore:d.opportunityQualityScore,activatedQualityScore:d.activatedQualityScore,qualityActivation:d.qualityActivation,reliabilityScore:d.reliabilityScore,expectedCAGR:v.expectedCAGR,expectedAlpha:d.expectedAlpha,
   fiveYearExpectedCAGR:v.fiveYearExpectedCAGR,bearCAGR:v.bearCAGR,bullCAGR:v.bullCAGR,
   fairValue:v.fairValueEstimate,buyPrice:v.requiredReturnBuyPrice,marginOfSafety:v.marginOfSafety,
+  horizonYears:v.horizonYears||10,totalShareholderValue:v.totalShareholderValue,modeledRevenueCAGR:v.modeledRevenueCAGR,
+  revenueGrowthAnchor:f.revenueGrowthAnchor,year5OperatingGrowth:f.year5OperatingGrowth,
+  targetFcfMargin:f.marginTargets?.fcf??null,targetNetMargin:f.marginTargets?.net??null,
   qualityScore:q.qualityScore,moatScore:q.moatScore,pricingPowerScore:q.pricingPowerScore,
   capitalAllocationScore:q.capitalAllocationScore,compounderScore:q.compounderScore,growthQualityScore:q.growthQualityScore,
   protectionScore:q.protectionScore,forecastConfidence:f.forecastReliabilityScore,
@@ -1051,8 +1054,8 @@ function buildPredictivePowerLab(rows,horizon=1){
   const dev=(rows||[]).filter(r=>year(r)>=2019&&year(r)<=2021),val=(rows||[]).filter(r=>year(r)>=2022&&year(r)<=2025);
   const runSet=rs=>FACTOR_LAB_SPECS.map(spec=>factorDiagnostics(rs,spec,horizon));
   const conditionalSets=[
-    {key:'alpha_ge_10',label:'Expected alpha ≥10%',filter:r=>finite(r.expectedAlpha)!=null&&r.expectedAlpha>=.10},
-    {key:'alpha_ge_10_top20pct',label:'Expected alpha ≥10% + top-20% overall rank',filter:r=>finite(r.expectedAlpha)!=null&&r.expectedAlpha>=.10&&finite(r.rank)!=null&&finite(r.universeSize)!=null&&r.rank<=Math.ceil(r.universeSize*.20)},
+    {key:'alpha_ge_10',label:'Expected alpha ≥5%',filter:r=>finite(r.expectedAlpha)!=null&&r.expectedAlpha>=.05},
+    {key:'alpha_ge_10_top20pct',label:'Expected alpha ≥5% + top-20% overall rank',filter:r=>finite(r.expectedAlpha)!=null&&r.expectedAlpha>=.05&&finite(r.rank)!=null&&finite(r.universeSize)!=null&&r.rank<=Math.ceil(r.universeSize*.20)},
   ];
   const conditionals=conditionalSets.map(c=>({key:c.key,label:c.label,development:runSet(dev.filter(c.filter)),validation:runSet(val.filter(c.filter))}));
   return {description:`Predictive-power laboratory using point-in-time, within-snapshot factor deciles and ${horizon}Y realized total-return excess vs SPY. D1 is the factor's most attractive decile. D1>D10, negative decile slope/correlation, and validation persistence are desirable. Conditional tests ask whether quality/evidence factors add value after expected-return gating.`,horizonYears:horizon,developmentYears:'2019-2021',validationYears:'2022-2025',factors:FACTOR_LAB_SPECS.map(x=>({key:x.key,label:x.label,higherBetter:x.higherBetter})),development:runSet(dev),validation:runSet(val),conditionals};
@@ -1073,7 +1076,7 @@ const CHALLENGER_SPECS=[
 function challengerRows(rows){
   const byDate=new Map();
   for(const r of rows||[]){
-    if((finite(r.expectedAlpha)??-Infinity)<.10)continue;
+    if((finite(r.expectedAlpha)??-Infinity)<.05)continue;
     const k=String(r.asOf||''); if(!byDate.has(k))byDate.set(k,[]); byDate.get(k).push(r);
   }
   const out=[];
@@ -1117,7 +1120,7 @@ function buildChallengerLab(rows,horizon=1){
   const year=r=>Number(String(r.asOf||'').slice(0,4));
   const dev=(rows||[]).filter(r=>year(r)>=2019&&year(r)<=2021),val=(rows||[]).filter(r=>year(r)>=2022&&year(r)<=2025);
   const run=rs=>CHALLENGER_SPECS.map(spec=>challengerDiagnostics(rs,spec,horizon));
-  return {description:'Frozen challenger comparison on one common eligible universe: Expected Alpha >=10%. A is the return-only baseline; B/C/D add simple, predeclared quality terms; E is the legacy v12.37 score; D is the promoted live v12.38 ranking rule. All blends use within-snapshot percentiles and fixed 50/50 weights. No parameter search or validation tuning is performed.',horizonYears:horizon,eligibility:'expectedAlpha >= 10%',developmentYears:'2019-2021',validationYears:'2022-2025',models:CHALLENGER_SPECS,development:run(dev),validation:run(val)};
+  return {description:'Frozen challenger comparison on one common eligible universe: Expected Alpha >=5% (15% hurdle scale). A is the return-only baseline; B/C/D add simple, predeclared quality terms; E is the legacy v12.37 score; D is the promoted live v12.38 ranking rule. All blends use within-snapshot percentiles and fixed 50/50 weights. No parameter search or validation tuning is performed.',horizonYears:horizon,eligibility:'expectedAlpha >= 5% (15% hurdle scale)',developmentYears:'2019-2021',validationYears:'2022-2025',models:CHALLENGER_SPECS,development:run(dev),validation:run(val)};
 }
 
 
@@ -1324,32 +1327,70 @@ function buildOwnerExitLab(eligible,snapshotOutput,historyByTicker,spyHistory,fi
 
 
 const ALPHA_EXIT_RULES=[
-  {key:'never_sell',label:'A · Never sell (5Y hold control)',threshold:null,confirmations:0},
-  {key:'alpha_below_10_2q',label:'B · Alpha <10% · 2 reviews',threshold:.10,confirmations:2},
-  {key:'alpha_below_5_2q',label:'C · Alpha <5% · 2 reviews',threshold:.05,confirmations:2},
-  {key:'alpha_below_0_2q',label:'D · Alpha <0% · 2 reviews',threshold:0,confirmations:2},
-  {key:'alpha_below_0_4q',label:'E · Alpha <0% · 4 reviews',threshold:0,confirmations:4}
+  {key:'never_sell',label:'A · Never sell (5Y hold control)',kind:'never',confirmations:0},
+  // Exact economic equivalent of v12.44's promising old-Alpha <0% x4 rule after rebasing Alpha by -5 points.
+  {key:'alpha_below_minus5_4q',label:'B · Alpha <-5% · 4 reviews',kind:'alpha',threshold:-.05,confirmations:4},
+  {key:'alpha_below_0_4q',label:'C · Alpha <0% · 4 reviews',kind:'alpha',threshold:0,confirmations:4},
+  {key:'alpha_below_minus5_2q',label:'D · Alpha <-5% · 2 reviews',kind:'alpha',threshold:-.05,confirmations:2},
+  {key:'alpha0_outcome_break_2q',label:'E · Alpha <0% + model outcome deterioration · 2 reviews',kind:'outcome',threshold:0,confirmations:2,outcomeAnnualizedMax:-.03},
+  {key:'alpha0_forecast_break_2q',label:'F · Alpha <0% + operating forecast deterioration · 2 reviews',kind:'forecast',threshold:0,confirmations:2,forecastDrop:.03}
 ];
-function ownerAlphaExitSignal(reviews,rule){
-  if(rule.threshold==null||!rule.confirmations)return null;
+function impliedShareholderOutcome(row){
+  const direct=finite(row?.totalShareholderValue);if(Number.isFinite(direct)&&direct>0)return direct;
+  const p=finite(row?.price),c=finite(row?.expectedCAGR),h=finite(row?.horizonYears)||10;
+  return p>0&&Number.isFinite(c)&&h>0?p*Math.pow(Math.max(.000001,1+c),h):null;
+}
+function ownerAlphaDecomposition(entry,row){
+  const h=finite(row?.horizonYears)||finite(entry?.horizonYears)||10;
+  const ep=finite(entry?.price),cp=finite(row?.price),eo=impliedShareholderOutcome(entry),co=impliedShareholderOutcome(row);
+  const annual=(ratio)=>ratio>0&&h>0?Math.pow(ratio,1/h)-1:null;
+  const outcomeAnnualizedChange=eo>0&&co>0?annual(co/eo):null;
+  const priceAnnualizedChange=ep>0&&cp>0?annual(cp/ep):null;
+  return {
+    entryPrice:ep,currentPrice:cp,entryOutcome:eo,currentOutcome:co,
+    outcomeAnnualizedChange,priceAnnualizedChange,
+    entryExpectedCAGR:finite(entry?.expectedCAGR),currentExpectedCAGR:finite(row?.expectedCAGR),
+    expectedCAGRChange:Number.isFinite(finite(entry?.expectedCAGR))&&Number.isFinite(finite(row?.expectedCAGR))?finite(row.expectedCAGR)-finite(entry.expectedCAGR):null,
+    revenueGrowthAnchorChange:Number.isFinite(finite(entry?.revenueGrowthAnchor))&&Number.isFinite(finite(row?.revenueGrowthAnchor))?finite(row.revenueGrowthAnchor)-finite(entry.revenueGrowthAnchor):null,
+    year5OperatingGrowthChange:Number.isFinite(finite(entry?.year5OperatingGrowth))&&Number.isFinite(finite(row?.year5OperatingGrowth))?finite(row.year5OperatingGrowth)-finite(entry.year5OperatingGrowth):null,
+    targetFcfMarginChange:Number.isFinite(finite(entry?.targetFcfMargin))&&Number.isFinite(finite(row?.targetFcfMargin))?finite(row.targetFcfMargin)-finite(entry.targetFcfMargin):null,
+    targetNetMarginChange:Number.isFinite(finite(entry?.targetNetMargin))&&Number.isFinite(finite(row?.targetNetMargin))?finite(row.targetNetMargin)-finite(entry.targetNetMargin):null
+  };
+}
+function ownerAlphaRulePass(entry,row,rule){
+  if(rule.kind==='never')return false;
+  const a=finite(row?.expectedAlpha);if(!Number.isFinite(a)||a>=rule.threshold)return false;
+  if(rule.kind==='alpha')return true;
+  const d=ownerAlphaDecomposition(entry,row);
+  if(rule.kind==='outcome')return Number.isFinite(d.outcomeAnnualizedChange)&&d.outcomeAnnualizedChange<=rule.outcomeAnnualizedMax;
+  if(rule.kind==='forecast'){
+    const drops=[d.revenueGrowthAnchorChange,d.year5OperatingGrowthChange,d.targetFcfMarginChange,d.targetNetMarginChange].filter(Number.isFinite);
+    return drops.some(x=>x<=-rule.forecastDrop);
+  }
+  return false;
+}
+function ownerAlphaExitSignal(entry,reviews,rule){
+  if(rule.kind==='never'||!rule.confirmations)return null;
   let streak=0;
   for(const x of reviews||[]){
-    const a=finite(x.row?.expectedAlpha);
-    streak=Number.isFinite(a)&&a<rule.threshold?streak+1:0;
-    if(streak>=rule.confirmations)return {asOf:x.asOf,row:x.row,reason:`expected_alpha_below_${Math.round(rule.threshold*100)}pct_${rule.confirmations}_reviews`,expectedAlpha:a,streak};
+    const pass=ownerAlphaRulePass(entry,x.row,rule);streak=pass?streak+1:0;
+    if(streak>=rule.confirmations){
+      const d=ownerAlphaDecomposition(entry,x.row);
+      return {asOf:x.asOf,row:x.row,reason:rule.key,expectedAlpha:finite(x.row?.expectedAlpha),streak,decomposition:d};
+    }
   }
   return null;
 }
 function evaluateOwnerAlphaExit(entry,entryAsOf,rule,reviewIndex,historyByTicker,spyHistory,horizon=5){
   const endDate=addYears(entryAsOf,horizon),group=economicSecurityGroup(entry.ticker);
   const reviews=(reviewIndex.get(group)||[]).filter(x=>String(x.asOf)>String(entryAsOf)&&String(x.asOf)<String(endDate));
-  const signal=ownerAlphaExitSignal(reviews,rule);
+  const signal=ownerAlphaExitSignal(entry,reviews,rule);
   const history=historyForEconomicSecurity(entry.ticker,historyByTicker);if(!history)return null;
   const hold=adjustedReturnBetween(history,entryAsOf,endDate,{executeAfterStart:true});
   const spyFull=adjustedReturnBetween(spyHistory,entryAsOf,endDate,{executeAfterStart:true});
   if(!hold||!spyFull)return null;
   const holdWealth=1+hold.return,holdCAGR=Math.pow(Math.max(0,holdWealth),1/horizon)-1,spyCAGR=Math.pow(Math.max(0,1+spyFull.return),1/horizon)-1;
-  if(!signal)return {ticker:entry.ticker,security:group,entryDate:entryAsOf,exitDate:null,reason:null,triggered:false,entryAlpha:finite(entry.expectedAlpha),exitAlpha:null,yearsHeld:horizon,holdCAGR,strategyCAGR:holdCAGR,deltaVsHoldCAGR:0,spyCAGR,postExitStockCAGR:null,postExitSpyCAGR:null,postExitExcessCAGR:null,improvedVsHold:false};
+  if(!signal)return {ticker:entry.ticker,security:group,entryDate:entryAsOf,exitDate:null,reason:null,triggered:false,entryAlpha:finite(entry.expectedAlpha),exitAlpha:null,yearsHeld:horizon,holdCAGR,strategyCAGR:holdCAGR,deltaVsHoldCAGR:0,spyCAGR,postExitStockCAGR:null,postExitSpyCAGR:null,postExitExcessCAGR:null,improvedVsHold:false,decomposition:null};
   const pre=adjustedReturnBetween(history,entryAsOf,signal.asOf,{executeAfterStart:true});
   const spyAfter=adjustedReturnBetween(spyHistory,signal.asOf,endDate,{executeAfterStart:true});
   const stockAfter=adjustedReturnBetween(history,signal.asOf,endDate,{executeAfterStart:true});
@@ -1358,7 +1399,7 @@ function evaluateOwnerAlphaExit(entry,entryAsOf,rule,reviewIndex,historyByTicker
   const postYears=yearsBetweenDates(signal.asOf,endDate);
   const postStockCAGR=stockAfter&&postYears>0?Math.pow(Math.max(0,1+stockAfter.return),1/postYears)-1:null;
   const postSpyCAGR=postYears>0?Math.pow(Math.max(0,1+spyAfter.return),1/postYears)-1:null;
-  return {ticker:entry.ticker,security:group,entryDate:entryAsOf,exitDate:signal.asOf,reason:signal.reason,triggered:true,entryAlpha:finite(entry.expectedAlpha),exitAlpha:finite(signal.row?.expectedAlpha),yearsHeld:yearsBetweenDates(entryAsOf,signal.asOf),holdCAGR,strategyCAGR,deltaVsHoldCAGR:strategyCAGR-holdCAGR,spyCAGR,postExitStockCAGR:postStockCAGR,postExitSpyCAGR:postSpyCAGR,postExitExcessCAGR:Number.isFinite(postStockCAGR)&&Number.isFinite(postSpyCAGR)?postStockCAGR-postSpyCAGR:null,improvedVsHold:strategyCAGR>holdCAGR};
+  return {ticker:entry.ticker,security:group,entryDate:entryAsOf,exitDate:signal.asOf,reason:signal.reason,triggered:true,entryAlpha:finite(entry.expectedAlpha),exitAlpha:finite(signal.row?.expectedAlpha),yearsHeld:yearsBetweenDates(entryAsOf,signal.asOf),holdCAGR,strategyCAGR,deltaVsHoldCAGR:strategyCAGR-holdCAGR,spyCAGR,postExitStockCAGR:postStockCAGR,postExitSpyCAGR:postSpyCAGR,postExitExcessCAGR:Number.isFinite(postStockCAGR)&&Number.isFinite(postSpyCAGR)?postStockCAGR-postSpyCAGR:null,improvedVsHold:strategyCAGR>holdCAGR,decomposition:signal.decomposition};
 }
 function ownerAlphaExitPortfolioComparison(fixedHold5,entryLookup,rule,reviewIndex,historyByTicker,spyHistory){
   const cohorts=[];
@@ -1379,13 +1420,13 @@ function buildOwnerAlphaExitLab(eligible,snapshotOutput,historyByTicker,spyHisto
   for(const r of [...(eligible||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf))||(finite(a.rank)??9999)-(finite(b.rank)??9999))){const g=economicSecurityGroup(r.ticker);if(seen.has(g)||!Number.isFinite(r.realized5YTotalReturnCAGR))continue;seen.add(g);first.push(r);}
   const rules=ALPHA_EXIT_RULES.map(rule=>{
     const evals=first.map(r=>evaluateOwnerAlphaExit(r,r.asOf,rule,reviewIndex,historyByTicker,spyHistory,5)).filter(Boolean);
-    return {key:rule.key,label:rule.label,threshold:rule.threshold,confirmations:rule.confirmations,firstSignalAudit:summarizeOwnerExitEvaluations(evals),portfolioAudit:ownerAlphaExitPortfolioComparison(fixedHold15?.['5Y'],entryLookup,rule,reviewIndex,historyByTicker,spyHistory)};
+    return {key:rule.key,label:rule.label,kind:rule.kind,threshold:rule.threshold??null,confirmations:rule.confirmations,firstSignalAudit:summarizeOwnerExitEvaluations(evals),portfolioAudit:ownerAlphaExitPortfolioComparison(fixedHold15?.['5Y'],entryLookup,rule,reviewIndex,historyByTicker,spyHistory)};
   });
-  return {description:'v12.44 frozen Alpha exit lab. The owner entry rule and 15-stock selection are unchanged. Only sell logic changes. A sale requires current expected Alpha to remain below a predeclared threshold for consecutive quarterly reviews; proceeds then move to SPY through the original 5-year endpoint.',horizonYears:5,entryRuleFrozen:true,rules};
+  return {description:'v12.45 predeclared 15%-hurdle sell lab. Alpha now equals expected CAGR minus 15%. The old v12.44 Alpha<0% x4 rule is preserved exactly as Alpha<-5% x4. New challengers distinguish valuation/price-driven Alpha compression from deterioration in the model-implied shareholder outcome or operating forecast. Missing/unsupported evidence resets confirmation; proceeds move to SPY through the original 5-year endpoint.',horizonYears:5,alphaHurdle:.15,entryRuleFrozen:true,rules};
 }
 function alphaSizingTarget(alpha){
   if(!Number.isFinite(alpha))return 4.5;
-  if(alpha>=.40)return 8.5;if(alpha>=.30)return 7.5;if(alpha>=.20)return 6.5;if(alpha>=.15)return 5.5;return 4.5;
+  if(alpha>=.35)return 8.5;if(alpha>=.25)return 7.5;if(alpha>=.15)return 6.5;if(alpha>=.10)return 5.5;return 4.5;
 }
 function ownerConviction01(r){
   const xs=[r.qualityScore,r.moatScore,r.growthQualityScore,r.compounderScore,r.forecastConfidence,r.valuationConfidence].map(finite).filter(Number.isFinite).map(x=>Math.max(0,Math.min(100,x))/100);
@@ -1414,7 +1455,7 @@ function buildOwnerWeightingLab(snapshotOutput){
   for(const spec of specs){
     const cohorts=[];
     for(const snap of snapshotOutput||[]){
-      const eligible=dedupeEconomicSecurities((snap.rows||[]).filter(r=>Number.isFinite(r.expectedAlpha)&&r.expectedAlpha>=.10&&Number.isFinite(r.expectedCAGR)&&r.expectedCAGR>=.15&&Number.isFinite(r.rank)&&r.rank<=25&&String(r.modelSupport||'')!=='unsupported').sort((a,b)=>a.rank-b.rank)).slice(0,15);
+      const eligible=dedupeEconomicSecurities((snap.rows||[]).filter(r=>Number.isFinite(r.expectedAlpha)&&r.expectedAlpha>=.05&&Number.isFinite(r.expectedCAGR)&&r.expectedCAGR>=.20&&Number.isFinite(r.rank)&&r.rank<=25&&String(r.modelSupport||'')!=='unsupported').sort((a,b)=>a.rank-b.rank)).slice(0,15);
       const items=eligible.filter(r=>Number.isFinite(r.realized5YTotalReturnCAGR)&&Number.isFinite(r.spy5YTotalReturnCAGR));if(!items.length)continue;
       const weights=normalizeRawWeights(items,spec.raw),portfolioCAGR=weightedHoldCAGR(items,weights,5),spyCAGR=cohortSpyCAGR(items,5);
       const terminalVals=items.map((r,i)=>weights[i]*Math.pow(Math.max(0,1+r.realized5YTotalReturnCAGR),5)),terminalTotal=terminalVals.reduce((a,b)=>a+b,0);
@@ -1424,10 +1465,37 @@ function buildOwnerWeightingLab(snapshotOutput){
     const meanSpy=mean(cohorts.map(c=>c.spyCAGR));
     results.push({key:spec.key,label:spec.label,cohortCount:cohorts.length,meanPortfolioCAGR:mean(cohorts.map(c=>c.portfolioCAGR)),medianPortfolioCAGR:median(cohorts.map(c=>c.portfolioCAGR)),meanSpyCAGR:meanSpy,meanExcessCAGR:mean(cohorts.map(c=>c.excessCAGR)),beatSpyRate:cohorts.length?cohorts.filter(c=>c.beatSpy).length/cohorts.length:null,worstCohort:cohorts.reduce((a,b)=>!a||b.portfolioCAGR<a.portfolioCAGR?b:a,null),meanInitialMaxWeight:mean(cohorts.map(c=>c.initialMaxWeight)),meanTerminalMaxWeight:mean(cohorts.map(c=>c.terminalMaxWeight)),meanRemoveBest1CAGR:mean(cohorts.map(c=>c.removeBest1CAGR)),meanRemoveBest1Excess:mean(cohorts.map(c=>c.removeBest1CAGR-c.spyCAGR)),meanRemoveBest3CAGR:mean(cohorts.map(c=>c.removeBest3CAGR)),meanRemoveBest3Excess:mean(cohorts.map(c=>c.removeBest3CAGR-c.spyCAGR)),cohorts});
   }
-  return {description:'v12.44 frozen 5-year weighting lab. Every method owns the exact same up-to-15 stocks selected by the frozen owner rule and never sells them during the 5-year horizon. Only initial weights differ.',methods:{equal:'Equal weight.',alpha_mild:'Alpha bucket targets of 4.5/5.5/6.5/7.5/8.5 for entry Alpha 10-15/15-20/20-30/30-40/40%+, normalized to 100%.',conviction_mild:'The same mild Alpha target multiplied by a bounded 0.85-1.15 conviction adjustment using available quality, moat, growth quality, compounder, forecast-confidence and valuation-confidence scores, then normalized to 100%.'},results};
+  return {description:'v12.44 frozen 5-year weighting lab. Every method owns the exact same up-to-15 stocks selected by the frozen owner rule and never sells them during the 5-year horizon. Only initial weights differ.',methods:{equal:'Equal weight.',alpha_mild:'Alpha bucket targets of 4.5/5.5/6.5/7.5/8.5 for entry Alpha 5-10/10-15/15-25/25-35/35%+ on the 15% hurdle scale, normalized to 100%.',conviction_mild:'The same mild Alpha target multiplied by a bounded 0.85-1.15 conviction adjustment using available quality, moat, growth quality, compounder, forecast-confidence and valuation-confidence scores, then normalized to 100%.'},results};
 }
+function buildAlphaGateRecalibrationLab(snapshotOutput){
+  const gates=[
+    {key:'alpha_ge_0',label:'Alpha >=0% (>=15% expected CAGR)',gate:0},
+    {key:'alpha_ge_5',label:'Alpha >=5% (>=20% expected CAGR)',gate:.05},
+    {key:'alpha_ge_10',label:'Alpha >=10% (>=25% expected CAGR)',gate:.10}
+  ];
+  const results=[];
+  for(const spec of gates){
+    const cohorts=[];const individual=[];
+    for(const snap of snapshotOutput||[]){
+      const cloned=(snap.rows||[]).map(r=>({...r}));
+      applyModelDRanking(cloned,{rankField:'recalRank',universeSizeField:null,alphaGate:spec.gate});
+      const picks=dedupeEconomicSecurities(cloned.filter(r=>r.rankEligible===true&&Number.isFinite(r.recalRank)&&r.recalRank<=25&&String(r.modelSupport||'')!=='unsupported').sort((a,b)=>a.recalRank-b.recalRank)).slice(0,15);
+      const completed=picks.filter(r=>Number.isFinite(r.realized5YTotalReturnCAGR)&&Number.isFinite(r.spy5YTotalReturnCAGR));
+      if(completed.length){
+        const portfolioCAGR=equalWeightFixedHoldCAGR(completed,5),spyCAGR=cohortSpyCAGR(completed,5);
+        cohorts.push({asOf:snap.asOf,holdings:completed.length,portfolioCAGR,spyCAGR,excessCAGR:portfolioCAGR-spyCAGR,beatSpy:portfolioCAGR>spyCAGR,tickers:completed.map(r=>r.ticker)});
+        individual.push(...completed);
+      }
+    }
+    const uniq=[];const seen=new Set();
+    for(const r of individual){const g=economicSecurityGroup(r.ticker);if(seen.has(g))continue;seen.add(g);uniq.push(r);}
+    results.push({key:spec.key,label:spec.label,alphaGate:spec.gate,cohortCount:cohorts.length,meanPortfolioCAGR:mean(cohorts.map(x=>x.portfolioCAGR)),medianPortfolioCAGR:median(cohorts.map(x=>x.portfolioCAGR)),meanSpyCAGR:mean(cohorts.map(x=>x.spyCAGR)),meanExcessCAGR:mean(cohorts.map(x=>x.excessCAGR)),beatSpyRate:cohorts.length?cohorts.filter(x=>x.beatSpy).length/cohorts.length:null,worstCohort:cohorts.reduce((a,b)=>!a||b.portfolioCAGR<a.portfolioCAGR?b:a,null),uniqueSecurities:uniq.length,uniqueMeanStockCAGR:mean(uniq.map(r=>r.realized5YTotalReturnCAGR)),uniqueMeanExcessCAGR:mean(uniq.map(r=>r.excess5YTotalReturnCAGR)),uniqueBeatSpyRate:uniq.length?uniq.filter(r=>Number.isFinite(r.excess5YTotalReturnCAGR)&&r.excess5YTotalReturnCAGR>0).length/uniq.filter(r=>Number.isFinite(r.excess5YTotalReturnCAGR)).length:null,cohorts});
+  }
+  return {description:'v12.45 Alpha-gate recalibration after redefining Alpha as expected CAGR minus the user\'s 15% hurdle. Each gate reruns the same Model-D percentile ranking within that gate, then selects up to the top 15 among rank<=25. This is a small predeclared 0/5/10-point comparison, not a threshold sweep.',alphaHurdle:.15,results};
+}
+
 function buildLongTermOwnerLab(rows,snapshotOutput,historyByTicker=null,spyHistory=null){
-  const eligible=(rows||[]).filter(r=>Number.isFinite(r.expectedAlpha)&&r.expectedAlpha>=.10&&Number.isFinite(r.expectedCAGR)&&r.expectedCAGR>=.15&&Number.isFinite(r.rank)&&r.rank<=25&&String(r.modelSupport||'')!=='unsupported');
+  const eligible=(rows||[]).filter(r=>Number.isFinite(r.expectedAlpha)&&r.expectedAlpha>=.05&&Number.isFinite(r.expectedCAGR)&&r.expectedCAGR>=.20&&Number.isFinite(r.rank)&&r.rank<=25&&String(r.modelSupport||'')!=='unsupported');
   const horizons={};
   for(const h of [1,3,5]){
     horizons[`${h}Y`]={
@@ -1435,28 +1503,29 @@ function buildLongTermOwnerLab(rows,snapshotOutput,historyByTicker=null,spyHisto
       byEntryRank:longTermOwnerGrouped(eligible,r=>r.rank<=5?'Rank 1-5':r.rank<=10?'Rank 6-10':r.rank<=15?'Rank 11-15':'Rank 16-25',h),
       byCategory:longTermOwnerGrouped(eligible,r=>r.category||'Unclassified',h).sort((a,b)=>b.n-a.n),
       bySector:longTermOwnerGrouped(eligible,r=>r.sector||'Unknown',h).sort((a,b)=>b.n-a.n),
-      byAlpha:longTermOwnerGrouped(eligible,r=>r.expectedAlpha>=.20?'Alpha >=20%':r.expectedAlpha>=.15?'Alpha 15-20%':'Alpha 10-15%',h),
+      byAlpha:longTermOwnerGrouped(eligible,r=>r.expectedAlpha>=.15?'Alpha >=15%':r.expectedAlpha>=.10?'Alpha 10-15%':'Alpha 5-10%',h),
       byDividend:longTermOwnerGrouped(eligible,r=>(finite(r.dividendYield)||0)>=.03?'Yield >=3%':(finite(r.dividendYield)||0)>=.01?'Yield 1-3%':'Yield <1%',h)
     };
   }
-  const fixedHold15=fixedHoldCohorts(snapshotOutput,{topN:15,minAlpha:.10,minExpectedCAGR:.15,maxRank:25,horizons:[3,5]});
+  const fixedHold15=fixedHoldCohorts(snapshotOutput,{topN:15,minAlpha:.05,minExpectedCAGR:.20,maxRank:25,horizons:[3,5]});
   return {
-    description:'Frozen long-term-owner test. Entry requires live Model-D rank <=25, expected Alpha >=10%, expected CAGR >=15%, and supported valuation. Outcomes are measured from the original purchase signal with no rank-based selling. Fixed-hold cohorts take up to the 15 best eligible economic securities at each snapshot, equal-weight them, and hold unchanged for 3 or 5 years.',
+    description:'Frozen long-term-owner test. Entry requires live Model-D rank <=25, expected Alpha >=5% on the 15% hurdle scale (therefore expected CAGR >=20%), and supported valuation, and supported valuation. Outcomes are measured from the original purchase signal with no rank-based selling. Fixed-hold cohorts take up to the 15 best eligible economic securities at each snapshot, equal-weight them, and hold unchanged for 3 or 5 years.',
     intendedUse:'Approximately 15 growth/value/dividend holdings; high hurdle to buy; 5+ year ownership intent; quarterly thesis review; rank changes alone are not a sell signal.',
-    entryRule:{maxRank:25,minExpectedAlpha:.10,minExpectedCAGR:.15,modelSupport:'supported_or_limited',portfolioTarget:15},
+    entryRule:{maxRank:25,minExpectedAlpha:.05,minExpectedCAGR:.20,modelSupport:'supported_or_limited',portfolioTarget:15},
     eligibleObservations:eligible.length,horizons,fixedHold15,
     robustnessAudit:buildOwnerRobustnessAudit(eligible,fixedHold15),
     exitLab:historyByTicker&&spyHistory?buildOwnerExitLab(eligible,snapshotOutput,historyByTicker,spyHistory,fixedHold15):null,
     alphaExitLab:historyByTicker&&spyHistory?buildOwnerAlphaExitLab(eligible,snapshotOutput,historyByTicker,spyHistory,fixedHold15):null,
-    weightingLab:buildOwnerWeightingLab(snapshotOutput)
+    weightingLab:buildOwnerWeightingLab(snapshotOutput),
+    alphaGateRecalibrationLab:buildAlphaGateRecalibrationLab(snapshotOutput)
   };
 }
 
 function buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory){
   const rules=[
-    {name:'Top 10 · Alpha ≥10%',topN:10,minAlpha:.10},
-    {name:'Top 20 · Alpha ≥10%',topN:20,minAlpha:.10},
-    {name:'Top 30 · Alpha ≥10%',topN:30,minAlpha:.10},
+    {name:'Top 10 · Alpha ≥5%',topN:10,minAlpha:.05},
+    {name:'Top 20 · Alpha ≥5%',topN:20,minAlpha:.05},
+    {name:'Top 30 · Alpha ≥5%',topN:30,minAlpha:.05},
     {name:'Top 20 rank · no Alpha gate',topN:20,minAlpha:-10}
   ];
   const transactionCostBps=Math.max(0,finite(process.env.BACKTEST_TRANSACTION_COST_BPS)??10);
@@ -1502,11 +1571,11 @@ function buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory){
   // 12 slots, conviction/evidence sizing, 80% starter deployment, 30% sector purchase cap,
   // additions only while the holding still clears the entry rule, and a 20% hard stock cap.
   // No sector is forced into the portfolio and no position is trimmed back to its entry target.
-  const simplePortfolioControl=strategies.find(x=>x.name==='Top 10 · Alpha ≥10%')||strategies[0];
+  const simplePortfolioControl=strategies.find(x=>x.name==='Top 10 · Alpha ≥5%')||strategies[0];
   const practicalPortfolio=simulateThesisHoldPortfolio(snapshotOutput,historyByTicker,spyHistory,{name:'B · Practical 12-stock owner portfolio',topN:12,minExpectedCAGR:.15,maxRank:25,sellExpectedCAGR:.06,maxInitialWeight:.10,rideMomentum:false,sellPolicy:'strict_thesis_only',forecastConfirmations:2,initialDeploymentCap:.80,sectorPurchaseCap:.30,hardHoldingCap:.20,scaleInitialBatch:true,transactionCostBps,computeDailyRisk:true});
   practicalPortfolio.development=periodStats(practicalPortfolio,2019,2021);practicalPortfolio.validation=periodStats(practicalPortfolio,2022,2025);practicalPortfolio.sellDecisionAudit=buildSellDecisionAudit(practicalPortfolio,historyByTicker,spyHistory);
   const portfolioConstructionLab={
-    description:'Frozen v12.40 portfolio-construction challenger. A is the existing equal-weight Top-10 Alpha>=10% quarterly rebalance. B uses the frozen v12.38 Model-D/Top-25 >=15% expected-CAGR entry rule plus strict-thesis ownership: 12 slots, confidence-aware conviction sizing, 80% initial deployment, 30% sector cap on purchases, 10% max initial stock size, 20% hard stock concentration cap, additions only while a holding still qualifies, no forced sector diversification, no rank-based rotation, and residual cash when opportunities are insufficient. No construction parameter search is performed.',
+    description:'Frozen v12.40 portfolio-construction challenger. A is the existing equal-weight Top-10 Alpha>=5% quarterly rebalance. B uses the frozen v12.38 Model-D/Top-25 >=15% expected-CAGR entry rule plus strict-thesis ownership: 12 slots, confidence-aware conviction sizing, 80% initial deployment, 30% sector cap on purchases, 10% max initial stock size, 20% hard stock concentration cap, additions only while a holding still qualifies, no forced sector diversification, no rank-based rotation, and residual cash when opportunities are insufficient. No construction parameter search is performed.',
     developmentYears:'2019-2021',validationYears:'2022-2025',
     challengers:[simplePortfolioControl,practicalPortfolio]
   };
