@@ -34,7 +34,7 @@ const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 
-const MODEL_VERSION='simple-v12.46-sell-diagnostics-rank-alpha-lab';
+const MODEL_VERSION='simple-v12.47-rank-trajectory-sell-diagnostics';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -1433,7 +1433,7 @@ function buildOwnerReviewIndexWithShadowRank(snapshotOutput){
   for(const xs of byGroup.values())xs.sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf))||(finite(a.row.ownerShadowRank)??9999)-(finite(b.row.ownerShadowRank)??9999));
   return byGroup;
 }
-function sellCheckpoint(entry,entryAsOf,review,historyByTicker,spyHistory,horizon=5){
+function sellCheckpoint(entry,entryAsOf,review,historyByTicker,spyHistory,horizon=5,trajectory=null){
   const endDate=addYears(entryAsOf,horizon),history=historyForEconomicSecurity(entry.ticker,historyByTicker);if(!history)return null;
   const pre=adjustedReturnBetween(history,entryAsOf,review.asOf,{executeAfterStart:true});
   const hold=adjustedReturnBetween(history,entryAsOf,endDate,{executeAfterStart:true});
@@ -1446,10 +1446,10 @@ function sellCheckpoint(entry,entryAsOf,review,historyByTicker,spyHistory,horizo
   const postExitStockCAGR=Math.pow(Math.max(0,1+stockAfter.return),1/postYears)-1;
   const postExitSpyCAGR=Math.pow(Math.max(0,1+spyAfter.return),1/postYears)-1;
   const d=ownerAlphaDecomposition(entry,review.row);
-  return {ticker:entry.ticker,security:economicSecurityGroup(entry.ticker),entryDate:entryAsOf,reviewDate:review.asOf,alpha:finite(review.row.expectedAlpha),shadowRank:finite(review.row.ownerShadowRank),shadowUniverse:finite(review.row.ownerShadowUniverse),quality:finite(review.row.qualityScore),protection:finite(review.row.protectionScore),holdCAGR,strategyCAGR,deltaVsHoldCAGR:strategyCAGR-holdCAGR,postExitStockCAGR,postExitSpyCAGR,postExitExcessCAGR:postExitStockCAGR-postExitSpyCAGR,sellWouldHelp:strategyCAGR>holdCAGR,decomposition:d};
+  return {ticker:entry.ticker,security:economicSecurityGroup(entry.ticker),entryDate:entryAsOf,reviewDate:review.asOf,entryAlpha:finite(entry.expectedAlpha),alpha:finite(review.row.expectedAlpha),entryRank:finite(entry.rank),shadowRank:finite(review.row.ownerShadowRank),shadowUniverse:finite(review.row.ownerShadowUniverse),quality:finite(review.row.qualityScore),protection:finite(review.row.protectionScore),holdCAGR,strategyCAGR,deltaVsHoldCAGR:strategyCAGR-holdCAGR,postExitStockCAGR,postExitSpyCAGR,postExitExcessCAGR:postExitStockCAGR-postExitSpyCAGR,sellWouldHelp:strategyCAGR>holdCAGR,decomposition:d,...(trajectory||{})};
 }
 function summarizeSellCheckpoints(rows){
-  const v=(rows||[]).filter(Boolean);return {n:v.length,helpRate:v.length?v.filter(x=>x.sellWouldHelp).length/v.length:null,meanDeltaVsHoldCAGR:mean(v.map(x=>x.deltaVsHoldCAGR)),meanPostExitExcessCAGR:mean(v.map(x=>x.postExitExcessCAGR)),meanAlpha:mean(v.map(x=>x.alpha)),meanShadowRank:mean(v.map(x=>x.shadowRank)),meanOutcomeAnnualizedChange:mean(v.map(x=>x.decomposition?.outcomeAnnualizedChange)),meanPriceAnnualizedChange:mean(v.map(x=>x.decomposition?.priceAnnualizedChange))};
+  const v=(rows||[]).filter(Boolean);return {n:v.length,helpRate:v.length?v.filter(x=>x.sellWouldHelp).length/v.length:null,meanDeltaVsHoldCAGR:mean(v.map(x=>x.deltaVsHoldCAGR)),meanPostExitExcessCAGR:mean(v.map(x=>x.postExitExcessCAGR)),meanAlpha:mean(v.map(x=>x.alpha)),meanAlphaChange:mean(v.map(x=>x.alphaChange)),meanShadowRank:mean(v.map(x=>x.shadowRank)),meanEntryShadowRank:mean(v.map(x=>x.entryShadowRank)),meanShadowRankChange:mean(v.map(x=>x.shadowRankChange)),meanShadowPctChange:mean(v.map(x=>x.shadowPctChange)),meanNegativeAlphaStreak:mean(v.map(x=>x.negativeAlphaStreak)),meanJointBadStreak:mean(v.map(x=>x.jointBadStreak)),meanOutcomeAnnualizedChange:mean(v.map(x=>x.decomposition?.outcomeAnnualizedChange)),meanPriceAnnualizedChange:mean(v.map(x=>x.decomposition?.priceAnnualizedChange))};
 }
 function groupSellCheckpoints(rows,keyFn){
   const m=new Map();for(const r of rows||[]){const k=keyFn(r);if(k==null)continue;if(!m.has(k))m.set(k,[]);m.get(k).push(r);}return [...m.entries()].map(([bucket,x])=>({bucket,...summarizeSellCheckpoints(x)}));
@@ -1459,14 +1459,31 @@ function buildSellDiagnosticLab(eligible,snapshotOutput,historyByTicker,spyHisto
   for(const r of [...(eligible||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf))||(finite(a.rank)??9999)-(finite(b.rank)??9999))){const g=economicSecurityGroup(r.ticker);if(seen.has(g)||!Number.isFinite(r.realized5YTotalReturnCAGR))continue;seen.add(g);first.push(r);}
   const firstNegative=[],allNegative=[];
   for(const entry of first){
-    const end=addYears(entry.asOf,5),reviews=(reviewIndex.get(economicSecurityGroup(entry.ticker))||[]).filter(x=>String(x.asOf)>String(entry.asOf)&&String(x.asOf)<String(end)&&Number.isFinite(finite(x.row.expectedAlpha))&&finite(x.row.expectedAlpha)<0);
-    let added=false;for(const review of reviews){const c=sellCheckpoint(entry,entry.asOf,review,historyByTicker,spyHistory,5);if(!c)continue;allNegative.push(c);if(!added){firstNegative.push(c);added=true;}}
+    const group=economicSecurityGroup(entry.ticker),end=addYears(entry.asOf,5),allReviews=(reviewIndex.get(group)||[]).filter(x=>String(x.asOf)>=String(entry.asOf)&&String(x.asOf)<String(end));
+    const entryReview=allReviews.find(x=>String(x.asOf)===String(entry.asOf))||null;
+    const er=finite(entryReview?.row?.ownerShadowRank),eu=finite(entryReview?.row?.ownerShadowUniverse),ep=Number.isFinite(er)&&Number.isFinite(eu)&&eu>0?er/eu:null;
+    let negStreak=0,jointStreak=0,added=false;
+    for(const review of allReviews){
+      if(String(review.asOf)<=String(entry.asOf))continue;
+      const a=finite(review.row.expectedAlpha),sr=finite(review.row.ownerShadowRank),su=finite(review.row.ownerShadowUniverse),sp=Number.isFinite(sr)&&Number.isFinite(su)&&su>0?sr/su:null;
+      negStreak=Number.isFinite(a)&&a<0?negStreak+1:0;
+      jointStreak=Number.isFinite(a)&&a<0&&Number.isFinite(sr)&&sr>100?jointStreak+1:0;
+      if(!(Number.isFinite(a)&&a<0))continue;
+      const trajectory={entryShadowRank:er,entryShadowUniverse:eu,entryShadowPct:ep,shadowPct:sp,shadowRankChange:Number.isFinite(er)&&Number.isFinite(sr)?sr-er:null,shadowPctChange:Number.isFinite(ep)&&Number.isFinite(sp)?sp-ep:null,alphaChange:Number.isFinite(finite(entry.expectedAlpha))?a-finite(entry.expectedAlpha):null,negativeAlphaStreak:negStreak,jointBadStreak:jointStreak,yearsSinceEntry:yearsBetweenDates(entry.asOf,review.asOf)};
+      const c=sellCheckpoint(entry,entry.asOf,review,historyByTicker,spyHistory,5,trajectory);if(!c)continue;allNegative.push(c);if(!added){firstNegative.push(c);added=true;}
+    }
   }
   const alphaBucketFn=r=>r.alpha<-.10?'Alpha <-10%':r.alpha<-.05?'Alpha -10% to -5%':'Alpha -5% to 0%';
   const rankBucketFn=r=>r.shadowRank<=50?'Shadow rank 1-50':r.shadowRank<=100?'Shadow rank 51-100':'Shadow rank >100';
+  const alphaChangeBucketFn=r=>!Number.isFinite(r.alphaChange)?null:r.alphaChange<=-.20?'Alpha deterioration >20pp':r.alphaChange<=-.10?'Alpha deterioration 10-20pp':'Alpha deterioration <10pp';
+  const rankPctChangeBucketFn=r=>!Number.isFinite(r.shadowPctChange)?null:r.shadowPctChange>.25?'Rank percentile deterioration >25pp':r.shadowPctChange>.10?'Rank percentile deterioration 10-25pp':'Rank percentile deterioration <=10pp';
+  const rankChangeBucketFn=r=>!Number.isFinite(r.shadowRankChange)?null:r.shadowRankChange>200?'Rank fell >200 places':r.shadowRankChange>100?'Rank fell 101-200':r.shadowRankChange>50?'Rank fell 51-100':'Rank fell <=50 places';
+  const persistenceBucketFn=r=>r.negativeAlphaStreak>=4?'Negative Alpha 4q+':r.negativeAlphaStreak===3?'Negative Alpha 3q':r.negativeAlphaStreak===2?'Negative Alpha 2q':'Negative Alpha 1q';
   const crossFn=r=>`${alphaBucketFn(r)} · ${rankBucketFn(r)}`;
+  const trajectoryCrossFn=r=>`${alphaChangeBucketFn(r)} · ${rankPctChangeBucketFn(r)}`;
   const helpful=firstNegative.filter(x=>x.sellWouldHelp),harmful=firstNegative.filter(x=>!x.sellWouldHelp);
-  return {description:'v12.46 diagnostic sell dataset. Uses each unique economic security\'s first completed owner entry, then asks at negative-Alpha quarterly reviews whether selling to SPY through the original 5-year endpoint would have helped. Shadow rank is Model-D rerun across the full modeled snapshot with no Alpha eligibility gate, so ranking remains meaningful after a holding falls below the new-money gate. Review-level rows are descriptive and overlapping; firstNegativeAlpha is the cleaner one-checkpoint-per-security view.',firstNegativeAlpha:{overall:summarizeSellCheckpoints(firstNegative),byAlpha:groupSellCheckpoints(firstNegative,alphaBucketFn),byShadowRank:groupSellCheckpoints(firstNegative,rankBucketFn),byAlphaAndShadowRank:groupSellCheckpoints(firstNegative,crossFn),helpfulProfile:summarizeSellCheckpoints(helpful),harmfulProfile:summarizeSellCheckpoints(harmful),rows:firstNegative},allNegativeAlphaReviews:{overall:summarizeSellCheckpoints(allNegative),byAlpha:groupSellCheckpoints(allNegative,alphaBucketFn),byShadowRank:groupSellCheckpoints(allNegative,rankBucketFn),byAlphaAndShadowRank:groupSellCheckpoints(allNegative,crossFn)}};
+  const trajectorySummary=(rows)=>({overall:summarizeSellCheckpoints(rows),byAlphaChange:groupSellCheckpoints(rows,alphaChangeBucketFn),byRankChange:groupSellCheckpoints(rows,rankChangeBucketFn),byRankPercentileChange:groupSellCheckpoints(rows,rankPctChangeBucketFn),byPersistence:groupSellCheckpoints(rows,persistenceBucketFn),byAlphaChangeAndRankPercentile:groupSellCheckpoints(rows,trajectoryCrossFn)});
+  return {description:'v12.47 sell diagnostic dataset. No new automatic exit rule is promoted. It extends the v12.46 negative-Alpha checkpoints with rank trajectory from the original owner entry: entry shadow rank, current shadow rank, absolute rank change, percentile-rank deterioration, Alpha deterioration, negative-Alpha persistence and joint Alpha<0 + shadow-rank>100 persistence. This is designed to learn what separates helpful sells from costly false positives before predeclaring another exit rule.',firstNegativeAlpha:{overall:summarizeSellCheckpoints(firstNegative),byAlpha:groupSellCheckpoints(firstNegative,alphaBucketFn),byShadowRank:groupSellCheckpoints(firstNegative,rankBucketFn),byAlphaAndShadowRank:groupSellCheckpoints(firstNegative,crossFn),...trajectorySummary(firstNegative),helpfulProfile:summarizeSellCheckpoints(helpful),harmfulProfile:summarizeSellCheckpoints(harmful),rows:firstNegative},allNegativeAlphaReviews:{overall:summarizeSellCheckpoints(allNegative),byAlpha:groupSellCheckpoints(allNegative,alphaBucketFn),byShadowRank:groupSellCheckpoints(allNegative,rankBucketFn),byAlphaAndShadowRank:groupSellCheckpoints(allNegative,crossFn),...trajectorySummary(allNegative)}};
 }
 
 function buildOwnerAlphaExitLab(eligible,snapshotOutput,historyByTicker,spyHistory,fixedHold15){
@@ -1478,7 +1495,7 @@ function buildOwnerAlphaExitLab(eligible,snapshotOutput,historyByTicker,spyHisto
     const evals=first.map(r=>evaluateOwnerAlphaExit(r,r.asOf,rule,reviewIndex,historyByTicker,spyHistory,5)).filter(Boolean);
     return {key:rule.key,label:rule.label,kind:rule.kind,threshold:rule.threshold??null,confirmations:rule.confirmations,firstSignalAudit:summarizeOwnerExitEvaluations(evals),portfolioAudit:ownerAlphaExitPortfolioComparison(fixedHold15?.['5Y'],entryLookup,rule,reviewIndex,historyByTicker,spyHistory)};
   });
-  return {description:'v12.46 predeclared 15%-hurdle sell lab. Existing v12.45 rules are preserved, and two rank+Alpha challengers are added. Shadow rank reruns the same Model-D Alpha/quality architecture across the full snapshot without the hard Alpha eligibility gate, so a held stock retains a meaningful relative rank after Alpha falls below the buy threshold. Missing/nonqualifying reviews reset confirmation; proceeds move to SPY through the original 5-year endpoint.',horizonYears:5,alphaHurdle:.15,entryRuleFrozen:true,rules};
+  return {description:'v12.47 frozen 15%-hurdle sell lab. Existing v12.46 exit rules are preserved unchanged while rank-trajectory diagnostics are studied separately.  Existing v12.45 rules are preserved, and two rank+Alpha challengers are added. Shadow rank reruns the same Model-D Alpha/quality architecture across the full snapshot without the hard Alpha eligibility gate, so a held stock retains a meaningful relative rank after Alpha falls below the buy threshold. Missing/nonqualifying reviews reset confirmation; proceeds move to SPY through the original 5-year endpoint.',horizonYears:5,alphaHurdle:.15,entryRuleFrozen:true,rules};
 }
 function alphaSizingTarget(alpha){
   if(!Number.isFinite(alpha))return 4.5;
