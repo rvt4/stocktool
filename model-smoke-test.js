@@ -946,3 +946,13 @@ assert(Math.abs(alphaProbe.expectedAlpha-.07)<1e-12,'22% expected CAGR should eq
 const rankProbe=[{ticker:'A',expectedAlpha:.049,expectedCAGR:.199,qualityScore:90,moatScore:90,growthQualityScore:90,compounderScore:90,investmentScore:90},{ticker:'B',expectedAlpha:.051,expectedCAGR:.201,qualityScore:60,moatScore:60,growthQualityScore:60,compounderScore:60,investmentScore:60}];
 applyModelDRanking(rankProbe);assert.strictEqual(rankProbe.find(x=>x.ticker==='B').rankEligible,true);assert.strictEqual(rankProbe.find(x=>x.ticker==='A').rankEligible,false);
 console.log('V12.45 Alpha regression passed: Alpha uses the 15% hurdle and the live gate preserves >=20% expected CAGR.');
+
+// V12.49 owner rating + rating-aware sizing regression -----------------------
+const {ownerEntryRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
+const ownerBuy={expectedCAGR:.22,expectedAlpha:.07,rank:20,modelSupport:'standard',qualityScore:60,forecastConfidence:50,valuationConfidence:50};
+assert.strictEqual(ownerEntryRating(ownerBuy),'Buy','owner-entry-eligible stock must be at least Buy');
+assert.strictEqual(ownerEntryRating({...ownerBuy,rank:10,expectedCAGR:.27,expectedAlpha:.12,qualityScore:70,forecastConfidence:55,valuationConfidence:55}),'Strong Buy','Strong Buy tier drifted');
+assert.strictEqual(ownerEntryRating({...ownerBuy,rank:3,expectedCAGR:.33,expectedAlpha:.18,qualityScore:82,forecastConfidence:70,valuationConfidence:70}),'Exceptional Buy','Exceptional Buy tier drifted');
+assert.strictEqual(ownerEntryRating({...ownerBuy,rank:26}),null,'stock outside owner entry rank cap received a Buy rating');
+assert(ratingAlphaSizingTarget({...ownerBuy,rating:'Strong Buy',expectedAlpha:.12})>ratingAlphaSizingTarget({...ownerBuy,rating:'Buy',expectedAlpha:.12}),'rating sizing bands are not ordered');
+console.log('V12.49 owner-rating regression passed: starter-portfolio stocks are Buy+ and rating bands can inform sizing.');

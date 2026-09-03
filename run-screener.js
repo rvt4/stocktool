@@ -17,7 +17,7 @@ const { valuate } = require('./engine/valuation-engine');
 const { rateStock } = require('./engine/rating-engine');
 const { validateUniverse } = require('./engine/validation');
 const { writeProspectiveSnapshot } = require('./engine/history-snapshot');
-const { livePortfolioGuidance } = require('./engine/portfolio-policy');
+const { livePortfolioGuidance, applyOwnerEntryRating } = require('./engine/portfolio-policy');
 const { applyModelDRanking, compareRank } = require('./engine/ranking-engine');
 
 const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'),'utf8'));
@@ -205,11 +205,12 @@ async function run(){
     const rec=flattenRecord(stock,forecast,quality,valuation,decision); rec.momentum=liveMomentum(stock.priceHistory||[],spyHistory); stocks.push(rec);
   }
   rank(stocks);
+  for(const s of stocks)applyOwnerEntryRating(s);
   applyLivePortfolioPolicy(stocks);
   enforceMutuallyExclusiveShareClasses(stocks);
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.39-sell-vs-rotate-policy',stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.49-owner-rating-weighting-lab',stocks}; writeJson('results.json',output);
   const historyFile=writeProspectiveSnapshot(__dirname,output);
   if(historyFile) console.log(`Saved prospective backtest snapshot: ${path.relative(__dirname,historyFile)}`);
   diag.finishedAt=new Date().toISOString();diag.scored=stocks.length;writeJson('screener-diagnostics.json',diag);
