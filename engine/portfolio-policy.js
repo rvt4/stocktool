@@ -11,9 +11,11 @@ function clamp(v,lo=0,hi=1){return Math.max(lo,Math.min(hi,v));}
 function ownerEntryRating(r,{minExpectedCAGR=.20,minAlpha=.05,maxRank=25}={}){
   const c=finite(r?.expectedCAGR??r?.expectedReturn),alpha=finite(r?.expectedAlpha),rank=finite(r?.rank??r?.overallRank);
   const support=String(r?.modelSupport||'standard');
-  const eligible=c!=null&&c>=minExpectedCAGR&&alpha!=null&&alpha>=minAlpha&&rank!=null&&rank<=maxRank&&support!=='unsupported';
-  if(!eligible)return null;
   const q=finite(r?.qualityScore),fc=finite(r?.forecastConfidence??r?.forecastReliabilityScore??r?.forecastConfidenceScore),vc=finite(r?.valuationConfidence??r?.valuationConfidenceScore??r?.confidenceScore);
+  // A new-money Buy must also clear the existing forecast-reliability safety invariant.
+  // This keeps Starter Portfolio membership and Buy+ ratings internally consistent.
+  const eligible=c!=null&&c>=minExpectedCAGR&&alpha!=null&&alpha>=minAlpha&&rank!=null&&rank<=maxRank&&support!=='unsupported'&&fc!=null&&fc>=45;
+  if(!eligible)return null;
   const evidenceCanUpgrade=support!=='limited'&&(fc==null||fc>=45)&&(vc==null||vc>=45);
   if(evidenceCanUpgrade&&rank<=5&&alpha>=.15&&(q==null||q>=75)&&(fc==null||fc>=60)&&(vc==null||vc>=60))return 'Exceptional Buy';
   if(evidenceCanUpgrade&&rank<=15&&alpha>=.10&&(q==null||q>=65)&&(fc==null||fc>=50)&&(vc==null||vc>=50))return 'Strong Buy';
@@ -32,10 +34,12 @@ function ratingAlphaSizingTarget(r){
   return 4.5+1.5*clamp(((a??.05)-.05)/.10,0,1);
 }
 
-function thesisEntryEligible(r,{minExpectedCAGR=.20,maxRank=25}={}){
+function thesisEntryEligible(r,{minExpectedCAGR=.20,minAlpha=.05,maxRank=25,minForecastReliability=45}={}){
   const c=finite(r?.expectedCAGR??r?.expectedReturn);
+  const alpha=finite(r?.expectedAlpha);
   const rank=finite(r?.rank??r?.overallRank);
-  return c!=null&&c>=minExpectedCAGR&&rank!=null&&rank<=maxRank&&String(r?.modelSupport||'')!=='unsupported';
+  const fc=finite(r?.forecastConfidence??r?.forecastReliabilityScore??r?.forecastConfidenceScore);
+  return c!=null&&c>=minExpectedCAGR&&alpha!=null&&alpha>=minAlpha&&rank!=null&&rank<=maxRank&&fc!=null&&fc>=minForecastReliability&&String(r?.modelSupport||'')!=='unsupported';
 }
 
 function thesisTargetWeight(r,{maxInitialWeight=.10}={}){
