@@ -5,41 +5,30 @@ function mean(xs){return xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null;}
 function clamp(v,lo=0,hi=1){return Math.max(lo,Math.min(hi,v));}
 
 
-// v12.49 owner-facing buy rating. The owner entry rule (rank + Alpha/CAGR +
-// model support) is the gate; ratings tier conviction only inside that eligible set.
-// Therefore every stock proposed for a new long-term position is at least Buy.
-function ownerEntryRating(r,{minExpectedCAGR=.20,minAlpha=.05,maxRank=25}={}){
-  const c=finite(r?.expectedCAGR??r?.expectedReturn),alpha=finite(r?.expectedAlpha),rank=finite(r?.rank??r?.overallRank);
-  const support=String(r?.modelSupport||'standard');
-  const q=finite(r?.qualityScore),fc=finite(r?.forecastConfidence??r?.forecastReliabilityScore??r?.forecastConfidenceScore),vc=finite(r?.valuationConfidence??r?.valuationConfidenceScore??r?.confidenceScore);
-  // A new-money Buy must also clear the existing forecast-reliability safety invariant.
-  // This keeps Starter Portfolio membership and Buy+ ratings internally consistent.
-  const eligible=c!=null&&c>=minExpectedCAGR&&alpha!=null&&alpha>=minAlpha&&rank!=null&&rank<=maxRank&&support!=='unsupported'&&fc!=null&&fc>=45;
-  if(!eligible)return null;
-  const evidenceCanUpgrade=support!=='limited'&&(fc==null||fc>=45)&&(vc==null||vc>=45);
-  if(evidenceCanUpgrade&&rank<=5&&alpha>=.15&&(q==null||q>=75)&&(fc==null||fc>=60)&&(vc==null||vc>=60))return 'Exceptional Buy';
-  if(evidenceCanUpgrade&&rank<=15&&alpha>=.10&&(q==null||q>=65)&&(fc==null||fc>=50)&&(vc==null||vc>=50))return 'Strong Buy';
-  return 'Buy';
-}
-function applyOwnerEntryRating(r,opts={}){
-  const rating=ownerEntryRating(r,opts);if(!rating)return r;
-  r.rating=rating;r.qualifiesForBuyList=true;r.ownerEntryRating=rating;return r;
-}
-// Rating establishes the sizing band; Alpha determines where the stock sits inside
-// that band. This remains a challenger until the historical weighting lab is reviewed.
-function ratingAlphaSizingTarget(r){
-  const rating=String(r?.ownerEntryRating||r?.rating||'Buy'),a=finite(r?.expectedAlpha);
-  if(rating==='Exceptional Buy')return 8+2*clamp(((a??.15)-.15)/.20,0,1);
-  if(rating==='Strong Buy')return 6+2*clamp(((a??.10)-.10)/.15,0,1);
-  return 4.5+1.5*clamp(((a??.05)-.05)/.10,0,1);
+// v12.50: the existing Valuation Rating is the buy-quality gate. Do not
+// overwrite it with a second portfolio-specific rating system. The portfolio can
+// only initiate a position when valuation says Buy / Strong Buy / Exceptional Buy.
+function isValuationBuyRating(rating){
+  return ['Buy','Strong Buy','Exceptional Buy'].includes(String(rating||''));
 }
 
-function thesisEntryEligible(r,{minExpectedCAGR=.20,minAlpha=.05,maxRank=25,minForecastReliability=45}={}){
+// Valuation Rating establishes the sizing band; Alpha decides where the stock
+// sits inside that band. These are raw sizing points and are normalized across
+// the selected Starter Portfolio so the final initial weights sum to 100%.
+function ratingAlphaSizingTarget(r){
+  const rating=String(r?.rating||'');
+  const a=finite(r?.expectedAlpha);
+  if(rating==='Exceptional Buy')return 8+2*clamp(((a??.15)-.15)/.20,0,1);
+  if(rating==='Strong Buy')return 6+2*clamp(((a??.10)-.10)/.15,0,1);
+  if(rating==='Buy')return 4.5+1.5*clamp(((a??.05)-.05)/.10,0,1);
+  return null;
+}
+
+function thesisEntryEligible(r,{minExpectedCAGR=.20,minAlpha=.05,maxRank=25}={}){
   const c=finite(r?.expectedCAGR??r?.expectedReturn);
   const alpha=finite(r?.expectedAlpha);
   const rank=finite(r?.rank??r?.overallRank);
-  const fc=finite(r?.forecastConfidence??r?.forecastReliabilityScore??r?.forecastConfidenceScore);
-  return c!=null&&c>=minExpectedCAGR&&alpha!=null&&alpha>=minAlpha&&rank!=null&&rank<=maxRank&&fc!=null&&fc>=minForecastReliability&&String(r?.modelSupport||'')!=='unsupported';
+  return isValuationBuyRating(r?.rating)&&c!=null&&c>=minExpectedCAGR&&alpha!=null&&alpha>=minAlpha&&rank!=null&&rank<=maxRank&&String(r?.modelSupport||'')!=='unsupported';
 }
 
 function thesisTargetWeight(r,{maxInitialWeight=.10}={}){
@@ -67,7 +56,8 @@ function livePortfolioGuidance(r,momentum,{minExpectedCAGR=.20,maxRank=25,sellEx
   const forecast=finite(r?.forecastConfidence??r?.forecastReliabilityScore??r?.forecastConfidenceScore);
   const supported=String(r?.modelSupport||'')!=='unsupported';
   const entryEligible=thesisEntryEligible(r,{minExpectedCAGR,maxRank});
-  const suggestedInitialWeight=entryEligible?thesisTargetWeight(r,{maxInitialWeight}):null;
+  const rawSizingPoints=entryEligible?ratingAlphaSizingTarget(r):null;
+  const suggestedInitialWeight=null; // normalized across the selected Starter Portfolio after all stocks are ranked
   const strongMomentum=isStrongWinnerMomentum(momentum);
 
   let existingHolderAction='HOLD';
@@ -88,14 +78,14 @@ function livePortfolioGuidance(r,momentum,{minExpectedCAGR=.20,maxRank=25,sellEx
     }
   }
 
-  const newPositionAction=entryEligible?'BUY':(!supported?'PASS':(c!=null&&c>=minExpectedCAGR?'WATCH':'PASS'));
+  const newPositionAction=entryEligible?'BUY':(!supported?'PASS':(isValuationBuyRating(r?.rating)?'WATCH':'PASS')); 
   const portfolioAction=entryEligible?'BUY':existingHolderAction;
   return {
     entryEligible,newPositionAction,existingHolderAction,portfolioAction,
-    suggestedInitialWeight,strongMomentum,
+    suggestedInitialWeight,rawSizingPoints,strongMomentum,
     rules:{minExpectedCAGR,maxRank,sellExpectedCAGR,maxInitialWeight},
     holderReason,
   };
 }
 
-module.exports={thesisEntryEligible,thesisTargetWeight,isStrongWinnerMomentum,livePortfolioGuidance,ownerEntryRating,applyOwnerEntryRating,ratingAlphaSizingTarget};
+module.exports={thesisEntryEligible,thesisTargetWeight,isStrongWinnerMomentum,livePortfolioGuidance,isValuationBuyRating,ratingAlphaSizingTarget};
