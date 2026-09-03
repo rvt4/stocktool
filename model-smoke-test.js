@@ -924,8 +924,8 @@ const {
   isStrongWinnerMomentum,
   livePortfolioGuidance,
 }=require('./engine/portfolio-policy');
-const liveCandidate={overallRank:7,expectedCAGR:.22,forecastReliabilityScore:88,valuationConfidenceScore:84,qualityScore:86,downsideProtectionScore:80,modelSupport:'standard'};
-assert.strictEqual(liveEntryEligible(liveCandidate),true,'live policy rejected a Top-25 stock with >=20% expected CAGR');
+const liveCandidate={overallRank:7,expectedCAGR:.22,expectedAlpha:.07,forecastReliabilityScore:88,valuationConfidenceScore:84,qualityScore:86,downsideProtectionScore:80,modelSupport:'standard'};
+assert.strictEqual(liveEntryEligible(liveCandidate),true,'live policy rejected a Top-25 stock that clears CAGR, Alpha and forecast-reliability entry gates');
 assert(liveTargetWeight(liveCandidate)>=.07&&liveTargetWeight(liveCandidate)<=.10,'live conviction sizing drifted from thesis-hold sizing bands');
 const liveRideMomentum={stock3:.08,rel6:.06,rel12:.03};
 assert.strictEqual(isStrongWinnerMomentum(liveRideMomentum),true,'live Ride Winner momentum test drifted from the backtest rule');
@@ -954,5 +954,6 @@ assert.strictEqual(ownerEntryRating(ownerBuy),'Buy','owner-entry-eligible stock 
 assert.strictEqual(ownerEntryRating({...ownerBuy,rank:10,expectedCAGR:.27,expectedAlpha:.12,qualityScore:70,forecastConfidence:55,valuationConfidence:55}),'Strong Buy','Strong Buy tier drifted');
 assert.strictEqual(ownerEntryRating({...ownerBuy,rank:3,expectedCAGR:.33,expectedAlpha:.18,qualityScore:82,forecastConfidence:70,valuationConfidence:70}),'Exceptional Buy','Exceptional Buy tier drifted');
 assert.strictEqual(ownerEntryRating({...ownerBuy,rank:26}),null,'stock outside owner entry rank cap received a Buy rating');
+assert.strictEqual(ownerEntryRating({...ownerBuy,forecastConfidence:44}),null,'low forecast reliability stock received a Buy rating');
 assert(ratingAlphaSizingTarget({...ownerBuy,rating:'Strong Buy',expectedAlpha:.12})>ratingAlphaSizingTarget({...ownerBuy,rating:'Buy',expectedAlpha:.12}),'rating sizing bands are not ordered');
 console.log('V12.49 owner-rating regression passed: starter-portfolio stocks are Buy+ and rating bands can inform sizing.');

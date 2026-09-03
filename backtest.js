@@ -1547,7 +1547,7 @@ function buildOwnerWeightingLab(snapshotOutput){
   for(const spec of specs){
     const cohorts=[];
     for(const snap of snapshotOutput||[]){
-      const eligible=dedupeEconomicSecurities((snap.rows||[]).filter(r=>Number.isFinite(r.expectedAlpha)&&r.expectedAlpha>=.05&&Number.isFinite(r.expectedCAGR)&&r.expectedCAGR>=.20&&Number.isFinite(r.rank)&&r.rank<=25&&String(r.modelSupport||'')!=='unsupported').sort((a,b)=>a.rank-b.rank)).slice(0,15);
+      const eligible=dedupeEconomicSecurities((snap.rows||[]).filter(r=>Number.isFinite(r.expectedAlpha)&&r.expectedAlpha>=.05&&Number.isFinite(r.expectedCAGR)&&r.expectedCAGR>=.20&&Number.isFinite(r.rank)&&r.rank<=25&&Number.isFinite(r.forecastConfidence)&&r.forecastConfidence>=45&&String(r.modelSupport||'')!=='unsupported').sort((a,b)=>a.rank-b.rank)).slice(0,15);
       const items=eligible.filter(r=>Number.isFinite(r.realized5YTotalReturnCAGR)&&Number.isFinite(r.spy5YTotalReturnCAGR));if(!items.length)continue;
       const weights=normalizeRawWeights(items,spec.raw),portfolioCAGR=weightedHoldCAGR(items,weights,5),spyCAGR=cohortSpyCAGR(items,5);
       const terminalVals=items.map((r,i)=>weights[i]*Math.pow(Math.max(0,1+r.realized5YTotalReturnCAGR),5)),terminalTotal=terminalVals.reduce((a,b)=>a+b,0);
@@ -1587,7 +1587,7 @@ function buildAlphaGateRecalibrationLab(snapshotOutput){
 }
 
 function buildLongTermOwnerLab(rows,snapshotOutput,historyByTicker=null,spyHistory=null){
-  const eligible=(rows||[]).filter(r=>Number.isFinite(r.expectedAlpha)&&r.expectedAlpha>=.05&&Number.isFinite(r.expectedCAGR)&&r.expectedCAGR>=.20&&Number.isFinite(r.rank)&&r.rank<=25&&String(r.modelSupport||'')!=='unsupported');
+  const eligible=(rows||[]).filter(r=>Number.isFinite(r.expectedAlpha)&&r.expectedAlpha>=.05&&Number.isFinite(r.expectedCAGR)&&r.expectedCAGR>=.20&&Number.isFinite(r.rank)&&r.rank<=25&&Number.isFinite(r.forecastConfidence)&&r.forecastConfidence>=45&&String(r.modelSupport||'')!=='unsupported');
   const horizons={};
   for(const h of [1,3,5]){
     horizons[`${h}Y`]={
@@ -1603,7 +1603,7 @@ function buildLongTermOwnerLab(rows,snapshotOutput,historyByTicker=null,spyHisto
   return {
     description:'Frozen long-term-owner test. Entry requires live Model-D rank <=25, expected Alpha >=5% on the 15% hurdle scale (therefore expected CAGR >=20%), and supported valuation, and supported valuation. Outcomes are measured from the original purchase signal with no rank-based selling. Fixed-hold cohorts take up to the 15 best eligible economic securities at each snapshot, equal-weight them, and hold unchanged for 3 or 5 years.',
     intendedUse:'Approximately 15 growth/value/dividend holdings; high hurdle to buy; 5+ year ownership intent; quarterly thesis review; rank changes alone are not a sell signal.',
-    entryRule:{maxRank:25,minExpectedAlpha:.05,minExpectedCAGR:.20,modelSupport:'supported_or_limited',portfolioTarget:15},
+    entryRule:{maxRank:25,minExpectedAlpha:.05,minExpectedCAGR:.20,minForecastReliability:45,modelSupport:'supported_or_limited',portfolioTarget:15},
     eligibleObservations:eligible.length,horizons,fixedHold15,
     robustnessAudit:buildOwnerRobustnessAudit(eligible,fixedHold15),
     exitLab:historyByTicker&&spyHistory?buildOwnerExitLab(eligible,snapshotOutput,historyByTicker,spyHistory,fixedHold15):null,

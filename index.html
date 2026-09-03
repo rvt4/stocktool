@@ -92,8 +92,8 @@ let latestBacktest=null, latestResults=null;
 function addYears(dateStr,years){const d=new Date(String(dateStr)+'T00:00:00Z');if(Number.isNaN(d.getTime()))return '—';d.setUTCFullYear(d.getUTCFullYear()+years);return d.toISOString().slice(0,10)}
 function fmtPct(v,d=1){return Number.isFinite(v)?(v*100).toFixed(d)+'%':'—'}
 function currentOwnerEligible(s){
- const rank=Number(s.overallRank), alpha=Number(s.expectedAlpha), cagr=Number(s.expectedReturn??s.expectedCAGR);
- return Number.isFinite(rank)&&rank<=25&&Number.isFinite(alpha)&&alpha>=.05&&Number.isFinite(cagr)&&cagr>=.20&&String(s.modelSupport||'standard')!=='unsupported';
+ const rank=Number(s.overallRank), alpha=Number(s.expectedAlpha), cagr=Number(s.expectedReturn??s.expectedCAGR), fc=Number(s.forecastReliabilityScore??s.forecastConfidenceScore);
+ return Number.isFinite(rank)&&rank<=25&&Number.isFinite(alpha)&&alpha>=.05&&Number.isFinite(cagr)&&cagr>=.20&&Number.isFinite(fc)&&fc>=45&&String(s.modelSupport||'standard')!=='unsupported';
 }
 function dedupeCurrentOwner(rows){
  const out=[], seen=new Set();
