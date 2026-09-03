@@ -35,7 +35,7 @@ const {rateStock}=require('./engine/rating-engine');
 const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='simple-v12.50-valuation-rating-portfolio';
+const MODEL_VERSION='simple-v12.51-dynamic-margin-of-safety-entry';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -1126,6 +1126,32 @@ function buildChallengerLab(rows,horizon=1){
 
 
 
+function dynamicMosProfile(r){
+  const q=finite(r?.qualityScore),moat=finite(r?.moatScore),comp=finite(r?.compounderScore),fc=finite(r?.forecastConfidence),vc=finite(r?.valuationConfidence),support=String(r?.modelSupport||'standard');
+  if(support==='unsupported')return {tier:'Unsupported',requiredMOS:null,eligibleQuality:false};
+  if(q!=null&&q>=80&&moat!=null&&moat>=75&&comp!=null&&comp>=75&&fc!=null&&fc>=60&&vc!=null&&vc>=65&&support!=='limited')return {tier:'Elite established compounder',requiredMOS:.05,eligibleQuality:true};
+  if(q!=null&&q>=72&&moat!=null&&moat>=65&&comp!=null&&comp>=68&&fc!=null&&fc>=55&&vc!=null&&vc>=60&&support!=='limited')return {tier:'Strong established business',requiredMOS:.10,eligibleQuality:true};
+  if(q!=null&&q>=58&&fc!=null&&fc>=50&&vc!=null&&vc>=55&&support!=='limited')return {tier:'Standard quality',requiredMOS:.20,eligibleQuality:true};
+  if(fc!=null&&fc>=45&&vc!=null&&vc>=45)return {tier:'Higher uncertainty',requiredMOS:.25,eligibleQuality:true};
+  return {tier:'Insufficient confidence',requiredMOS:.30,eligibleQuality:false};
+}
+function ownerDynamicEntryEligible(r,{minExpectedCAGR=.15,minAlpha=0,maxRank=25}={}){
+  const p=dynamicMosProfile(r),mos=finite(r?.marginOfSafety);
+  return p.eligibleQuality&&Number.isFinite(r?.expectedAlpha)&&r.expectedAlpha>=minAlpha&&Number.isFinite(r?.expectedCAGR)&&r.expectedCAGR>=minExpectedCAGR&&Number.isFinite(r?.dynamicRank)&&r.dynamicRank<=maxRank&&Number.isFinite(mos)&&mos>=p.requiredMOS&&String(r?.modelSupport||'')!=='unsupported';
+}
+function dynamicRankSnapshotRows(rows){const cloned=(rows||[]).map(r=>({...r}));applyModelDRanking(cloned,{rankField:'dynamicRank',universeSizeField:null,alphaGate:0});return cloned;}
+function buildDynamicMosEntryLab(snapshotOutput){
+  const specs=[
+    {key:'fixed20',label:'A · Fixed 20% CAGR control',pick:rows=>{const c=rows.map(r=>({...r}));applyModelDRanking(c,{rankField:'testRank',universeSizeField:null,alphaGate:.05});return dedupeEconomicSecurities(c.filter(r=>Number.isFinite(r.testRank)&&r.testRank<=25&&Number.isFinite(r.expectedCAGR)&&r.expectedCAGR>=.20&&String(r.modelSupport||'')!=='unsupported').sort((a,b)=>a.testRank-b.testRank)).slice(0,15)}},
+    {key:'dynamic_mos',label:'B · 15% CAGR + dynamic MOS',pick:rows=>dedupeEconomicSecurities(dynamicRankSnapshotRows(rows).filter(ownerDynamicEntryEligible).sort((a,b)=>a.dynamicRank-b.dynamicRank)).slice(0,15)}
+  ];
+  const results=[];
+  for(const spec of specs){const cohorts=[];for(const snap of snapshotOutput||[]){const picks=spec.pick(snap.rows||[]);const valid=picks.filter(r=>Number.isFinite(r.realized5YTotalReturnCAGR)&&Number.isFinite(r.spy5YTotalReturnCAGR));if(!valid.length)continue;const portfolioCAGR=equalWeightFixedHoldCAGR(valid,5),spyCAGR=cohortSpyCAGR(valid,5);cohorts.push({asOf:snap.asOf,holdings:valid.length,portfolioCAGR,spyCAGR,excessCAGR:portfolioCAGR-spyCAGR,beatSpy:portfolioCAGR>spyCAGR,hit15:portfolioCAGR>=.15,tickers:valid.map(r=>r.ticker),members:valid.map(r=>({ticker:r.ticker,cagr:r.realized5YTotalReturnCAGR,tier:dynamicMosProfile(r).tier,requiredMOS:dynamicMosProfile(r).requiredMOS,marginOfSafety:r.marginOfSafety,expectedCAGR:r.expectedCAGR}))});}
+    results.push({key:spec.key,label:spec.label,cohortCount:cohorts.length,meanHoldings:mean(cohorts.map(x=>x.holdings)),meanPortfolioCAGR:mean(cohorts.map(x=>x.portfolioCAGR)),medianPortfolioCAGR:median(cohorts.map(x=>x.portfolioCAGR)),meanSpyCAGR:mean(cohorts.map(x=>x.spyCAGR)),meanExcessCAGR:mean(cohorts.map(x=>x.excessCAGR)),beatSpyRate:cohorts.length?cohorts.filter(x=>x.beatSpy).length/cohorts.length:null,hit15Rate:cohorts.length?cohorts.filter(x=>x.hit15).length/cohorts.length:null,worstCohort:cohorts.reduce((a,b)=>!a||b.portfolioCAGR<a.portfolioCAGR?b:a,null),cohorts});}
+  const a=results[0],b=results[1],replacements=[];if(a&&b){const am=new Map(a.cohorts.map(c=>[c.asOf,c])),bm=new Map(b.cohorts.map(c=>[c.asOf,c]));for(const [date,bc] of bm){const ac=am.get(date);if(!ac)continue;const aset=new Set(ac.tickers),bset=new Set(bc.tickers),added=bc.members.filter(x=>!aset.has(x.ticker)),removed=ac.cohorts?[]:ac.members?.filter(x=>!bset.has(x.ticker))||[];replacements.push({asOf:date,added,removed});}}
+  return {description:'v12.51 predeclared entry-policy test. The investor hurdle is 15% expected CAGR. Margin of safety is separate and scales with uncertainty: Elite established compounder 5%, Strong established business 10%, Standard quality 20%, Higher uncertainty 25%. Insufficient-confidence and unsupported names cannot enter. The dynamic challenger reranks the >=15% CAGR candidate universe with the same Model-D formula; no sell or weighting rule is changed.',tiers:[{tier:'Elite established compounder',requiredMOS:.05},{tier:'Strong established business',requiredMOS:.10},{tier:'Standard quality',requiredMOS:.20},{tier:'Higher uncertainty',requiredMOS:.25}],results,replacements};
+}
+
 function ownerValuationEntryEligible(r,{minAlpha=.05,minExpectedCAGR=.20,maxRank=25}={}){
   return isValuationBuyRating(r?.rating)&&Number.isFinite(r?.expectedAlpha)&&r.expectedAlpha>=minAlpha&&Number.isFinite(r?.expectedCAGR)&&r.expectedCAGR>=minExpectedCAGR&&Number.isFinite(r?.rank)&&r.rank<=maxRank&&String(r?.modelSupport||'')!=='unsupported';
 }
@@ -1591,7 +1617,8 @@ function buildAlphaGateRecalibrationLab(snapshotOutput){
 }
 
 function buildLongTermOwnerLab(rows,snapshotOutput,historyByTicker=null,spyHistory=null){
-  const eligible=(rows||[]).filter(r=>ownerValuationEntryEligible(r));
+  const dynamicSnapshots=(snapshotOutput||[]).map(s=>({...s,rows:dynamicRankSnapshotRows(s.rows||[])}));
+  const eligible=dynamicSnapshots.flatMap(s=>s.rows).filter(r=>ownerDynamicEntryEligible(r));
   const horizons={};
   for(const h of [1,3,5]){
     horizons[`${h}Y`]={
@@ -1603,18 +1630,19 @@ function buildLongTermOwnerLab(rows,snapshotOutput,historyByTicker=null,spyHisto
       byDividend:longTermOwnerGrouped(eligible,r=>(finite(r.dividendYield)||0)>=.03?'Yield >=3%':(finite(r.dividendYield)||0)>=.01?'Yield 1-3%':'Yield <1%',h)
     };
   }
-  const fixedHold15=fixedHoldCohorts(snapshotOutput,{topN:15,minAlpha:.05,minExpectedCAGR:.20,maxRank:25,horizons:[3,5]});
+  const fixedHold15={}; for(const h of [3,5]){const cohorts=[];for(const snap of dynamicSnapshots){const picks=dedupeEconomicSecurities((snap.rows||[]).filter(ownerDynamicEntryEligible).sort((a,b)=>a.dynamicRank-b.dynamicRank)).slice(0,15);const valid=picks.filter(r=>Number.isFinite(r[`realized${h}YTotalReturnCAGR`])&&Number.isFinite(r[`spy${h}YTotalReturnCAGR`]));if(!valid.length)continue;const stockCAGR=equalWeightFixedHoldCAGR(valid,h),spyCAGR=cohortSpyCAGR(valid,h);cohorts.push({asOf:snap.asOf,holdings:valid.length,stockCAGR,spyCAGR,excessCAGR:stockCAGR-spyCAGR,beatSpy:stockCAGR>spyCAGR,hit15:stockCAGR>=.15,tickers:valid.map(r=>r.ticker),members:valid.map(r=>({ticker:r.ticker,cagr:r[`realized${h}YTotalReturnCAGR`]}))});}fixedHold15[`${h}Y`]={horizonYears:h,cohortCount:cohorts.length,meanHoldings:mean(cohorts.map(x=>x.holdings)),meanPortfolioCAGR:mean(cohorts.map(x=>x.stockCAGR)),medianPortfolioCAGR:median(cohorts.map(x=>x.stockCAGR)),meanSpyCAGR:mean(cohorts.map(x=>x.spyCAGR)),meanExcessCAGR:mean(cohorts.map(x=>x.excessCAGR)),medianExcessCAGR:median(cohorts.map(x=>x.excessCAGR)),beatSpyRate:cohorts.length?cohorts.filter(x=>x.beatSpy).length/cohorts.length:null,hit15CAGRRate:cohorts.length?cohorts.filter(x=>x.hit15).length/cohorts.length:null,cohorts};}
   return {
-    description:'v12.50 long-term-owner test. Entry requires Model-D rank <=25, expected Alpha >=5% on the 15% hurdle scale (expected CAGR >=20%), supported valuation, and an existing point-in-time Valuation Rating of Buy, Strong Buy, or Exceptional Buy. Watch/Hold/Avoid/Sell/Unrated cannot enter the Starter Portfolio. Outcomes are measured from the original purchase signal with no rank-based selling.',
+    description:'v12.51 long-term-owner test. Entry requires >=15% expected CAGR, dynamic Model-D rank <=25, supported valuation, and a quality/confidence-scaled margin of safety. Elite established compounders need 5% MOS, strong established businesses 10%, standard quality 20%, and higher-uncertainty names 25%. Outcomes are measured from the original purchase signal with no rank-based selling.',
     intendedUse:'Approximately 15 growth/value/dividend holdings; high hurdle to buy; 5+ year ownership intent; quarterly thesis review; rank changes alone are not a sell signal.',
-    entryRule:{maxRank:25,minExpectedAlpha:.05,minExpectedCAGR:.20,minValuationRating:'Buy',allowedValuationRatings:['Buy','Strong Buy','Exceptional Buy'],modelSupport:'supported',portfolioTarget:15},
+    entryRule:{maxRank:25,minExpectedAlpha:0,minExpectedCAGR:.15,dynamicMarginOfSafety:true,modelSupport:'supported',portfolioTarget:15},
     eligibleObservations:eligible.length,horizons,fixedHold15,
     robustnessAudit:buildOwnerRobustnessAudit(eligible,fixedHold15),
     exitLab:historyByTicker&&spyHistory?buildOwnerExitLab(eligible,snapshotOutput,historyByTicker,spyHistory,fixedHold15):null,
     alphaExitLab:historyByTicker&&spyHistory?buildOwnerAlphaExitLab(eligible,snapshotOutput,historyByTicker,spyHistory,fixedHold15):null,
     sellDiagnosticLab:historyByTicker&&spyHistory?buildSellDiagnosticLab(eligible,snapshotOutput,historyByTicker,spyHistory):null,
     weightingLab:buildOwnerWeightingLab(snapshotOutput),
-    alphaGateRecalibrationLab:buildAlphaGateRecalibrationLab(snapshotOutput)
+    alphaGateRecalibrationLab:buildAlphaGateRecalibrationLab(snapshotOutput),
+    dynamicMosEntryLab:buildDynamicMosEntryLab(snapshotOutput)
   };
 }
 
@@ -1827,4 +1855,4 @@ async function main(){
   console.log(`Wrote compact analysis output to data/backtest-summary.json (${(fs.statSync(sp).size/1024).toFixed(1)} KiB).`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,contributionConcentration,leaveWinnersOut,buildParameterStability,monotonicitySummary,buildScoreGeneralization,buildPredictivePowerLab,buildLongTermOwnerLab,buildOwnerRobustnessAudit,buildOwnerExitLab,buildOwnerAlphaExitLab,ownerAlphaRulePass,ownerAlphaExitSignal,summarizeOwnerExitEvaluations,buildOwnerWeightingLab,fixedHoldCohorts,buildPortfolioSimulation,economicSecurityGroup,dedupeEconomicSecurities,ownerValuationEntryEligible};
+module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,contributionConcentration,leaveWinnersOut,buildParameterStability,monotonicitySummary,buildScoreGeneralization,buildPredictivePowerLab,buildLongTermOwnerLab,buildOwnerRobustnessAudit,buildOwnerExitLab,buildOwnerAlphaExitLab,ownerAlphaRulePass,ownerAlphaExitSignal,summarizeOwnerExitEvaluations,buildOwnerWeightingLab,fixedHoldCohorts,buildPortfolioSimulation,economicSecurityGroup,dedupeEconomicSecurities,ownerValuationEntryEligible,ownerDynamicEntryEligible,dynamicMosProfile,buildDynamicMosEntryLab};
