@@ -34,7 +34,7 @@ const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 
-const MODEL_VERSION='simple-v12.45-15pct-alpha-decomposed-exit-lab';
+const MODEL_VERSION='simple-v12.46-sell-diagnostics-rank-alpha-lab';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -1333,7 +1333,9 @@ const ALPHA_EXIT_RULES=[
   {key:'alpha_below_0_4q',label:'C · Alpha <0% · 4 reviews',kind:'alpha',threshold:0,confirmations:4},
   {key:'alpha_below_minus5_2q',label:'D · Alpha <-5% · 2 reviews',kind:'alpha',threshold:-.05,confirmations:2},
   {key:'alpha0_outcome_break_2q',label:'E · Alpha <0% + model outcome deterioration · 2 reviews',kind:'outcome',threshold:0,confirmations:2,outcomeAnnualizedMax:-.03},
-  {key:'alpha0_forecast_break_2q',label:'F · Alpha <0% + operating forecast deterioration · 2 reviews',kind:'forecast',threshold:0,confirmations:2,forecastDrop:.03}
+  {key:'alpha0_forecast_break_2q',label:'F · Alpha <0% + operating forecast deterioration · 2 reviews',kind:'forecast',threshold:0,confirmations:2,forecastDrop:.03},
+  {key:'alpha0_shadow50_4q',label:'G · Alpha <0% + shadow rank >50 · 4 reviews',kind:'rankAlpha',threshold:0,confirmations:4,minShadowRank:50},
+  {key:'alpha_minus5_shadow100_2q',label:'H · Alpha <-5% + shadow rank >100 · 2 reviews',kind:'rankAlpha',threshold:-.05,confirmations:2,minShadowRank:100}
 ];
 function impliedShareholderOutcome(row){
   const direct=finite(row?.totalShareholderValue);if(Number.isFinite(direct)&&direct>0)return direct;
@@ -1361,6 +1363,7 @@ function ownerAlphaRulePass(entry,row,rule){
   if(rule.kind==='never')return false;
   const a=finite(row?.expectedAlpha);if(!Number.isFinite(a)||a>=rule.threshold)return false;
   if(rule.kind==='alpha')return true;
+  if(rule.kind==='rankAlpha')return Number.isFinite(finite(row?.ownerShadowRank))&&finite(row.ownerShadowRank)>rule.minShadowRank;
   const d=ownerAlphaDecomposition(entry,row);
   if(rule.kind==='outcome')return Number.isFinite(d.outcomeAnnualizedChange)&&d.outcomeAnnualizedChange<=rule.outcomeAnnualizedMax;
   if(rule.kind==='forecast'){
@@ -1390,7 +1393,7 @@ function evaluateOwnerAlphaExit(entry,entryAsOf,rule,reviewIndex,historyByTicker
   const spyFull=adjustedReturnBetween(spyHistory,entryAsOf,endDate,{executeAfterStart:true});
   if(!hold||!spyFull)return null;
   const holdWealth=1+hold.return,holdCAGR=Math.pow(Math.max(0,holdWealth),1/horizon)-1,spyCAGR=Math.pow(Math.max(0,1+spyFull.return),1/horizon)-1;
-  if(!signal)return {ticker:entry.ticker,security:group,entryDate:entryAsOf,exitDate:null,reason:null,triggered:false,entryAlpha:finite(entry.expectedAlpha),exitAlpha:null,yearsHeld:horizon,holdCAGR,strategyCAGR:holdCAGR,deltaVsHoldCAGR:0,spyCAGR,postExitStockCAGR:null,postExitSpyCAGR:null,postExitExcessCAGR:null,improvedVsHold:false,decomposition:null};
+  if(!signal)return {ticker:entry.ticker,security:group,entryDate:entryAsOf,exitDate:null,reason:null,triggered:false,entryAlpha:finite(entry.expectedAlpha),exitAlpha:null,exitShadowRank:null,yearsHeld:horizon,holdCAGR,strategyCAGR:holdCAGR,deltaVsHoldCAGR:0,spyCAGR,postExitStockCAGR:null,postExitSpyCAGR:null,postExitExcessCAGR:null,improvedVsHold:false,decomposition:null};
   const pre=adjustedReturnBetween(history,entryAsOf,signal.asOf,{executeAfterStart:true});
   const spyAfter=adjustedReturnBetween(spyHistory,signal.asOf,endDate,{executeAfterStart:true});
   const stockAfter=adjustedReturnBetween(history,signal.asOf,endDate,{executeAfterStart:true});
@@ -1399,7 +1402,7 @@ function evaluateOwnerAlphaExit(entry,entryAsOf,rule,reviewIndex,historyByTicker
   const postYears=yearsBetweenDates(signal.asOf,endDate);
   const postStockCAGR=stockAfter&&postYears>0?Math.pow(Math.max(0,1+stockAfter.return),1/postYears)-1:null;
   const postSpyCAGR=postYears>0?Math.pow(Math.max(0,1+spyAfter.return),1/postYears)-1:null;
-  return {ticker:entry.ticker,security:group,entryDate:entryAsOf,exitDate:signal.asOf,reason:signal.reason,triggered:true,entryAlpha:finite(entry.expectedAlpha),exitAlpha:finite(signal.row?.expectedAlpha),yearsHeld:yearsBetweenDates(entryAsOf,signal.asOf),holdCAGR,strategyCAGR,deltaVsHoldCAGR:strategyCAGR-holdCAGR,spyCAGR,postExitStockCAGR:postStockCAGR,postExitSpyCAGR:postSpyCAGR,postExitExcessCAGR:Number.isFinite(postStockCAGR)&&Number.isFinite(postSpyCAGR)?postStockCAGR-postSpyCAGR:null,improvedVsHold:strategyCAGR>holdCAGR,decomposition:signal.decomposition};
+  return {ticker:entry.ticker,security:group,entryDate:entryAsOf,exitDate:signal.asOf,reason:signal.reason,triggered:true,entryAlpha:finite(entry.expectedAlpha),exitAlpha:finite(signal.row?.expectedAlpha),exitShadowRank:finite(signal.row?.ownerShadowRank),yearsHeld:yearsBetweenDates(entryAsOf,signal.asOf),holdCAGR,strategyCAGR,deltaVsHoldCAGR:strategyCAGR-holdCAGR,spyCAGR,postExitStockCAGR:postStockCAGR,postExitSpyCAGR:postSpyCAGR,postExitExcessCAGR:Number.isFinite(postStockCAGR)&&Number.isFinite(postSpyCAGR)?postStockCAGR-postSpyCAGR:null,improvedVsHold:strategyCAGR>holdCAGR,decomposition:signal.decomposition};
 }
 function ownerAlphaExitPortfolioComparison(fixedHold5,entryLookup,rule,reviewIndex,historyByTicker,spyHistory){
   const cohorts=[];
@@ -1413,8 +1416,61 @@ function ownerAlphaExitPortfolioComparison(fixedHold5,entryLookup,rule,reviewInd
   }
   return {cohortCount:cohorts.length,meanPortfolioCAGR:mean(cohorts.map(x=>x.portfolioCAGR)),medianPortfolioCAGR:median(cohorts.map(x=>x.portfolioCAGR)),meanHoldCAGR:mean(cohorts.map(x=>x.holdCAGR)),meanDeltaVsHoldCAGR:mean(cohorts.map(x=>x.deltaVsHoldCAGR)),meanSpyCAGR:mean(cohorts.map(x=>x.spyCAGR)),meanExcessCAGR:mean(cohorts.map(x=>x.excessCAGR)),beatSpyRate:cohorts.length?cohorts.filter(x=>x.portfolioCAGR>x.spyCAGR).length/cohorts.length:null,totalSales:cohorts.reduce((a,x)=>a+x.sellCount,0),averageSalesPerCohort:mean(cohorts.map(x=>x.sellCount)),worstCohort:cohorts.reduce((a,b)=>!a||b.portfolioCAGR<a.portfolioCAGR?b:a,null),cohorts};
 }
+
+function buildOwnerReviewIndexWithShadowRank(snapshotOutput){
+  const byGroup=new Map();
+  for(const snap of snapshotOutput||[]){
+    const cloned=(snap.rows||[]).map(r=>({...r}));
+    // Diagnostic-only rank: preserve Model-D's 50/50 Alpha + quality-basket architecture,
+    // but remove the hard Alpha gate so a held stock can still have a meaningful relative rank
+    // after its Alpha falls below the new-money threshold.
+    applyModelDRanking(cloned,{rankField:'ownerShadowRank',universeSizeField:'ownerShadowUniverse',alphaGate:-10});
+    for(const row of cloned){
+      const g=economicSecurityGroup(row.ticker);if(!byGroup.has(g))byGroup.set(g,[]);
+      byGroup.get(g).push({asOf:snap.asOf,row});
+    }
+  }
+  for(const xs of byGroup.values())xs.sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf))||(finite(a.row.ownerShadowRank)??9999)-(finite(b.row.ownerShadowRank)??9999));
+  return byGroup;
+}
+function sellCheckpoint(entry,entryAsOf,review,historyByTicker,spyHistory,horizon=5){
+  const endDate=addYears(entryAsOf,horizon),history=historyForEconomicSecurity(entry.ticker,historyByTicker);if(!history)return null;
+  const pre=adjustedReturnBetween(history,entryAsOf,review.asOf,{executeAfterStart:true});
+  const hold=adjustedReturnBetween(history,entryAsOf,endDate,{executeAfterStart:true});
+  const stockAfter=adjustedReturnBetween(history,review.asOf,endDate,{executeAfterStart:true});
+  const spyAfter=adjustedReturnBetween(spyHistory,review.asOf,endDate,{executeAfterStart:true});
+  if(!pre||!hold||!stockAfter||!spyAfter)return null;
+  const postYears=yearsBetweenDates(review.asOf,endDate);if(!(postYears>0))return null;
+  const holdCAGR=Math.pow(Math.max(0,1+hold.return),1/horizon)-1;
+  const strategyCAGR=Math.pow(Math.max(0,(1+pre.return)*(1+spyAfter.return)),1/horizon)-1;
+  const postExitStockCAGR=Math.pow(Math.max(0,1+stockAfter.return),1/postYears)-1;
+  const postExitSpyCAGR=Math.pow(Math.max(0,1+spyAfter.return),1/postYears)-1;
+  const d=ownerAlphaDecomposition(entry,review.row);
+  return {ticker:entry.ticker,security:economicSecurityGroup(entry.ticker),entryDate:entryAsOf,reviewDate:review.asOf,alpha:finite(review.row.expectedAlpha),shadowRank:finite(review.row.ownerShadowRank),shadowUniverse:finite(review.row.ownerShadowUniverse),quality:finite(review.row.qualityScore),protection:finite(review.row.protectionScore),holdCAGR,strategyCAGR,deltaVsHoldCAGR:strategyCAGR-holdCAGR,postExitStockCAGR,postExitSpyCAGR,postExitExcessCAGR:postExitStockCAGR-postExitSpyCAGR,sellWouldHelp:strategyCAGR>holdCAGR,decomposition:d};
+}
+function summarizeSellCheckpoints(rows){
+  const v=(rows||[]).filter(Boolean);return {n:v.length,helpRate:v.length?v.filter(x=>x.sellWouldHelp).length/v.length:null,meanDeltaVsHoldCAGR:mean(v.map(x=>x.deltaVsHoldCAGR)),meanPostExitExcessCAGR:mean(v.map(x=>x.postExitExcessCAGR)),meanAlpha:mean(v.map(x=>x.alpha)),meanShadowRank:mean(v.map(x=>x.shadowRank)),meanOutcomeAnnualizedChange:mean(v.map(x=>x.decomposition?.outcomeAnnualizedChange)),meanPriceAnnualizedChange:mean(v.map(x=>x.decomposition?.priceAnnualizedChange))};
+}
+function groupSellCheckpoints(rows,keyFn){
+  const m=new Map();for(const r of rows||[]){const k=keyFn(r);if(k==null)continue;if(!m.has(k))m.set(k,[]);m.get(k).push(r);}return [...m.entries()].map(([bucket,x])=>({bucket,...summarizeSellCheckpoints(x)}));
+}
+function buildSellDiagnosticLab(eligible,snapshotOutput,historyByTicker,spyHistory){
+  const reviewIndex=buildOwnerReviewIndexWithShadowRank(snapshotOutput),first=[];const seen=new Set();
+  for(const r of [...(eligible||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf))||(finite(a.rank)??9999)-(finite(b.rank)??9999))){const g=economicSecurityGroup(r.ticker);if(seen.has(g)||!Number.isFinite(r.realized5YTotalReturnCAGR))continue;seen.add(g);first.push(r);}
+  const firstNegative=[],allNegative=[];
+  for(const entry of first){
+    const end=addYears(entry.asOf,5),reviews=(reviewIndex.get(economicSecurityGroup(entry.ticker))||[]).filter(x=>String(x.asOf)>String(entry.asOf)&&String(x.asOf)<String(end)&&Number.isFinite(finite(x.row.expectedAlpha))&&finite(x.row.expectedAlpha)<0);
+    let added=false;for(const review of reviews){const c=sellCheckpoint(entry,entry.asOf,review,historyByTicker,spyHistory,5);if(!c)continue;allNegative.push(c);if(!added){firstNegative.push(c);added=true;}}
+  }
+  const alphaBucketFn=r=>r.alpha<-.10?'Alpha <-10%':r.alpha<-.05?'Alpha -10% to -5%':'Alpha -5% to 0%';
+  const rankBucketFn=r=>r.shadowRank<=50?'Shadow rank 1-50':r.shadowRank<=100?'Shadow rank 51-100':'Shadow rank >100';
+  const crossFn=r=>`${alphaBucketFn(r)} · ${rankBucketFn(r)}`;
+  const helpful=firstNegative.filter(x=>x.sellWouldHelp),harmful=firstNegative.filter(x=>!x.sellWouldHelp);
+  return {description:'v12.46 diagnostic sell dataset. Uses each unique economic security\'s first completed owner entry, then asks at negative-Alpha quarterly reviews whether selling to SPY through the original 5-year endpoint would have helped. Shadow rank is Model-D rerun across the full modeled snapshot with no Alpha eligibility gate, so ranking remains meaningful after a holding falls below the new-money gate. Review-level rows are descriptive and overlapping; firstNegativeAlpha is the cleaner one-checkpoint-per-security view.',firstNegativeAlpha:{overall:summarizeSellCheckpoints(firstNegative),byAlpha:groupSellCheckpoints(firstNegative,alphaBucketFn),byShadowRank:groupSellCheckpoints(firstNegative,rankBucketFn),byAlphaAndShadowRank:groupSellCheckpoints(firstNegative,crossFn),helpfulProfile:summarizeSellCheckpoints(helpful),harmfulProfile:summarizeSellCheckpoints(harmful),rows:firstNegative},allNegativeAlphaReviews:{overall:summarizeSellCheckpoints(allNegative),byAlpha:groupSellCheckpoints(allNegative,alphaBucketFn),byShadowRank:groupSellCheckpoints(allNegative,rankBucketFn),byAlphaAndShadowRank:groupSellCheckpoints(allNegative,crossFn)}};
+}
+
 function buildOwnerAlphaExitLab(eligible,snapshotOutput,historyByTicker,spyHistory,fixedHold15){
-  const reviewIndex=buildOwnerReviewIndex(snapshotOutput),entryLookup=new Map();
+  const reviewIndex=buildOwnerReviewIndexWithShadowRank(snapshotOutput),entryLookup=new Map();
   for(const r of eligible||[])entryLookup.set(`${r.asOf}|${economicSecurityGroup(r.ticker)}`,r);
   const first=[];const seen=new Set();
   for(const r of [...(eligible||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf))||(finite(a.rank)??9999)-(finite(b.rank)??9999))){const g=economicSecurityGroup(r.ticker);if(seen.has(g)||!Number.isFinite(r.realized5YTotalReturnCAGR))continue;seen.add(g);first.push(r);}
@@ -1422,7 +1478,7 @@ function buildOwnerAlphaExitLab(eligible,snapshotOutput,historyByTicker,spyHisto
     const evals=first.map(r=>evaluateOwnerAlphaExit(r,r.asOf,rule,reviewIndex,historyByTicker,spyHistory,5)).filter(Boolean);
     return {key:rule.key,label:rule.label,kind:rule.kind,threshold:rule.threshold??null,confirmations:rule.confirmations,firstSignalAudit:summarizeOwnerExitEvaluations(evals),portfolioAudit:ownerAlphaExitPortfolioComparison(fixedHold15?.['5Y'],entryLookup,rule,reviewIndex,historyByTicker,spyHistory)};
   });
-  return {description:'v12.45 predeclared 15%-hurdle sell lab. Alpha now equals expected CAGR minus 15%. The old v12.44 Alpha<0% x4 rule is preserved exactly as Alpha<-5% x4. New challengers distinguish valuation/price-driven Alpha compression from deterioration in the model-implied shareholder outcome or operating forecast. Missing/unsupported evidence resets confirmation; proceeds move to SPY through the original 5-year endpoint.',horizonYears:5,alphaHurdle:.15,entryRuleFrozen:true,rules};
+  return {description:'v12.46 predeclared 15%-hurdle sell lab. Existing v12.45 rules are preserved, and two rank+Alpha challengers are added. Shadow rank reruns the same Model-D Alpha/quality architecture across the full snapshot without the hard Alpha eligibility gate, so a held stock retains a meaningful relative rank after Alpha falls below the buy threshold. Missing/nonqualifying reviews reset confirmation; proceeds move to SPY through the original 5-year endpoint.',horizonYears:5,alphaHurdle:.15,entryRuleFrozen:true,rules};
 }
 function alphaSizingTarget(alpha){
   if(!Number.isFinite(alpha))return 4.5;
@@ -1516,6 +1572,7 @@ function buildLongTermOwnerLab(rows,snapshotOutput,historyByTicker=null,spyHisto
     robustnessAudit:buildOwnerRobustnessAudit(eligible,fixedHold15),
     exitLab:historyByTicker&&spyHistory?buildOwnerExitLab(eligible,snapshotOutput,historyByTicker,spyHistory,fixedHold15):null,
     alphaExitLab:historyByTicker&&spyHistory?buildOwnerAlphaExitLab(eligible,snapshotOutput,historyByTicker,spyHistory,fixedHold15):null,
+    sellDiagnosticLab:historyByTicker&&spyHistory?buildSellDiagnosticLab(eligible,snapshotOutput,historyByTicker,spyHistory):null,
     weightingLab:buildOwnerWeightingLab(snapshotOutput),
     alphaGateRecalibrationLab:buildAlphaGateRecalibrationLab(snapshotOutput)
   };
