@@ -2,11 +2,11 @@
 
 // v12.38 live ranking architecture.
 // The backtest challenger was frozen before promotion and showed that, once Expected
-// Alpha >= 5% on the new 15% hurdle scale (same >=20% expected-CAGR gate), a simple 50/50 blend of Expected Alpha percentile and an equal-weight
+// Alpha >= 0% on the 15% hurdle scale (>=15% expected CAGR candidate universe), a simple 50/50 blend of Expected Alpha percentile and an equal-weight
 // Quality/Moat/Growth-Quality/Compounder percentile basket generalized better than the
 // v12.37 hierarchical score. This module implements that exact cross-sectional rule.
 
-const ALPHA_GATE = 0.05;
+const ALPHA_GATE = 0.00;
 
 function finite(v){
   const n=Number(v);

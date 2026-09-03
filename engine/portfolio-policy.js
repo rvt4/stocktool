@@ -5,30 +5,39 @@ function mean(xs){return xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null;}
 function clamp(v,lo=0,hi=1){return Math.max(lo,Math.min(hi,v));}
 
 
-// v12.50: the existing Valuation Rating is the buy-quality gate. Do not
-// overwrite it with a second portfolio-specific rating system. The portfolio can
-// only initiate a position when valuation says Buy / Strong Buy / Exceptional Buy.
+// v12.51: 15% is the investor return hurdle. Margin of safety is a separate
+// valuation cushion and scales with business/forecast uncertainty rather than being
+// approximated by a universal 20% expected-CAGR requirement.
 function isValuationBuyRating(rating){
   return ['Buy','Strong Buy','Exceptional Buy'].includes(String(rating||''));
 }
-
-// Valuation Rating establishes the sizing band; Alpha decides where the stock
-// sits inside that band. These are raw sizing points and are normalized across
-// the selected Starter Portfolio so the final initial weights sum to 100%.
 function ratingAlphaSizingTarget(r){
-  const rating=String(r?.rating||'');
-  const a=finite(r?.expectedAlpha);
+  const rating=String(r?.rating||''),a=finite(r?.expectedAlpha);
   if(rating==='Exceptional Buy')return 8+2*clamp(((a??.15)-.15)/.20,0,1);
   if(rating==='Strong Buy')return 6+2*clamp(((a??.10)-.10)/.15,0,1);
   if(rating==='Buy')return 4.5+1.5*clamp(((a??.05)-.05)/.10,0,1);
   return null;
 }
-
-function thesisEntryEligible(r,{minExpectedCAGR=.20,minAlpha=.05,maxRank=25}={}){
-  const c=finite(r?.expectedCAGR??r?.expectedReturn);
-  const alpha=finite(r?.expectedAlpha);
-  const rank=finite(r?.rank??r?.overallRank);
-  return isValuationBuyRating(r?.rating)&&c!=null&&c>=minExpectedCAGR&&alpha!=null&&alpha>=minAlpha&&rank!=null&&rank<=maxRank&&String(r?.modelSupport||'')!=='unsupported';
+function dynamicMosProfile(r){
+  const q=finite(r?.qualityScore),moat=finite(r?.moatScore),comp=finite(r?.compounderScore),
+        fc=finite(r?.forecastConfidence??r?.forecastReliabilityScore??r?.forecastConfidenceScore),
+        vc=finite(r?.valuationConfidence??r?.valuationConfidenceScore??r?.confidenceScore);
+  const support=String(r?.modelSupport||'standard');
+  if(support==='unsupported')return {tier:'Unsupported',requiredMOS:null,eligibleQuality:false};
+  if(q!=null&&q>=80&&moat!=null&&moat>=75&&comp!=null&&comp>=75&&fc!=null&&fc>=60&&vc!=null&&vc>=65&&support!=='limited')
+    return {tier:'Elite established compounder',requiredMOS:.05,eligibleQuality:true};
+  if(q!=null&&q>=72&&moat!=null&&moat>=65&&comp!=null&&comp>=68&&fc!=null&&fc>=55&&vc!=null&&vc>=60&&support!=='limited')
+    return {tier:'Strong established business',requiredMOS:.10,eligibleQuality:true};
+  if(q!=null&&q>=58&&fc!=null&&fc>=50&&vc!=null&&vc>=55&&support!=='limited')
+    return {tier:'Standard quality',requiredMOS:.20,eligibleQuality:true};
+  if(fc!=null&&fc>=45&&vc!=null&&vc>=45)
+    return {tier:'Higher uncertainty',requiredMOS:.25,eligibleQuality:true};
+  return {tier:'Insufficient confidence',requiredMOS:.30,eligibleQuality:false};
+}
+function thesisEntryEligible(r,{minExpectedCAGR=.15,minAlpha=0,maxRank=25}={}){
+  const c=finite(r?.expectedCAGR??r?.expectedReturn),alpha=finite(r?.expectedAlpha),rank=finite(r?.rank??r?.overallRank),mos=finite(r?.marginOfSafety);
+  const profile=dynamicMosProfile(r);
+  return profile.eligibleQuality&&c!=null&&c>=minExpectedCAGR&&alpha!=null&&alpha>=minAlpha&&rank!=null&&rank<=maxRank&&mos!=null&&profile.requiredMOS!=null&&mos>=profile.requiredMOS&&String(r?.modelSupport||'')!=='unsupported';
 }
 
 function thesisTargetWeight(r,{maxInitialWeight=.10}={}){
@@ -51,12 +60,12 @@ function isStrongWinnerMomentum(momentum){
   return stock3!=null&&stock3>0&&rel6!=null&&rel6>0&&rel12!=null&&rel12>0&&(rel6>=.05||rel12>=.05);
 }
 
-function livePortfolioGuidance(r,momentum,{minExpectedCAGR=.20,maxRank=25,sellExpectedCAGR=.06,maxInitialWeight=.10}={}){
+function livePortfolioGuidance(r,momentum,{minExpectedCAGR=.15,maxRank=25,sellExpectedCAGR=.06,maxInitialWeight=.10}={}){
   const c=finite(r?.expectedCAGR??r?.expectedReturn);
   const forecast=finite(r?.forecastConfidence??r?.forecastReliabilityScore??r?.forecastConfidenceScore);
   const supported=String(r?.modelSupport||'')!=='unsupported';
   const entryEligible=thesisEntryEligible(r,{minExpectedCAGR,maxRank});
-  const rawSizingPoints=entryEligible?ratingAlphaSizingTarget(r):null;
+  const rawSizingPoints=entryEligible?Math.max(4.5,4.5+4*clamp((finite(r?.expectedAlpha)??0)/.20,0,1)):null;
   const suggestedInitialWeight=null; // normalized across the selected Starter Portfolio after all stocks are ranked
   const strongMomentum=isStrongWinnerMomentum(momentum);
 
@@ -78,14 +87,14 @@ function livePortfolioGuidance(r,momentum,{minExpectedCAGR=.20,maxRank=25,sellEx
     }
   }
 
-  const newPositionAction=entryEligible?'BUY':(!supported?'PASS':(isValuationBuyRating(r?.rating)?'WATCH':'PASS')); 
+  const newPositionAction=entryEligible?'BUY':(!supported?'PASS':'WATCH'); 
   const portfolioAction=entryEligible?'BUY':existingHolderAction;
   return {
     entryEligible,newPositionAction,existingHolderAction,portfolioAction,
     suggestedInitialWeight,rawSizingPoints,strongMomentum,
-    rules:{minExpectedCAGR,maxRank,sellExpectedCAGR,maxInitialWeight},
+    rules:{minExpectedCAGR,maxRank,sellExpectedCAGR,maxInitialWeight,dynamicMOS:dynamicMosProfile(r)},
     holderReason,
   };
 }
 
-module.exports={thesisEntryEligible,thesisTargetWeight,isStrongWinnerMomentum,livePortfolioGuidance,isValuationBuyRating,ratingAlphaSizingTarget};
+module.exports={thesisEntryEligible,thesisTargetWeight,isStrongWinnerMomentum,livePortfolioGuidance,isValuationBuyRating,ratingAlphaSizingTarget,dynamicMosProfile};
