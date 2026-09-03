@@ -17,7 +17,7 @@ const { valuate } = require('./engine/valuation-engine');
 const { rateStock } = require('./engine/rating-engine');
 const { validateUniverse } = require('./engine/validation');
 const { writeProspectiveSnapshot } = require('./engine/history-snapshot');
-const { livePortfolioGuidance, applyOwnerEntryRating } = require('./engine/portfolio-policy');
+const { livePortfolioGuidance, ratingAlphaSizingTarget } = require('./engine/portfolio-policy');
 const { applyModelDRanking, compareRank } = require('./engine/ranking-engine');
 
 const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'),'utf8'));
@@ -166,6 +166,24 @@ function enforceMutuallyExclusiveShareClasses(stocks){
   }
 }
 
+function applyStarterPortfolioWeights(stocks,topN=15){
+  const candidates=(stocks||[]).filter(s=>s.newPositionAction==='BUY').sort((a,b)=>(a.overallRank||Infinity)-(b.overallRank||Infinity)||(b.expectedAlpha||-Infinity)-(a.expectedAlpha||-Infinity));
+  const selected=[];const seen=new Set();
+  for(const s of candidates){const g=economicSecurityGroup(s.ticker);if(!g||seen.has(g))continue;seen.add(g);selected.push(s);if(selected.length>=topN)break;}
+  const raw=selected.map(s=>Math.max(.0001,Number(ratingAlphaSizingTarget(s))||.0001));
+  const total=raw.reduce((a,b)=>a+b,0);
+  for(const s of stocks||[]){s.starterPortfolio=false;s.suggestedInitialWeight=null;}
+  selected.forEach((s,i)=>{
+    s.starterPortfolio=true;
+    s.suggestedInitialWeight=total>0?raw[i]/total:null;
+    s.portfolioPolicy={...(s.portfolioPolicy||{}),starterPortfolio:true,suggestedInitialWeight:s.suggestedInitialWeight};
+    s.decisionDashboard=s.decisionDashboard||{};
+    s.decisionDashboard.positionTier=s.rating==='Exceptional Buy'?'Exceptional':s.rating==='Strong Buy'?'Strong':'Buy';
+    s.decisionDashboard.suggestedWeight=Number.isFinite(s.suggestedInitialWeight)?`${(s.suggestedInitialWeight*100).toFixed(1)}% starter weight`:'—';
+  });
+  return selected;
+}
+
 function applyLivePortfolioPolicy(stocks){
   for(const s of stocks){
     const g=livePortfolioGuidance(s,s.momentum||{});
@@ -176,8 +194,8 @@ function applyLivePortfolioPolicy(stocks){
     s.suggestedInitialWeight=g.suggestedInitialWeight;
     s.rideWinner=g.existingHolderAction==='RIDE WINNER';
     s.decisionDashboard=s.decisionDashboard||{};
-    s.decisionDashboard.positionTier=g.entryEligible?(g.suggestedInitialWeight>=.08?'High conviction':g.suggestedInitialWeight>=.05?'Core':'Starter'):(g.strongMomentum?'Ride winner':'No new position');
-    s.decisionDashboard.suggestedWeight=Number.isFinite(g.suggestedInitialWeight)?`${(g.suggestedInitialWeight*100).toFixed(0)}% initial`:(g.strongMomentum?'Let winner run':'—');
+    s.decisionDashboard.positionTier=g.entryEligible?`${s.rating} candidate`:(g.strongMomentum?'Ride winner':'No new position');
+    s.decisionDashboard.suggestedWeight=g.strongMomentum?'Let winner run':'—';
   }
 }
 
@@ -205,12 +223,12 @@ async function run(){
     const rec=flattenRecord(stock,forecast,quality,valuation,decision); rec.momentum=liveMomentum(stock.priceHistory||[],spyHistory); stocks.push(rec);
   }
   rank(stocks);
-  for(const s of stocks)applyOwnerEntryRating(s);
   applyLivePortfolioPolicy(stocks);
   enforceMutuallyExclusiveShareClasses(stocks);
+  applyStarterPortfolioWeights(stocks,15);
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.49-owner-rating-weighting-lab',stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.50-valuation-rating-portfolio',stocks}; writeJson('results.json',output);
   const historyFile=writeProspectiveSnapshot(__dirname,output);
   if(historyFile) console.log(`Saved prospective backtest snapshot: ${path.relative(__dirname,historyFile)}`);
   diag.finishedAt=new Date().toISOString();diag.scored=stocks.length;writeJson('screener-diagnostics.json',diag);

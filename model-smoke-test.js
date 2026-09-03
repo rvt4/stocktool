@@ -924,13 +924,14 @@ const {
   isStrongWinnerMomentum,
   livePortfolioGuidance,
 }=require('./engine/portfolio-policy');
-const liveCandidate={overallRank:7,expectedCAGR:.22,expectedAlpha:.07,forecastReliabilityScore:88,valuationConfidenceScore:84,qualityScore:86,downsideProtectionScore:80,modelSupport:'standard'};
-assert.strictEqual(liveEntryEligible(liveCandidate),true,'live policy rejected a Top-25 stock that clears CAGR, Alpha and forecast-reliability entry gates');
+const liveCandidate={overallRank:7,expectedCAGR:.22,expectedAlpha:.07,rating:'Buy',forecastReliabilityScore:88,valuationConfidenceScore:84,qualityScore:86,downsideProtectionScore:80,modelSupport:'standard'};
+assert.strictEqual(liveEntryEligible(liveCandidate),true,'live policy rejected a Buy-rated Top-25 stock that clears CAGR and Alpha entry gates');
+assert.strictEqual(liveEntryEligible({...liveCandidate,rating:'Watch'}),false,'Watch-rated stock was admitted to the Starter Portfolio');
 assert(liveTargetWeight(liveCandidate)>=.07&&liveTargetWeight(liveCandidate)<=.10,'live conviction sizing drifted from thesis-hold sizing bands');
 const liveRideMomentum={stock3:.08,rel6:.06,rel12:.03};
 assert.strictEqual(isStrongWinnerMomentum(liveRideMomentum),true,'live Ride Winner momentum test drifted from the backtest rule');
 const liveRide=livePortfolioGuidance({...liveCandidate,overallRank:40,expectedCAGR:.04},liveRideMomentum);
-assert.strictEqual(liveRide.newPositionAction,'PASS','valuation-stretched winner was incorrectly opened as a new position');
+assert.strictEqual(liveRide.newPositionAction,'WATCH','valuation-stretched Buy-rated stock should be watched rather than opened as a new position');
 assert.strictEqual(liveRide.existingHolderAction,'RIDE WINNER','live policy failed to ride an existing valuation-stretched winner with strong momentum');
 const liveExit=livePortfolioGuidance({...liveCandidate,overallRank:40,expectedCAGR:.04},{stock3:-.02,rel6:-.01,rel12:.02});
 assert.strictEqual(liveExit.existingHolderAction,'HOLD — VALUATION WATCH','live policy incorrectly turned low expected return into a thesis sell');
@@ -947,13 +948,17 @@ const rankProbe=[{ticker:'A',expectedAlpha:.049,expectedCAGR:.199,qualityScore:9
 applyModelDRanking(rankProbe);assert.strictEqual(rankProbe.find(x=>x.ticker==='B').rankEligible,true);assert.strictEqual(rankProbe.find(x=>x.ticker==='A').rankEligible,false);
 console.log('V12.45 Alpha regression passed: Alpha uses the 15% hurdle and the live gate preserves >=20% expected CAGR.');
 
-// V12.49 owner rating + rating-aware sizing regression -----------------------
-const {ownerEntryRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
-const ownerBuy={expectedCAGR:.22,expectedAlpha:.07,rank:20,modelSupport:'standard',qualityScore:60,forecastConfidence:50,valuationConfidence:50};
-assert.strictEqual(ownerEntryRating(ownerBuy),'Buy','owner-entry-eligible stock must be at least Buy');
-assert.strictEqual(ownerEntryRating({...ownerBuy,rank:10,expectedCAGR:.27,expectedAlpha:.12,qualityScore:70,forecastConfidence:55,valuationConfidence:55}),'Strong Buy','Strong Buy tier drifted');
-assert.strictEqual(ownerEntryRating({...ownerBuy,rank:3,expectedCAGR:.33,expectedAlpha:.18,qualityScore:82,forecastConfidence:70,valuationConfidence:70}),'Exceptional Buy','Exceptional Buy tier drifted');
-assert.strictEqual(ownerEntryRating({...ownerBuy,rank:26}),null,'stock outside owner entry rank cap received a Buy rating');
-assert.strictEqual(ownerEntryRating({...ownerBuy,forecastConfidence:44}),null,'low forecast reliability stock received a Buy rating');
-assert(ratingAlphaSizingTarget({...ownerBuy,rating:'Strong Buy',expectedAlpha:.12})>ratingAlphaSizingTarget({...ownerBuy,rating:'Buy',expectedAlpha:.12}),'rating sizing bands are not ordered');
-console.log('V12.49 owner-rating regression passed: starter-portfolio stocks are Buy+ and rating bands can inform sizing.');
+// V12.50 valuation-rating portfolio regression -------------------------------
+const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
+assert.strictEqual(isValuationBuyRating('Buy'),true);
+assert.strictEqual(isValuationBuyRating('Strong Buy'),true);
+assert.strictEqual(isValuationBuyRating('Exceptional Buy'),true);
+assert.strictEqual(isValuationBuyRating('Watch'),false,'Watch must not enter a new Starter Portfolio');
+const valuationBuy={expectedCAGR:.22,expectedAlpha:.07,overallRank:20,modelSupport:'standard',rating:'Buy'};
+assert.strictEqual(liveEntryEligible(valuationBuy),true,'existing Buy rating should qualify when rank/Alpha/CAGR gates also clear');
+assert.strictEqual(liveEntryEligible({...valuationBuy,rating:'Watch'}),false,'portfolio logic must not manufacture Buy from a Watch valuation rating');
+assert.strictEqual(liveEntryEligible({...valuationBuy,expectedAlpha:.04,expectedCAGR:.19}),false,'valuation Buy rating must not bypass the frozen Alpha/CAGR margin-of-safety gate');
+assert(ratingAlphaSizingTarget({...valuationBuy,rating:'Strong Buy',expectedAlpha:.12})>ratingAlphaSizingTarget({...valuationBuy,rating:'Buy',expectedAlpha:.12}),'valuation-rating sizing bands are not ordered');
+assert(ratingAlphaSizingTarget({...valuationBuy,rating:'Exceptional Buy',expectedAlpha:.18})>ratingAlphaSizingTarget({...valuationBuy,rating:'Strong Buy',expectedAlpha:.18}),'Exceptional Buy sizing band is not above Strong Buy');
+assert.strictEqual(ratingAlphaSizingTarget({...valuationBuy,rating:'Watch'}),null,'Watch should not receive a new-position sizing target');
+console.log('V12.50 valuation-rating regression passed: existing valuation ratings gate Starter Portfolio entry and drive rating-aware sizing without a second rating system.');
