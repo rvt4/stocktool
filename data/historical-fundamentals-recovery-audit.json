@@ -1,0 +1,1157 @@
+{
+  "generatedAt": "2026-09-04T21:46:38.442Z",
+  "version": "v12.55.5-historical-fundamentals-recovery",
+  "requested": {
+    "startYear": 2007,
+    "endYear": 2011,
+    "frequency": "quarterly",
+    "requestedSnapshots": 20,
+    "auditedSnapshots": 20,
+    "unavailableSnapshots": [],
+    "limit": null
+  },
+  "guardrails": [
+    "Point-in-time IWB membership comes only from validated historical-universe caches.",
+    "Only SEC 10-K/10-K/A filings filed on or before each snapshot may contribute recovered fundamentals.",
+    "Later filings are never used to repair an earlier snapshot.",
+    "Legacy filing data only fills missing Company Facts fields; it never overwrites an already-available production fact.",
+    "Recovery is attempted only for rows blocked by insufficient annual financial history; other model failures remain failures.",
+    "Recovered rows must still pass the unchanged production forecast, quality, valuation, and rating pipeline with a finite expected CAGR."
+  ],
+  "summary": {
+    "holdingObservations": 19536,
+    "identityResolved": 11963,
+    "identityResolvedRate": 0.6123566748566749,
+    "baselineModelable": 2536,
+    "baselineModelableRate": 0.1298116298116298,
+    "recoveryAttempted": 8906,
+    "recoveredModelable": 4236,
+    "recoveredModelableRate": 0.21683046683046683,
+    "incrementalRecovered": 1700,
+    "incrementalRecoveryRate": 0.08701883701883702,
+    "recoveryAttemptSuccessRate": 0.1908825510891534
+  },
+  "byYear": [
+    {
+      "year": "2007",
+      "snapshots": 4,
+      "holdings": 3980,
+      "identityResolved": 2309,
+      "baselineModelable": 0,
+      "baselineModelableRate": 0,
+      "recoveredModelable": 486,
+      "recoveredModelableRate": 0.1221105527638191,
+      "incrementalRecovered": 486,
+      "incrementalRecoveryRate": 0.1221105527638191
+    },
+    {
+      "year": "2008",
+      "snapshots": 4,
+      "holdings": 3962,
+      "identityResolved": 2381,
+      "baselineModelable": 0,
+      "baselineModelableRate": 0,
+      "recoveredModelable": 484,
+      "recoveredModelableRate": 0.12216052498738011,
+      "incrementalRecovered": 484,
+      "incrementalRecoveryRate": 0.12216052498738011
+    },
+    {
+      "year": "2009",
+      "snapshots": 4,
+      "holdings": 3840,
+      "identityResolved": 2367,
+      "baselineModelable": 14,
+      "baselineModelableRate": 0.0036458333333333334,
+      "recoveredModelable": 485,
+      "recoveredModelableRate": 0.12630208333333334,
+      "incrementalRecovered": 471,
+      "incrementalRecoveryRate": 0.12265625
+    },
+    {
+      "year": "2010",
+      "snapshots": 4,
+      "holdings": 3868,
+      "identityResolved": 2414,
+      "baselineModelable": 804,
+      "baselineModelableRate": 0.2078593588417787,
+      "recoveredModelable": 1020,
+      "recoveredModelableRate": 0.26370217166494314,
+      "incrementalRecovered": 216,
+      "incrementalRecoveryRate": 0.055842812823164424
+    },
+    {
+      "year": "2011",
+      "snapshots": 4,
+      "holdings": 3886,
+      "identityResolved": 2492,
+      "baselineModelable": 1718,
+      "baselineModelableRate": 0.44209984559958826,
+      "recoveredModelable": 1761,
+      "recoveredModelableRate": 0.45316520844055586,
+      "incrementalRecovered": 43,
+      "incrementalRecoveryRate": 0.011065362840967576
+    }
+  ],
+  "coverage": [
+    {
+      "asOf": "2007-03-31",
+      "sourceAsOf": "2007-03-31",
+      "holdings": 968,
+      "identityResolved": 555,
+      "baselineModelable": 0,
+      "recoveryAttempted": 552,
+      "recoveryYearsFound": 3017,
+      "recoveryFilingsParsed": 1160,
+      "recoveredModelable": 115,
+      "incrementalRecovered": 115,
+      "failureReasons": {
+        "recovery_insufficient_years": 116,
+        "recovery_historical_stock_unavailable": 311,
+        "recovery_missing_expected_cagr": 10,
+        "fetch_unavailable": 3
+      },
+      "identityResolvedRate": 0.5733471074380165,
+      "baselineModelableRate": 0,
+      "recoveredModelableRate": 0.11880165289256199,
+      "incrementalRecoveryRate": 0.11880165289256199,
+      "recoverySuccessRate": 0.20833333333333334
+    },
+    {
+      "asOf": "2007-06-30",
+      "sourceAsOf": "2007-06-30",
+      "holdings": 1016,
+      "identityResolved": 583,
+      "baselineModelable": 0,
+      "recoveryAttempted": 579,
+      "recoveryYearsFound": 3131,
+      "recoveryFilingsParsed": 1206,
+      "recoveredModelable": 120,
+      "incrementalRecovered": 120,
+      "failureReasons": {
+        "recovery_insufficient_years": 127,
+        "recovery_historical_stock_unavailable": 321,
+        "recovery_missing_expected_cagr": 11,
+        "fetch_unavailable": 4
+      },
+      "identityResolvedRate": 0.5738188976377953,
+      "baselineModelableRate": 0,
+      "recoveredModelableRate": 0.11811023622047244,
+      "incrementalRecoveryRate": 0.11811023622047244,
+      "recoverySuccessRate": 0.20725388601036268
+    },
+    {
+      "asOf": "2007-09-30",
+      "sourceAsOf": "2007-09-30",
+      "holdings": 1004,
+      "identityResolved": 583,
+      "baselineModelable": 0,
+      "recoveryAttempted": 579,
+      "recoveryYearsFound": 3129,
+      "recoveryFilingsParsed": 1209,
+      "recoveredModelable": 124,
+      "incrementalRecovered": 124,
+      "failureReasons": {
+        "recovery_insufficient_years": 126,
+        "recovery_historical_stock_unavailable": 317,
+        "recovery_missing_expected_cagr": 12,
+        "fetch_unavailable": 4
+      },
+      "identityResolvedRate": 0.5806772908366534,
+      "baselineModelableRate": 0,
+      "recoveredModelableRate": 0.12350597609561753,
+      "incrementalRecoveryRate": 0.12350597609561753,
+      "recoverySuccessRate": 0.2141623488773748
+    },
+    {
+      "asOf": "2007-12-31",
+      "sourceAsOf": "2007-12-31",
+      "holdings": 992,
+      "identityResolved": 588,
+      "baselineModelable": 0,
+      "recoveryAttempted": 584,
+      "recoveryYearsFound": 3131,
+      "recoveryFilingsParsed": 1215,
+      "recoveredModelable": 127,
+      "incrementalRecovered": 127,
+      "failureReasons": {
+        "recovery_insufficient_years": 128,
+        "recovery_historical_stock_unavailable": 315,
+        "recovery_missing_expected_cagr": 14,
+        "fetch_unavailable": 4
+      },
+      "identityResolvedRate": 0.592741935483871,
+      "baselineModelableRate": 0,
+      "recoveredModelableRate": 0.1280241935483871,
+      "incrementalRecoveryRate": 0.1280241935483871,
+      "recoverySuccessRate": 0.21746575342465754
+    },
+    {
+      "asOf": "2008-03-31",
+      "sourceAsOf": "2008-03-31",
+      "holdings": 990,
+      "identityResolved": 590,
+      "baselineModelable": 0,
+      "recoveryAttempted": 586,
+      "recoveryYearsFound": 3283,
+      "recoveryFilingsParsed": 1289,
+      "recoveredModelable": 123,
+      "incrementalRecovered": 123,
+      "failureReasons": {
+        "recovery_insufficient_years": 121,
+        "recovery_historical_stock_unavailable": 328,
+        "recovery_missing_expected_cagr": 14,
+        "fetch_unavailable": 4
+      },
+      "identityResolvedRate": 0.5959595959595959,
+      "baselineModelableRate": 0,
+      "recoveredModelableRate": 0.12424242424242424,
+      "incrementalRecoveryRate": 0.12424242424242424,
+      "recoverySuccessRate": 0.2098976109215017
+    },
+    {
+      "asOf": "2008-06-30",
+      "sourceAsOf": "2008-06-30",
+      "holdings": 997,
+      "identityResolved": 597,
+      "baselineModelable": 0,
+      "recoveryAttempted": 594,
+      "recoveryYearsFound": 3293,
+      "recoveryFilingsParsed": 1294,
+      "recoveredModelable": 122,
+      "incrementalRecovered": 122,
+      "failureReasons": {
+        "recovery_insufficient_years": 124,
+        "recovery_historical_stock_unavailable": 335,
+        "recovery_missing_expected_cagr": 13,
+        "fetch_unavailable": 3
+      },
+      "identityResolvedRate": 0.5987963891675026,
+      "baselineModelableRate": 0,
+      "recoveredModelableRate": 0.12236710130391174,
+      "incrementalRecoveryRate": 0.12236710130391174,
+      "recoverySuccessRate": 0.2053872053872054
+    },
+    {
+      "asOf": "2008-09-30",
+      "sourceAsOf": "2008-09-30",
+      "holdings": 993,
+      "identityResolved": 598,
+      "baselineModelable": 0,
+      "recoveryAttempted": 595,
+      "recoveryYearsFound": 3271,
+      "recoveryFilingsParsed": 1295,
+      "recoveredModelable": 123,
+      "incrementalRecovered": 123,
+      "failureReasons": {
+        "recovery_insufficient_years": 127,
+        "recovery_historical_stock_unavailable": 330,
+        "recovery_missing_expected_cagr": 15,
+        "fetch_unavailable": 3
+      },
+      "identityResolvedRate": 0.6022155085599195,
+      "baselineModelableRate": 0,
+      "recoveredModelableRate": 0.12386706948640483,
+      "incrementalRecoveryRate": 0.12386706948640483,
+      "recoverySuccessRate": 0.20672268907563024
+    },
+    {
+      "asOf": "2008-12-31",
+      "sourceAsOf": "2008-12-31",
+      "holdings": 982,
+      "identityResolved": 596,
+      "baselineModelable": 0,
+      "recoveryAttempted": 593,
+      "recoveryYearsFound": 3268,
+      "recoveryFilingsParsed": 1302,
+      "recoveredModelable": 116,
+      "incrementalRecovered": 116,
+      "failureReasons": {
+        "recovery_insufficient_years": 125,
+        "recovery_historical_stock_unavailable": 327,
+        "recovery_missing_expected_cagr": 25,
+        "fetch_unavailable": 3
+      },
+      "identityResolvedRate": 0.6069246435845214,
+      "baselineModelableRate": 0,
+      "recoveredModelableRate": 0.11812627291242363,
+      "incrementalRecoveryRate": 0.11812627291242363,
+      "recoverySuccessRate": 0.19561551433389546
+    },
+    {
+      "asOf": "2009-03-31",
+      "sourceAsOf": "2009-03-31",
+      "holdings": 965,
+      "identityResolved": 592,
+      "baselineModelable": 0,
+      "recoveryAttempted": 589,
+      "recoveryYearsFound": 3367,
+      "recoveryFilingsParsed": 1344,
+      "recoveredModelable": 111,
+      "incrementalRecovered": 111,
+      "failureReasons": {
+        "recovery_insufficient_years": 112,
+        "recovery_historical_stock_unavailable": 346,
+        "recovery_missing_expected_cagr": 20,
+        "fetch_unavailable": 3
+      },
+      "identityResolvedRate": 0.6134715025906736,
+      "baselineModelableRate": 0,
+      "recoveredModelableRate": 0.11502590673575129,
+      "incrementalRecoveryRate": 0.11502590673575129,
+      "recoverySuccessRate": 0.18845500848896435
+    },
+    {
+      "asOf": "2009-06-30",
+      "sourceAsOf": "2009-06-30",
+      "holdings": 961,
+      "identityResolved": 592,
+      "baselineModelable": 0,
+      "recoveryAttempted": 590,
+      "recoveryYearsFound": 3355,
+      "recoveryFilingsParsed": 1343,
+      "recoveredModelable": 121,
+      "incrementalRecovered": 121,
+      "failureReasons": {
+        "recovery_insufficient_years": 112,
+        "recovery_historical_stock_unavailable": 341,
+        "recovery_missing_expected_cagr": 16,
+        "fetch_unavailable": 2
+      },
+      "identityResolvedRate": 0.6160249739854319,
+      "baselineModelableRate": 0,
+      "recoveredModelableRate": 0.1259105098855359,
+      "incrementalRecoveryRate": 0.1259105098855359,
+      "recoverySuccessRate": 0.20508474576271185
+    },
+    {
+      "asOf": "2009-09-30",
+      "sourceAsOf": "2009-09-30",
+      "holdings": 956,
+      "identityResolved": 590,
+      "baselineModelable": 0,
+      "recoveryAttempted": 588,
+      "recoveryYearsFound": 3347,
+      "recoveryFilingsParsed": 1344,
+      "recoveredModelable": 123,
+      "incrementalRecovered": 123,
+      "failureReasons": {
+        "recovery_insufficient_years": 111,
+        "recovery_historical_stock_unavailable": 339,
+        "recovery_missing_expected_cagr": 15,
+        "fetch_unavailable": 2
+      },
+      "identityResolvedRate": 0.6171548117154811,
+      "baselineModelableRate": 0,
+      "recoveredModelableRate": 0.12866108786610878,
+      "incrementalRecoveryRate": 0.12866108786610878,
+      "recoverySuccessRate": 0.20918367346938777
+    },
+    {
+      "asOf": "2009-12-31",
+      "sourceAsOf": "2009-12-31",
+      "holdings": 958,
+      "identityResolved": 593,
+      "baselineModelable": 14,
+      "recoveryAttempted": 575,
+      "recoveryYearsFound": 3237,
+      "recoveryFilingsParsed": 1304,
+      "recoveredModelable": 130,
+      "incrementalRecovered": 116,
+      "failureReasons": {
+        "recovery_insufficient_years": 111,
+        "recovery_historical_stock_unavailable": 331,
+        "missing_expected_cagr": 2,
+        "recovery_missing_expected_cagr": 17,
+        "fetch_unavailable": 2
+      },
+      "identityResolvedRate": 0.6189979123173278,
+      "baselineModelableRate": 0.014613778705636743,
+      "recoveredModelableRate": 0.13569937369519833,
+      "incrementalRecoveryRate": 0.12108559498956159,
+      "recoverySuccessRate": 0.20173913043478262
+    },
+    {
+      "asOf": "2010-03-31",
+      "sourceAsOf": "2010-03-31",
+      "holdings": 949,
+      "identityResolved": 593,
+      "baselineModelable": 188,
+      "recoveryAttempted": 363,
+      "recoveryYearsFound": 1966,
+      "recoveryFilingsParsed": 789,
+      "recoveredModelable": 244,
+      "incrementalRecovered": 56,
+      "failureReasons": {
+        "recovery_insufficient_years": 81,
+        "missing_expected_cagr": 30,
+        "historical_stock_unavailable": 10,
+        "recovery_historical_stock_unavailable": 216,
+        "fetch_unavailable": 2,
+        "recovery_missing_expected_cagr": 10
+      },
+      "identityResolvedRate": 0.624868282402529,
+      "baselineModelableRate": 0.19810326659641728,
+      "recoveredModelableRate": 0.2571127502634352,
+      "incrementalRecoveryRate": 0.059009483667017915,
+      "recoverySuccessRate": 0.15426997245179064
+    },
+    {
+      "asOf": "2010-06-30",
+      "sourceAsOf": "2010-06-30",
+      "holdings": 976,
+      "identityResolved": 606,
+      "baselineModelable": 184,
+      "recoveryAttempted": 370,
+      "recoveryYearsFound": 1986,
+      "recoveryFilingsParsed": 790,
+      "recoveredModelable": 240,
+      "incrementalRecovered": 56,
+      "failureReasons": {
+        "recovery_insufficient_years": 83,
+        "missing_expected_cagr": 39,
+        "historical_stock_unavailable": 10,
+        "recovery_historical_stock_unavailable": 220,
+        "fetch_unavailable": 3,
+        "recovery_missing_expected_cagr": 11
+      },
+      "identityResolvedRate": 0.6209016393442623,
+      "baselineModelableRate": 0.1885245901639344,
+      "recoveredModelableRate": 0.2459016393442623,
+      "incrementalRecoveryRate": 0.05737704918032787,
+      "recoverySuccessRate": 0.15135135135135136
+    },
+    {
+      "asOf": "2010-09-30",
+      "sourceAsOf": "2010-09-30",
+      "holdings": 974,
+      "identityResolved": 605,
+      "baselineModelable": 204,
+      "recoveryAttempted": 350,
+      "recoveryYearsFound": 1878,
+      "recoveryFilingsParsed": 748,
+      "recoveredModelable": 259,
+      "incrementalRecovered": 55,
+      "failureReasons": {
+        "recovery_insufficient_years": 78,
+        "missing_expected_cagr": 38,
+        "historical_stock_unavailable": 10,
+        "recovery_historical_stock_unavailable": 210,
+        "fetch_unavailable": 3,
+        "recovery_missing_expected_cagr": 7
+      },
+      "identityResolvedRate": 0.6211498973305954,
+      "baselineModelableRate": 0.20944558521560575,
+      "recoveredModelableRate": 0.26591375770020537,
+      "incrementalRecoveryRate": 0.05646817248459959,
+      "recoverySuccessRate": 0.15714285714285714
+    },
+    {
+      "asOf": "2010-12-31",
+      "sourceAsOf": "2010-12-31",
+      "holdings": 969,
+      "identityResolved": 610,
+      "baselineModelable": 228,
+      "recoveryAttempted": 330,
+      "recoveryYearsFound": 1728,
+      "recoveryFilingsParsed": 689,
+      "recoveredModelable": 277,
+      "incrementalRecovered": 49,
+      "failureReasons": {
+        "recovery_insufficient_years": 80,
+        "missing_expected_cagr": 38,
+        "historical_stock_unavailable": 11,
+        "recovery_historical_stock_unavailable": 195,
+        "fetch_unavailable": 3,
+        "recovery_missing_expected_cagr": 6
+      },
+      "identityResolvedRate": 0.6295149638802889,
+      "baselineModelableRate": 0.23529411764705882,
+      "recoveredModelableRate": 0.28586171310629516,
+      "incrementalRecoveryRate": 0.05056759545923633,
+      "recoverySuccessRate": 0.1484848484848485
+    },
+    {
+      "asOf": "2011-03-31",
+      "sourceAsOf": "2011-03-31",
+      "holdings": 966,
+      "identityResolved": 611,
+      "baselineModelable": 415,
+      "recoveryAttempted": 128,
+      "recoveryYearsFound": 371,
+      "recoveryFilingsParsed": 145,
+      "recoveredModelable": 427,
+      "incrementalRecovered": 12,
+      "failureReasons": {
+        "recovery_insufficient_years": 72,
+        "missing_expected_cagr": 57,
+        "recovery_historical_stock_unavailable": 42,
+        "historical_stock_unavailable": 9,
+        "fetch_unavailable": 2,
+        "recovery_missing_expected_cagr": 2
+      },
+      "identityResolvedRate": 0.6325051759834368,
+      "baselineModelableRate": 0.42960662525879917,
+      "recoveredModelableRate": 0.4420289855072464,
+      "incrementalRecoveryRate": 0.012422360248447204,
+      "recoverySuccessRate": 0.09375
+    },
+    {
+      "asOf": "2011-06-30",
+      "sourceAsOf": "2011-06-30",
+      "holdings": 976,
+      "identityResolved": 624,
+      "baselineModelable": 430,
+      "recoveryAttempted": 132,
+      "recoveryYearsFound": 398,
+      "recoveryFilingsParsed": 154,
+      "recoveredModelable": 444,
+      "incrementalRecovered": 14,
+      "failureReasons": {
+        "recovery_insufficient_years": 71,
+        "missing_expected_cagr": 49,
+        "recovery_historical_stock_unavailable": 46,
+        "historical_stock_unavailable": 12,
+        "fetch_unavailable": 1,
+        "recovery_missing_expected_cagr": 1
+      },
+      "identityResolvedRate": 0.639344262295082,
+      "baselineModelableRate": 0.4405737704918033,
+      "recoveredModelableRate": 0.45491803278688525,
+      "incrementalRecoveryRate": 0.014344262295081968,
+      "recoverySuccessRate": 0.10606060606060606
+    },
+    {
+      "asOf": "2011-09-30",
+      "sourceAsOf": "2011-09-30",
+      "holdings": 971,
+      "identityResolved": 624,
+      "baselineModelable": 430,
+      "recoveryAttempted": 114,
+      "recoveryYearsFound": 288,
+      "recoveryFilingsParsed": 112,
+      "recoveredModelable": 439,
+      "incrementalRecovered": 9,
+      "failureReasons": {
+        "recovery_insufficient_years": 68,
+        "missing_expected_cagr": 67,
+        "recovery_historical_stock_unavailable": 36,
+        "historical_stock_unavailable": 12,
+        "fetch_unavailable": 1,
+        "recovery_missing_expected_cagr": 1
+      },
+      "identityResolvedRate": 0.6426364572605562,
+      "baselineModelableRate": 0.4428424304840371,
+      "recoveredModelableRate": 0.45211122554067973,
+      "incrementalRecoveryRate": 0.009268795056642637,
+      "recoverySuccessRate": 0.07894736842105263
+    },
+    {
+      "asOf": "2011-12-31",
+      "sourceAsOf": "2011-12-31",
+      "holdings": 973,
+      "identityResolved": 633,
+      "baselineModelable": 443,
+      "recoveryAttempted": 115,
+      "recoveryYearsFound": 257,
+      "recoveryFilingsParsed": 99,
+      "recoveredModelable": 451,
+      "incrementalRecovered": 8,
+      "failureReasons": {
+        "recovery_insufficient_years": 73,
+        "missing_expected_cagr": 62,
+        "recovery_historical_stock_unavailable": 34,
+        "historical_stock_unavailable": 12,
+        "fetch_unavailable": 1
+      },
+      "identityResolvedRate": 0.6505652620760535,
+      "baselineModelableRate": 0.4552929085303186,
+      "recoveredModelableRate": 0.4635149023638232,
+      "incrementalRecoveryRate": 0.008221993833504625,
+      "recoverySuccessRate": 0.06956521739130435
+    }
+  ],
+  "representativeRecoveries": [
+    {
+      "ticker": "MSFT",
+      "asOf": "2007-03-31",
+      "recoveredYears": [
+        2000,
+        2001,
+        2002,
+        2003,
+        2004,
+        2005,
+        2006
+      ],
+      "expectedCAGR": 0.05899483196668287,
+      "rating": "Avoid"
+    },
+    {
+      "ticker": "MSFT",
+      "asOf": "2007-06-30",
+      "recoveredYears": [
+        2000,
+        2001,
+        2002,
+        2003,
+        2004,
+        2005,
+        2006
+      ],
+      "expectedCAGR": 0.07320832817974288,
+      "rating": "Avoid"
+    },
+    {
+      "ticker": "MSFT",
+      "asOf": "2007-09-30",
+      "recoveredYears": [
+        2001,
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007
+      ],
+      "expectedCAGR": 0.11983256089573935,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "MSFT",
+      "asOf": "2007-12-31",
+      "recoveredYears": [
+        2001,
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007
+      ],
+      "expectedCAGR": 0.09883217134371147,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "MSFT",
+      "asOf": "2008-03-31",
+      "recoveredYears": [
+        2001,
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007
+      ],
+      "expectedCAGR": 0.12402281432799356,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "MSFT",
+      "asOf": "2008-06-30",
+      "recoveredYears": [
+        2001,
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007
+      ],
+      "expectedCAGR": 0.12752791973301214,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "MSFT",
+      "asOf": "2008-09-30",
+      "recoveredYears": [
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008
+      ],
+      "expectedCAGR": 0.1665567241826058,
+      "rating": "Watch"
+    },
+    {
+      "ticker": "MSFT",
+      "asOf": "2008-12-31",
+      "recoveredYears": [
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008
+      ],
+      "expectedCAGR": 0.20412366651458802,
+      "rating": "Watch"
+    },
+    {
+      "ticker": "MSFT",
+      "asOf": "2009-03-31",
+      "recoveredYears": [
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008
+      ],
+      "expectedCAGR": 0.21096001132374975,
+      "rating": "Watch"
+    },
+    {
+      "ticker": "MSFT",
+      "asOf": "2009-06-30",
+      "recoveredYears": [
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008
+      ],
+      "expectedCAGR": 0.18015160289104104,
+      "rating": "Watch"
+    },
+    {
+      "ticker": "MSFT",
+      "asOf": "2009-09-30",
+      "recoveredYears": [
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008,
+        2009
+      ],
+      "expectedCAGR": 0.11083100775271859,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "MSFT",
+      "asOf": "2009-12-31",
+      "recoveredYears": [
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008,
+        2009
+      ],
+      "expectedCAGR": 0.08113552209528385,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "MSFT",
+      "asOf": "2010-03-31",
+      "recoveredYears": [
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008,
+        2009
+      ],
+      "expectedCAGR": 0.11225560129562373,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "MSFT",
+      "asOf": "2010-06-30",
+      "recoveredYears": [
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008,
+        2009
+      ],
+      "expectedCAGR": 0.13244970297293834,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "BAC",
+      "asOf": "2007-03-31",
+      "recoveredYears": [
+        2000,
+        2001,
+        2002,
+        2003,
+        2004,
+        2005,
+        2006
+      ],
+      "expectedCAGR": 0.15289240354103928,
+      "rating": "Watch"
+    },
+    {
+      "ticker": "BAC",
+      "asOf": "2007-06-30",
+      "recoveredYears": [
+        2000,
+        2001,
+        2002,
+        2003,
+        2004,
+        2005,
+        2006
+      ],
+      "expectedCAGR": 0.15781939485174257,
+      "rating": "Watch"
+    },
+    {
+      "ticker": "BAC",
+      "asOf": "2007-09-30",
+      "recoveredYears": [
+        2000,
+        2001,
+        2002,
+        2003,
+        2004,
+        2005,
+        2006
+      ],
+      "expectedCAGR": 0.15460101382832558,
+      "rating": "Watch"
+    },
+    {
+      "ticker": "BAC",
+      "asOf": "2007-12-31",
+      "recoveredYears": [
+        2000,
+        2001,
+        2002,
+        2003,
+        2004,
+        2005,
+        2006
+      ],
+      "expectedCAGR": 0.17763282572088035,
+      "rating": "Watch"
+    },
+    {
+      "ticker": "BAC",
+      "asOf": "2008-03-31",
+      "recoveredYears": [
+        2001,
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007
+      ],
+      "expectedCAGR": 0.07503635042708368,
+      "rating": "Avoid"
+    },
+    {
+      "ticker": "BAC",
+      "asOf": "2008-06-30",
+      "recoveredYears": [
+        2001,
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007
+      ],
+      "expectedCAGR": 0.12593490854279366,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "BAC",
+      "asOf": "2008-09-30",
+      "recoveredYears": [
+        2001,
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007
+      ],
+      "expectedCAGR": 0.08365670684744142,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "BAC",
+      "asOf": "2009-03-31",
+      "recoveredYears": [
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008
+      ],
+      "expectedCAGR": 0.25154151337479624,
+      "rating": "Watch"
+    },
+    {
+      "ticker": "BAC",
+      "asOf": "2009-06-30",
+      "recoveredYears": [
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008
+      ],
+      "expectedCAGR": 0.1715647757325076,
+      "rating": "Watch"
+    },
+    {
+      "ticker": "BAC",
+      "asOf": "2009-09-30",
+      "recoveredYears": [
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008
+      ],
+      "expectedCAGR": 0.1955781086210826,
+      "rating": "Watch"
+    },
+    {
+      "ticker": "BAC",
+      "asOf": "2009-12-31",
+      "recoveredYears": [
+        2002,
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008
+      ],
+      "expectedCAGR": 0.18248537974808854,
+      "rating": "Watch"
+    },
+    {
+      "ticker": "JPM",
+      "asOf": "2007-03-31",
+      "recoveredYears": [
+        2002,
+        2003,
+        2004,
+        2005,
+        2006
+      ],
+      "expectedCAGR": 0.12200021557057972,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "JPM",
+      "asOf": "2007-06-30",
+      "recoveredYears": [
+        2002,
+        2003,
+        2004,
+        2005,
+        2006
+      ],
+      "expectedCAGR": 0.121838005496401,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "JPM",
+      "asOf": "2007-09-30",
+      "recoveredYears": [
+        2002,
+        2003,
+        2004,
+        2005,
+        2006
+      ],
+      "expectedCAGR": 0.12811667715479258,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "JPM",
+      "asOf": "2007-12-31",
+      "recoveredYears": [
+        2002,
+        2003,
+        2004,
+        2005,
+        2006
+      ],
+      "expectedCAGR": 0.1337580775999525,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "INTC",
+      "asOf": "2007-03-31",
+      "recoveredYears": [
+        2002,
+        2003,
+        2004,
+        2005,
+        2006
+      ],
+      "expectedCAGR": 0.07865940563158702,
+      "rating": "Avoid"
+    },
+    {
+      "ticker": "INTC",
+      "asOf": "2007-06-30",
+      "recoveredYears": [
+        2002,
+        2003,
+        2004,
+        2005,
+        2006
+      ],
+      "expectedCAGR": 0.09523948585652908,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "INTC",
+      "asOf": "2007-09-30",
+      "recoveredYears": [
+        2002,
+        2003,
+        2004,
+        2005,
+        2006
+      ],
+      "expectedCAGR": 0.08591119559847482,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "INTC",
+      "asOf": "2007-12-31",
+      "recoveredYears": [
+        2002,
+        2003,
+        2004,
+        2005,
+        2006
+      ],
+      "expectedCAGR": 0.08260779428318576,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "INTC",
+      "asOf": "2008-03-31",
+      "recoveredYears": [
+        2003,
+        2004,
+        2005,
+        2006,
+        2007
+      ],
+      "expectedCAGR": 0.1181485366873527,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "INTC",
+      "asOf": "2008-06-30",
+      "recoveredYears": [
+        2003,
+        2004,
+        2005,
+        2006,
+        2007
+      ],
+      "expectedCAGR": 0.11657697810040224,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "INTC",
+      "asOf": "2008-09-30",
+      "recoveredYears": [
+        2003,
+        2004,
+        2005,
+        2006,
+        2007
+      ],
+      "expectedCAGR": 0.13197886765281308,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "INTC",
+      "asOf": "2008-12-31",
+      "recoveredYears": [
+        2003,
+        2004,
+        2005,
+        2006,
+        2007
+      ],
+      "expectedCAGR": 0.1600553181621993,
+      "rating": "Watch"
+    },
+    {
+      "ticker": "INTC",
+      "asOf": "2009-03-31",
+      "recoveredYears": [
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008
+      ],
+      "expectedCAGR": 0.10258007399284441,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "INTC",
+      "asOf": "2009-06-30",
+      "recoveredYears": [
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008
+      ],
+      "expectedCAGR": 0.09200905367649792,
+      "rating": "Hold"
+    },
+    {
+      "ticker": "INTC",
+      "asOf": "2009-09-30",
+      "recoveredYears": [
+        2003,
+        2004,
+        2005,
+        2006,
+        2007,
+        2008
+      ],
+      "expectedCAGR": 0.07385824254312978,
+      "rating": "Avoid"
+    }
+  ],
+  "fetchErrors": [
+    {
+      "ticker": "ACV",
+      "cik": "0001636289",
+      "stage": "companyfacts",
+      "error": "SEC EDGAR fetch failed for ACV: 404"
+    }
+  ]
+}
