@@ -35,7 +35,7 @@ const {rateStock}=require('./engine/rating-engine');
 const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='simple-v12.52-uncertainty-compensated-entry';
+const MODEL_VERSION='simple-v12.53-margin-of-safety-integrity-audit';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -510,6 +510,10 @@ function compactModel(stock,f,q,v,d){return {
   protectionScore:q.protectionScore,forecastConfidence:f.forecastReliabilityScore,
   valuationConfidence:v.valuationConfidenceScore,methodAgreement:v.methodAgreementScore,
   methodCount:(v.methods||[]).length,independentEvidenceFamilies:v.independentMethodCount,
+  intrinsicDiscountRate:v.intrinsicDiscountRate,hurdleReturnPrice:v.hurdleReturnPrice,requiredReturnBuyPrice:v.requiredReturnBuyPrice,
+  methodDispersionRatio:v.methodDispersionRatio,valuationReviewFlag:v.valuationReviewFlag,
+  valuationConsensus:v.valuationConsensus?{hasConsensusOutlier:!!v.valuationConsensus.hasConsensusOutlier,clusterSpread:v.valuationConsensus.clusterSpread??null,outlierGap:v.valuationConsensus.outlierGap??null}:null,
+  valuationMethodEvidence:(v.methods||[]).map(m=>({name:m.name||null,family:m.family||null,reliability:m.reliability??null,weight:m.weight??null,fairValueToday:m.audit?.fairValueToday??null,hurdleValueToday:m.audit?.hurdleValueToday??null,outcome:m.outcome??null})),
   modelSupport:v.modelSupport
 };}
 function rank(rows){applyModelDRanking(rows,{rankField:'rank',universeSizeField:'universeSize'});}
@@ -1159,6 +1163,48 @@ function buildDynamicMosEntryLab(snapshotOutput){
   return {description:'v12.52 predeclared entry-policy test. A preserves the fixed >=20% CAGR control. B preserves v12.51 exactly, including its hard veto on insufficient-confidence names. C changes only that flaw: supported very-high-uncertainty names may enter if they clear a 35% margin of safety. The 15% CAGR floor, Model-D ranking, other MOS tiers, sell rules and weighting are unchanged.',tiers:[{tier:'Elite established compounder',requiredMOS:.05},{tier:'Strong established business',requiredMOS:.10},{tier:'Standard quality',requiredMOS:.20},{tier:'Higher uncertainty',requiredMOS:.25},{tier:'Very high uncertainty',requiredMOS:.35}],results,replacements};
 }
 
+
+function pearsonCorrelation(rows,aFn,bFn){
+  const pts=(rows||[]).map(r=>[finite(aFn(r)),finite(bFn(r))]).filter(([a,b])=>Number.isFinite(a)&&Number.isFinite(b));
+  if(pts.length<3)return {n:pts.length,correlation:null};
+  const ma=mean(pts.map(x=>x[0])),mb=mean(pts.map(x=>x[1]));
+  const cov=mean(pts.map(x=>(x[0]-ma)*(x[1]-mb))),va=mean(pts.map(x=>(x[0]-ma)**2)),vb=mean(pts.map(x=>(x[1]-mb)**2));
+  return {n:pts.length,correlation:va>0&&vb>0?cov/Math.sqrt(va*vb):null};
+}
+function percentileValue(vals,p){
+  const a=(vals||[]).filter(Number.isFinite).sort((x,y)=>x-y);if(!a.length)return null;
+  const idx=(a.length-1)*p,lo=Math.floor(idx),hi=Math.ceil(idx);return lo===hi?a[lo]:a[lo]+(a[hi]-a[lo])*(idx-lo);
+}
+function mosBucket(v){v=finite(v);if(v==null)return null;return v<.20?'<20%':v<.40?'20-40%':v<.60?'40-60%':v<.80?'60-80%':'>=80%';}
+function alphaAuditBucket(v){v=finite(v);if(v==null)return null;return v<0?'<0%':v<.05?'0-5%':v<.10?'5-10%':'>=10%';}
+function methodEvidenceStats(rows){
+  const valid=(rows||[]).filter(r=>Array.isArray(r.valuationMethodEvidence)&&r.valuationMethodEvidence.length);
+  const methodFairMultiples=[];const rowMedianMos=[];let disagreement=0,single=0,outliers=0;
+  for(const r of valid){
+    if(Number.isFinite(r.methodAgreement)&&r.methodAgreement<35)disagreement++;
+    if((r.independentEvidenceFamilies??r.methodCount??0)<=1)single++;
+    if(r.valuationConsensus?.hasConsensusOutlier)outliers++;
+    const p=finite(r.price),fvs=r.valuationMethodEvidence.map(m=>finite(m.fairValueToday)).filter(x=>x>0);
+    if(p>0&&fvs.length){for(const fv of fvs)methodFairMultiples.push(fv/p);const mf=median(fvs);rowMedianMos.push(Math.max(0,1-p/mf));}
+  }
+  return {n:valid.length,meanMethodAgreement:mean(valid.map(r=>r.methodAgreement).filter(Number.isFinite)),meanMethodCount:mean(valid.map(r=>r.methodCount).filter(Number.isFinite)),meanIndependentEvidenceFamilies:mean(valid.map(r=>r.independentEvidenceFamilies).filter(Number.isFinite)),materialDisagreementRate:valid.length?disagreement/valid.length:null,singleFamilyRate:valid.length?single/valid.length:null,consensusOutlierRate:valid.length?outliers/valid.length:null,medianIndividualMethodFairValueMultiple:median(methodFairMultiples),medianMethodConsensusMOS:median(rowMedianMos)};
+}
+function buildMosIntegrityAudit(snapshotOutput){
+  const rows=(snapshotOutput||[]).flatMap(s=>dynamicRankSnapshotRows(s.rows||[]).map(r=>({...r,asOf:s.asOf}))).filter(r=>String(r.modelSupport||'')!=='unsupported'&&Number.isFinite(r.marginOfSafety)&&Number.isFinite(r.expectedCAGR));
+  const canonical=rows.filter(r=>Number.isFinite(r.price)&&r.price>0&&Number.isFinite(r.fairValue)&&r.fairValue>0);
+  const errors=canonical.map(r=>Math.abs(Math.max(0,1-r.price/r.fairValue)-r.marginOfSafety));
+  const fvMult=canonical.map(r=>r.fairValue/r.price).filter(Number.isFinite);
+  const candidate=rows.filter(r=>Number.isFinite(r.dynamicRank)&&r.dynamicRank<=25&&r.expectedCAGR>=.15);
+  const completed5=candidate.filter(r=>Number.isFinite(r.realized5YTotalReturnCAGR)&&Number.isFinite(r.spy5YTotalReturnCAGR));
+  const outcomeByMos={};for(const h of [3,5])outcomeByMos[`${h}Y`]=groupedOutcome(candidate,r=>mosBucket(r.marginOfSafety),h).sort((a,b)=>['<20%','20-40%','40-60%','60-80%','>=80%'].indexOf(a.bucket)-['<20%','20-40%','40-60%','60-80%','>=80%'].indexOf(b.bucket));
+  const alphaMos5Y=groupedOutcome(candidate,r=>`${alphaAuditBucket(r.expectedAlpha)} | MOS ${mosBucket(r.marginOfSafety)}`,5).sort((a,b)=>a.bucket.localeCompare(b.bucket));
+  const extreme=completed5.filter(r=>r.marginOfSafety>=.60).sort((a,b)=>b.marginOfSafety-a.marginOfSafety);
+  const extremeCases=extreme.slice(0,30).map(r=>{const methods=(r.valuationMethodEvidence||[]).map(m=>({name:m.name,family:m.family,reliability:m.reliability,fairValueMultiple:Number.isFinite(m.fairValueToday)&&r.price>0?m.fairValueToday/r.price:null,methodMOS:Number.isFinite(m.fairValueToday)&&m.fairValueToday>0&&r.price>0?Math.max(0,1-r.price/m.fairValueToday):null}));return {asOf:r.asOf,ticker:r.ticker,price:r.price,fairValue:r.fairValue,fairValueMultiple:r.fairValue/r.price,marginOfSafety:r.marginOfSafety,expectedCAGR:r.expectedCAGR,expectedAlpha:r.expectedAlpha,intrinsicDiscountRate:r.intrinsicDiscountRate,realized5YCAGR:r.realized5YTotalReturnCAGR,excess5YCAGR:r.excess5YTotalReturnCAGR,methodAgreement:r.methodAgreement,methodCount:r.methodCount,independentEvidenceFamilies:r.independentEvidenceFamilies,methodDispersionRatio:r.methodDispersionRatio,hasConsensusOutlier:!!r.valuationConsensus?.hasConsensusOutlier,methods};});
+  const mosBands=['<20%','20-40%','40-60%','60-80%','>=80%'];
+  const evidenceByMos=mosBands.map(bucket=>{const rs=candidate.filter(r=>mosBucket(r.marginOfSafety)===bucket);return {bucket,n:rs.length,...methodEvidenceStats(rs)};});
+  return {description:'v12.53 audit only. No entry, ranking, sell, or weighting rule is changed. This tests whether canonical margin of safety is arithmetically sound, how tightly it overlaps with Expected CAGR/Alpha, whether higher MOS adds realized 3Y/5Y information inside the top-25 >=15% CAGR candidate universe, and whether extreme MOS is corroborated by multiple valuation methods.',formula:'canonical MOS = max(0, 1 - current price / risk-normalized fair value); fair value = year-10 total shareholder value discounted at the intrinsic discount rate',identity:{n:canonical.length,maxAbsoluteMosReconciliationError:errors.length?Math.max(...errors):null,medianFairValueMultiple:median(fvMult),p90FairValueMultiple:percentileValue(fvMult,.90),p95FairValueMultiple:percentileValue(fvMult,.95),mosAtLeast60Rate:canonical.length?canonical.filter(r=>r.marginOfSafety>=.60).length/canonical.length:null,mosAtLeast80Rate:canonical.length?canonical.filter(r=>r.marginOfSafety>=.80).length/canonical.length:null},signalOverlap:{mosVsExpectedCAGR:pearsonCorrelation(candidate,r=>r.marginOfSafety,r=>r.expectedCAGR),mosVsExpectedAlpha:pearsonCorrelation(candidate,r=>r.marginOfSafety,r=>r.expectedAlpha),mosVsIntrinsicDiscountRate:pearsonCorrelation(candidate,r=>r.marginOfSafety,r=>r.intrinsicDiscountRate)},candidateUniverse:{n:candidate.length,completed5Y:completed5.length,meanMOS:mean(candidate.map(r=>r.marginOfSafety)),medianMOS:median(candidate.map(r=>r.marginOfSafety)),meanExpectedCAGR:mean(candidate.map(r=>r.expectedCAGR)),meanRealized5YCAGR:mean(completed5.map(r=>r.realized5YTotalReturnCAGR)),meanExcess5YCAGR:mean(completed5.map(r=>r.excess5YTotalReturnCAGR))},outcomeByMos,alphaMos5Y,evidenceByMos,extremeMosEvidence:{threshold:.60,...methodEvidenceStats(extreme),completed5YCount:extreme.length,meanRealized5YCAGR:mean(extreme.map(r=>r.realized5YTotalReturnCAGR)),medianRealized5YCAGR:median(extreme.map(r=>r.realized5YTotalReturnCAGR)),meanExcess5YCAGR:mean(extreme.map(r=>r.excess5YTotalReturnCAGR)),beatSpyRate:extreme.length?extreme.filter(r=>r.excess5YTotalReturnCAGR>0).length/extreme.length:null,lossRate:extreme.length?extreme.filter(r=>r.realized5YTotalReturnCAGR<0).length/extreme.length:null},extremeCases};
+}
+
 function ownerValuationEntryEligible(r,{minAlpha=.05,minExpectedCAGR=.20,maxRank=25}={}){
   return isValuationBuyRating(r?.rating)&&Number.isFinite(r?.expectedAlpha)&&r.expectedAlpha>=minAlpha&&Number.isFinite(r?.expectedCAGR)&&r.expectedCAGR>=minExpectedCAGR&&Number.isFinite(r?.rank)&&r.rank<=maxRank&&String(r?.modelSupport||'')!=='unsupported';
 }
@@ -1649,7 +1695,8 @@ function buildLongTermOwnerLab(rows,snapshotOutput,historyByTicker=null,spyHisto
     sellDiagnosticLab:historyByTicker&&spyHistory?buildSellDiagnosticLab(eligible,snapshotOutput,historyByTicker,spyHistory):null,
     weightingLab:buildOwnerWeightingLab(snapshotOutput),
     alphaGateRecalibrationLab:buildAlphaGateRecalibrationLab(snapshotOutput),
-    dynamicMosEntryLab:buildDynamicMosEntryLab(snapshotOutput)
+    dynamicMosEntryLab:buildDynamicMosEntryLab(snapshotOutput),
+    mosIntegrityAudit:buildMosIntegrityAudit(snapshotOutput)
   };
 }
 
@@ -1862,4 +1909,4 @@ async function main(){
   console.log(`Wrote compact analysis output to data/backtest-summary.json (${(fs.statSync(sp).size/1024).toFixed(1)} KiB).`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,contributionConcentration,leaveWinnersOut,buildParameterStability,monotonicitySummary,buildScoreGeneralization,buildPredictivePowerLab,buildLongTermOwnerLab,buildOwnerRobustnessAudit,buildOwnerExitLab,buildOwnerAlphaExitLab,ownerAlphaRulePass,ownerAlphaExitSignal,summarizeOwnerExitEvaluations,buildOwnerWeightingLab,fixedHoldCohorts,buildPortfolioSimulation,economicSecurityGroup,dedupeEconomicSecurities,ownerValuationEntryEligible,ownerDynamicEntryEligible,dynamicMosProfile,buildDynamicMosEntryLab};
+module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,contributionConcentration,leaveWinnersOut,buildParameterStability,monotonicitySummary,buildScoreGeneralization,buildPredictivePowerLab,buildLongTermOwnerLab,buildOwnerRobustnessAudit,buildOwnerExitLab,buildOwnerAlphaExitLab,ownerAlphaRulePass,ownerAlphaExitSignal,summarizeOwnerExitEvaluations,buildOwnerWeightingLab,fixedHoldCohorts,buildPortfolioSimulation,economicSecurityGroup,dedupeEconomicSecurities,ownerValuationEntryEligible,ownerDynamicEntryEligible,dynamicMosProfile,buildDynamicMosEntryLab,buildMosIntegrityAudit};
