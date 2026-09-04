@@ -470,9 +470,13 @@ async function buildHistoricalUniverse(dates){
   return {byDate,coverage,union:[...union.values()],provider:pre.length?'iShares historical holdings cache (<2019) + SEC N-PORT IWB holdings (2019+)':'SEC N-PORT IWB holdings + OpenFIGI CUSIP-to-ticker mapping',requestedStart:START,effectiveStart:Number(dates[0].slice(0,4)),effectiveStartDate:dates[0]};
 }
 
-function historicalStockFromData(ticker,sector,rawFacts,priceHistory,asOf,diagnostics=null){
+function historicalStockFromData(ticker,sector,rawFacts,priceHistory,asOf,diagnostics=null,supplementalYears=null){
   const facts=factsAsOf(rawFacts,asOf);
-  const years=parseAnnualFinancials(facts);
+  let years=parseAnnualFinancials(facts);
+  if(Array.isArray(supplementalYears)&&supplementalYears.length){
+    const {mergeAnnualHistories}=require('./historical-fundamentals-recovery');
+    years=mergeAnnualHistories(years,supplementalYears);
+  }
   const quarters=parseQuarterlyRevenue(facts);
   if(years.length<2){ if(diagnostics) diagnostics.insufficientFinancialHistory++; return null; }
   if(diagnostics) diagnostics.usableFinancialHistory++;

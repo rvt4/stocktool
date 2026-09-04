@@ -994,3 +994,17 @@ assert.strictEqual(inferHistoricalModelabilityFailure({insufficientFinancialHist
 const modelabilityYearProbe=summarizeHistoricalModelabilityYear([{asOf:'2010-03-31',holdings:100,identityResolved:80,modelable:60,modelableRate:.60},{asOf:'2010-06-30',holdings:100,identityResolved:82,modelable:70,modelableRate:.70}]);
 assert.strictEqual(modelabilityYearProbe[0].modelableRate,.65,'yearly modelability aggregation must use observation-weighted coverage');
 console.log('V12.55.4 historical-modelability regression passed: weights, failure attribution, and annual coverage aggregation are deterministic.');
+
+// V12.55.5 historical fundamentals recovery regression --------------------
+const {parseLegacy10KAnnuals,filingRows,mergeAnnualHistories}=require('./historical-fundamentals-recovery');
+const legacyFixture=`<html><body><table><tr><td>CONSOLIDATED STATEMENTS OF INCOME (in millions, except per share data)</td></tr><tr><th></th><th>2006</th><th>2005</th><th>2004</th></tr><tr><td>Net sales</td><td>$1,200</td><td>$1,050</td><td>$900</td></tr><tr><td>Net income</td><td>120</td><td>100</td><td>80</td></tr><tr><td>Diluted earnings per share</td><td>1.20</td><td>1.00</td><td>0.80</td></tr><tr><td>Weighted average diluted shares</td><td>100</td><td>100</td><td>100</td></tr></table><table><tr><td>CONSOLIDATED STATEMENTS OF CASH FLOWS (in millions)</td></tr><tr><th></th><th>2006</th><th>2005</th><th>2004</th></tr><tr><td>Net cash provided by operating activities</td><td>180</td><td>160</td><td>140</td></tr><tr><td>Capital expenditures</td><td>(40)</td><td>(35)</td><td>(30)</td></tr></table></body></html>`;
+const legacyParsed=parseLegacy10KAnnuals(legacyFixture,{filed:'2007-02-28',accession:'0000000000-07-000001'});
+assert.strictEqual(legacyParsed.years.length,3,'legacy 10-K parser should recover comparative annual years');
+assert.strictEqual(legacyParsed.years.at(-1).revenue,1200e6,'legacy 10-K monetary scale parsing drifted');
+assert.strictEqual(legacyParsed.years.at(-1).sharesOutTTM,100e6,'legacy 10-K diluted share scale parsing drifted');
+assert.strictEqual(legacyParsed.years.at(-1).fcf,140e6,'legacy 10-K FCF reconstruction drifted');
+const filingProbe=filingRows([{filings:{recent:{form:['10-K','10-K'],filingDate:['2007-02-28','2008-02-29'],accessionNumber:['a','b'],primaryDocument:['a.htm','b.htm'],reportDate:['2006-12-31','2007-12-31']}}}],'2007-03-31');
+assert.deepStrictEqual(filingProbe.map(x=>x.accession),['a'],'legacy recovery must never use a filing submitted after the historical snapshot');
+const mergedLegacy=mergeAnnualHistories([{year:2006,revenue:1300}],legacyParsed.years);
+assert.strictEqual(mergedLegacy.find(y=>y.year===2006).revenue,1300,'legacy recovery must not overwrite an existing production fact');
+console.log('V12.55.5 historical-fundamentals recovery regression passed: comparative filing extraction is scaled, point-in-time, and fill-only.');
