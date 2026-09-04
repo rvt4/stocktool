@@ -1,0 +1,55 @@
+name: Historical Price & Delisting Recovery Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_year:
+        description: 'First year to audit'
+        required: true
+        default: '2007'
+      end_year:
+        description: 'Last year to audit'
+        required: true
+        default: '2011'
+      frequency:
+        description: 'Snapshot frequency'
+        required: true
+        default: 'quarterly'
+        type: choice
+        options: [annual, quarterly]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: historical-price-delisting-recovery-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify model invariants
+        run: node model-smoke-test.js
+      - name: Audit historical price and delisting recovery
+        env:
+          PRICE_RECOVERY_START: ${{ inputs.start_year }}
+          PRICE_RECOVERY_END: ${{ inputs.end_year }}
+          PRICE_RECOVERY_FREQUENCY: ${{ inputs.frequency }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: node historical-price-delisting-recovery-audit.js
+      - name: Commit audit
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add data/historical-price-delisting-recovery-audit.json
+          git diff --staged --quiet || git commit -m "Historical price recovery audit $(date -u +%Y-%m-%d)"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
