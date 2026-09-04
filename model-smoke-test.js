@@ -828,14 +828,19 @@ assert.strictEqual(chooseOpenFigiTicker({data:[{ticker:'ESH26',marketSector:'Equ
 console.log('V12.26 backtest regression passed: SEC N-PORT CUSIPs survive parsing and OpenFIGI common-stock ticker selection is guarded.');
 
 // V12.55 pre-N-PORT historical-universe archive parser regression ------------
-const {parseIsharesHoldingsJson,candidateSourceDates}=require('./historical-coverage-audit');
-const isharesFixture={aaData:[['AAPL','APPLE INC','Information Technology','Equity',{}, {}, {}, {},'037833100','US0378331005'],['BRK.B','BERKSHIRE HATHAWAY INC CLASS B','Financials','Equity',{}, {}, {}, {},'084670702','US0846707026'],['-','Historical Company','Industrials','Equity',{}, {}, {}, {},'123456789','US1234567890'],['USD','US DOLLAR','Cash and/or Derivatives','Cash',{}, {}, {}, {},'-','-']]};
+const {parseIsharesResponseText,parseIsharesHoldingsJson,holdingsFingerprint,candidateSourceDates}=require('./historical-coverage-audit');
+const isharesFixture={aaData:[['AAPL','APPLE INC','Information Technology','Equity',{raw:1},{raw:1},{raw:1},{raw:1},'037833100','US0378331005'],['BRK.B','BERKSHIRE HATHAWAY INC CLASS B','Financials','Equity',{raw:1},{raw:1},{raw:1},{raw:1},'084670702','US0846707026'],['-','Historical Company','Industrials','Equity',{raw:1},{raw:1},{raw:1},{raw:1},'123456789','US1234567890'],['USD','US DOLLAR','Cash and/or Derivatives','Cash',{raw:1},{raw:1},{raw:1},{raw:1},'-','-']]};
 const parsedIshares=parseIsharesHoldingsJson(isharesFixture);
 assert.strictEqual(parsedIshares.holdings.length,2,'v12.55 iShares parser did not retain tickered equities only');
 assert.strictEqual(parsedIshares.holdings[1].ticker,'BRK-B','v12.55 iShares parser did not normalize dotted ticker');
 assert.strictEqual(parsedIshares.unresolved.length,1,'v12.55 iShares parser did not retain unresolved equity CUSIP for diagnostics');
+const wrappedFixture={aaData:[[{display:'MSFT'},'MICROSOFT CORP',{display:'Information Technology'},{display:'Equity'}, {}, {}, {}, {},{display:'594918104'}]]};
+assert.strictEqual(parseIsharesHoldingsJson(wrappedFixture).holdings[0].ticker,'MSFT','v12.55.1 iShares parser did not unwrap display/raw cells');
+const bomParsed=parseIsharesResponseText('\uFEFF'+JSON.stringify(isharesFixture));
+assert.strictEqual(bomParsed.aaData.length,4,'v12.55.1 iShares parser did not strip UTF-8 BOM before JSON.parse');
+assert.strictEqual(holdingsFingerprint(parsedIshares.holdings),holdingsFingerprint([...parsedIshares.holdings].reverse()),'v12.55.1 holdings fingerprint must be order-independent');
 assert.deepStrictEqual(candidateSourceDates('2016-12-31').slice(0,3),['2016-12-31','2016-12-30','2016-12-29'],'v12.55 archive date fallback did not walk backward through prior trading days');
-console.log('V12.55 coverage-audit regression passed: pre-2019 iShares holdings parse safely and weekend/holiday fallback is deterministic.');
+console.log('V12.55.1 coverage-audit regression passed: BOM/wrapped iShares JSON parses safely and date fallback/fingerprints are deterministic.');
 
 
 // V12.28: the investable portfolio path must use non-overlapping next-rebalance
