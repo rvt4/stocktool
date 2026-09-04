@@ -1,0 +1,58 @@
+name: Historical Fundamentals Recovery Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_year:
+        description: 'First year to test legacy SEC recovery'
+        required: true
+        default: '2007'
+      end_year:
+        description: 'Last year to test (start with 2011)'
+        required: true
+        default: '2011'
+      frequency:
+        description: 'Snapshot frequency'
+        required: true
+        default: 'quarterly'
+        type: choice
+        options:
+          - annual
+          - quarterly
+
+permissions:
+  contents: write
+
+concurrency:
+  group: historical-fundamentals-recovery-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify model invariants
+        run: node model-smoke-test.js
+      - name: Recover point-in-time legacy SEC fundamentals
+        env:
+          RECOVERY_START: ${{ inputs.start_year }}
+          RECOVERY_END: ${{ inputs.end_year }}
+          RECOVERY_FREQUENCY: ${{ inputs.frequency }}
+          RECOVERY_DELAY_MS: '75'
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: node historical-fundamentals-recovery-audit.js
+      - name: Commit recovery audit
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add data/historical-fundamentals-recovery-audit.json
+          git diff --staged --quiet || git commit -m "Historical fundamentals recovery audit $(date -u +%Y-%m-%d)"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
