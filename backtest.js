@@ -1617,7 +1617,7 @@ function buildAlphaGateRecalibrationLab(snapshotOutput){
 }
 
 function buildLongTermOwnerLab(rows,snapshotOutput,historyByTicker=null,spyHistory=null){
-  const dynamicSnapshots=(snapshotOutput||[]).map(s=>({...s,rows:dynamicRankSnapshotRows(s.rows||[])}));
+  const dynamicSnapshots=(snapshotOutput||[]).map(s=>({...s,rows:dynamicRankSnapshotRows(s.rows||[]).map(r=>({...r,asOf:s.asOf}))}));
   const eligible=dynamicSnapshots.flatMap(s=>s.rows).filter(r=>ownerDynamicEntryEligible(r));
   const horizons={};
   for(const h of [1,3,5]){
