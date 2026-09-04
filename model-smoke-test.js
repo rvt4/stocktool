@@ -985,3 +985,12 @@ assert.strictEqual(chooseHistoricalIdentityFigi({data:[
 ]}),'ABC','historical identity resolver must reject derivative lookalikes and prefer common equity');
 assert.strictEqual(chooseHistoricalIdentityFigi({data:[{ticker:'USD',marketSector:'Equity',securityType2:'Common Stock'}]}),null,'historical identity resolver accepted a non-security ticker');
 console.log('V12.55.3 historical-security identity regression passed: CUSIP bridge rejects derivative/non-security mappings.');
+
+// V12.55.4 historical modelability audit regression -------------------------
+const {rowWeight:historicalRowWeight,inferFailure:inferHistoricalModelabilityFailure,summarizeYear:summarizeHistoricalModelabilityYear}=require('./historical-modelability-audit');
+assert.strictEqual(historicalRowWeight({holdingPercent:2.5}),.025,'historical holding percent should normalize from percent units');
+assert.strictEqual(historicalRowWeight({weight:.012}),.012,'historical decimal portfolio weight should remain decimal');
+assert.strictEqual(inferHistoricalModelabilityFailure({insufficientFinancialHistory:0,missingHistoricalPrice:0,missingShareCount:0},{insufficientFinancialHistory:1,missingHistoricalPrice:0,missingShareCount:0}),'insufficient_financial_history','modelability audit failure attribution drifted');
+const modelabilityYearProbe=summarizeHistoricalModelabilityYear([{asOf:'2010-03-31',holdings:100,identityResolved:80,modelable:60,modelableRate:.60},{asOf:'2010-06-30',holdings:100,identityResolved:82,modelable:70,modelableRate:.70}]);
+assert.strictEqual(modelabilityYearProbe[0].modelableRate,.65,'yearly modelability aggregation must use observation-weighted coverage');
+console.log('V12.55.4 historical-modelability regression passed: weights, failure attribution, and annual coverage aggregation are deterministic.');

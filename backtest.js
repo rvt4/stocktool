@@ -35,7 +35,7 @@ const {rateStock}=require('./engine/rating-engine');
 const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='simple-v12.55.3-historical-security-identity';
+const MODEL_VERSION='simple-v12.55.4-historical-modelability-audit';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -411,6 +411,10 @@ async function buildHistoricalUniverse(dates){
     if(!fs.existsSync(identityPath))throw new Error('Pre-2019 backtest requires data/historical-security-identity.json. Run Historical Security Identity Audit first.');
     const identity=JSON.parse(fs.readFileSync(identityPath,'utf8'));
     if(!String(identity.version||'').startsWith('v12.55.3'))throw new Error(`Historical security identity audit is stale (${identity.version||'unknown'}). Run Historical Security Identity Audit again.`);
+    const modelabilityPath=path.join(__dirname,'data','historical-modelability-audit.json');
+    if(!fs.existsSync(modelabilityPath))throw new Error('Pre-2019 backtest requires data/historical-modelability-audit.json. Run Historical Modelability Audit first.');
+    const modelability=JSON.parse(fs.readFileSync(modelabilityPath,'utf8'));
+    if(!String(modelability.version||'').startsWith('v12.55.4'))throw new Error(`Historical modelability audit is stale (${modelability.version||'unknown'}). Run Historical Modelability Audit again.`);
   }
   const cached=loadCachedIsharesSnapshots(pre,current);
   if(cached.missing.length){
