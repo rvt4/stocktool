@@ -1,0 +1,392 @@
+{
+  "generatedAt": "2026-09-04T20:10:35.483Z",
+  "version": "v12.55.3-historical-security-identity",
+  "guardrails": [
+    "Point-in-time membership is never replaced with current constituents.",
+    "Current SEC ticker data is used only as an identity bridge to CIK.",
+    "OpenFIGI CUSIP mapping is used only to resolve security identity, never membership.",
+    "Unresolved historical securities remain explicitly unresolved and are not silently substituted."
+  ],
+  "summary": {
+    "snapshots": 46,
+    "rows": 45532,
+    "uniqueCusips": 1843,
+    "secCikResolved": 30364,
+    "secCikResolvedRate": 0.6668716507071949,
+    "directHistoricalTickerResolved": 28629,
+    "cusipOpenFigiResolved": 1735,
+    "cacheFilesEnriched": 46,
+    "minSnapshotResolvedRate": 0.5733471074380165,
+    "meanSnapshotResolvedRate": 0.6665077274358799
+  },
+  "coverage": [
+    {
+      "asOf": "2007-03-31",
+      "holdings": 968,
+      "secCikResolved": 555,
+      "secCikResolvedRate": 0.5733471074380165,
+      "directTicker": 517,
+      "cusipViaOpenFigi": 38
+    },
+    {
+      "asOf": "2007-06-30",
+      "holdings": 1016,
+      "secCikResolved": 583,
+      "secCikResolvedRate": 0.5738188976377953,
+      "directTicker": 545,
+      "cusipViaOpenFigi": 38
+    },
+    {
+      "asOf": "2007-09-30",
+      "holdings": 1004,
+      "secCikResolved": 583,
+      "secCikResolvedRate": 0.5806772908366534,
+      "directTicker": 544,
+      "cusipViaOpenFigi": 39
+    },
+    {
+      "asOf": "2007-12-31",
+      "holdings": 992,
+      "secCikResolved": 588,
+      "secCikResolvedRate": 0.592741935483871,
+      "directTicker": 549,
+      "cusipViaOpenFigi": 39
+    },
+    {
+      "asOf": "2008-03-31",
+      "holdings": 990,
+      "secCikResolved": 590,
+      "secCikResolvedRate": 0.5959595959595959,
+      "directTicker": 550,
+      "cusipViaOpenFigi": 40
+    },
+    {
+      "asOf": "2008-06-30",
+      "holdings": 997,
+      "secCikResolved": 597,
+      "secCikResolvedRate": 0.5987963891675026,
+      "directTicker": 555,
+      "cusipViaOpenFigi": 42
+    },
+    {
+      "asOf": "2008-09-30",
+      "holdings": 993,
+      "secCikResolved": 598,
+      "secCikResolvedRate": 0.6022155085599195,
+      "directTicker": 555,
+      "cusipViaOpenFigi": 43
+    },
+    {
+      "asOf": "2008-12-31",
+      "holdings": 982,
+      "secCikResolved": 596,
+      "secCikResolvedRate": 0.6069246435845214,
+      "directTicker": 553,
+      "cusipViaOpenFigi": 43
+    },
+    {
+      "asOf": "2009-03-31",
+      "holdings": 965,
+      "secCikResolved": 592,
+      "secCikResolvedRate": 0.6134715025906736,
+      "directTicker": 549,
+      "cusipViaOpenFigi": 43
+    },
+    {
+      "asOf": "2009-06-30",
+      "holdings": 961,
+      "secCikResolved": 592,
+      "secCikResolvedRate": 0.6160249739854319,
+      "directTicker": 550,
+      "cusipViaOpenFigi": 42
+    },
+    {
+      "asOf": "2009-09-30",
+      "holdings": 956,
+      "secCikResolved": 590,
+      "secCikResolvedRate": 0.6171548117154811,
+      "directTicker": 548,
+      "cusipViaOpenFigi": 42
+    },
+    {
+      "asOf": "2009-12-31",
+      "holdings": 958,
+      "secCikResolved": 593,
+      "secCikResolvedRate": 0.6189979123173278,
+      "directTicker": 551,
+      "cusipViaOpenFigi": 42
+    },
+    {
+      "asOf": "2010-03-31",
+      "holdings": 949,
+      "secCikResolved": 593,
+      "secCikResolvedRate": 0.624868282402529,
+      "directTicker": 551,
+      "cusipViaOpenFigi": 42
+    },
+    {
+      "asOf": "2010-06-30",
+      "holdings": 976,
+      "secCikResolved": 606,
+      "secCikResolvedRate": 0.6209016393442623,
+      "directTicker": 562,
+      "cusipViaOpenFigi": 44
+    },
+    {
+      "asOf": "2010-09-30",
+      "holdings": 974,
+      "secCikResolved": 605,
+      "secCikResolvedRate": 0.6211498973305954,
+      "directTicker": 561,
+      "cusipViaOpenFigi": 44
+    },
+    {
+      "asOf": "2010-12-31",
+      "holdings": 969,
+      "secCikResolved": 610,
+      "secCikResolvedRate": 0.6295149638802889,
+      "directTicker": 566,
+      "cusipViaOpenFigi": 44
+    },
+    {
+      "asOf": "2011-03-31",
+      "holdings": 966,
+      "secCikResolved": 611,
+      "secCikResolvedRate": 0.6325051759834368,
+      "directTicker": 567,
+      "cusipViaOpenFigi": 44
+    },
+    {
+      "asOf": "2011-06-30",
+      "holdings": 976,
+      "secCikResolved": 624,
+      "secCikResolvedRate": 0.639344262295082,
+      "directTicker": 580,
+      "cusipViaOpenFigi": 44
+    },
+    {
+      "asOf": "2011-09-30",
+      "holdings": 971,
+      "secCikResolved": 624,
+      "secCikResolvedRate": 0.6426364572605562,
+      "directTicker": 579,
+      "cusipViaOpenFigi": 45
+    },
+    {
+      "asOf": "2011-12-31",
+      "holdings": 973,
+      "secCikResolved": 633,
+      "secCikResolvedRate": 0.6505652620760535,
+      "directTicker": 587,
+      "cusipViaOpenFigi": 46
+    },
+    {
+      "asOf": "2012-03-31",
+      "holdings": 967,
+      "secCikResolved": 633,
+      "secCikResolvedRate": 0.6546018614270941,
+      "directTicker": 586,
+      "cusipViaOpenFigi": 47
+    },
+    {
+      "asOf": "2012-06-30",
+      "holdings": 981,
+      "secCikResolved": 642,
+      "secCikResolvedRate": 0.654434250764526,
+      "directTicker": 593,
+      "cusipViaOpenFigi": 49
+    },
+    {
+      "asOf": "2012-09-30",
+      "holdings": 977,
+      "secCikResolved": 642,
+      "secCikResolvedRate": 0.6571136131013307,
+      "directTicker": 593,
+      "cusipViaOpenFigi": 49
+    },
+    {
+      "asOf": "2012-12-31",
+      "holdings": 980,
+      "secCikResolved": 646,
+      "secCikResolvedRate": 0.6591836734693878,
+      "directTicker": 596,
+      "cusipViaOpenFigi": 50
+    },
+    {
+      "asOf": "2013-03-31",
+      "holdings": 980,
+      "secCikResolved": 649,
+      "secCikResolvedRate": 0.6622448979591836,
+      "directTicker": 599,
+      "cusipViaOpenFigi": 50
+    },
+    {
+      "asOf": "2013-06-30",
+      "holdings": 978,
+      "secCikResolved": 652,
+      "secCikResolvedRate": 0.6666666666666666,
+      "directTicker": 602,
+      "cusipViaOpenFigi": 50
+    },
+    {
+      "asOf": "2013-09-30",
+      "holdings": 991,
+      "secCikResolved": 668,
+      "secCikResolvedRate": 0.6740665993945509,
+      "directTicker": 615,
+      "cusipViaOpenFigi": 53
+    },
+    {
+      "asOf": "2013-12-31",
+      "holdings": 1004,
+      "secCikResolved": 678,
+      "secCikResolvedRate": 0.6752988047808764,
+      "directTicker": 624,
+      "cusipViaOpenFigi": 54
+    },
+    {
+      "asOf": "2014-03-31",
+      "holdings": 1012,
+      "secCikResolved": 697,
+      "secCikResolvedRate": 0.6887351778656127,
+      "directTicker": 674,
+      "cusipViaOpenFigi": 23
+    },
+    {
+      "asOf": "2014-06-30",
+      "holdings": 1024,
+      "secCikResolved": 704,
+      "secCikResolvedRate": 0.6875,
+      "directTicker": 682,
+      "cusipViaOpenFigi": 22
+    },
+    {
+      "asOf": "2014-09-30",
+      "holdings": 1029,
+      "secCikResolved": 705,
+      "secCikResolvedRate": 0.685131195335277,
+      "directTicker": 681,
+      "cusipViaOpenFigi": 24
+    },
+    {
+      "asOf": "2014-12-31",
+      "holdings": 1043,
+      "secCikResolved": 716,
+      "secCikResolvedRate": 0.6864813039309684,
+      "directTicker": 686,
+      "cusipViaOpenFigi": 30
+    },
+    {
+      "asOf": "2015-03-31",
+      "holdings": 1036,
+      "secCikResolved": 714,
+      "secCikResolvedRate": 0.6891891891891891,
+      "directTicker": 684,
+      "cusipViaOpenFigi": 30
+    },
+    {
+      "asOf": "2015-06-30",
+      "holdings": 1028,
+      "secCikResolved": 714,
+      "secCikResolvedRate": 0.6945525291828794,
+      "directTicker": 689,
+      "cusipViaOpenFigi": 25
+    },
+    {
+      "asOf": "2015-09-30",
+      "holdings": 1033,
+      "secCikResolved": 726,
+      "secCikResolvedRate": 0.7028073572120038,
+      "directTicker": 700,
+      "cusipViaOpenFigi": 26
+    },
+    {
+      "asOf": "2015-12-31",
+      "holdings": 1032,
+      "secCikResolved": 732,
+      "secCikResolvedRate": 0.7093023255813954,
+      "directTicker": 704,
+      "cusipViaOpenFigi": 28
+    },
+    {
+      "asOf": "2016-03-31",
+      "holdings": 1020,
+      "secCikResolved": 729,
+      "secCikResolvedRate": 0.7147058823529412,
+      "directTicker": 701,
+      "cusipViaOpenFigi": 28
+    },
+    {
+      "asOf": "2016-06-30",
+      "holdings": 999,
+      "secCikResolved": 726,
+      "secCikResolvedRate": 0.7267267267267268,
+      "directTicker": 699,
+      "cusipViaOpenFigi": 27
+    },
+    {
+      "asOf": "2016-09-30",
+      "holdings": 995,
+      "secCikResolved": 728,
+      "secCikResolvedRate": 0.7316582914572864,
+      "directTicker": 701,
+      "cusipViaOpenFigi": 27
+    },
+    {
+      "asOf": "2016-12-31",
+      "holdings": 999,
+      "secCikResolved": 736,
+      "secCikResolvedRate": 0.7367367367367368,
+      "directTicker": 709,
+      "cusipViaOpenFigi": 27
+    },
+    {
+      "asOf": "2017-09-30",
+      "holdings": 981,
+      "secCikResolved": 742,
+      "secCikResolvedRate": 0.7563710499490316,
+      "directTicker": 712,
+      "cusipViaOpenFigi": 30
+    },
+    {
+      "asOf": "2017-12-31",
+      "holdings": 978,
+      "secCikResolved": 744,
+      "secCikResolvedRate": 0.7607361963190185,
+      "directTicker": 714,
+      "cusipViaOpenFigi": 30
+    },
+    {
+      "asOf": "2018-03-31",
+      "holdings": 975,
+      "secCikResolved": 748,
+      "secCikResolvedRate": 0.7671794871794871,
+      "directTicker": 720,
+      "cusipViaOpenFigi": 28
+    },
+    {
+      "asOf": "2018-06-30",
+      "holdings": 987,
+      "secCikResolved": 771,
+      "secCikResolvedRate": 0.7811550151975684,
+      "directTicker": 743,
+      "cusipViaOpenFigi": 28
+    },
+    {
+      "asOf": "2018-09-30",
+      "holdings": 984,
+      "secCikResolved": 775,
+      "secCikResolvedRate": 0.7876016260162602,
+      "directTicker": 747,
+      "cusipViaOpenFigi": 28
+    },
+    {
+      "asOf": "2018-12-31",
+      "holdings": 983,
+      "secCikResolved": 784,
+      "secCikResolvedRate": 0.797558494404883,
+      "directTicker": 756,
+      "cusipViaOpenFigi": 28
+    }
+  ]
+}
