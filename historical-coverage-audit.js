@@ -9,9 +9,14 @@
  *
  * This script does NOT change any investment rule. It is infrastructure/audit only.
  * A pre-2019 snapshot is written only when >=500 equity tickers are returned.
+ *
+ * v12.55.1: iShares JSON responses may begin with a UTF-8 BOM and numeric cells
+ * are often wrapped as {display,raw}. Parse both forms, record response diagnostics,
+ * and reject exact duplicate holdings fingerprints across distant snapshot dates.
  */
 const fs=require('fs');
 const path=require('path');
+const crypto=require('crypto');
 
 const START=Number(process.env.COVERAGE_START||2007);
 const END=Math.min(2018,Number(process.env.COVERAGE_END||2018));
@@ -49,21 +54,54 @@ async function fetchWithTimeout(url,options={}){
   const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),REQUEST_TIMEOUT_MS);
   try{return await fetch(url,{...options,signal:controller.signal});}finally{clearTimeout(timer);}
 }
+function isharesCell(x){
+  if(x==null)return '';
+  if(typeof x==='object'){
+    if(x.display!=null)return String(x.display).trim();
+    if(x.raw!=null)return String(x.raw).trim();
+  }
+  return String(x).trim();
+}
+function cleanIsharesJsonText(text){
+  let s=String(text||'');
+  // iShares historical JSON has commonly shipped with a UTF-8 BOM. Python's
+  // bytes-aware json loader tolerates it; JSON.parse on a JS string does not.
+  s=s.replace(/^\uFEFF/,'').replace(/^\xEF\xBB\xBF/,'').trimStart();
+  // Be defensive against a short anti-XSSI/preamble while refusing to scan an
+  // arbitrary HTML page for JSON.
+  if(!s.startsWith('{')&&!s.startsWith('[')){
+    const obj=s.indexOf('{'),arr=s.indexOf('[');
+    const candidates=[obj,arr].filter(i=>i>=0&&i<=32);
+    if(candidates.length)s=s.slice(Math.min(...candidates));
+  }
+  return s;
+}
+function parseIsharesResponseText(text){
+  return JSON.parse(cleanIsharesJsonText(text));
+}
 function parseIsharesHoldingsJson(json){
   const aa=Array.isArray(json?.aaData)?json.aaData:[];
   const rows=[],unresolved=[];
   for(const x of aa){
     if(!Array.isArray(x))continue;
-    const ticker=normalizeTicker(x[0]);
-    const name=String(x[1]||'').trim();
-    const sector=normalizeSectorName(x[2]);
-    const assetClass=String(x[3]||'').trim();
-    const cusip=String(x[8]||'').trim().toUpperCase();
+    const ticker=normalizeTicker(isharesCell(x[0]));
+    const name=isharesCell(x[1]);
+    const sector=normalizeSectorName(isharesCell(x[2]));
+    const assetClass=isharesCell(x[3]);
+    const cusip=isharesCell(x[8]).toUpperCase();
     if(!/^Equity$/i.test(assetClass))continue;
     if(/^[A-Z0-9-]{1,12}$/.test(ticker)&&ticker!=='-'&&ticker!=='USD')rows.push({ticker,name,sector,cusip});
-    else if(cusip)unresolved.push({name,sector,cusip});
+    else if(cusip&&cusip!=='-')unresolved.push({name,sector,cusip});
   }
-  return {holdings:[...new Map(rows.map(r=>[r.ticker,r])).values()],unresolved};
+  const holdings=[...new Map(rows.map(r=>[r.ticker,r])).values()];
+  return {holdings,unresolved,rawRowCount:aa.length};
+}
+function holdingsFingerprint(holdings){
+  const canonical=(holdings||[]).map(h=>`${normalizeTicker(h.ticker)}|${String(h.cusip||'').toUpperCase()}`).sort().join('\n');
+  return crypto.createHash('sha256').update(canonical).digest('hex');
+}
+function responsePrefix(text){
+  return String(text||'').slice(0,160).replace(/[\r\n\t]+/g,' ').replace(/[^\x20-\x7E]/g,'?');
 }
 async function fetchIsharesSnapshot(asOf){
   const attempts=[];
@@ -71,13 +109,23 @@ async function fetchIsharesSnapshot(asOf){
     const ymd=sourceDate.replaceAll('-','');
     const url=`${IWB_ROOT}/${IWB_AJAX}?fileType=json&tab=all&asOfDate=${ymd}`;
     try{
-      const res=await fetchWithTimeout(url,{headers:{'User-Agent':'Mozilla/5.0 (compatible; FreeScreener/12.55)','Accept':'application/json,text/plain,*/*','Referer':`${IWB_ROOT}`}});
+      const res=await fetchWithTimeout(url,{headers:{'User-Agent':'Mozilla/5.0 (compatible; FreeScreener/12.55.1)','Accept':'application/json,text/plain,*/*','Referer':`${IWB_ROOT}`}});
       const text=await res.text();
-      attempts.push({sourceDate,status:res.status,bytes:text.length});
+      const attempt={sourceDate,status:res.status,bytes:Buffer.byteLength(text,'utf8'),contentType:res.headers.get('content-type')||null,prefix:responsePrefix(text)};
+      attempts.push(attempt);
       if(!res.ok)continue;
-      let json;try{json=JSON.parse(text);}catch{continue;}
+      let json;
+      try{json=parseIsharesResponseText(text);}
+      catch(e){attempt.parseError=e.message;continue;}
       const parsed=parseIsharesHoldingsJson(json);
-      if(parsed.holdings.length>=500)return {asOf,sourceAsOf:sourceDate,status:'usable',httpStatus:res.status,...parsed,attempts};
+      attempt.rawRows=parsed.rawRowCount;
+      attempt.equityTickers=parsed.holdings.length;
+      if(parsed.holdings.length>=500){
+        const fingerprint=holdingsFingerprint(parsed.holdings);
+        attempt.fingerprint=fingerprint.slice(0,16);
+        return {asOf,sourceAsOf:sourceDate,status:'usable',httpStatus:res.status,fingerprint,...parsed,attempts};
+      }
+      attempt.parseError=`parsed ${parsed.holdings.length} tickered equities from ${parsed.rawRowCount} aaData rows`;
     }catch(e){attempts.push({sourceDate,status:'error',error:e.message});}
     await sleep(DELAY_MS);
   }
@@ -100,27 +148,44 @@ async function main(){
   if(START>END)throw new Error(`Coverage range must be <=2018 and start <= end; got ${START}-${END}`);
   fs.mkdirSync(DATA_DIR,{recursive:true});
   const secMap=await secTickerMap();
-  const coverage=[],dates=requestedDates();
-  console.log(`v12.55 historical coverage audit: probing ${dates.length} ${FREQUENCY} IWB snapshots from ${START}-${END}.`);
+  const coverage=[],dates=requestedDates(),fingerprints=new Map();
+  console.log(`v12.55.1 historical coverage audit: probing ${dates.length} ${FREQUENCY} IWB snapshots from ${START}-${END}.`);
   for(let i=0;i<dates.length;i++){
     const asOf=dates[i],snap=await fetchIsharesSnapshot(asOf);
     if(snap.status==='usable'){
+      const prior=fingerprints.get(snap.fingerprint);
+      // Exact full-universe equality across distant quarter snapshots is a strong
+      // sign that iShares ignored asOfDate and returned one current response.
+      if(prior){
+        const days=Math.abs((Date.parse(`${asOf}T00:00:00Z`)-Date.parse(`${prior.asOf}T00:00:00Z`))/86400000);
+        if(days>35){
+          prior.row.status='suspicious_duplicate_response';
+          prior.row.guardrailReason=`same holdings fingerprint as ${asOf}`;
+          if(prior.row.cachePath){try{fs.unlinkSync(path.join(__dirname,prior.row.cachePath));}catch{} delete prior.row.cachePath;}
+          coverage.push({asOf,sourceAsOf:snap.sourceAsOf,status:'suspicious_duplicate_response',holdings:snap.holdings.length,fingerprint:snap.fingerprint.slice(0,16),guardrailReason:`same holdings fingerprint as ${prior.asOf}`,attempts:snap.attempts});
+          console.log(`[${i+1}/${dates.length}] ${asOf}: rejected suspicious duplicate of ${prior.asOf} (${snap.holdings.length} holdings).`);
+          if(DELAY_MS)await sleep(DELAY_MS);
+          continue;
+        }
+      }
       const secResolvable=snap.holdings.filter(h=>secMap.has(normalizeTicker(h.ticker))).length;
       const cachePath=writeSnapshot(snap);
-      coverage.push({asOf,sourceAsOf:snap.sourceAsOf,status:'usable',holdings:snap.holdings.length,unresolvedRows:snap.unresolved.length,secTickerResolvable:secResolvable,secTickerResolvableRate:secResolvable/snap.holdings.length,cachePath:path.relative(__dirname,cachePath),attempts:snap.attempts});
+      const row={asOf,sourceAsOf:snap.sourceAsOf,status:'usable',holdings:snap.holdings.length,fingerprint:snap.fingerprint.slice(0,16),unresolvedRows:snap.unresolved.length,secTickerResolvable:secResolvable,secTickerResolvableRate:secResolvable/snap.holdings.length,cachePath:path.relative(__dirname,cachePath),attempts:snap.attempts};
+      coverage.push(row); fingerprints.set(snap.fingerprint,{asOf,row});
       console.log(`[${i+1}/${dates.length}] ${asOf}: ${snap.holdings.length} holdings from ${snap.sourceAsOf}; current SEC ticker-map coverage ${(100*secResolvable/snap.holdings.length).toFixed(1)}%.`);
     }else{
       coverage.push({asOf,status:'unavailable',holdings:0,attempts:snap.attempts});
-      console.log(`[${i+1}/${dates.length}] ${asOf}: unavailable.`);
+      const last=snap.attempts.at(-1);
+      console.log(`[${i+1}/${dates.length}] ${asOf}: unavailable${last?.parseError?` (${last.parseError})`:''}.`);
     }
     if(DELAY_MS)await sleep(DELAY_MS);
   }
   const usable=coverage.filter(x=>x.status==='usable');
   let firstContinuous=null;
   for(let i=0;i<coverage.length;i++)if(coverage.slice(i).every(x=>x.status==='usable')){firstContinuous=coverage[i].asOf;break;}
-  const report={generatedAt:new Date().toISOString(),version:'v12.55-historical-coverage-audit',requested:{startYear:START,endYear:END,frequency:FREQUENCY},source:{provider:'iShares historical holdings archive',fund:'IWB',archiveEndpointPattern:'iShares product AJAX holdings endpoint',pointInTime:true},guardrails:['No current-constituent fallback.','A snapshot is cached only with >=500 equity tickers.','Weekend/holiday snapshot dates may use the nearest prior holdings date within seven calendar days.','SEC ticker-map resolvability is diagnostic only; it does not silently substitute securities.'],summary:{requestedSnapshots:coverage.length,usableSnapshots:usable.length,usableRate:coverage.length?usable.length/coverage.length:null,firstUsable:usable[0]?.asOf||null,lastUsable:usable.at(-1)?.asOf||null,firstContinuousThroughEnd:firstContinuous,meanHoldings:usable.length?usable.reduce((a,x)=>a+x.holdings,0)/usable.length:null,meanCurrentSecTickerResolvableRate:usable.length?usable.reduce((a,x)=>a+x.secTickerResolvableRate,0)/usable.length:null,minCurrentSecTickerResolvableRate:usable.length?Math.min(...usable.map(x=>x.secTickerResolvableRate)):null},coverage};
+  const report={generatedAt:new Date().toISOString(),version:'v12.55.1-historical-coverage-audit',requested:{startYear:START,endYear:END,frequency:FREQUENCY},source:{provider:'iShares historical holdings archive',fund:'IWB',archiveEndpointPattern:'iShares product AJAX holdings endpoint',pointInTime:true},guardrails:['No current-constituent fallback.','A snapshot is cached only with >=500 equity tickers.','Weekend/holiday snapshot dates may use the nearest prior holdings date within seven calendar days.','SEC ticker-map resolvability is diagnostic only; it does not silently substitute securities.','Exact duplicate full-holdings fingerprints across distant snapshots are rejected as likely asOfDate failures.'],summary:{requestedSnapshots:coverage.length,usableSnapshots:usable.length,usableRate:coverage.length?usable.length/coverage.length:null,firstUsable:usable[0]?.asOf||null,lastUsable:usable.at(-1)?.asOf||null,firstContinuousThroughEnd:firstContinuous,meanHoldings:usable.length?usable.reduce((a,x)=>a+x.holdings,0)/usable.length:null,meanCurrentSecTickerResolvableRate:usable.length?usable.reduce((a,x)=>a+x.secTickerResolvableRate,0)/usable.length:null,minCurrentSecTickerResolvableRate:usable.length?Math.min(...usable.map(x=>x.secTickerResolvableRate)):null},coverage};
   const p=path.join(DATA_DIR,'historical-coverage-audit.json'),tmp=p+'.tmp';fs.writeFileSync(tmp,JSON.stringify(report,null,2));fs.renameSync(tmp,p);
   console.log(`Wrote ${path.relative(__dirname,p)}. Usable ${usable.length}/${coverage.length}; first continuous=${firstContinuous||'none'}.`);
 }
 if(require.main===module)main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={normalizeTicker,requestedDates,candidateSourceDates,parseIsharesHoldingsJson,fetchIsharesSnapshot};
+module.exports={normalizeTicker,requestedDates,candidateSourceDates,cleanIsharesJsonText,parseIsharesResponseText,parseIsharesHoldingsJson,holdingsFingerprint,fetchIsharesSnapshot};
