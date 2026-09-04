@@ -5,9 +5,9 @@ function mean(xs){return xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null;}
 function clamp(v,lo=0,hi=1){return Math.max(lo,Math.min(hi,v));}
 
 
-// v12.51: 15% is the investor return hurdle. Margin of safety is a separate
-// valuation cushion and scales with business/forecast uncertainty rather than being
-// approximated by a universal 20% expected-CAGR requirement.
+// v12.52: 15% is the investor return hurdle. Margin of safety is separate and
+// scales with uncertainty. Very uncertain but still supported businesses are no
+// longer vetoed outright; they must clear a substantially larger valuation cushion.
 function isValuationBuyRating(rating){
   return ['Buy','Strong Buy','Exceptional Buy'].includes(String(rating||''));
 }
@@ -32,7 +32,7 @@ function dynamicMosProfile(r){
     return {tier:'Standard quality',requiredMOS:.20,eligibleQuality:true};
   if(fc!=null&&fc>=45&&vc!=null&&vc>=45)
     return {tier:'Higher uncertainty',requiredMOS:.25,eligibleQuality:true};
-  return {tier:'Insufficient confidence',requiredMOS:.30,eligibleQuality:false};
+  return {tier:'Very high uncertainty',requiredMOS:.35,eligibleQuality:true};
 }
 function thesisEntryEligible(r,{minExpectedCAGR=.15,minAlpha=0,maxRank=25}={}){
   const c=finite(r?.expectedCAGR??r?.expectedReturn),alpha=finite(r?.expectedAlpha),rank=finite(r?.rank??r?.overallRank),mos=finite(r?.marginOfSafety);
