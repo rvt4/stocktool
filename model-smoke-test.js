@@ -1008,3 +1008,12 @@ assert.deepStrictEqual(filingProbe.map(x=>x.accession),['a'],'legacy recovery mu
 const mergedLegacy=mergeAnnualHistories([{year:2006,revenue:1300}],legacyParsed.years);
 assert.strictEqual(mergedLegacy.find(y=>y.year===2006).revenue,1300,'legacy recovery must not overwrite an existing production fact');
 console.log('V12.55.5 historical-fundamentals recovery regression passed: comparative filing extraction is scaled, point-in-time, and fill-only.');
+
+// v12.55.6 historical price/delisting audit regression helpers.
+{
+  const {aliasesFor,diagReason}=require('./historical-price-delisting-recovery-audit');
+  const aliases=aliasesFor({historicalTicker:'BRK.B',ticker:'BRK-B',currentTicker:'BRK-B'});
+  assert(aliases.includes('BRK-B'),'v12.55.6 should normalize/dedupe same-security ticker aliases');
+  assert.strictEqual(diagReason({insufficientFinancialHistory:0,missingHistoricalPrice:1,missingShareCount:0}),'missing_historical_price');
+  assert.strictEqual(diagReason({insufficientFinancialHistory:0,missingHistoricalPrice:0,missingShareCount:1}),'missing_share_count');
+}
