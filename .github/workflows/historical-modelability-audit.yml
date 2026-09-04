@@ -1,0 +1,63 @@
+name: Historical Modelability Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_year:
+        description: 'First pre-2019 year to audit'
+        required: true
+        default: '2007'
+      end_year:
+        description: 'Last pre-2019 year to audit'
+        required: true
+        default: '2018'
+      frequency:
+        description: 'Snapshot frequency'
+        required: true
+        default: 'quarterly'
+        type: choice
+        options:
+          - annual
+          - quarterly
+
+permissions:
+  contents: write
+
+concurrency:
+  group: historical-modelability-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Verify model invariants
+        run: node model-smoke-test.js
+
+      - name: Measure historical modelability
+        env:
+          MODELABILITY_START: ${{ inputs.start_year }}
+          MODELABILITY_END: ${{ inputs.end_year }}
+          MODELABILITY_FREQUENCY: ${{ inputs.frequency }}
+          MODELABILITY_DELAY_MS: '150'
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: node historical-modelability-audit.js
+
+      - name: Commit modelability audit
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add data/historical-modelability-audit.json
+          git diff --staged --quiet || git commit -m "Historical modelability audit $(date -u +%Y-%m-%d)"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
