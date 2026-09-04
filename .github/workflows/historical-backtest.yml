@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       start_year:
-        description: 'First historical year'
+        description: 'First historical year (pre-2019 requires validated coverage cache)'
         required: true
-        default: '2016'
+        default: '2007'
       end_year:
         description: 'Last historical year'
         required: true

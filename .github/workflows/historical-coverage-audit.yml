@@ -1,0 +1,61 @@
+name: Historical Coverage Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_year:
+        description: 'First pre-N-PORT year to probe'
+        required: true
+        default: '2007'
+      end_year:
+        description: 'Last pre-N-PORT year to probe (max 2018)'
+        required: true
+        default: '2018'
+      frequency:
+        description: 'Snapshot frequency'
+        required: true
+        default: 'quarterly'
+        type: choice
+        options:
+          - annual
+          - quarterly
+
+permissions:
+  contents: write
+
+concurrency:
+  group: historical-coverage-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify model invariants
+        run: node model-smoke-test.js
+
+      - name: Probe pre-2019 IWB history
+        env:
+          COVERAGE_START: ${{ inputs.start_year }}
+          COVERAGE_END: ${{ inputs.end_year }}
+          COVERAGE_FREQUENCY: ${{ inputs.frequency }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: node historical-coverage-audit.js
+
+      - name: Commit coverage audit and validated universe cache
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add data/historical-coverage-audit.json data/historical-universe/
+          git diff --staged --quiet || git commit -m "Historical coverage audit $(date -u +%Y-%m-%d)"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
