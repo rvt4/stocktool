@@ -35,7 +35,7 @@ const {rateStock}=require('./engine/rating-engine');
 const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='simple-v12.53-margin-of-safety-integrity-audit';
+const MODEL_VERSION='simple-v12.55-historical-coverage-audit';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -367,71 +367,82 @@ async function loadIwbNportSnapshots(dates,currentMap){
   }
   return {byReport,out,accessions};
 }
-async function buildHistoricalUniverse(dates){
-  // Free, machine-readable point-in-time IWB holdings are reliably available from
-  // SEC Form N-PORT beginning in 2019. We intentionally do NOT fall back to today's
-  // watchlist for 2016-2018 because that reintroduces survivorship bias.
-  const supported=dates.filter(d=>Number(d.slice(0,4))>=2019);
-  if(!supported.length)throw new Error('Survivorship-reduced historical universe requires 2019 or later (SEC N-PORT era).');
-  if(supported.length!==dates.length){
-    console.log(`Historical universe note: ${dates.length-supported.length} pre-2019 snapshots excluded; free SEC N-PORT point-in-time IWB holdings begin in 2019.`);
-    dates.splice(0,dates.length,...supported);
-  }
-  const current=new Map(watchlist.map(x=>[x.ticker,x]));
-  console.log(`Loading point-in-time Russell 1000 proxy membership from SEC N-PORT IWB filings for ${dates.length} snapshot dates...`);
-  const loaded=await loadIwbNportSnapshots(dates,current);
-
-  // N-PORT became effective in 2019, but an individual fund's first usable filing can
-  // be later than 2019-01-01. IWB's archive begins at 2019-09-30. Treat snapshots
-  // before the first actually available report as outside the supported backtest era,
-  // rather than calling them data failures. Once the archive begins, however, every
-  // requested snapshot must still resolve or the backtest fails closed.
-  const usableReportDates=[...loaded.byReport.keys()].sort();
-  if(!usableReportDates.length){
-    throw new Error('SEC N-PORT IWB archive contained no usable equity reports after CUSIP mapping.');
-  }
-  const firstUsableReportDate=usableReportDates[0];
-  const effectiveDates=dates.filter(d=>d>=firstUsableReportDate);
-  if(effectiveDates.length!==dates.length){
-    console.log(`Historical universe note: ${dates.length-effectiveDates.length} snapshot(s) before IWB's first usable SEC N-PORT report (${firstUsableReportDate}) excluded.`);
-    dates.splice(0,dates.length,...effectiveDates);
-  }
-  if(!dates.length)throw new Error(`Requested backtest period ends before IWB's first usable SEC N-PORT report (${firstUsableReportDate}).`);
-
-  // A requested calendar endpoint can be later than the latest N-PORT report that is
-  // safely usable under the 100-day staleness rule. That is a trailing data-availability
-  // boundary, not an interior coverage failure. Exclude only those unavailable tail
-  // snapshots; never substitute today's watchlist. Any missing date *inside* the usable
-  // historical span still fails closed below.
-  const resolvableDates=dates.filter(d=>loaded.out.get(d)?.holdings?.length>=500);
-  if(!resolvableDates.length){
-    throw new Error('SEC N-PORT IWB archive could not resolve any requested snapshot date with at least 500 holdings.');
-  }
-  const lastResolvableDate=resolvableDates.at(-1);
-  const tailTrimmedDates=dates.filter(d=>d<=lastResolvableDate);
-  if(tailTrimmedDates.length!==dates.length){
-    const excluded=dates.filter(d=>d>lastResolvableDate);
-    console.log(`Historical universe note: ${excluded.length} trailing snapshot(s) after the latest safely resolvable IWB membership date (${lastResolvableDate}) excluded: ${excluded.join(', ')}.`);
-    dates.splice(0,dates.length,...tailTrimmedDates);
-  }
-
-  const byDate=new Map(),coverage=[],failures=[];
+function loadCachedIsharesSnapshots(dates,current){
+  const out=new Map(),coverage=[],missing=[];
+  const dir=path.join(__dirname,'data','historical-universe');
   for(const asOf of dates){
+    const fp=path.join(dir,`iwb-${asOf}.json`);
+    if(!fs.existsSync(fp)){missing.push(asOf);continue;}
+    try{
+      const j=JSON.parse(fs.readFileSync(fp,'utf8'));
+      const holdings=(j.holdings||[]).map(x=>({ticker:normalizeTickerSymbol(x.ticker),sector:normalizeSectorName(x.sector||current.get(normalizeTickerSymbol(x.ticker))?.sector),name:x.name||x.ticker,cusip:x.cusip||null})).filter(x=>validEquityTicker(x.ticker));
+      const dedup=[...new Map(holdings.map(x=>[x.ticker,x])).values()];
+      if(dedup.length<500){missing.push(asOf);continue;}
+      const snap={reportDate:j.sourceAsOf||j.asOf||asOf,sourceType:'ISHARES_ARCHIVE',holdings:dedup};out.set(asOf,snap);
+      coverage.push({asOf,sourceAsOf:snap.reportDate,sourceType:'ISHARES_ARCHIVE',count:dedup.length,status:'ishares_archive_cache'});
+    }catch(e){missing.push(asOf);}
+  }
+  return {out,coverage,missing};
+}
+async function buildHistoricalUniverse(dates){
+  // v12.55 extends the survivorship-reduced universe backward only when a validated
+  // point-in-time iShares archive cache exists. The cache is produced by
+  // historical-coverage-audit.js and requires >=500 equities. Missing pre-2019
+  // snapshots fail closed; today's watchlist is never substituted.
+  const current=new Map(watchlist.map(x=>[x.ticker,x]));
+  const pre=dates.filter(d=>Number(d.slice(0,4))<2019),post=dates.filter(d=>Number(d.slice(0,4))>=2019);
+  const cached=loadCachedIsharesSnapshots(pre,current);
+  if(cached.missing.length){
+    throw new Error(`Pre-2019 point-in-time IWB cache missing/invalid for ${cached.missing.length} requested snapshot(s): ${cached.missing.join(', ')}. Run Historical Coverage Audit first; no current-watchlist fallback.`);
+  }
+  let loaded={byReport:new Map(),out:new Map()};
+  if(post.length){
+    console.log(`Loading point-in-time Russell 1000 proxy membership from SEC N-PORT IWB filings for ${post.length} post-2018 snapshot dates...`);
+    loaded=await loadIwbNportSnapshots(post,current);
+  }
+
+  // N-PORT starts in 2019. For the post-2018 slice, retain the existing strict
+  // first-usable-report and trailing-coverage rules. Pre-2019 dates have already
+  // been validated against exact cached iShares archive snapshots above.
+  if(post.length){
+    const usableReportDates=[...loaded.byReport.keys()].sort();
+    if(!usableReportDates.length)throw new Error('SEC N-PORT IWB archive contained no usable equity reports after CUSIP mapping.');
+    const firstUsableReportDate=usableReportDates[0];
+    const impossiblePost=post.filter(d=>d<firstUsableReportDate);
+    if(impossiblePost.length){
+      console.log(`Historical universe note: ${impossiblePost.length} post-2018 snapshot(s) before IWB's first usable SEC N-PORT report (${firstUsableReportDate}) excluded.`);
+      dates.splice(0,dates.length,...dates.filter(d=>!impossiblePost.includes(d)));
+    }
+    const currentPost=dates.filter(d=>Number(d.slice(0,4))>=2019);
+    const resolvablePost=currentPost.filter(d=>loaded.out.get(d)?.holdings?.length>=500);
+    if(currentPost.length&&!resolvablePost.length)throw new Error('SEC N-PORT IWB archive could not resolve any requested post-2018 snapshot date with at least 500 holdings.');
+    if(resolvablePost.length){
+      const lastResolvableDate=resolvablePost.at(-1),excluded=currentPost.filter(d=>d>lastResolvableDate);
+      if(excluded.length){
+        console.log(`Historical universe note: ${excluded.length} trailing snapshot(s) after latest safely resolvable IWB membership date (${lastResolvableDate}) excluded: ${excluded.join(', ')}.`);
+        dates.splice(0,dates.length,...dates.filter(d=>!excluded.includes(d)));
+      }
+    }
+  }
+
+  const byDate=new Map(),coverage=[...cached.coverage],failures=[];
+  for(const asOf of dates){
+    if(Number(asOf.slice(0,4))<2019){
+      const snap=cached.out.get(asOf);
+      if(snap?.holdings?.length>=500)byDate.set(asOf,new Map(snap.holdings.map(x=>[x.ticker,x])));
+      else failures.push({asOf,count:0,status:'ishares_archive_cache_unavailable'});
+      continue;
+    }
     const snap=loaded.out.get(asOf);
     if(snap?.holdings?.length>=500){
       byDate.set(asOf,new Map(snap.holdings.map(x=>[x.ticker,x])));
       coverage.push({asOf,sourceAsOf:snap.reportDate,sourceType:'SEC NPORT-P',accession:snap.accession,count:snap.holdings.length,status:'sec_nport_iwb_history'});
-    }else{
-      const detail={asOf,count:0,status:'sec_nport_iwb_history_unavailable'};coverage.push(detail);failures.push(detail);
-    }
+    }else{const detail={asOf,count:0,status:'sec_nport_iwb_history_unavailable'};coverage.push(detail);failures.push(detail);}
   }
-  if(failures.length){
-    const err=new Error(`SEC N-PORT IWB membership unavailable for ${failures.length}/${dates.length} supported snapshot dates. Backtest aborted; no current-watchlist fallback. Missing: ${failures.map(x=>x.asOf).join(', ')}`);
-    err.historicalUniverseCoverage=coverage;throw err;
-  }
-  const union=new Map();
-  for(const m of byDate.values())for(const [ticker,x] of m)if(!union.has(ticker))union.set(ticker,{ticker,sector:x.sector||current.get(ticker)?.sector||'Unknown'});
-  return {byDate,coverage,union:[...union.values()],provider:'SEC N-PORT IWB holdings + OpenFIGI CUSIP-to-ticker mapping',requestedStart:START,effectiveStart:Number(dates[0].slice(0,4)),effectiveStartDate:dates[0]};
+  if(failures.length){const err=new Error(`Point-in-time IWB membership unavailable for ${failures.length}/${dates.length} requested snapshots. Backtest aborted; no current-watchlist fallback. Missing: ${failures.map(x=>x.asOf).join(', ')}`);err.historicalUniverseCoverage=coverage;throw err;}
+  coverage.sort((a,b)=>a.asOf.localeCompare(b.asOf));
+  const union=new Map();for(const m of byDate.values())for(const [ticker,x] of m)if(!union.has(ticker))union.set(ticker,{ticker,sector:x.sector||current.get(ticker)?.sector||'Unknown'});
+  return {byDate,coverage,union:[...union.values()],provider:pre.length?'iShares historical holdings cache (<2019) + SEC N-PORT IWB holdings (2019+)':'SEC N-PORT IWB holdings + OpenFIGI CUSIP-to-ticker mapping',requestedStart:START,effectiveStart:Number(dates[0].slice(0,4)),effectiveStartDate:dates[0]};
 }
 
 function historicalStockFromData(ticker,sector,rawFacts,priceHistory,asOf,diagnostics=null){
@@ -1915,8 +1926,8 @@ async function main(){
   const longTermOwnerLab=buildLongTermOwnerLab(flat,snapshotOutput,historyByTicker,spyHistory);
   const output={
     generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,backtestMode:'historical_core_point_in_time',frequency:FREQUENCY,requestedStartYear:START,startYear:historicalUniverse.effectiveStart||START,effectiveStartYear:historicalUniverse.effectiveStart||START,effectiveStartDate:historicalUniverse.effectiveStartDate||`${historicalUniverse.effectiveStart||START}-01-01`,endYear:END,
-    assumptions:{analystEstimates:'excluded_historical_unavailable',universe:'historical_iwb_holdings_required_fail_closed_no_current_watchlist_fallback',returns:'Yahoo adjusted-close total return where available; Stooq price-only fallback is explicitly flagged',benchmark:'SPY adjusted-close total return',valuationPrice:'raw historical close',secCutoff:'facts must be filed by as-of date'},
-    observations:flat.length,longTermOwnerLab,historicalUniverse:{provider:historicalUniverse.provider||'SEC N-PORT / IWB',coverage:historicalUniverse.coverage,uniqueTickers:historicalUniverse.union.length,note:'Point-in-time IWB membership is required for every snapshot. SEC N-PORT supplies historical CUSIPs; OpenFIGI maps those CUSIPs to historical/current equity symbols. No current-watchlist membership fallback is permitted. Residual bias can remain for identifiers OpenFIGI cannot resolve or price histories unavailable from free sources.'},diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YTotalReturnCAGR'),summary3Y:summarize(flat,'realized3YTotalReturnCAGR'),summary5Y:summarize(flat,'realized5YTotalReturnCAGR'),signalAnalysis:buildSignalAnalysis(flat),predictivePowerLab:buildPredictivePowerLab(flat,1),challengerLab:buildChallengerLab(flat,1),portfolioSimulation:buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory),errors:errors.slice(0,500),snapshots:snapshotOutput
+    assumptions:{analystEstimates:'excluded_historical_unavailable',universe:'point_in_time_iwb_required_fail_closed_ishares_cache_pre2019_sec_nport_2019plus_no_current_watchlist_fallback',returns:'Yahoo adjusted-close total return where available; Stooq price-only fallback is explicitly flagged',benchmark:'SPY adjusted-close total return',valuationPrice:'raw historical close',secCutoff:'facts must be filed by as-of date'},
+    observations:flat.length,longTermOwnerLab,historicalUniverse:{provider:historicalUniverse.provider||'SEC N-PORT / IWB',coverage:historicalUniverse.coverage,uniqueTickers:historicalUniverse.union.length,note:'Point-in-time IWB membership is required for every snapshot. Before 2019, only validated iShares archive snapshots produced by the coverage audit are accepted; 2019+ uses SEC N-PORT with OpenFIGI CUSIP mapping. No current-watchlist membership fallback is permitted. Residual bias can remain where historical/delisted tickers cannot be resolved to SEC facts or free price history.'},diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YTotalReturnCAGR'),summary3Y:summarize(flat,'realized3YTotalReturnCAGR'),summary5Y:summarize(flat,'realized5YTotalReturnCAGR'),signalAnalysis:buildSignalAnalysis(flat),predictivePowerLab:buildPredictivePowerLab(flat,1),challengerLab:buildChallengerLab(flat,1),portfolioSimulation:buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory),errors:errors.slice(0,500),snapshots:snapshotOutput
   };
   const p=path.join(__dirname,'data','backtest-results.json'),tmp=p+'.tmp';fs.writeFileSync(tmp,JSON.stringify(output));fs.renameSync(tmp,p);
   const summary=buildBacktestSummary(output),sp=path.join(__dirname,'data','backtest-summary.json'),stmp=sp+'.tmp';fs.writeFileSync(stmp,JSON.stringify(summary,null,2));fs.renameSync(stmp,sp);
@@ -1924,4 +1935,4 @@ async function main(){
   console.log(`Wrote compact analysis output to data/backtest-summary.json (${(fs.statSync(sp).size/1024).toFixed(1)} KiB).`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,contributionConcentration,leaveWinnersOut,buildParameterStability,monotonicitySummary,buildScoreGeneralization,buildPredictivePowerLab,buildLongTermOwnerLab,buildOwnerRobustnessAudit,buildOwnerExitLab,buildOwnerAlphaExitLab,ownerAlphaRulePass,ownerAlphaExitSignal,summarizeOwnerExitEvaluations,buildOwnerWeightingLab,fixedHoldCohorts,buildPortfolioSimulation,economicSecurityGroup,dedupeEconomicSecurities,ownerValuationEntryEligible,ownerDynamicEntryEligible,dynamicMosProfile,buildDynamicMosEntryLab,buildMosIntegrityAudit};
+module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,loadCachedIsharesSnapshots,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,contributionConcentration,leaveWinnersOut,buildParameterStability,monotonicitySummary,buildScoreGeneralization,buildPredictivePowerLab,buildLongTermOwnerLab,buildOwnerRobustnessAudit,buildOwnerExitLab,buildOwnerAlphaExitLab,ownerAlphaRulePass,ownerAlphaExitSignal,summarizeOwnerExitEvaluations,buildOwnerWeightingLab,fixedHoldCohorts,buildPortfolioSimulation,economicSecurityGroup,dedupeEconomicSecurities,ownerValuationEntryEligible,ownerDynamicEntryEligible,dynamicMosProfile,buildDynamicMosEntryLab,buildMosIntegrityAudit};

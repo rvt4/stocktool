@@ -827,6 +827,17 @@ assert.strictEqual(chooseOpenFigiTicker({data:[{ticker:'VLTO',marketSector:'Equi
 assert.strictEqual(chooseOpenFigiTicker({data:[{ticker:'ESH26',marketSector:'Equity',securityType2:'Future',exchCode:'US'}]}),null,'OpenFIGI mapper accepted a derivative as an equity constituent');
 console.log('V12.26 backtest regression passed: SEC N-PORT CUSIPs survive parsing and OpenFIGI common-stock ticker selection is guarded.');
 
+// V12.55 pre-N-PORT historical-universe archive parser regression ------------
+const {parseIsharesHoldingsJson,candidateSourceDates}=require('./historical-coverage-audit');
+const isharesFixture={aaData:[['AAPL','APPLE INC','Information Technology','Equity',{}, {}, {}, {},'037833100','US0378331005'],['BRK.B','BERKSHIRE HATHAWAY INC CLASS B','Financials','Equity',{}, {}, {}, {},'084670702','US0846707026'],['-','Historical Company','Industrials','Equity',{}, {}, {}, {},'123456789','US1234567890'],['USD','US DOLLAR','Cash and/or Derivatives','Cash',{}, {}, {}, {},'-','-']]};
+const parsedIshares=parseIsharesHoldingsJson(isharesFixture);
+assert.strictEqual(parsedIshares.holdings.length,2,'v12.55 iShares parser did not retain tickered equities only');
+assert.strictEqual(parsedIshares.holdings[1].ticker,'BRK-B','v12.55 iShares parser did not normalize dotted ticker');
+assert.strictEqual(parsedIshares.unresolved.length,1,'v12.55 iShares parser did not retain unresolved equity CUSIP for diagnostics');
+assert.deepStrictEqual(candidateSourceDates('2016-12-31').slice(0,3),['2016-12-31','2016-12-30','2016-12-29'],'v12.55 archive date fallback did not walk backward through prior trading days');
+console.log('V12.55 coverage-audit regression passed: pre-2019 iShares holdings parse safely and weekend/holiday fallback is deterministic.');
+
+
 // V12.28: the investable portfolio path must use non-overlapping next-rebalance
 // returns, execute after the signal date, annualize quarterly volatility/CAGR, and
 // charge turnover rather than compounding overlapping 1Y cohorts.
