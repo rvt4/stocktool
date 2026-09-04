@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-09-04T17:41:50.004Z",
-  "version": "v12.55-historical-coverage-audit",
+  "generatedAt": "2026-09-04T18:17:04.512Z",
+  "version": "v12.55.1-historical-coverage-audit",
   "requested": {
     "startYear": 2007,
     "endYear": 2018,
@@ -16,7 +16,8 @@
     "No current-constituent fallback.",
     "A snapshot is cached only with >=500 equity tickers.",
     "Weekend/holiday snapshot dates may use the nearest prior holdings date within seven calendar days.",
-    "SEC ticker-map resolvability is diagnostic only; it does not silently substitute securities."
+    "SEC ticker-map resolvability is diagnostic only; it does not silently substitute securities.",
+    "Exact duplicate full-holdings fingerprints across distant snapshots are rejected as likely asOfDate failures."
   ],
   "summary": {
     "requestedSnapshots": 48,
@@ -38,42 +39,66 @@
         {
           "sourceDate": "2007-03-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-03-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-03-29",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-03-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-03-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-03-26",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-03-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-03-24",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -85,42 +110,66 @@
         {
           "sourceDate": "2007-06-30",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-06-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-06-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-06-27",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-06-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-06-25",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-06-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-06-23",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -132,42 +181,66 @@
         {
           "sourceDate": "2007-09-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-09-29",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-09-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-09-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-09-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-09-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-09-24",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-09-23",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -179,42 +252,66 @@
         {
           "sourceDate": "2007-12-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-12-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-12-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-12-28",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-12-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-12-26",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-12-25",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2007-12-24",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -226,42 +323,66 @@
         {
           "sourceDate": "2008-03-31",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-03-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-03-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-03-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-03-27",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-03-26",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-03-25",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-03-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -273,42 +394,66 @@
         {
           "sourceDate": "2008-06-30",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-06-29",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-06-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-06-27",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-06-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-06-25",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-06-24",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-06-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -320,42 +465,66 @@
         {
           "sourceDate": "2008-09-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-09-29",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-09-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-09-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-09-26",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-09-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-09-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-09-23",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -367,42 +536,66 @@
         {
           "sourceDate": "2008-12-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-12-30",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-12-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-12-28",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-12-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-12-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-12-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2008-12-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -414,42 +607,66 @@
         {
           "sourceDate": "2009-03-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-03-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-03-29",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-03-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-03-27",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-03-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-03-25",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-03-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -461,42 +678,66 @@
         {
           "sourceDate": "2009-06-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-06-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-06-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-06-27",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-06-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-06-25",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-06-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-06-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -508,42 +749,66 @@
         {
           "sourceDate": "2009-09-30",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-09-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-09-28",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-09-27",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-09-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-09-25",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-09-24",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-09-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -555,42 +820,66 @@
         {
           "sourceDate": "2009-12-31",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-12-30",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-12-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-12-28",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-12-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-12-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-12-25",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2009-12-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -602,42 +891,66 @@
         {
           "sourceDate": "2010-03-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-03-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-03-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-03-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-03-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-03-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-03-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-03-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -649,42 +962,66 @@
         {
           "sourceDate": "2010-06-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-06-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-06-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-06-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-06-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-06-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-06-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-06-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -696,42 +1033,66 @@
         {
           "sourceDate": "2010-09-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-09-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-09-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-09-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-09-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-09-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-09-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-09-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -743,42 +1104,66 @@
         {
           "sourceDate": "2010-12-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-12-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-12-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-12-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-12-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-12-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-12-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2010-12-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -790,42 +1175,66 @@
         {
           "sourceDate": "2011-03-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-03-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-03-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-03-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-03-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-03-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-03-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-03-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -837,42 +1246,66 @@
         {
           "sourceDate": "2011-06-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-06-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-06-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-06-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-06-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-06-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-06-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-06-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -884,42 +1317,66 @@
         {
           "sourceDate": "2011-09-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-09-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-09-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-09-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-09-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-09-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-09-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-09-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -931,42 +1388,66 @@
         {
           "sourceDate": "2011-12-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-12-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-12-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-12-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-12-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-12-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-12-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2011-12-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -978,42 +1459,66 @@
         {
           "sourceDate": "2012-03-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-03-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-03-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-03-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-03-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-03-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-03-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-03-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1025,42 +1530,66 @@
         {
           "sourceDate": "2012-06-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-06-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-06-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-06-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-06-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-06-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-06-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-06-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1072,42 +1601,66 @@
         {
           "sourceDate": "2012-09-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-09-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-09-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-09-27",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-09-26",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-09-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-09-24",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-09-23",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1119,42 +1672,66 @@
         {
           "sourceDate": "2012-12-31",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-12-30",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-12-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-12-28",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-12-27",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-12-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-12-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2012-12-24",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1166,42 +1743,66 @@
         {
           "sourceDate": "2013-03-31",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-03-30",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-03-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-03-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-03-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-03-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-03-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-03-24",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1213,42 +1814,66 @@
         {
           "sourceDate": "2013-06-30",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-06-29",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-06-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-06-27",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-06-26",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-06-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-06-24",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-06-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1260,42 +1885,66 @@
         {
           "sourceDate": "2013-09-30",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-09-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-09-28",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-09-27",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-09-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-09-25",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-09-24",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-09-23",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1307,42 +1956,66 @@
         {
           "sourceDate": "2013-12-31",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-12-30",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-12-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-12-28",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-12-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-12-26",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-12-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2013-12-24",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1354,42 +2027,66 @@
         {
           "sourceDate": "2014-03-31",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-03-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-03-29",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-03-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-03-27",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-03-26",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-03-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-03-24",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1401,42 +2098,66 @@
         {
           "sourceDate": "2014-06-30",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-06-29",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-06-28",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-06-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-06-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-06-25",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-06-24",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-06-23",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1448,42 +2169,66 @@
         {
           "sourceDate": "2014-09-30",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-09-29",
           "status": 200,
-          "bytes": 1431074
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-09-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-09-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-09-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-09-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-09-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-09-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1495,42 +2240,66 @@
         {
           "sourceDate": "2014-12-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-12-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-12-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-12-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-12-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-12-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-12-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2014-12-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1542,42 +2311,66 @@
         {
           "sourceDate": "2015-03-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-03-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-03-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-03-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-03-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-03-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-03-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-03-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1589,42 +2382,66 @@
         {
           "sourceDate": "2015-06-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-06-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-06-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-06-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-06-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-06-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-06-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-06-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1636,42 +2453,66 @@
         {
           "sourceDate": "2015-09-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-09-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-09-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-09-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-09-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-09-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-09-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-09-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1683,42 +2524,66 @@
         {
           "sourceDate": "2015-12-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-12-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-12-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-12-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-12-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-12-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-12-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2015-12-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1730,42 +2595,66 @@
         {
           "sourceDate": "2016-03-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-03-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-03-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-03-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-03-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-03-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-03-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-03-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1777,42 +2666,66 @@
         {
           "sourceDate": "2016-06-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-06-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-06-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-06-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-06-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-06-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-06-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-06-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1824,42 +2737,66 @@
         {
           "sourceDate": "2016-09-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-09-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-09-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-09-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-09-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-09-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-09-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-09-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1871,42 +2808,66 @@
         {
           "sourceDate": "2016-12-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-12-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-12-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-12-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-12-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-12-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-12-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2016-12-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1918,42 +2879,66 @@
         {
           "sourceDate": "2017-03-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-03-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-03-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-03-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-03-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-03-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-03-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-03-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -1965,42 +2950,66 @@
         {
           "sourceDate": "2017-06-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-06-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-06-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-06-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-06-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-06-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-06-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-06-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -2012,42 +3021,66 @@
         {
           "sourceDate": "2017-09-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-09-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-09-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-09-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-09-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-09-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-09-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-09-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -2059,42 +3092,66 @@
         {
           "sourceDate": "2017-12-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-12-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-12-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-12-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-12-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-12-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-12-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2017-12-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -2106,42 +3163,66 @@
         {
           "sourceDate": "2018-03-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-03-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-03-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-03-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-03-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-03-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-03-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-03-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -2153,42 +3234,66 @@
         {
           "sourceDate": "2018-06-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-06-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-06-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-06-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-06-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-06-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-06-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-06-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -2200,42 +3305,66 @@
         {
           "sourceDate": "2018-09-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-09-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-09-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-09-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-09-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-09-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-09-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-09-23",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     },
@@ -2247,42 +3376,66 @@
         {
           "sourceDate": "2018-12-31",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-12-30",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-12-29",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-12-28",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-12-27",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-12-26",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-12-25",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         },
         {
           "sourceDate": "2018-12-24",
           "status": 200,
-          "bytes": 1431072
+          "bytes": 1432992,
+          "contentType": "application/json;charset=UTF-8",
+          "prefix": "<!DOCTYPE html> <html xmlns=\"http://www.w3.org/1999/xhtml\" prefix=\"og: http://ogp.me/ns#\" lang=\"en-US\" xml:lang=\"en-US\"> <head> <link rel=\"preload\" href=\"/blk-o",
+          "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
         }
       ]
     }
