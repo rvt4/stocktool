@@ -941,14 +941,14 @@ console.log('V12.39 live portfolio-policy regression passed: entry logic is unch
 const {INVESTOR_ALPHA_HURDLE}=require('./engine/config');
 const {ALPHA_GATE,applyModelDRanking}=require('./engine/ranking-engine');
 assert.strictEqual(INVESTOR_ALPHA_HURDLE,.15,'Expected Alpha hurdle is not 15%');
-assert.strictEqual(ALPHA_GATE,0,'v12.51 live candidate ranking should include stocks at the 15% CAGR hurdle (Alpha >=0)');
+assert.strictEqual(ALPHA_GATE,0,'v12.52 live candidate ranking should include stocks at the 15% CAGR hurdle (Alpha >=0)');
 const alphaProbe=rateStock({price:{current:100},sector:'Technology'},{forecastReliabilityScore:80},{qualityScore:80,growthQualityScore:80,moatScore:80,compounderScore:80,pricingPowerScore:80,capitalAllocationScore:80,protectionScore:80,confidenceScore:80},{expectedCAGR:.22,marginOfSafety:.2,requiredReturnBuyPrice:90,hurdleReturnPrice:110,methodAgreementScore:80,valuationConfidenceScore:80,methods:[1,2,3],independentMethodCount:3,modelSupport:'standard'});
 assert(Math.abs(alphaProbe.expectedAlpha-.07)<1e-12,'22% expected CAGR should equal +7% Alpha on a 15% hurdle');
 const rankProbe=[{ticker:'A',expectedAlpha:.049,expectedCAGR:.199,qualityScore:90,moatScore:90,growthQualityScore:90,compounderScore:90,investmentScore:90},{ticker:'B',expectedAlpha:.051,expectedCAGR:.201,qualityScore:60,moatScore:60,growthQualityScore:60,compounderScore:60,investmentScore:60}];
 applyModelDRanking(rankProbe);assert.strictEqual(rankProbe.find(x=>x.ticker==='B').rankEligible,true);assert.strictEqual(rankProbe.find(x=>x.ticker==='A').rankEligible,true);
-console.log('V12.51 Alpha regression passed: Alpha uses the 15% hurdle and live candidate ranking starts at Alpha >=0.');
+console.log('V12.52 Alpha regression passed: Alpha uses the 15% hurdle and live candidate ranking starts at Alpha >=0.');
 
-// V12.51 dynamic margin-of-safety entry regression ---------------------------
+// V12.52 uncertainty-compensated margin-of-safety entry regression ---------------------------
 const {dynamicMosProfile}=require('./engine/portfolio-policy');
 const elite={...liveCandidate,expectedCAGR:.17,expectedAlpha:.02,overallRank:10,qualityScore:86,moatScore:82,compounderScore:84,forecastReliabilityScore:72,valuationConfidenceScore:76,marginOfSafety:.06,rating:'Watch'};
 assert.strictEqual(dynamicMosProfile(elite).requiredMOS,.05,'elite compounder should require 5% MOS');
@@ -957,5 +957,11 @@ const uncertain={...liveCandidate,expectedCAGR:.24,expectedAlpha:.09,overallRank
 assert.strictEqual(dynamicMosProfile(uncertain).requiredMOS,.25,'higher-uncertainty business should require 25% MOS');
 assert.strictEqual(liveEntryEligible(uncertain),false,'higher-uncertainty business must not qualify with only 20% MOS');
 assert.strictEqual(liveEntryEligible({...uncertain,marginOfSafety:.27}),true,'higher-uncertainty business should qualify after clearing its larger MOS requirement');
+const veryUncertain={...liveCandidate,expectedCAGR:.30,expectedAlpha:.15,overallRank:6,qualityScore:45,moatScore:35,compounderScore:40,forecastReliabilityScore:38,valuationConfidenceScore:41,marginOfSafety:.34,rating:'Watch'};
+assert.strictEqual(dynamicMosProfile(veryUncertain).tier,'Very high uncertainty','weak-confidence supported business should move to the 35% MOS tier rather than be vetoed');
+assert.strictEqual(dynamicMosProfile(veryUncertain).requiredMOS,.35,'very-high-uncertainty business should require 35% MOS');
+assert.strictEqual(liveEntryEligible(veryUncertain),false,'very-high-uncertainty business must not qualify below 35% MOS');
+assert.strictEqual(liveEntryEligible({...veryUncertain,marginOfSafety:.36}),true,'very-high-uncertainty business should qualify when extraordinary MOS compensates for uncertainty');
 assert.strictEqual(liveEntryEligible({...elite,expectedCAGR:.149,expectedAlpha:-.001}),false,'no quality tier may bypass the 15% return hurdle');
+console.log('V12.52 dynamic MOS regression passed: uncertainty raises the required cushion instead of becoming a supported-stock veto.');
 console.log('V12.51 dynamic-MOS regression passed: 15% CAGR is the floor and stronger businesses earn a smaller required valuation cushion.');

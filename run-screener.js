@@ -17,7 +17,7 @@ const { valuate } = require('./engine/valuation-engine');
 const { rateStock } = require('./engine/rating-engine');
 const { validateUniverse } = require('./engine/validation');
 const { writeProspectiveSnapshot } = require('./engine/history-snapshot');
-const { livePortfolioGuidance, ratingAlphaSizingTarget } = require('./engine/portfolio-policy');
+const { livePortfolioGuidance } = require('./engine/portfolio-policy');
 const { applyModelDRanking, compareRank } = require('./engine/ranking-engine');
 
 const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'),'utf8'));
@@ -170,7 +170,9 @@ function applyStarterPortfolioWeights(stocks,topN=15){
   const candidates=(stocks||[]).filter(s=>s.newPositionAction==='BUY').sort((a,b)=>(a.overallRank||Infinity)-(b.overallRank||Infinity)||(b.expectedAlpha||-Infinity)-(a.expectedAlpha||-Infinity));
   const selected=[];const seen=new Set();
   for(const s of candidates){const g=economicSecurityGroup(s.ticker);if(!g||seen.has(g))continue;seen.add(g);selected.push(s);if(selected.length>=topN)break;}
-  const raw=selected.map(s=>Math.max(.0001,Number(ratingAlphaSizingTarget(s))||.0001));
+  // v12.52 keeps the evidence-backed mild-Alpha sizing control. Valuation Rating
+  // is context, not a hidden near-zero weight for Watch-rated eligible names.
+  const raw=selected.map(s=>Math.max(.0001,Number(s.portfolioPolicy?.rawSizingPoints)||4.5));
   const total=raw.reduce((a,b)=>a+b,0);
   for(const s of stocks||[]){s.starterPortfolio=false;s.suggestedInitialWeight=null;}
   selected.forEach((s,i)=>{
@@ -228,7 +230,7 @@ async function run(){
   applyStarterPortfolioWeights(stocks,15);
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.51-dynamic-margin-of-safety-entry',stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.52-uncertainty-compensated-entry',stocks}; writeJson('results.json',output);
   const historyFile=writeProspectiveSnapshot(__dirname,output);
   if(historyFile) console.log(`Saved prospective backtest snapshot: ${path.relative(__dirname,historyFile)}`);
   diag.finishedAt=new Date().toISOString();diag.scored=stocks.length;writeJson('screener-diagnostics.json',diag);
