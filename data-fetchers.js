@@ -97,6 +97,22 @@ async function fetchSecFacts(ticker) {
   return res.json();
 }
 
+async function fetchSecFactsByCik(cik, label = 'historical security') {
+  const normalized = String(cik || '').replace(/\D/g, '').padStart(10, '0');
+  if (!/^\d{10}$/.test(normalized)) throw new Error(`Invalid CIK for ${label}: ${cik}`);
+  const res = await fetchWithTimeout(`https://data.sec.gov/api/xbrl/companyfacts/CIK${normalized}.json`, { headers: SEC_HEADERS }, `SEC EDGAR ${label}`);
+  if (!res.ok) throw new Error(`SEC EDGAR fetch failed for ${label}: ${res.status}`);
+  return res.json();
+}
+
+async function fetchSecSubmissionsByCik(cik) {
+  const normalized = String(cik || '').replace(/\D/g, '').padStart(10, '0');
+  if (!/^\d{10}$/.test(normalized)) return null;
+  const res = await fetchWithTimeout(`https://data.sec.gov/submissions/CIK${normalized}.json`, { headers: SEC_HEADERS }, 'SEC submissions');
+  if (!res.ok) return null;
+  return res.json();
+}
+
 async function fetchSecSubmissions(ticker) {
   const map = await getTickerCikMap();
   const cik = map[normalizeSecTicker(ticker)];
@@ -1025,7 +1041,7 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
 }
 
 const api = {
-  fetchSecFacts, fetchSecSubmissions, classifyCompanyMetadata, parseAnnualFinancials, parseQuarterlyRevenue, recentQuarterYoYGrowth, blendedForwardGrowth,
+  fetchSecFacts, fetchSecFactsByCik, fetchSecSubmissions, fetchSecSubmissionsByCik, classifyCompanyMetadata, parseAnnualFinancials, parseQuarterlyRevenue, recentQuarterYoYGrowth, blendedForwardGrowth,
   fetchStooqPrice, fetchStooqHistory, fetchYahooHistory, fetchBacktestHistory,
   fetchFinnhubProfile, fetchFinnhubQuote, fetchFinnhubRevenueEstimate,
   buildStockRecord, latestDilutedSharesFromFacts, normalizeHistoryForCorporateAction, shareDenominatorLooksSuspicious, reconcileSharesWithLiveMarketCap, getTickerCikMap, normalizeSecTicker, normalizeFinnhubTicker, fetchWithTimeout,

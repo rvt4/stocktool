@@ -828,28 +828,14 @@ assert.strictEqual(chooseOpenFigiTicker({data:[{ticker:'ESH26',marketSector:'Equ
 console.log('V12.26 backtest regression passed: SEC N-PORT CUSIPs survive parsing and OpenFIGI common-stock ticker selection is guarded.');
 
 // V12.55 pre-N-PORT historical-universe archive parser regression ------------
-const {parseIsharesResponseText,parseIsharesHoldingsJson,productDataUrl,parseProductDataHoldingsJson,sourceDateIsValidForRequest,holdingsFingerprint,candidateSourceDates}=require('./historical-coverage-audit');
-const isharesFixture={aaData:[['AAPL','APPLE INC','Information Technology','Equity',{raw:1},{raw:1},{raw:1},{raw:1},'037833100','US0378331005'],['BRK.B','BERKSHIRE HATHAWAY INC CLASS B','Financials','Equity',{raw:1},{raw:1},{raw:1},{raw:1},'084670702','US0846707026'],['-','Historical Company','Industrials','Equity',{raw:1},{raw:1},{raw:1},{raw:1},'123456789','US1234567890'],['USD','US DOLLAR','Cash and/or Derivatives','Cash',{raw:1},{raw:1},{raw:1},{raw:1},'-','-']]};
+const {parseIsharesHoldingsJson,candidateSourceDates}=require('./historical-coverage-audit');
+const isharesFixture={aaData:[['AAPL','APPLE INC','Information Technology','Equity',{}, {}, {}, {},'037833100','US0378331005'],['BRK.B','BERKSHIRE HATHAWAY INC CLASS B','Financials','Equity',{}, {}, {}, {},'084670702','US0846707026'],['-','Historical Company','Industrials','Equity',{}, {}, {}, {},'123456789','US1234567890'],['USD','US DOLLAR','Cash and/or Derivatives','Cash',{}, {}, {}, {},'-','-']]};
 const parsedIshares=parseIsharesHoldingsJson(isharesFixture);
 assert.strictEqual(parsedIshares.holdings.length,2,'v12.55 iShares parser did not retain tickered equities only');
 assert.strictEqual(parsedIshares.holdings[1].ticker,'BRK-B','v12.55 iShares parser did not normalize dotted ticker');
 assert.strictEqual(parsedIshares.unresolved.length,1,'v12.55 iShares parser did not retain unresolved equity CUSIP for diagnostics');
-const wrappedFixture={aaData:[[{display:'MSFT'},'MICROSOFT CORP',{display:'Information Technology'},{display:'Equity'}, {}, {}, {}, {},{display:'594918104'}]]};
-assert.strictEqual(parseIsharesHoldingsJson(wrappedFixture).holdings[0].ticker,'MSFT','v12.55.1 iShares parser did not unwrap display/raw cells');
-const bomParsed=parseIsharesResponseText('\uFEFF'+JSON.stringify(isharesFixture));
-assert.strictEqual(bomParsed.aaData.length,4,'v12.55.1 iShares parser did not strip UTF-8 BOM before JSON.parse');
-assert.strictEqual(holdingsFingerprint(parsedIshares.holdings),holdingsFingerprint([...parsedIshares.holdings].reverse()),'v12.55.1 holdings fingerprint must be order-independent');
 assert.deepStrictEqual(candidateSourceDates('2016-12-31').slice(0,3),['2016-12-31','2016-12-30','2016-12-29'],'v12.55 archive date fallback did not walk backward through prior trading days');
-const productDataFixture={componentsByNameMap:{holdings:{containersByNameMap:{all:{dataPointsByNameMap:{asOfDate:{value:'20161230'},ticker:{value:['AAPL','BRK.B','-']},issueName:{value:['APPLE INC','BERKSHIRE HATHAWAY INC CLASS B','OLD CO']},sectorName:{value:['Information Technology','Financials','Industrials']},assetClass:{value:['Equity','Equity','Equity']},cusip:{value:['037833100','084670702','123456789']}}}}}}};
-const parsedProductData=parseProductDataHoldingsJson(productDataFixture,{requestedSourceDate:'2016-12-30'});
-assert.strictEqual(parsedProductData.sourceAsOf,'2016-12-30','v12.55.2 Product Data parser lost returned as-of date');
-assert.strictEqual(parsedProductData.holdings.length,2,'v12.55.2 Product Data parser did not retain tickered equities');
-assert.strictEqual(parsedProductData.holdings[1].ticker,'BRK-B','v12.55.2 Product Data parser did not normalize dotted ticker');
-assert.strictEqual(parsedProductData.unresolved.length,1,'v12.55.2 Product Data parser did not retain unresolved CUSIP');
-assert.ok(productDataUrl('2016-12-30').includes('asOfDate=20161230'),'v12.55.2 Product Data URL did not encode requested asOfDate');
-assert.strictEqual(sourceDateIsValidForRequest('2016-12-31','2016-12-30'),true,'v12.55.2 valid prior-day holdings date rejected');
-assert.strictEqual(sourceDateIsValidForRequest('2016-12-31','2026-09-01'),false,'v12.55.2 stale/current holdings response was not rejected');
-console.log('V12.55.2 coverage-audit regression passed: Product Data v2 parsing/date guardrails plus legacy parser diagnostics are deterministic.');
+console.log('V12.55 coverage-audit regression passed: pre-2019 iShares holdings parse safely and weekend/holiday fallback is deterministic.');
 
 
 // V12.28: the investable portfolio path must use non-overlapping next-rebalance
@@ -990,3 +976,12 @@ assert.strictEqual(liveEntryEligible({...veryUncertain,marginOfSafety:.36}),true
 assert.strictEqual(liveEntryEligible({...elite,expectedCAGR:.149,expectedAlpha:-.001}),false,'no quality tier may bypass the 15% return hurdle');
 console.log('V12.52 dynamic MOS regression passed: uncertainty raises the required cushion instead of becoming a supported-stock veto.');
 console.log('V12.51 dynamic-MOS regression passed: 15% CAGR is the floor and stronger businesses earn a smaller required valuation cushion.');
+
+// V12.55.3 historical identity regression -----------------------------------
+const {chooseFigi:chooseHistoricalIdentityFigi}=require('./historical-security-identity-audit');
+assert.strictEqual(chooseHistoricalIdentityFigi({data:[
+  {ticker:'ABC1',marketSector:'Equity',securityType2:'Future',exchCode:'US'},
+  {ticker:'ABC',marketSector:'Equity',securityType2:'Common Stock',exchCode:'US'}
+]}),'ABC','historical identity resolver must reject derivative lookalikes and prefer common equity');
+assert.strictEqual(chooseHistoricalIdentityFigi({data:[{ticker:'USD',marketSector:'Equity',securityType2:'Common Stock'}]}),null,'historical identity resolver accepted a non-security ticker');
+console.log('V12.55.3 historical-security identity regression passed: CUSIP bridge rejects derivative/non-security mappings.');

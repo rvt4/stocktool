@@ -24,7 +24,7 @@
 const fs=require('fs');
 const path=require('path');
 const {
-  fetchSecFacts, fetchSecSubmissions, classifyCompanyMetadata, parseAnnualFinancials, parseQuarterlyRevenue, recentQuarterYoYGrowth,
+  fetchSecFacts, fetchSecFactsByCik, fetchSecSubmissions, fetchSecSubmissionsByCik, classifyCompanyMetadata, parseAnnualFinancials, parseQuarterlyRevenue, recentQuarterYoYGrowth,
   blendedForwardGrowth, fetchBacktestHistory, latestDilutedSharesFromFacts,
   normalizeHistoryForCorporateAction, normalizeSecTicker
 }=require('./data-fetchers');
@@ -35,7 +35,7 @@ const {rateStock}=require('./engine/rating-engine');
 const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='simple-v12.55-historical-coverage-audit';
+const MODEL_VERSION='simple-v12.55.3-historical-security-identity';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -370,16 +370,31 @@ async function loadIwbNportSnapshots(dates,currentMap){
 function loadCachedIsharesSnapshots(dates,current){
   const out=new Map(),coverage=[],missing=[];
   const dir=path.join(__dirname,'data','historical-universe');
+  const available=fs.existsSync(dir)?fs.readdirSync(dir).filter(x=>/^iwb-\d{4}-\d{2}-\d{2}\.json$/.test(x)).map(x=>x.slice(4,14)).sort():[];
   for(const asOf of dates){
-    const fp=path.join(dir,`iwb-${asOf}.json`);
-    if(!fs.existsSync(fp)){missing.push(asOf);continue;}
+    let sourceDate=asOf,carryForward=false;
+    let fp=path.join(dir,`iwb-${sourceDate}.json`);
+    if(!fs.existsSync(fp)){
+      // v12.55.3: the audit found two isolated 2017 archive holes. We may carry
+      // forward the nearest PRIOR validated membership snapshot for at most 100
+      // days. This is explicit and never substitutes today's constituents.
+      const prior=available.filter(d=>d<asOf).at(-1);
+      const gap=prior?(new Date(`${asOf}T00:00:00Z`)-new Date(`${prior}T00:00:00Z`))/86400000:Infinity;
+      if(prior&&gap<=100){sourceDate=prior;fp=path.join(dir,`iwb-${prior}.json`);carryForward=true;}
+      else{missing.push(asOf);continue;}
+    }
     try{
       const j=JSON.parse(fs.readFileSync(fp,'utf8'));
-      const holdings=(j.holdings||[]).map(x=>({ticker:normalizeTickerSymbol(x.ticker),sector:normalizeSectorName(x.sector||current.get(normalizeTickerSymbol(x.ticker))?.sector),name:x.name||x.ticker,cusip:x.cusip||null})).filter(x=>validEquityTicker(x.ticker));
-      const dedup=[...new Map(holdings.map(x=>[x.ticker,x])).values()];
+      const holdings=(j.holdings||[]).map(x=>{
+        const historicalTicker=normalizeTickerSymbol(x.historicalTicker||x.ticker);
+        const resolvedTicker=normalizeTickerSymbol(x.resolvedTicker||x.ticker);
+        return {ticker:resolvedTicker,historicalTicker,sector:normalizeSectorName(x.sector||current.get(resolvedTicker)?.sector),name:x.name||historicalTicker,cusip:x.cusip||null,secCik:x.secCik||null,identitySource:x.identitySource||null};
+      }).filter(x=>validEquityTicker(x.ticker));
+      const dedup=[...new Map(holdings.map(x=>[`${x.secCik||''}|${x.ticker}`,x])).values()];
       if(dedup.length<500){missing.push(asOf);continue;}
-      const snap={reportDate:j.sourceAsOf||j.asOf||asOf,sourceType:'ISHARES_ARCHIVE',holdings:dedup};out.set(asOf,snap);
-      coverage.push({asOf,sourceAsOf:snap.reportDate,sourceType:'ISHARES_ARCHIVE',count:dedup.length,status:'ishares_archive_cache'});
+      const snap={reportDate:j.sourceAsOf||j.asOf||sourceDate,sourceType:carryForward?'ISHARES_ARCHIVE_CARRY_FORWARD':'ISHARES_ARCHIVE',membershipSourceDate:sourceDate,holdings:dedup};out.set(asOf,snap);
+      const cikResolved=dedup.filter(x=>x.secCik).length;
+      coverage.push({asOf,sourceAsOf:snap.reportDate,membershipSourceDate:sourceDate,sourceType:snap.sourceType,count:dedup.length,status:carryForward?'ishares_archive_prior_snapshot_carry_forward':'ishares_archive_cache',carryForwardDays:carryForward?Math.round((new Date(`${asOf}T00:00:00Z`)-new Date(`${sourceDate}T00:00:00Z`))/86400000):0,secCikResolved:cikResolved,secCikResolvedRate:dedup.length?cikResolved/dedup.length:null});
     }catch(e){missing.push(asOf);}
   }
   return {out,coverage,missing};
@@ -391,6 +406,12 @@ async function buildHistoricalUniverse(dates){
   // snapshots fail closed; today's watchlist is never substituted.
   const current=new Map(watchlist.map(x=>[x.ticker,x]));
   const pre=dates.filter(d=>Number(d.slice(0,4))<2019),post=dates.filter(d=>Number(d.slice(0,4))>=2019);
+  if(pre.length){
+    const identityPath=path.join(__dirname,'data','historical-security-identity.json');
+    if(!fs.existsSync(identityPath))throw new Error('Pre-2019 backtest requires data/historical-security-identity.json. Run Historical Security Identity Audit first.');
+    const identity=JSON.parse(fs.readFileSync(identityPath,'utf8'));
+    if(!String(identity.version||'').startsWith('v12.55.3'))throw new Error(`Historical security identity audit is stale (${identity.version||'unknown'}). Run Historical Security Identity Audit again.`);
+  }
   const cached=loadCachedIsharesSnapshots(pre,current);
   if(cached.missing.length){
     throw new Error(`Pre-2019 point-in-time IWB cache missing/invalid for ${cached.missing.length} requested snapshot(s): ${cached.missing.join(', ')}. Run Historical Coverage Audit first; no current-watchlist fallback.`);
@@ -441,7 +462,7 @@ async function buildHistoricalUniverse(dates){
   }
   if(failures.length){const err=new Error(`Point-in-time IWB membership unavailable for ${failures.length}/${dates.length} requested snapshots. Backtest aborted; no current-watchlist fallback. Missing: ${failures.map(x=>x.asOf).join(', ')}`);err.historicalUniverseCoverage=coverage;throw err;}
   coverage.sort((a,b)=>a.asOf.localeCompare(b.asOf));
-  const union=new Map();for(const m of byDate.values())for(const [ticker,x] of m)if(!union.has(ticker))union.set(ticker,{ticker,sector:x.sector||current.get(ticker)?.sector||'Unknown'});
+  const union=new Map();for(const m of byDate.values())for(const [ticker,x] of m){const key=x.secCik?`CIK:${x.secCik}`:`T:${ticker}`;if(!union.has(key))union.set(key,{ticker,sector:x.sector||current.get(ticker)?.sector||'Unknown',secCik:x.secCik||null,identitySource:x.identitySource||null,historicalTicker:x.historicalTicker||ticker});}
   return {byDate,coverage,union:[...union.values()],provider:pre.length?'iShares historical holdings cache (<2019) + SEC N-PORT IWB holdings (2019+)':'SEC N-PORT IWB holdings + OpenFIGI CUSIP-to-ticker mapping',requestedStart:START,effectiveStart:Number(dates[0].slice(0,4)),effectiveStartDate:dates[0]};
 }
 
@@ -1872,7 +1893,7 @@ async function main(){
   if(!spyHistory.length) throw new Error('SPY historical price history was empty; cannot benchmark backtest.');
   const snapshots=new Map(dates.map(d=>[d,[]])); const errors=[]; const historyByTicker=new Map();
   const diagnostics={
-    tickerDateAttempts:0,tickersFetched:0,tickerFetchFailures:0,
+    tickerDateAttempts:0,tickersFetched:0,tickerFetchFailures:0,identityCikFetches:0,identityTickerFallbackFetches:0,
     usableFinancialHistory:0,insufficientFinancialHistory:0,
     historicalPriceFound:0,missingHistoricalPrice:0,
     shareCountFound:0,missingShareCount:0,
@@ -1880,10 +1901,13 @@ async function main(){
   };
   const skipExamples=[];
   for(let i=0;i<universe.length;i++){
-    const {ticker,sector}=universe[i];
+    const {ticker,sector,secCik}=universe[i];
     try{
       const sec=normalizeSecTicker(ticker);
-      const [facts,submissions,history]=await Promise.all([fetchSecFacts(sec),fetchSecSubmissions(sec).catch(()=>null),fetchBacktestHistory(sec,HISTORY_YEARS)]);
+      if(secCik)diagnostics.identityCikFetches++;else diagnostics.identityTickerFallbackFetches++;
+      const factsPromise=secCik?fetchSecFactsByCik(secCik,ticker):fetchSecFacts(sec);
+      const submissionsPromise=secCik?fetchSecSubmissionsByCik(secCik).catch(()=>null):fetchSecSubmissions(sec).catch(()=>null);
+      const [facts,submissions,history]=await Promise.all([factsPromise,submissionsPromise,fetchBacktestHistory(sec,HISTORY_YEARS)]);
       historyByTicker.set(ticker,history);
       diagnostics.tickersFetched++;
       if(!history.length && skipExamples.length<20) skipExamples.push({ticker,reason:'empty_stooq_history'});
@@ -1927,7 +1951,7 @@ async function main(){
   const output={
     generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,backtestMode:'historical_core_point_in_time',frequency:FREQUENCY,requestedStartYear:START,startYear:historicalUniverse.effectiveStart||START,effectiveStartYear:historicalUniverse.effectiveStart||START,effectiveStartDate:historicalUniverse.effectiveStartDate||`${historicalUniverse.effectiveStart||START}-01-01`,endYear:END,
     assumptions:{analystEstimates:'excluded_historical_unavailable',universe:'point_in_time_iwb_required_fail_closed_ishares_cache_pre2019_sec_nport_2019plus_no_current_watchlist_fallback',returns:'Yahoo adjusted-close total return where available; Stooq price-only fallback is explicitly flagged',benchmark:'SPY adjusted-close total return',valuationPrice:'raw historical close',secCutoff:'facts must be filed by as-of date'},
-    observations:flat.length,longTermOwnerLab,historicalUniverse:{provider:historicalUniverse.provider||'SEC N-PORT / IWB',coverage:historicalUniverse.coverage,uniqueTickers:historicalUniverse.union.length,note:'Point-in-time IWB membership is required for every snapshot. Before 2019, only validated iShares archive snapshots produced by the coverage audit are accepted; 2019+ uses SEC N-PORT with OpenFIGI CUSIP mapping. No current-watchlist membership fallback is permitted. Residual bias can remain where historical/delisted tickers cannot be resolved to SEC facts or free price history.'},diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YTotalReturnCAGR'),summary3Y:summarize(flat,'realized3YTotalReturnCAGR'),summary5Y:summarize(flat,'realized5YTotalReturnCAGR'),signalAnalysis:buildSignalAnalysis(flat),predictivePowerLab:buildPredictivePowerLab(flat,1),challengerLab:buildChallengerLab(flat,1),portfolioSimulation:buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory),errors:errors.slice(0,500),snapshots:snapshotOutput
+    observations:flat.length,longTermOwnerLab,historicalUniverse:{provider:historicalUniverse.provider||'SEC N-PORT / IWB',coverage:historicalUniverse.coverage,uniqueTickers:historicalUniverse.union.length,note:'Point-in-time IWB membership is required for every snapshot. Before 2019, only validated iShares archive snapshots produced by the coverage audit are accepted; 2019+ uses SEC N-PORT with OpenFIGI CUSIP mapping. No current-watchlist membership fallback is permitted. Pre-2019 cache rows may carry stable SEC CIK identity from the v12.55.3 identity audit; unresolved historical securities remain explicit. Two isolated archive holes may use only the nearest prior validated IWB snapshot within 100 days, flagged in coverage. Residual bias can remain where delisted securities lack free price history or resolvable SEC identity.'},diagnostics,skipExamples,summary1Y:summarize(flat,'realized1YTotalReturnCAGR'),summary3Y:summarize(flat,'realized3YTotalReturnCAGR'),summary5Y:summarize(flat,'realized5YTotalReturnCAGR'),signalAnalysis:buildSignalAnalysis(flat),predictivePowerLab:buildPredictivePowerLab(flat,1),challengerLab:buildChallengerLab(flat,1),portfolioSimulation:buildPortfolioSimulation(snapshotOutput,historyByTicker,spyHistory),errors:errors.slice(0,500),snapshots:snapshotOutput
   };
   const p=path.join(__dirname,'data','backtest-results.json'),tmp=p+'.tmp';fs.writeFileSync(tmp,JSON.stringify(output));fs.renameSync(tmp,p);
   const summary=buildBacktestSummary(output),sp=path.join(__dirname,'data','backtest-summary.json'),stmp=sp+'.tmp';fs.writeFileSync(stmp,JSON.stringify(summary,null,2));fs.renameSync(stmp,sp);
