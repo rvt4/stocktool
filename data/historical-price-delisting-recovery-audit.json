@@ -1,0 +1,763 @@
+{
+  "generatedAt": "2026-09-06T16:27:08.647Z",
+  "version": "v12.55.6.1-historical-price-delisting-recovery-audit",
+  "requested": {
+    "startYear": 2007,
+    "endYear": 2011,
+    "frequency": "quarterly",
+    "requestedSnapshots": 20,
+    "auditedSnapshots": 20,
+    "unavailableSnapshots": [],
+    "limit": null
+  },
+  "guardrails": [
+    "Point-in-time IWB membership comes only from validated historical-universe caches.",
+    "Price alias retries are restricted to ticker aliases already attached to the same historical holding and SEC CIK.",
+    "No current-constituent membership fallback or unrelated successor-company substitution is permitted.",
+    "Historical valuation uses a quote on or before the snapshot; future prices cannot repair an earlier snapshot.",
+    "Legacy fundamentals recovery retains the v12.55.5 filing-date guardrails.",
+    "Null historical stocks are classified by production diagnostics so missing share count or fundamentals cannot be mislabeled as a price failure.",
+    "Large SEC facts and price payloads are processed one CIK at a time and released between securities; this is a memory-management change only."
+  ],
+  "summary": {
+    "holdingObservations": 19536,
+    "identityResolved": 11963,
+    "identityResolvedRate": 0.6123566748566749,
+    "baselineModelable": 2499,
+    "recoveredModelable": 4180,
+    "recoveredModelableRate": 0.21396396396396397,
+    "aliasRecoveredModelable": 4220,
+    "aliasRecoveredModelableRate": 0.216011466011466,
+    "incrementalAliasRecovered": 40,
+    "failureReasons": {
+      "insufficient_financial_history": 2046,
+      "price_series_unavailable_primary": 682,
+      "missing_share_count": 4829,
+      "missing_historical_price": 242,
+      "missing_expected_cagr": 613,
+      "price_series_unavailable_all_same_cik_aliases": 36,
+      "sec_facts_unavailable": 17
+    }
+  },
+  "byYear": [
+    {
+      "year": "2007",
+      "snapshots": 4,
+      "holdings": 3980,
+      "identityResolved": 2309,
+      "baselineModelable": 0,
+      "recoveredModelable": 478,
+      "recoveredModelableRate": 0.12010050251256281,
+      "aliasRecoveredModelable": 486,
+      "aliasRecoveredModelableRate": 0.1221105527638191,
+      "incrementalAliasRecovered": 8
+    },
+    {
+      "year": "2008",
+      "snapshots": 4,
+      "holdings": 3962,
+      "identityResolved": 2381,
+      "baselineModelable": 0,
+      "recoveredModelable": 480,
+      "recoveredModelableRate": 0.12115093387178193,
+      "aliasRecoveredModelable": 484,
+      "aliasRecoveredModelableRate": 0.12216052498738011,
+      "incrementalAliasRecovered": 4
+    },
+    {
+      "year": "2009",
+      "snapshots": 4,
+      "holdings": 3840,
+      "identityResolved": 2367,
+      "baselineModelable": 14,
+      "recoveredModelable": 478,
+      "recoveredModelableRate": 0.12447916666666667,
+      "aliasRecoveredModelable": 485,
+      "aliasRecoveredModelableRate": 0.12630208333333334,
+      "incrementalAliasRecovered": 7
+    },
+    {
+      "year": "2010",
+      "snapshots": 4,
+      "holdings": 3868,
+      "identityResolved": 2414,
+      "baselineModelable": 791,
+      "recoveredModelable": 1007,
+      "recoveredModelableRate": 0.26034126163391935,
+      "aliasRecoveredModelable": 1017,
+      "aliasRecoveredModelableRate": 0.2629265770423992,
+      "incrementalAliasRecovered": 10
+    },
+    {
+      "year": "2011",
+      "snapshots": 4,
+      "holdings": 3886,
+      "identityResolved": 2492,
+      "baselineModelable": 1694,
+      "recoveredModelable": 1737,
+      "recoveredModelableRate": 0.4469891919711786,
+      "aliasRecoveredModelable": 1748,
+      "aliasRecoveredModelableRate": 0.4498198661863098,
+      "incrementalAliasRecovered": 11
+    }
+  ],
+  "coverage": [
+    {
+      "asOf": "2007-03-31",
+      "holdings": 968,
+      "identityResolved": 555,
+      "baselineModelable": 0,
+      "recoveredModelable": 113,
+      "aliasRecoveredModelable": 115,
+      "aliasRecoveryAttempts": 34,
+      "aliasRecoverySuccesses": 30,
+      "failureReasons": {
+        "insufficient_financial_history": 116,
+        "price_series_unavailable_primary": 30,
+        "missing_share_count": 297,
+        "missing_historical_price": 16,
+        "missing_expected_cagr": 10,
+        "price_series_unavailable_all_same_cik_aliases": 2,
+        "sec_facts_unavailable": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000050863",
+          "asOf": "2007-03-31",
+          "primaryTicker": "INCO",
+          "recoveredPriceTicker": "INTC"
+        },
+        {
+          "cik": "0000804328",
+          "asOf": "2007-03-31",
+          "primaryTicker": "QCI",
+          "recoveredPriceTicker": "QCOM"
+        }
+      ]
+    },
+    {
+      "asOf": "2007-06-30",
+      "holdings": 1016,
+      "identityResolved": 583,
+      "baselineModelable": 0,
+      "recoveredModelable": 118,
+      "aliasRecoveredModelable": 120,
+      "aliasRecoveryAttempts": 34,
+      "aliasRecoverySuccesses": 30,
+      "failureReasons": {
+        "insufficient_financial_history": 127,
+        "price_series_unavailable_primary": 31,
+        "missing_share_count": 307,
+        "missing_historical_price": 16,
+        "missing_expected_cagr": 11,
+        "price_series_unavailable_all_same_cik_aliases": 3,
+        "sec_facts_unavailable": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000050863",
+          "asOf": "2007-06-30",
+          "primaryTicker": "INCO",
+          "recoveredPriceTicker": "INTC"
+        },
+        {
+          "cik": "0000804328",
+          "asOf": "2007-06-30",
+          "primaryTicker": "QCI",
+          "recoveredPriceTicker": "QCOM"
+        }
+      ]
+    },
+    {
+      "asOf": "2007-09-30",
+      "holdings": 1004,
+      "identityResolved": 583,
+      "baselineModelable": 0,
+      "recoveredModelable": 122,
+      "aliasRecoveredModelable": 124,
+      "aliasRecoveryAttempts": 35,
+      "aliasRecoverySuccesses": 31,
+      "failureReasons": {
+        "insufficient_financial_history": 126,
+        "price_series_unavailable_primary": 32,
+        "missing_share_count": 304,
+        "missing_historical_price": 15,
+        "missing_expected_cagr": 12,
+        "price_series_unavailable_all_same_cik_aliases": 3,
+        "sec_facts_unavailable": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000050863",
+          "asOf": "2007-09-30",
+          "primaryTicker": "INCO",
+          "recoveredPriceTicker": "INTC"
+        },
+        {
+          "cik": "0000804328",
+          "asOf": "2007-09-30",
+          "primaryTicker": "QCI",
+          "recoveredPriceTicker": "QCOM"
+        }
+      ]
+    },
+    {
+      "asOf": "2007-12-31",
+      "holdings": 992,
+      "identityResolved": 588,
+      "baselineModelable": 0,
+      "recoveredModelable": 125,
+      "aliasRecoveredModelable": 127,
+      "aliasRecoveryAttempts": 34,
+      "aliasRecoverySuccesses": 31,
+      "failureReasons": {
+        "insufficient_financial_history": 128,
+        "price_series_unavailable_primary": 32,
+        "missing_share_count": 303,
+        "missing_historical_price": 14,
+        "missing_expected_cagr": 14,
+        "price_series_unavailable_all_same_cik_aliases": 3,
+        "sec_facts_unavailable": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000050863",
+          "asOf": "2007-12-31",
+          "primaryTicker": "INCO",
+          "recoveredPriceTicker": "INTC"
+        },
+        {
+          "cik": "0000804328",
+          "asOf": "2007-12-31",
+          "primaryTicker": "QCI",
+          "recoveredPriceTicker": "QCOM"
+        }
+      ]
+    },
+    {
+      "asOf": "2008-03-31",
+      "holdings": 990,
+      "identityResolved": 590,
+      "baselineModelable": 0,
+      "recoveredModelable": 122,
+      "aliasRecoveredModelable": 123,
+      "aliasRecoveryAttempts": 34,
+      "aliasRecoverySuccesses": 31,
+      "failureReasons": {
+        "insufficient_financial_history": 121,
+        "price_series_unavailable_primary": 33,
+        "missing_share_count": 316,
+        "missing_historical_price": 13,
+        "missing_expected_cagr": 14,
+        "price_series_unavailable_all_same_cik_aliases": 3,
+        "sec_facts_unavailable": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000050863",
+          "asOf": "2008-03-31",
+          "primaryTicker": "INCO",
+          "recoveredPriceTicker": "INTC"
+        }
+      ]
+    },
+    {
+      "asOf": "2008-06-30",
+      "holdings": 997,
+      "identityResolved": 597,
+      "baselineModelable": 0,
+      "recoveredModelable": 121,
+      "aliasRecoveredModelable": 122,
+      "aliasRecoveryAttempts": 35,
+      "aliasRecoverySuccesses": 33,
+      "failureReasons": {
+        "insufficient_financial_history": 124,
+        "price_series_unavailable_primary": 34,
+        "missing_share_count": 324,
+        "missing_historical_price": 12,
+        "missing_expected_cagr": 13,
+        "price_series_unavailable_all_same_cik_aliases": 2,
+        "sec_facts_unavailable": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000050863",
+          "asOf": "2008-06-30",
+          "primaryTicker": "INCO",
+          "recoveredPriceTicker": "INTC"
+        }
+      ]
+    },
+    {
+      "asOf": "2008-09-30",
+      "holdings": 993,
+      "identityResolved": 598,
+      "baselineModelable": 0,
+      "recoveredModelable": 122,
+      "aliasRecoveredModelable": 123,
+      "aliasRecoveryAttempts": 38,
+      "aliasRecoverySuccesses": 34,
+      "failureReasons": {
+        "insufficient_financial_history": 127,
+        "price_series_unavailable_primary": 35,
+        "missing_share_count": 319,
+        "missing_historical_price": 12,
+        "missing_expected_cagr": 15,
+        "price_series_unavailable_all_same_cik_aliases": 2,
+        "sec_facts_unavailable": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000050863",
+          "asOf": "2008-09-30",
+          "primaryTicker": "INCO",
+          "recoveredPriceTicker": "INTC"
+        }
+      ]
+    },
+    {
+      "asOf": "2008-12-31",
+      "holdings": 982,
+      "identityResolved": 596,
+      "baselineModelable": 0,
+      "recoveredModelable": 115,
+      "aliasRecoveredModelable": 116,
+      "aliasRecoveryAttempts": 37,
+      "aliasRecoverySuccesses": 34,
+      "failureReasons": {
+        "insufficient_financial_history": 125,
+        "price_series_unavailable_primary": 35,
+        "missing_share_count": 317,
+        "missing_expected_cagr": 25,
+        "missing_historical_price": 11,
+        "price_series_unavailable_all_same_cik_aliases": 2,
+        "sec_facts_unavailable": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000050863",
+          "asOf": "2008-12-31",
+          "primaryTicker": "INCO",
+          "recoveredPriceTicker": "INTC"
+        }
+      ]
+    },
+    {
+      "asOf": "2009-03-31",
+      "holdings": 965,
+      "identityResolved": 592,
+      "baselineModelable": 0,
+      "recoveredModelable": 109,
+      "aliasRecoveredModelable": 111,
+      "aliasRecoveryAttempts": 39,
+      "aliasRecoverySuccesses": 35,
+      "failureReasons": {
+        "insufficient_financial_history": 112,
+        "price_series_unavailable_primary": 35,
+        "missing_share_count": 335,
+        "missing_historical_price": 13,
+        "missing_expected_cagr": 20,
+        "price_series_unavailable_all_same_cik_aliases": 2,
+        "sec_facts_unavailable": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000050863",
+          "asOf": "2009-03-31",
+          "primaryTicker": "INCO",
+          "recoveredPriceTicker": "INTC"
+        },
+        {
+          "cik": "0000804328",
+          "asOf": "2009-03-31",
+          "primaryTicker": "QCI",
+          "recoveredPriceTicker": "QCOM"
+        }
+      ]
+    },
+    {
+      "asOf": "2009-06-30",
+      "holdings": 961,
+      "identityResolved": 592,
+      "baselineModelable": 0,
+      "recoveredModelable": 119,
+      "aliasRecoveredModelable": 121,
+      "aliasRecoveryAttempts": 38,
+      "aliasRecoverySuccesses": 35,
+      "failureReasons": {
+        "insufficient_financial_history": 112,
+        "price_series_unavailable_primary": 34,
+        "missing_share_count": 330,
+        "missing_historical_price": 13,
+        "missing_expected_cagr": 16,
+        "price_series_unavailable_all_same_cik_aliases": 1,
+        "sec_facts_unavailable": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000050863",
+          "asOf": "2009-06-30",
+          "primaryTicker": "INCO",
+          "recoveredPriceTicker": "INTC"
+        },
+        {
+          "cik": "0000804328",
+          "asOf": "2009-06-30",
+          "primaryTicker": "QCI",
+          "recoveredPriceTicker": "QCOM"
+        }
+      ]
+    },
+    {
+      "asOf": "2009-09-30",
+      "holdings": 956,
+      "identityResolved": 590,
+      "baselineModelable": 0,
+      "recoveredModelable": 121,
+      "aliasRecoveredModelable": 123,
+      "aliasRecoveryAttempts": 38,
+      "aliasRecoverySuccesses": 35,
+      "failureReasons": {
+        "insufficient_financial_history": 111,
+        "price_series_unavailable_primary": 34,
+        "missing_share_count": 328,
+        "missing_historical_price": 13,
+        "missing_expected_cagr": 15,
+        "price_series_unavailable_all_same_cik_aliases": 1,
+        "sec_facts_unavailable": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000050863",
+          "asOf": "2009-09-30",
+          "primaryTicker": "INCO",
+          "recoveredPriceTicker": "INTC"
+        },
+        {
+          "cik": "0000804328",
+          "asOf": "2009-09-30",
+          "primaryTicker": "QCI",
+          "recoveredPriceTicker": "QCOM"
+        }
+      ]
+    },
+    {
+      "asOf": "2009-12-31",
+      "holdings": 958,
+      "identityResolved": 593,
+      "baselineModelable": 14,
+      "recoveredModelable": 129,
+      "aliasRecoveredModelable": 130,
+      "aliasRecoveryAttempts": 37,
+      "aliasRecoverySuccesses": 34,
+      "failureReasons": {
+        "insufficient_financial_history": 111,
+        "price_series_unavailable_primary": 34,
+        "missing_share_count": 320,
+        "missing_expected_cagr": 19,
+        "missing_historical_price": 12,
+        "price_series_unavailable_all_same_cik_aliases": 1,
+        "sec_facts_unavailable": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000050863",
+          "asOf": "2009-12-31",
+          "primaryTicker": "INCO",
+          "recoveredPriceTicker": "INTC"
+        }
+      ]
+    },
+    {
+      "asOf": "2010-03-31",
+      "holdings": 949,
+      "identityResolved": 593,
+      "baselineModelable": 185,
+      "recoveredModelable": 241,
+      "aliasRecoveredModelable": 244,
+      "aliasRecoveryAttempts": 37,
+      "aliasRecoverySuccesses": 36,
+      "failureReasons": {
+        "insufficient_financial_history": 81,
+        "price_series_unavailable_primary": 34,
+        "missing_expected_cagr": 40,
+        "missing_historical_price": 12,
+        "missing_share_count": 217,
+        "price_series_unavailable_all_same_cik_aliases": 1,
+        "sec_facts_unavailable": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000050863",
+          "asOf": "2010-03-31",
+          "primaryTicker": "INCO",
+          "recoveredPriceTicker": "INTC"
+        },
+        {
+          "cik": "0001133421",
+          "asOf": "2010-03-31",
+          "primaryTicker": "NTH",
+          "recoveredPriceTicker": "NOC"
+        },
+        {
+          "cik": "0000906107",
+          "asOf": "2010-03-31",
+          "primaryTicker": "EQR",
+          "recoveredPriceTicker": "VMRK"
+        }
+      ]
+    },
+    {
+      "asOf": "2010-06-30",
+      "holdings": 976,
+      "identityResolved": 606,
+      "baselineModelable": 180,
+      "recoveredModelable": 236,
+      "aliasRecoveredModelable": 239,
+      "aliasRecoveryAttempts": 39,
+      "aliasRecoverySuccesses": 37,
+      "failureReasons": {
+        "insufficient_financial_history": 83,
+        "price_series_unavailable_primary": 36,
+        "missing_expected_cagr": 51,
+        "missing_historical_price": 11,
+        "missing_share_count": 222,
+        "price_series_unavailable_all_same_cik_aliases": 2,
+        "sec_facts_unavailable": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000050863",
+          "asOf": "2010-06-30",
+          "primaryTicker": "INCO",
+          "recoveredPriceTicker": "INTC"
+        },
+        {
+          "cik": "0001133421",
+          "asOf": "2010-06-30",
+          "primaryTicker": "NTH",
+          "recoveredPriceTicker": "NOC"
+        },
+        {
+          "cik": "0000906107",
+          "asOf": "2010-06-30",
+          "primaryTicker": "EQR",
+          "recoveredPriceTicker": "VMRK"
+        }
+      ]
+    },
+    {
+      "asOf": "2010-09-30",
+      "holdings": 974,
+      "identityResolved": 605,
+      "baselineModelable": 201,
+      "recoveredModelable": 256,
+      "aliasRecoveredModelable": 258,
+      "aliasRecoveryAttempts": 37,
+      "aliasRecoverySuccesses": 36,
+      "failureReasons": {
+        "insufficient_financial_history": 78,
+        "price_series_unavailable_primary": 36,
+        "missing_expected_cagr": 46,
+        "missing_historical_price": 9,
+        "missing_share_count": 213,
+        "price_series_unavailable_all_same_cik_aliases": 2,
+        "sec_facts_unavailable": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000050863",
+          "asOf": "2010-09-30",
+          "primaryTicker": "INCO",
+          "recoveredPriceTicker": "INTC"
+        },
+        {
+          "cik": "0000906107",
+          "asOf": "2010-09-30",
+          "primaryTicker": "EQR",
+          "recoveredPriceTicker": "VMRK"
+        }
+      ]
+    },
+    {
+      "asOf": "2010-12-31",
+      "holdings": 969,
+      "identityResolved": 610,
+      "baselineModelable": 225,
+      "recoveredModelable": 274,
+      "aliasRecoveredModelable": 276,
+      "aliasRecoveryAttempts": 38,
+      "aliasRecoverySuccesses": 36,
+      "failureReasons": {
+        "insufficient_financial_history": 80,
+        "price_series_unavailable_primary": 36,
+        "missing_expected_cagr": 45,
+        "missing_historical_price": 10,
+        "missing_share_count": 198,
+        "price_series_unavailable_all_same_cik_aliases": 2,
+        "sec_facts_unavailable": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000050863",
+          "asOf": "2010-12-31",
+          "primaryTicker": "INCO",
+          "recoveredPriceTicker": "INTC"
+        },
+        {
+          "cik": "0000906107",
+          "asOf": "2010-12-31",
+          "primaryTicker": "EQR",
+          "recoveredPriceTicker": "VMRK"
+        }
+      ]
+    },
+    {
+      "asOf": "2011-03-31",
+      "holdings": 966,
+      "identityResolved": 611,
+      "baselineModelable": 410,
+      "recoveredModelable": 422,
+      "aliasRecoveredModelable": 424,
+      "aliasRecoveryAttempts": 38,
+      "aliasRecoverySuccesses": 36,
+      "failureReasons": {
+        "insufficient_financial_history": 72,
+        "price_series_unavailable_primary": 35,
+        "missing_expected_cagr": 60,
+        "missing_historical_price": 10,
+        "missing_share_count": 45,
+        "price_series_unavailable_all_same_cik_aliases": 1,
+        "sec_facts_unavailable": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000906107",
+          "asOf": "2011-03-31",
+          "primaryTicker": "EQR",
+          "recoveredPriceTicker": "VMRK"
+        },
+        {
+          "cik": "0001089063",
+          "asOf": "2011-03-31",
+          "primaryTicker": "DSG",
+          "recoveredPriceTicker": "DKS"
+        }
+      ]
+    },
+    {
+      "asOf": "2011-06-30",
+      "holdings": 976,
+      "identityResolved": 624,
+      "baselineModelable": 423,
+      "recoveredModelable": 437,
+      "aliasRecoveredModelable": 441,
+      "aliasRecoveryAttempts": 39,
+      "aliasRecoverySuccesses": 38,
+      "failureReasons": {
+        "insufficient_financial_history": 71,
+        "missing_expected_cagr": 52,
+        "missing_historical_price": 11,
+        "price_series_unavailable_primary": 35,
+        "missing_share_count": 52,
+        "price_series_unavailable_all_same_cik_aliases": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000050863",
+          "asOf": "2011-06-30",
+          "primaryTicker": "INCO",
+          "recoveredPriceTicker": "INTC"
+        },
+        {
+          "cik": "0000804328",
+          "asOf": "2011-06-30",
+          "primaryTicker": "QCI",
+          "recoveredPriceTicker": "QCOM"
+        },
+        {
+          "cik": "0000906107",
+          "asOf": "2011-06-30",
+          "primaryTicker": "EQR",
+          "recoveredPriceTicker": "VMRK"
+        },
+        {
+          "cik": "0001089063",
+          "asOf": "2011-06-30",
+          "primaryTicker": "DSG",
+          "recoveredPriceTicker": "DKS"
+        }
+      ]
+    },
+    {
+      "asOf": "2011-09-30",
+      "holdings": 971,
+      "identityResolved": 624,
+      "baselineModelable": 423,
+      "recoveredModelable": 432,
+      "aliasRecoveredModelable": 435,
+      "aliasRecoveryAttempts": 38,
+      "aliasRecoverySuccesses": 37,
+      "failureReasons": {
+        "insufficient_financial_history": 68,
+        "missing_expected_cagr": 71,
+        "missing_historical_price": 10,
+        "price_series_unavailable_primary": 35,
+        "missing_share_count": 42,
+        "price_series_unavailable_all_same_cik_aliases": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000804328",
+          "asOf": "2011-09-30",
+          "primaryTicker": "QCI",
+          "recoveredPriceTicker": "QCOM"
+        },
+        {
+          "cik": "0000906107",
+          "asOf": "2011-09-30",
+          "primaryTicker": "EQR",
+          "recoveredPriceTicker": "VMRK"
+        },
+        {
+          "cik": "0001089063",
+          "asOf": "2011-09-30",
+          "primaryTicker": "DSG",
+          "recoveredPriceTicker": "DKS"
+        }
+      ]
+    },
+    {
+      "asOf": "2011-12-31",
+      "holdings": 973,
+      "identityResolved": 633,
+      "baselineModelable": 438,
+      "recoveredModelable": 446,
+      "aliasRecoveredModelable": 448,
+      "aliasRecoveryAttempts": 38,
+      "aliasRecoverySuccesses": 37,
+      "failureReasons": {
+        "insufficient_financial_history": 73,
+        "missing_expected_cagr": 64,
+        "price_series_unavailable_primary": 36,
+        "missing_historical_price": 9,
+        "missing_share_count": 40,
+        "price_series_unavailable_all_same_cik_aliases": 1
+      },
+      "aliasExamples": [
+        {
+          "cik": "0000060086",
+          "asOf": "2011-12-31",
+          "primaryTicker": "LTR",
+          "recoveredPriceTicker": "L"
+        },
+        {
+          "cik": "0000906107",
+          "asOf": "2011-12-31",
+          "primaryTicker": "EQR",
+          "recoveredPriceTicker": "VMRK"
+        }
+      ]
+    }
+  ]
+}
