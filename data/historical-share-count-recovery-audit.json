@@ -1,0 +1,2553 @@
+{
+  "generatedAt": "2026-09-07T17:27:52.068Z",
+  "version": "v12.55.7-historical-share-count-recovery-audit",
+  "requested": {
+    "startYear": 2007,
+    "endYear": 2011,
+    "frequency": "quarterly",
+    "requestedSnapshots": 20,
+    "auditedSnapshots": 20,
+    "unavailableSnapshots": [],
+    "limit": null
+  },
+  "guardrails": [
+    "Point-in-time IWB membership comes only from validated historical-universe caches.",
+    "SEC Company Facts and legacy 10-Ks remain limited to information filed on or before each snapshot.",
+    "Enhanced share recovery is attempted only after the prior pipeline fails specifically for missing share count.",
+    "Diluted weighted-average shares and same-filing NI/diluted-EPS evidence are preferred over basic-share fallbacks.",
+    "Basic weighted-average shares or NI/basic-EPS are used only when no stronger denominator exists and are explicitly tagged.",
+    "Cover-page shares outstanding are a last-resort same-filing period-end denominator and are explicitly tagged; no current share count or current market-cap reconciliation is used.",
+    "Recovered observations must still pass the unchanged production forecast, quality, valuation, and rating pipeline with finite expected CAGR.",
+    "Large SEC facts, price histories, and filing caches are processed one CIK at a time to stay within GitHub Actions memory limits."
+  ],
+  "summary": {
+    "holdingObservations": 19536,
+    "identityResolved": 11963,
+    "identityResolvedRate": 0.6123566748566749,
+    "priorRecoveredModelable": 3897,
+    "priorRecoveredModelableRate": 0.199477886977887,
+    "enhancedShareRecoveredModelable": 5366,
+    "enhancedShareRecoveredModelableRate": 0.27467239967239965,
+    "incrementalShareRecovered": 1469,
+    "incrementalShareRecoveryRate": 0.07519451269451269,
+    "shareRecoveryAttempts": 4451,
+    "shareRecoverySuccesses": 1469,
+    "shareRecoveryAttemptSuccessRate": 0.3300381936643451,
+    "recoveryMethods": {
+      "legacy_diluted_weighted_average_expanded_label": 949,
+      "legacy_basic_weighted_average": 107,
+      "legacy_cover_page_period_end_fallback": 301,
+      "legacy_same_filing_net_income_div_basic_eps": 16,
+      "legacy_basic_weighted_average_fallback": 96
+    },
+    "failureReasons": {
+      "insufficient_financial_history": 2024,
+      "price_series_unavailable_primary": 807,
+      "missing_share_count": 2717,
+      "missing_historical_price": 205,
+      "missing_expected_cagr": 827,
+      "sec_facts_unavailable": 17
+    }
+  },
+  "byYear": [
+    {
+      "year": "2007",
+      "snapshots": 4,
+      "holdings": 3980,
+      "identityResolved": 2309,
+      "priorRecoveredModelable": 446,
+      "priorRecoveredModelableRate": 0.1120603015075377,
+      "enhancedShareRecoveredModelable": 784,
+      "enhancedShareRecoveredModelableRate": 0.19698492462311556,
+      "incrementalShareRecovered": 338,
+      "incrementalShareRecoveryRate": 0.08492462311557789
+    },
+    {
+      "year": "2008",
+      "snapshots": 4,
+      "holdings": 3962,
+      "identityResolved": 2381,
+      "priorRecoveredModelable": 441,
+      "priorRecoveredModelableRate": 0.11130742049469965,
+      "enhancedShareRecoveredModelable": 813,
+      "enhancedShareRecoveredModelableRate": 0.20519939424533065,
+      "incrementalShareRecovered": 372,
+      "incrementalShareRecoveryRate": 0.09389197375063099
+    },
+    {
+      "year": "2009",
+      "snapshots": 4,
+      "holdings": 3840,
+      "identityResolved": 2367,
+      "priorRecoveredModelable": 441,
+      "priorRecoveredModelableRate": 0.11484375,
+      "enhancedShareRecoveredModelable": 867,
+      "enhancedShareRecoveredModelableRate": 0.22578125,
+      "incrementalShareRecovered": 426,
+      "incrementalShareRecoveryRate": 0.1109375
+    },
+    {
+      "year": "2010",
+      "snapshots": 4,
+      "holdings": 3868,
+      "identityResolved": 2414,
+      "priorRecoveredModelable": 954,
+      "priorRecoveredModelableRate": 0.2466390899689762,
+      "enhancedShareRecoveredModelable": 1214,
+      "enhancedShareRecoveredModelableRate": 0.3138572905894519,
+      "incrementalShareRecovered": 260,
+      "incrementalShareRecoveryRate": 0.0672182006204757
+    },
+    {
+      "year": "2011",
+      "snapshots": 4,
+      "holdings": 3886,
+      "identityResolved": 2492,
+      "priorRecoveredModelable": 1615,
+      "priorRecoveredModelableRate": 0.41559444158517755,
+      "enhancedShareRecoveredModelable": 1688,
+      "enhancedShareRecoveredModelableRate": 0.4343798250128667,
+      "incrementalShareRecovered": 73,
+      "incrementalShareRecoveryRate": 0.01878538342768914
+    }
+  ],
+  "coverage": [
+    {
+      "asOf": "2007-03-31",
+      "holdings": 968,
+      "identityResolved": 555,
+      "priorRecoveredModelable": 105,
+      "enhancedShareRecoveredModelable": 186,
+      "incrementalShareRecovered": 81,
+      "shareRecoveryAttempts": 276,
+      "shareRecoverySuccesses": 81,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 47,
+        "legacy_basic_weighted_average": 6,
+        "legacy_cover_page_period_end_fallback": 20,
+        "legacy_same_filing_net_income_div_basic_eps": 2,
+        "legacy_basic_weighted_average_fallback": 6
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 115,
+        "price_series_unavailable_primary": 36,
+        "missing_share_count": 186,
+        "missing_historical_price": 13,
+        "missing_expected_cagr": 18,
+        "sec_facts_unavailable": 1
+      },
+      "examples": [
+        {
+          "cik": "0000047217",
+          "asOf": "2007-03-31",
+          "ticker": "HPQ",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.12606954722428498,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000063908",
+          "asOf": "2007-03-31",
+          "ticker": "MCD",
+          "shareSource": "legacy_basic_weighted_average",
+          "expectedCAGR": 0.07239207537429326,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000899051",
+          "asOf": "2007-03-31",
+          "ticker": "ALL",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.07325099100616028,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000024741",
+          "asOf": "2007-03-31",
+          "ticker": "GLW",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.4368148984362179,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000715957",
+          "asOf": "2007-03-31",
+          "ticker": "D",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.06495216840067042,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000100885",
+          "asOf": "2007-03-31",
+          "ticker": "UNP",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.02768228975058218,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000092122",
+          "asOf": "2007-03-31",
+          "ticker": "SO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.4272112063596136,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000796343",
+          "asOf": "2007-03-31",
+          "ticker": "ADBE",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.042647682885499805,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000753308",
+          "asOf": "2007-03-31",
+          "ticker": "NEE",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.3149198932327284,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000092230",
+          "asOf": "2007-03-31",
+          "ticker": "TFC",
+          "shareSource": "legacy_same_filing_net_income_div_basic_eps",
+          "expectedCAGR": -0.04060244502323429,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000093751",
+          "asOf": "2007-03-31",
+          "ticker": "STT",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.0564050890295682,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0001136869",
+          "asOf": "2007-03-31",
+          "ticker": "ZBH",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.05194412745876997,
+          "rating": "Avoid"
+        }
+      ]
+    },
+    {
+      "asOf": "2007-06-30",
+      "holdings": 1016,
+      "identityResolved": 583,
+      "priorRecoveredModelable": 110,
+      "enhancedShareRecoveredModelable": 194,
+      "incrementalShareRecovered": 84,
+      "shareRecoveryAttempts": 286,
+      "shareRecoverySuccesses": 84,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 51,
+        "legacy_basic_weighted_average": 6,
+        "legacy_cover_page_period_end_fallback": 19,
+        "legacy_same_filing_net_income_div_basic_eps": 2,
+        "legacy_basic_weighted_average_fallback": 6
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 126,
+        "price_series_unavailable_primary": 37,
+        "missing_share_count": 192,
+        "missing_historical_price": 13,
+        "missing_expected_cagr": 20,
+        "sec_facts_unavailable": 1
+      },
+      "examples": [
+        {
+          "cik": "0000047217",
+          "asOf": "2007-06-30",
+          "ticker": "HPQ",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.14359848814970033,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000063908",
+          "asOf": "2007-06-30",
+          "ticker": "MCD",
+          "shareSource": "legacy_basic_weighted_average",
+          "expectedCAGR": 0.06695027021891753,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000899051",
+          "asOf": "2007-06-30",
+          "ticker": "ALL",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.0706937324169643,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000024741",
+          "asOf": "2007-06-30",
+          "ticker": "GLW",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.46334972158925747,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000715957",
+          "asOf": "2007-06-30",
+          "ticker": "D",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.0685908161347164,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000100885",
+          "asOf": "2007-06-30",
+          "ticker": "UNP",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.01484676480217706,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000092122",
+          "asOf": "2007-06-30",
+          "ticker": "SO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.4377062488086165,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000796343",
+          "asOf": "2007-06-30",
+          "ticker": "ADBE",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.06067830060833157,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000753308",
+          "asOf": "2007-06-30",
+          "ticker": "NEE",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.3207077963225946,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000092230",
+          "asOf": "2007-06-30",
+          "ticker": "TFC",
+          "shareSource": "legacy_same_filing_net_income_div_basic_eps",
+          "expectedCAGR": -0.03980358827219854,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000093751",
+          "asOf": "2007-06-30",
+          "ticker": "STT",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.050627709507407914,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0001136869",
+          "asOf": "2007-06-30",
+          "ticker": "ZBH",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.07445230762133437,
+          "rating": "Avoid"
+        }
+      ]
+    },
+    {
+      "asOf": "2007-09-30",
+      "holdings": 1004,
+      "identityResolved": 583,
+      "priorRecoveredModelable": 114,
+      "enhancedShareRecoveredModelable": 198,
+      "incrementalShareRecovered": 84,
+      "shareRecoveryAttempts": 283,
+      "shareRecoverySuccesses": 84,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 52,
+        "legacy_basic_weighted_average": 5,
+        "legacy_cover_page_period_end_fallback": 19,
+        "legacy_same_filing_net_income_div_basic_eps": 2,
+        "legacy_basic_weighted_average_fallback": 6
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 124,
+        "price_series_unavailable_primary": 38,
+        "missing_share_count": 188,
+        "missing_historical_price": 12,
+        "missing_expected_cagr": 22,
+        "sec_facts_unavailable": 1
+      },
+      "examples": [
+        {
+          "cik": "0000047217",
+          "asOf": "2007-09-30",
+          "ticker": "HPQ",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.13112947481063908,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000063908",
+          "asOf": "2007-09-30",
+          "ticker": "MCD",
+          "shareSource": "legacy_basic_weighted_average",
+          "expectedCAGR": 0.0594503265064954,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000899051",
+          "asOf": "2007-09-30",
+          "ticker": "ALL",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.07851905704226714,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000024741",
+          "asOf": "2007-09-30",
+          "ticker": "GLW",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.46142181742468935,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000715957",
+          "asOf": "2007-09-30",
+          "ticker": "D",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.07111176298464561,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000721371",
+          "asOf": "2007-09-30",
+          "ticker": "CAH",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 3.3662382835163047,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000100885",
+          "asOf": "2007-09-30",
+          "ticker": "UNP",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.01670736413298113,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000092122",
+          "asOf": "2007-09-30",
+          "ticker": "SO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.44086937478480315,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000796343",
+          "asOf": "2007-09-30",
+          "ticker": "ADBE",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.05182591731236408,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000753308",
+          "asOf": "2007-09-30",
+          "ticker": "NEE",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.31143935067355955,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000092230",
+          "asOf": "2007-09-30",
+          "ticker": "TFC",
+          "shareSource": "legacy_same_filing_net_income_div_basic_eps",
+          "expectedCAGR": -0.03911638299060116,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000093751",
+          "asOf": "2007-09-30",
+          "ticker": "STT",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.0509970606718948,
+          "rating": "Avoid"
+        }
+      ]
+    },
+    {
+      "asOf": "2007-12-31",
+      "holdings": 992,
+      "identityResolved": 588,
+      "priorRecoveredModelable": 117,
+      "enhancedShareRecoveredModelable": 206,
+      "incrementalShareRecovered": 89,
+      "shareRecoveryAttempts": 281,
+      "shareRecoverySuccesses": 89,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 57,
+        "legacy_basic_weighted_average": 5,
+        "legacy_cover_page_period_end_fallback": 19,
+        "legacy_same_filing_net_income_div_basic_eps": 2,
+        "legacy_basic_weighted_average_fallback": 6
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 126,
+        "price_series_unavailable_primary": 38,
+        "missing_share_count": 180,
+        "missing_historical_price": 12,
+        "missing_expected_cagr": 25,
+        "sec_facts_unavailable": 1
+      },
+      "examples": [
+        {
+          "cik": "0000047217",
+          "asOf": "2007-12-31",
+          "ticker": "HPQ",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.1695132973680049,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000063908",
+          "asOf": "2007-12-31",
+          "ticker": "MCD",
+          "shareSource": "legacy_basic_weighted_average",
+          "expectedCAGR": 0.051180837916944055,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000899051",
+          "asOf": "2007-12-31",
+          "ticker": "ALL",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.08834811583533142,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000024741",
+          "asOf": "2007-12-31",
+          "ticker": "GLW",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.45995814075785335,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000715957",
+          "asOf": "2007-12-31",
+          "ticker": "D",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.05850015479538828,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000721371",
+          "asOf": "2007-12-31",
+          "ticker": "CAH",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 3.401098377319866,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000100885",
+          "asOf": "2007-12-31",
+          "ticker": "UNP",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.006053292092053075,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000092122",
+          "asOf": "2007-12-31",
+          "ticker": "SO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.44453994070840697,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000796343",
+          "asOf": "2007-12-31",
+          "ticker": "ADBE",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.05409305495007666,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000753308",
+          "asOf": "2007-12-31",
+          "ticker": "NEE",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.2974347338184229,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000829224",
+          "asOf": "2007-12-31",
+          "ticker": "SBUX",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.005611495125261934,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000092230",
+          "asOf": "2007-12-31",
+          "ticker": "TFC",
+          "shareSource": "legacy_same_filing_net_income_div_basic_eps",
+          "expectedCAGR": -0.01229603834945292,
+          "rating": "Sell"
+        }
+      ]
+    },
+    {
+      "asOf": "2008-03-31",
+      "holdings": 990,
+      "identityResolved": 590,
+      "priorRecoveredModelable": 113,
+      "enhancedShareRecoveredModelable": 201,
+      "incrementalShareRecovered": 88,
+      "shareRecoveryAttempts": 293,
+      "shareRecoverySuccesses": 88,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 55,
+        "legacy_basic_weighted_average": 8,
+        "legacy_cover_page_period_end_fallback": 16,
+        "legacy_basic_weighted_average_fallback": 7,
+        "legacy_same_filing_net_income_div_basic_eps": 2
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 119,
+        "price_series_unavailable_primary": 39,
+        "missing_share_count": 191,
+        "missing_historical_price": 12,
+        "missing_expected_cagr": 27,
+        "sec_facts_unavailable": 1
+      },
+      "examples": [
+        {
+          "cik": "0000047217",
+          "asOf": "2008-03-31",
+          "ticker": "HPQ",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.18130898665246953,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000063908",
+          "asOf": "2008-03-31",
+          "ticker": "MCD",
+          "shareSource": "legacy_basic_weighted_average",
+          "expectedCAGR": 0.01737611797264127,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000024741",
+          "asOf": "2008-03-31",
+          "ticker": "GLW",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.4228136694955529,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000874766",
+          "asOf": "2008-03-31",
+          "ticker": "HIG",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.12334436617752687,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000100885",
+          "asOf": "2008-03-31",
+          "ticker": "UNP",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.02726416539885146,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000092122",
+          "asOf": "2008-03-31",
+          "ticker": "SO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.4548759057688213,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000796343",
+          "asOf": "2008-03-31",
+          "ticker": "ADBE",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.12301516242242094,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000829224",
+          "asOf": "2008-03-31",
+          "ticker": "SBUX",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.021499614469669748,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000093751",
+          "asOf": "2008-03-31",
+          "ticker": "STT",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.732885762511977,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001136869",
+          "asOf": "2008-03-31",
+          "ticker": "ZBH",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.109487804176287,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000788784",
+          "asOf": "2008-03-31",
+          "ticker": "PEG",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.0276596305981468,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000038777",
+          "asOf": "2008-03-31",
+          "ticker": "BEN",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 1.4840088555427187,
+          "rating": "Watch"
+        }
+      ]
+    },
+    {
+      "asOf": "2008-06-30",
+      "holdings": 997,
+      "identityResolved": 597,
+      "priorRecoveredModelable": 111,
+      "enhancedShareRecoveredModelable": 205,
+      "incrementalShareRecovered": 94,
+      "shareRecoveryAttempts": 298,
+      "shareRecoverySuccesses": 94,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 59,
+        "legacy_basic_weighted_average": 7,
+        "legacy_cover_page_period_end_fallback": 18,
+        "legacy_basic_weighted_average_fallback": 8,
+        "legacy_same_filing_net_income_div_basic_eps": 2
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 123,
+        "price_series_unavailable_primary": 40,
+        "missing_share_count": 189,
+        "missing_historical_price": 12,
+        "missing_expected_cagr": 27,
+        "sec_facts_unavailable": 1
+      },
+      "examples": [
+        {
+          "cik": "0000047217",
+          "asOf": "2008-06-30",
+          "ticker": "HPQ",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.18512741496310325,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000063908",
+          "asOf": "2008-06-30",
+          "ticker": "MCD",
+          "shareSource": "legacy_basic_weighted_average",
+          "expectedCAGR": 0.016558833266037798,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000024741",
+          "asOf": "2008-06-30",
+          "ticker": "GLW",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.42038129317260453,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001090012",
+          "asOf": "2008-06-30",
+          "ticker": "DVN",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.11622261127517208,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000874766",
+          "asOf": "2008-06-30",
+          "ticker": "HIG",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.14145701095600116,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000100885",
+          "asOf": "2008-06-30",
+          "ticker": "UNP",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.008340635927063023,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000092122",
+          "asOf": "2008-06-30",
+          "ticker": "SO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.45380822618454275,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000796343",
+          "asOf": "2008-06-30",
+          "ticker": "ADBE",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.11168007445882622,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000829224",
+          "asOf": "2008-06-30",
+          "ticker": "SBUX",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.032384652709047,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000093751",
+          "asOf": "2008-06-30",
+          "ticker": "STT",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.7271973818724489,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001136869",
+          "asOf": "2008-06-30",
+          "ticker": "ZBH",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.12453029008978334,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000788784",
+          "asOf": "2008-06-30",
+          "ticker": "PEG",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.04055414408526159,
+          "rating": "Sell"
+        }
+      ]
+    },
+    {
+      "asOf": "2008-09-30",
+      "holdings": 993,
+      "identityResolved": 598,
+      "priorRecoveredModelable": 112,
+      "enhancedShareRecoveredModelable": 207,
+      "incrementalShareRecovered": 95,
+      "shareRecoveryAttempts": 296,
+      "shareRecoverySuccesses": 95,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 60,
+        "legacy_basic_weighted_average": 7,
+        "legacy_cover_page_period_end_fallback": 18,
+        "legacy_basic_weighted_average_fallback": 8,
+        "legacy_same_filing_net_income_div_basic_eps": 2
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 124,
+        "price_series_unavailable_primary": 41,
+        "missing_share_count": 186,
+        "missing_historical_price": 10,
+        "missing_expected_cagr": 29,
+        "sec_facts_unavailable": 1
+      },
+      "examples": [
+        {
+          "cik": "0000047217",
+          "asOf": "2008-09-30",
+          "ticker": "HPQ",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.17981880853124688,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000063908",
+          "asOf": "2008-09-30",
+          "ticker": "MCD",
+          "shareSource": "legacy_basic_weighted_average",
+          "expectedCAGR": 0.007147517514339619,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000024741",
+          "asOf": "2008-09-30",
+          "ticker": "GLW",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.3974601023955495,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001090012",
+          "asOf": "2008-09-30",
+          "ticker": "DVN",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.14743297541628553,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000721371",
+          "asOf": "2008-09-30",
+          "ticker": "CAH",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.09862064797556358,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000100885",
+          "asOf": "2008-09-30",
+          "ticker": "UNP",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.014327893460901242,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000092122",
+          "asOf": "2008-09-30",
+          "ticker": "SO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.4579617131224667,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000796343",
+          "asOf": "2008-09-30",
+          "ticker": "ADBE",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.1114545419974704,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000829224",
+          "asOf": "2008-09-30",
+          "ticker": "SBUX",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.038271457886281945,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000093751",
+          "asOf": "2008-09-30",
+          "ticker": "STT",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.7239652323649561,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001136869",
+          "asOf": "2008-09-30",
+          "ticker": "ZBH",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.13046629948281074,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000788784",
+          "asOf": "2008-09-30",
+          "ticker": "PEG",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.007670337649011705,
+          "rating": "Sell"
+        }
+      ]
+    },
+    {
+      "asOf": "2008-12-31",
+      "holdings": 982,
+      "identityResolved": 596,
+      "priorRecoveredModelable": 105,
+      "enhancedShareRecoveredModelable": 200,
+      "incrementalShareRecovered": 95,
+      "shareRecoveryAttempts": 293,
+      "shareRecoverySuccesses": 95,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 59,
+        "legacy_basic_weighted_average": 7,
+        "legacy_cover_page_period_end_fallback": 20,
+        "legacy_basic_weighted_average_fallback": 7,
+        "legacy_same_filing_net_income_div_basic_eps": 2
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 122,
+        "price_series_unavailable_primary": 41,
+        "missing_expected_cagr": 44,
+        "missing_share_count": 178,
+        "missing_historical_price": 10,
+        "sec_facts_unavailable": 1
+      },
+      "examples": [
+        {
+          "cik": "0000047217",
+          "asOf": "2008-12-31",
+          "ticker": "HPQ",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.2378410064919667,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000063908",
+          "asOf": "2008-12-31",
+          "ticker": "MCD",
+          "shareSource": "legacy_basic_weighted_average",
+          "expectedCAGR": 0.006351153687138789,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000024741",
+          "asOf": "2008-12-31",
+          "ticker": "GLW",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.3668593521209731,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001090012",
+          "asOf": "2008-12-31",
+          "ticker": "DVN",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.18566954000206048,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000721371",
+          "asOf": "2008-12-31",
+          "ticker": "CAH",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.1385987325950797,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000100885",
+          "asOf": "2008-12-31",
+          "ticker": "UNP",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.055502279878041794,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000092122",
+          "asOf": "2008-12-31",
+          "ticker": "SO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.45695927085200205,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000796343",
+          "asOf": "2008-12-31",
+          "ticker": "ADBE",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.18222693810411084,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000829224",
+          "asOf": "2008-12-31",
+          "ticker": "SBUX",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.1565643502650731,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000093751",
+          "asOf": "2008-12-31",
+          "ticker": "STT",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.7135905459183862,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001136869",
+          "asOf": "2008-12-31",
+          "ticker": "ZBH",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.18466168306142716,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000788784",
+          "asOf": "2008-12-31",
+          "ticker": "PEG",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.004006381417577476,
+          "rating": "Avoid"
+        }
+      ]
+    },
+    {
+      "asOf": "2009-03-31",
+      "holdings": 965,
+      "identityResolved": 592,
+      "priorRecoveredModelable": 99,
+      "enhancedShareRecoveredModelable": 198,
+      "incrementalShareRecovered": 99,
+      "shareRecoveryAttempts": 311,
+      "shareRecoverySuccesses": 99,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 62,
+        "legacy_basic_weighted_average": 7,
+        "legacy_cover_page_period_end_fallback": 23,
+        "legacy_basic_weighted_average_fallback": 7
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 111,
+        "price_series_unavailable_primary": 41,
+        "missing_share_count": 186,
+        "missing_historical_price": 10,
+        "missing_expected_cagr": 45,
+        "sec_facts_unavailable": 1
+      },
+      "examples": [
+        {
+          "cik": "0000047217",
+          "asOf": "2009-03-31",
+          "ticker": "HPQ",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.2532774109245146,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000063908",
+          "asOf": "2009-03-31",
+          "ticker": "MCD",
+          "shareSource": "legacy_basic_weighted_average",
+          "expectedCAGR": 0.10662314365838665,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000014272",
+          "asOf": "2009-03-31",
+          "ticker": "BMY",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.04571314154152861,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000059478",
+          "asOf": "2009-03-31",
+          "ticker": "LLY",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.004307845666644106,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0001065088",
+          "asOf": "2009-03-31",
+          "ticker": "EBAY",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 1.736798094637634,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000024741",
+          "asOf": "2009-03-31",
+          "ticker": "GLW",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.3547835488533063,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000882095",
+          "asOf": "2009-03-31",
+          "ticker": "GILD",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.2869449360680918,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0001090012",
+          "asOf": "2009-03-31",
+          "ticker": "DVN",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.30092088163994646,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000100885",
+          "asOf": "2009-03-31",
+          "ticker": "UNP",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.028569404732090575,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000092122",
+          "asOf": "2009-03-31",
+          "ticker": "SO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.24881960931168046,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000796343",
+          "asOf": "2009-03-31",
+          "ticker": "ADBE",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.19920270654293382,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000829224",
+          "asOf": "2009-03-31",
+          "ticker": "SBUX",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.13811857340057765,
+          "rating": "Hold"
+        }
+      ]
+    },
+    {
+      "asOf": "2009-06-30",
+      "holdings": 961,
+      "identityResolved": 592,
+      "priorRecoveredModelable": 111,
+      "enhancedShareRecoveredModelable": 215,
+      "incrementalShareRecovered": 104,
+      "shareRecoveryAttempts": 305,
+      "shareRecoverySuccesses": 104,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 66,
+        "legacy_basic_weighted_average": 7,
+        "legacy_cover_page_period_end_fallback": 24,
+        "legacy_basic_weighted_average_fallback": 7
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 111,
+        "price_series_unavailable_primary": 40,
+        "missing_share_count": 180,
+        "missing_historical_price": 10,
+        "missing_expected_cagr": 35,
+        "sec_facts_unavailable": 1
+      },
+      "examples": [
+        {
+          "cik": "0000047217",
+          "asOf": "2009-06-30",
+          "ticker": "HPQ",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.23006656440204454,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000063908",
+          "asOf": "2009-06-30",
+          "ticker": "MCD",
+          "shareSource": "legacy_basic_weighted_average",
+          "expectedCAGR": 0.10086968278811081,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000014272",
+          "asOf": "2009-06-30",
+          "ticker": "BMY",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.05372098650535295,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000059478",
+          "asOf": "2009-06-30",
+          "ticker": "LLY",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.0006834454765820563,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0001065088",
+          "asOf": "2009-06-30",
+          "ticker": "EBAY",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 1.6531755184262238,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000024741",
+          "asOf": "2009-06-30",
+          "ticker": "GLW",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.3669792104910199,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000882095",
+          "asOf": "2009-06-30",
+          "ticker": "GILD",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.2855090290313902,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0001090012",
+          "asOf": "2009-06-30",
+          "ticker": "DVN",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.2753584638821138,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000100885",
+          "asOf": "2009-06-30",
+          "ticker": "UNP",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.004564745176666385,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000092122",
+          "asOf": "2009-06-30",
+          "ticker": "SO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.250131660547085,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000796343",
+          "asOf": "2009-06-30",
+          "ticker": "ADBE",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.43149727766607693,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000829224",
+          "asOf": "2009-06-30",
+          "ticker": "SBUX",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.11298340714326716,
+          "rating": "Hold"
+        }
+      ]
+    },
+    {
+      "asOf": "2009-09-30",
+      "holdings": 956,
+      "identityResolved": 590,
+      "priorRecoveredModelable": 112,
+      "enhancedShareRecoveredModelable": 223,
+      "incrementalShareRecovered": 111,
+      "shareRecoveryAttempts": 303,
+      "shareRecoverySuccesses": 111,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 71,
+        "legacy_basic_weighted_average": 7,
+        "legacy_cover_page_period_end_fallback": 25,
+        "legacy_basic_weighted_average_fallback": 8
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 110,
+        "price_series_unavailable_primary": 40,
+        "missing_share_count": 174,
+        "missing_historical_price": 10,
+        "missing_expected_cagr": 32,
+        "sec_facts_unavailable": 1
+      },
+      "examples": [
+        {
+          "cik": "0000047217",
+          "asOf": "2009-09-30",
+          "ticker": "HPQ",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.20570250687476066,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000063908",
+          "asOf": "2009-09-30",
+          "ticker": "MCD",
+          "shareSource": "legacy_basic_weighted_average",
+          "expectedCAGR": 0.09074696970641383,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000014272",
+          "asOf": "2009-09-30",
+          "ticker": "BMY",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.04289306975874796,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000059478",
+          "asOf": "2009-09-30",
+          "ticker": "LLY",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.005457335694943888,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0001065088",
+          "asOf": "2009-09-30",
+          "ticker": "EBAY",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.28962441128415795,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000024741",
+          "asOf": "2009-09-30",
+          "ticker": "GLW",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.36394450981688353,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000882095",
+          "asOf": "2009-09-30",
+          "ticker": "GILD",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.3524855963885841,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001090012",
+          "asOf": "2009-09-30",
+          "ticker": "DVN",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.15124980796101672,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000721371",
+          "asOf": "2009-09-30",
+          "ticker": "CAH",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.17989520128254544,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000874766",
+          "asOf": "2009-09-30",
+          "ticker": "HIG",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.05521153746058616,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000100885",
+          "asOf": "2009-09-30",
+          "ticker": "UNP",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.02352194899854787,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000092122",
+          "asOf": "2009-09-30",
+          "ticker": "SO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.25134805765884005,
+          "rating": "Sell"
+        }
+      ]
+    },
+    {
+      "asOf": "2009-12-31",
+      "holdings": 958,
+      "identityResolved": 593,
+      "priorRecoveredModelable": 119,
+      "enhancedShareRecoveredModelable": 231,
+      "incrementalShareRecovered": 112,
+      "shareRecoveryAttempts": 295,
+      "shareRecoverySuccesses": 112,
+      "recoveryMethods": {
+        "legacy_basic_weighted_average": 7,
+        "legacy_diluted_weighted_average_expanded_label": 70,
+        "legacy_cover_page_period_end_fallback": 26,
+        "legacy_basic_weighted_average_fallback": 9
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 110,
+        "price_series_unavailable_primary": 40,
+        "missing_share_count": 164,
+        "missing_expected_cagr": 37,
+        "missing_historical_price": 10,
+        "sec_facts_unavailable": 1
+      },
+      "examples": [
+        {
+          "cik": "0000063908",
+          "asOf": "2009-12-31",
+          "ticker": "MCD",
+          "shareSource": "legacy_basic_weighted_average",
+          "expectedCAGR": 0.08470484529314515,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000014272",
+          "asOf": "2009-12-31",
+          "ticker": "BMY",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.03102805462587721,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000059478",
+          "asOf": "2009-12-31",
+          "ticker": "LLY",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.0023561748085456635,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001065088",
+          "asOf": "2009-12-31",
+          "ticker": "EBAY",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.28950427557571445,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000024741",
+          "asOf": "2009-12-31",
+          "ticker": "GLW",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.37853839873292283,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000882095",
+          "asOf": "2009-12-31",
+          "ticker": "GILD",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.3464027085588479,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001090012",
+          "asOf": "2009-12-31",
+          "ticker": "DVN",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.11382609774435681,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000721371",
+          "asOf": "2009-12-31",
+          "ticker": "CAH",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.15480397307615812,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000874766",
+          "asOf": "2009-12-31",
+          "ticker": "HIG",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.06906262581409939,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000100885",
+          "asOf": "2009-12-31",
+          "ticker": "UNP",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.029631907675291558,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000092122",
+          "asOf": "2009-12-31",
+          "ticker": "SO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.32085431264475006,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000909832",
+          "asOf": "2009-12-31",
+          "ticker": "COST",
+          "shareSource": "legacy_basic_weighted_average_fallback",
+          "expectedCAGR": -0.4828617095224256,
+          "rating": "Sell"
+        }
+      ]
+    },
+    {
+      "asOf": "2010-03-31",
+      "holdings": 949,
+      "identityResolved": 593,
+      "priorRecoveredModelable": 226,
+      "enhancedShareRecoveredModelable": 290,
+      "incrementalShareRecovered": 64,
+      "shareRecoveryAttempts": 198,
+      "shareRecoverySuccesses": 64,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 43,
+        "legacy_cover_page_period_end_fallback": 11,
+        "legacy_basic_weighted_average": 7,
+        "legacy_basic_weighted_average_fallback": 3
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 81,
+        "price_series_unavailable_primary": 40,
+        "missing_expected_cagr": 55,
+        "missing_historical_price": 10,
+        "missing_share_count": 116,
+        "sec_facts_unavailable": 1
+      },
+      "examples": [
+        {
+          "cik": "0000059478",
+          "asOf": "2010-03-31",
+          "ticker": "LLY",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.031098952958604764,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000764478",
+          "asOf": "2010-03-31",
+          "ticker": "BBY",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.14116590324591405,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0001047862",
+          "asOf": "2010-03-31",
+          "ticker": "ED",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.09253972225695972,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0001300514",
+          "asOf": "2010-03-31",
+          "ticker": "LVS",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.003428590965479872,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000896878",
+          "asOf": "2010-03-31",
+          "ticker": "INTU",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.11614229139255783,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000016732",
+          "asOf": "2010-03-31",
+          "ticker": "CPB",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.7355788521065154,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000827054",
+          "asOf": "2010-03-31",
+          "ticker": "MCHP",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.3768247532163117,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000912242",
+          "asOf": "2010-03-31",
+          "ticker": "MAC",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.5195793898522032,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001001250",
+          "asOf": "2010-03-31",
+          "ticker": "EL",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.050345842529879725,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000910606",
+          "asOf": "2010-03-31",
+          "ticker": "REG",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.03140752853713502,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000042582",
+          "asOf": "2010-03-31",
+          "ticker": "GT",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.015795028087109086,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001037038",
+          "asOf": "2010-03-31",
+          "ticker": "RL",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.08297130381066209,
+          "rating": "Hold"
+        }
+      ]
+    },
+    {
+      "asOf": "2010-06-30",
+      "holdings": 976,
+      "identityResolved": 606,
+      "priorRecoveredModelable": 225,
+      "enhancedShareRecoveredModelable": 289,
+      "incrementalShareRecovered": 64,
+      "shareRecoveryAttempts": 201,
+      "shareRecoverySuccesses": 64,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 44,
+        "legacy_cover_page_period_end_fallback": 10,
+        "legacy_basic_weighted_average": 7,
+        "legacy_basic_weighted_average_fallback": 3
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 83,
+        "price_series_unavailable_primary": 42,
+        "missing_expected_cagr": 64,
+        "missing_historical_price": 9,
+        "missing_share_count": 118,
+        "sec_facts_unavailable": 1
+      },
+      "examples": [
+        {
+          "cik": "0000059478",
+          "asOf": "2010-06-30",
+          "ticker": "LLY",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.03918619788792732,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0001047862",
+          "asOf": "2010-06-30",
+          "ticker": "ED",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.09613623021145101,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0001300514",
+          "asOf": "2010-06-30",
+          "ticker": "LVS",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.0011512113252628575,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000896878",
+          "asOf": "2010-06-30",
+          "ticker": "INTU",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.11729291613107029,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000016732",
+          "asOf": "2010-06-30",
+          "ticker": "CPB",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.7359352426859529,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000912242",
+          "asOf": "2010-06-30",
+          "ticker": "MAC",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.5183199225163159,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001001250",
+          "asOf": "2010-06-30",
+          "ticker": "EL",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.06641883866959053,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000910606",
+          "asOf": "2010-06-30",
+          "ticker": "REG",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.023092117998944728,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000042582",
+          "asOf": "2010-06-30",
+          "ticker": "GT",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.00814181063718844,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0001037038",
+          "asOf": "2010-06-30",
+          "ticker": "RL",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.08784934618212126,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000049196",
+          "asOf": "2010-06-30",
+          "ticker": "HBAN",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.23948106800562918,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0001090425",
+          "asOf": "2010-06-30",
+          "ticker": "LAMR",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.04553663081906767,
+          "rating": "Avoid"
+        }
+      ]
+    },
+    {
+      "asOf": "2010-09-30",
+      "holdings": 974,
+      "identityResolved": 605,
+      "priorRecoveredModelable": 242,
+      "enhancedShareRecoveredModelable": 309,
+      "incrementalShareRecovered": 67,
+      "shareRecoveryAttempts": 191,
+      "shareRecoverySuccesses": 67,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 48,
+        "legacy_cover_page_period_end_fallback": 9,
+        "legacy_basic_weighted_average": 7,
+        "legacy_basic_weighted_average_fallback": 3
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 78,
+        "price_series_unavailable_primary": 42,
+        "missing_expected_cagr": 56,
+        "missing_historical_price": 9,
+        "missing_share_count": 110,
+        "sec_facts_unavailable": 1
+      },
+      "examples": [
+        {
+          "cik": "0000059478",
+          "asOf": "2010-09-30",
+          "ticker": "LLY",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.03022689866980044,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0001047862",
+          "asOf": "2010-09-30",
+          "ticker": "ED",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.09544769254255958,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0001300514",
+          "asOf": "2010-09-30",
+          "ticker": "LVS",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.04545318829430933,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000912242",
+          "asOf": "2010-09-30",
+          "ticker": "MAC",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.5257818428771479,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001001250",
+          "asOf": "2010-09-30",
+          "ticker": "EL",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.12022105490318591,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000813672",
+          "asOf": "2010-09-30",
+          "ticker": "CDNS",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.06410227955192271,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000910606",
+          "asOf": "2010-09-30",
+          "ticker": "REG",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.03643116320687767,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000042582",
+          "asOf": "2010-09-30",
+          "ticker": "GT",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.0002750051048470148,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0001037038",
+          "asOf": "2010-09-30",
+          "ticker": "RL",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.06541938730394858,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000049196",
+          "asOf": "2010-09-30",
+          "ticker": "HBAN",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 1.3936681790855818,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0001090425",
+          "asOf": "2010-09-30",
+          "ticker": "LAMR",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.018641307204205315,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0001331875",
+          "asOf": "2010-09-30",
+          "ticker": "FNF",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.10320124757390414,
+          "rating": "Hold"
+        }
+      ]
+    },
+    {
+      "asOf": "2010-12-31",
+      "holdings": 969,
+      "identityResolved": 610,
+      "priorRecoveredModelable": 261,
+      "enhancedShareRecoveredModelable": 326,
+      "incrementalShareRecovered": 65,
+      "shareRecoveryAttempts": 177,
+      "shareRecoverySuccesses": 65,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 47,
+        "legacy_cover_page_period_end_fallback": 9,
+        "legacy_basic_weighted_average": 7,
+        "legacy_basic_weighted_average_fallback": 2
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 80,
+        "price_series_unavailable_primary": 42,
+        "missing_expected_cagr": 51,
+        "missing_historical_price": 9,
+        "missing_share_count": 101,
+        "sec_facts_unavailable": 1
+      },
+      "examples": [
+        {
+          "cik": "0000059478",
+          "asOf": "2010-12-31",
+          "ticker": "LLY",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.034503398551183784,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0001047862",
+          "asOf": "2010-12-31",
+          "ticker": "ED",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.0924271245744186,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0001300514",
+          "asOf": "2010-12-31",
+          "ticker": "LVS",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.07148493297632885,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000723125",
+          "asOf": "2010-12-31",
+          "ticker": "MU",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 4.255305233146337,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000912242",
+          "asOf": "2010-12-31",
+          "ticker": "MAC",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.5272559761546891,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001001250",
+          "asOf": "2010-12-31",
+          "ticker": "EL",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.09322284150106874,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000813672",
+          "asOf": "2010-12-31",
+          "ticker": "CDNS",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.07109434997601471,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000910606",
+          "asOf": "2010-12-31",
+          "ticker": "REG",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.04294462397180132,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000042582",
+          "asOf": "2010-12-31",
+          "ticker": "GT",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.00942257392590995,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001037038",
+          "asOf": "2010-12-31",
+          "ticker": "RL",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.04322083392501974,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000049196",
+          "asOf": "2010-12-31",
+          "ticker": "HBAN",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 1.3489182630932555,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0001090425",
+          "asOf": "2010-12-31",
+          "ticker": "LAMR",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.003999933625753571,
+          "rating": "Sell"
+        }
+      ]
+    },
+    {
+      "asOf": "2011-03-31",
+      "holdings": 966,
+      "identityResolved": 611,
+      "priorRecoveredModelable": 391,
+      "enhancedShareRecoveredModelable": 411,
+      "incrementalShareRecovered": 20,
+      "shareRecoveryAttempts": 42,
+      "shareRecoverySuccesses": 20,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 17,
+        "legacy_cover_page_period_end_fallback": 3
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 72,
+        "price_series_unavailable_primary": 41,
+        "missing_expected_cagr": 56,
+        "missing_historical_price": 9,
+        "missing_share_count": 21,
+        "sec_facts_unavailable": 1
+      },
+      "examples": [
+        {
+          "cik": "0001047862",
+          "asOf": "2011-03-31",
+          "ticker": "ED",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.09087889645539837,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000319201",
+          "asOf": "2011-03-31",
+          "ticker": "KLAC",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.3115264653734553,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000723125",
+          "asOf": "2011-03-31",
+          "ticker": "MU",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 4.070596377704966,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0001001250",
+          "asOf": "2011-03-31",
+          "ticker": "EL",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.07400516409399804,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000910606",
+          "asOf": "2011-03-31",
+          "ticker": "REG",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.05561578396090461,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001037038",
+          "asOf": "2011-03-31",
+          "ticker": "RL",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.03194802555258924,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000016918",
+          "asOf": "2011-03-31",
+          "ticker": "STZ",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.14837466507706176,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000022444",
+          "asOf": "2011-03-31",
+          "ticker": "CMC",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.055228675314665465,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000003197",
+          "asOf": "2011-03-31",
+          "ticker": "CECO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.1189220884405977,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000029644",
+          "asOf": "2011-03-31",
+          "ticker": "DCI",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.10985203089009976,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000918646",
+          "asOf": "2011-03-31",
+          "ticker": "EXP",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.05246989922890677,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0001069157",
+          "asOf": "2011-03-31",
+          "ticker": "EWBC",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.000705568309365745,
+          "rating": "Avoid"
+        }
+      ]
+    },
+    {
+      "asOf": "2011-06-30",
+      "holdings": 976,
+      "identityResolved": 624,
+      "priorRecoveredModelable": 406,
+      "enhancedShareRecoveredModelable": 428,
+      "incrementalShareRecovered": 22,
+      "shareRecoveryAttempts": 48,
+      "shareRecoverySuccesses": 22,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 17,
+        "legacy_cover_page_period_end_fallback": 5
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 71,
+        "price_series_unavailable_primary": 42,
+        "missing_expected_cagr": 52,
+        "missing_historical_price": 9,
+        "missing_share_count": 22
+      },
+      "examples": [
+        {
+          "cik": "0001047862",
+          "asOf": "2011-06-30",
+          "ticker": "ED",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.07591640801412769,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000319201",
+          "asOf": "2011-06-30",
+          "ticker": "KLAC",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.3321633527913934,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000723125",
+          "asOf": "2011-06-30",
+          "ticker": "MU",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 4.292065669681516,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0001001250",
+          "asOf": "2011-06-30",
+          "ticker": "EL",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.06462976110861351,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000910606",
+          "asOf": "2011-06-30",
+          "ticker": "REG",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.0566735209358985,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000016918",
+          "asOf": "2011-06-30",
+          "ticker": "STZ",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.0055571241451971565,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000022444",
+          "asOf": "2011-06-30",
+          "ticker": "CMC",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": -0.0375664654751483,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000003197",
+          "asOf": "2011-06-30",
+          "ticker": "CECO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.1308297666974204,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000029644",
+          "asOf": "2011-06-30",
+          "ticker": "DCI",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.10896121022305894,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000730263",
+          "asOf": "2011-06-30",
+          "ticker": "THO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.45728125786627805,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001334978",
+          "asOf": "2011-06-30",
+          "ticker": "CCO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.09984796978327881,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000043920",
+          "asOf": "2011-06-30",
+          "ticker": "GEF",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.29126137472614966,
+          "rating": "Watch"
+        }
+      ]
+    },
+    {
+      "asOf": "2011-09-30",
+      "holdings": 971,
+      "identityResolved": 624,
+      "priorRecoveredModelable": 403,
+      "enhancedShareRecoveredModelable": 419,
+      "incrementalShareRecovered": 16,
+      "shareRecoveryAttempts": 38,
+      "shareRecoverySuccesses": 16,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 12,
+        "legacy_cover_page_period_end_fallback": 4
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 67,
+        "price_series_unavailable_primary": 43,
+        "missing_expected_cagr": 69,
+        "missing_historical_price": 8,
+        "missing_share_count": 18
+      },
+      "examples": [
+        {
+          "cik": "0001047862",
+          "asOf": "2011-09-30",
+          "ticker": "ED",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.07076114127982636,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000723125",
+          "asOf": "2011-09-30",
+          "ticker": "MU",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 4.505190240893999,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0000910606",
+          "asOf": "2011-09-30",
+          "ticker": "REG",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.0358084813193541,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000016918",
+          "asOf": "2011-09-30",
+          "ticker": "STZ",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.009022062317194601,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000022444",
+          "asOf": "2011-09-30",
+          "ticker": "CMC",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.0028544026442829384,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000003197",
+          "asOf": "2011-09-30",
+          "ticker": "CECO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.11572308284635124,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001069157",
+          "asOf": "2011-09-30",
+          "ticker": "EWBC",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.04021181964861831,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000043920",
+          "asOf": "2011-09-30",
+          "ticker": "GEF",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.34613907476404226,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0001442145",
+          "asOf": "2011-09-30",
+          "ticker": "VRSK",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.08145903941262733,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000029534",
+          "asOf": "2011-09-30",
+          "ticker": "DG",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.11012959090446373,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0001042776",
+          "asOf": "2011-09-30",
+          "ticker": "PDM",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.5410489342834065,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001467858",
+          "asOf": "2011-09-30",
+          "ticker": "GM",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.2684131680750155,
+          "rating": "Sell"
+        }
+      ]
+    },
+    {
+      "asOf": "2011-12-31",
+      "holdings": 973,
+      "identityResolved": 633,
+      "priorRecoveredModelable": 415,
+      "enhancedShareRecoveredModelable": 430,
+      "incrementalShareRecovered": 15,
+      "shareRecoveryAttempts": 36,
+      "shareRecoverySuccesses": 15,
+      "recoveryMethods": {
+        "legacy_diluted_weighted_average_expanded_label": 12,
+        "legacy_cover_page_period_end_fallback": 3
+      },
+      "failureReasons": {
+        "insufficient_financial_history": 71,
+        "price_series_unavailable_primary": 44,
+        "missing_expected_cagr": 63,
+        "missing_historical_price": 8,
+        "missing_share_count": 17
+      },
+      "examples": [
+        {
+          "cik": "0001047862",
+          "asOf": "2011-12-31",
+          "ticker": "ED",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.0606258641475399,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000910606",
+          "asOf": "2011-12-31",
+          "ticker": "REG",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.04184494520319104,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000016918",
+          "asOf": "2011-12-31",
+          "ticker": "STZ",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.004837815181500393,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0000003197",
+          "asOf": "2011-12-31",
+          "ticker": "CECO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.1135173997187805,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001069157",
+          "asOf": "2011-12-31",
+          "ticker": "EWBC",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.011376453071372694,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0001334978",
+          "asOf": "2011-12-31",
+          "ticker": "CCO",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.10415363161653013,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0000043920",
+          "asOf": "2011-12-31",
+          "ticker": "GEF",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.2357124171669367,
+          "rating": "Watch"
+        },
+        {
+          "cik": "0001442145",
+          "asOf": "2011-12-31",
+          "ticker": "VRSK",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.06606485838508602,
+          "rating": "Avoid"
+        },
+        {
+          "cik": "0000029534",
+          "asOf": "2011-12-31",
+          "ticker": "DG",
+          "shareSource": "legacy_cover_page_period_end_fallback",
+          "expectedCAGR": 0.10065306579747335,
+          "rating": "Hold"
+        },
+        {
+          "cik": "0001042776",
+          "asOf": "2011-12-31",
+          "ticker": "PDM",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.5429054675117297,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001467858",
+          "asOf": "2011-12-31",
+          "ticker": "GM",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": -0.2689480905787318,
+          "rating": "Sell"
+        },
+        {
+          "cik": "0001262039",
+          "asOf": "2011-12-31",
+          "ticker": "FTNT",
+          "shareSource": "legacy_diluted_weighted_average_expanded_label",
+          "expectedCAGR": 0.3639362209035686,
+          "rating": "Watch"
+        }
+      ]
+    }
+  ]
+}
