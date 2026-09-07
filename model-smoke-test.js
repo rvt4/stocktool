@@ -1017,3 +1017,22 @@ console.log('V12.55.5 historical-fundamentals recovery regression passed: compar
   assert.strictEqual(diagReason({insufficientFinancialHistory:0,missingHistoricalPrice:1,missingShareCount:0}),'missing_historical_price');
   assert.strictEqual(diagReason({insufficientFinancialHistory:0,missingHistoricalPrice:0,missingShareCount:1}),'missing_share_count');
 }
+// V12.55.7 historical share-count recovery regression ----------------------
+{
+  const {parseLegacy10KAnnuals:parseShares,extractCoverPageShares}=require('./historical-fundamentals-recovery');
+  const expandedShareFixture=`<html><body><table><tr><td>CONSOLIDATED STATEMENTS OF INCOME (in millions, except per share data)</td></tr><tr><th></th><th>2006</th><th>2005</th></tr><tr><td>Net income</td><td>240</td><td>210</td></tr><tr><td>Weighted average common shares outstanding assuming dilution</td><td>120</td><td>120</td></tr></table></body></html>`;
+  const oldShareParse=parseShares(expandedShareFixture,{filed:'2007-02-28',reportDate:'2006-12-31',enhancedShares:false});
+  const newShareParse=parseShares(expandedShareFixture,{filed:'2007-02-28',reportDate:'2006-12-31',enhancedShares:true});
+  assert(!(oldShareParse.years.at(-1)?.sharesOutTTM>0),'v12.55.7 baseline mode unexpectedly accepted an expanded share label');
+  assert.strictEqual(newShareParse.years.at(-1).sharesOutTTM,120e6,'v12.55.7 expanded diluted-share label was not scaled/recovered');
+  const basicFixture=`<html><body><table><tr><td>STATEMENTS OF INCOME (in millions, except per share data)</td></tr><tr><th></th><th>2006</th><th>2005</th></tr><tr><td>Net income</td><td>100</td><td>90</td></tr><tr><td>Basic earnings per share</td><td>1.00</td><td>0.90</td></tr></table></body></html>`;
+  const basicParsed=parseShares(basicFixture,{filed:'2007-02-28',reportDate:'2006-12-31',enhancedShares:true});
+  assert.strictEqual(basicParsed.years.at(-1).sharesOutTTM,100e6,'v12.55.7 same-filing NI/basic-EPS fallback failed');
+  assert.strictEqual(basicParsed.years.at(-1).sharesSource,'legacy_same_filing_net_income_div_basic_eps','v12.55.7 basic-EPS fallback provenance drifted');
+  const coverFixture=`<html><body><p>There were 123,456,789 shares of the registrant's common stock outstanding as of February 20, 2007.</p></body></html>`;
+  const cover=extractCoverPageShares(coverFixture,{filed:'2007-02-28',reportDate:'2006-12-31'});
+  assert.strictEqual(cover.value,123456789,'v12.55.7 cover-page share extraction failed');
+  assert.strictEqual(cover.year,2006,'v12.55.7 cover-page shares were not assigned to filing report year');
+  assert.strictEqual(extractCoverPageShares(coverFixture,{filed:'2007-02-01',reportDate:'2006-12-31'}),null,'v12.55.7 accepted cover-page shares dated after filing date');
+  console.log('V12.55.7 historical share-count recovery regression passed: expanded labels, basic-EPS fallback, cover-page provenance, and PIT guards hold.');
+}
