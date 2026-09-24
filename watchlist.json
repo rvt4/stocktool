@@ -4090,5 +4090,17 @@
   {
     "ticker": "HOLX",
     "sector": "Healthcare"
+  },
+  {
+    "ticker": "ZETA",
+    "sector": "Technology"
+  },
+  {
+    "ticker": "CAKE",
+    "sector": "Consumer Discretionary"
+  },
+  {
+    "ticker": "HNST",
+    "sector": "Consumer Staples"
   }
 ]
