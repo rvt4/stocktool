@@ -1751,6 +1751,34 @@ function starterPortfolioCohorts(snapshotOutput,{minExpectedCAGR=.20,minAlpha=.0
   const summarize=xs=>({cohortCount:xs.length,meanHoldings:mean(xs.map(x=>x.holdings)),meanPortfolioCAGR:mean(xs.map(x=>x.portfolioCAGR)),medianPortfolioCAGR:median(xs.map(x=>x.portfolioCAGR)),meanEqualWeightCAGR:mean(xs.map(x=>x.equalWeightCAGR)),meanSpyCAGR:mean(xs.map(x=>x.spyCAGR)),meanExcessCAGR:mean(xs.map(x=>x.excessCAGR)),medianExcessCAGR:median(xs.map(x=>x.excessCAGR)),beatSpyRate:xs.length?xs.filter(x=>x.beatSpy).length/xs.length:null});
   return {horizonYears:horizon,minExpectedCAGR,minAlpha,maxRank,topN,all:summarize(cohorts),development:summarize(cohorts.filter(x=>x.signalYear>=2019&&x.signalYear<=2021)),validation:summarize(cohorts.filter(x=>x.signalYear>=2022&&x.signalYear<=2025)),cohorts};
 }
+function starterSelectionComparisonCohorts(snapshotOutput,{ruleKey,horizon=1,topN=15,maxRank=25}={}){
+  const cohorts=[];
+  for(const snap of snapshotOutput||[]){
+    const ranked=dedupeEconomicSecurities((snap.rows||[]).filter(r=>Number.isFinite(r?.rank)&&r.rank<=maxRank&&String(r?.modelSupport||'')!=='unsupported').sort((a,b)=>a.rank-b.rank));
+    let candidates=ranked;
+    if(ruleKey==='rank_cagr15')candidates=ranked.filter(r=>Number.isFinite(r?.expectedCAGR)&&r.expectedCAGR>=.15);
+    if(ruleKey==='rank_cagr15_quality_mos')candidates=ranked.filter(r=>{
+      const p=dynamicMosProfile(r),mos=finite(r?.marginOfSafety);
+      return Number.isFinite(r?.expectedCAGR)&&r.expectedCAGR>=.15&&p.eligibleQuality&&Number.isFinite(mos)&&p.requiredMOS!=null&&mos>=p.requiredMOS;
+    });
+    const picks=candidates.slice(0,topN);
+    const valid=picks.filter(r=>Number.isFinite(r[`realized${horizon}YTotalReturnCAGR`])&&Number.isFinite(r[`spy${horizon}YTotalReturnCAGR`]));
+    if(!valid.length)continue;
+    const portfolioCAGR=weightedFixedHoldCAGR(valid,horizon,r=>alphaSizingTarget(finite(r.expectedAlpha))),equalWeightCAGR=equalWeightFixedHoldCAGR(valid,horizon),spyCAGR=cohortSpyCAGR(valid,horizon);
+    cohorts.push({asOf:snap.asOf,signalYear:Number(String(snap.asOf).slice(0,4)),holdings:valid.length,portfolioCAGR,equalWeightCAGR,spyCAGR,excessCAGR:portfolioCAGR-spyCAGR,beatSpy:portfolioCAGR>spyCAGR,tickers:valid.map(r=>r.ticker)});
+  }
+  const summarize=xs=>({cohortCount:xs.length,meanHoldings:mean(xs.map(x=>x.holdings)),meanPortfolioCAGR:mean(xs.map(x=>x.portfolioCAGR)),medianPortfolioCAGR:median(xs.map(x=>x.portfolioCAGR)),meanEqualWeightCAGR:mean(xs.map(x=>x.equalWeightCAGR)),meanSpyCAGR:mean(xs.map(x=>x.spyCAGR)),meanExcessCAGR:mean(xs.map(x=>x.excessCAGR)),medianExcessCAGR:median(xs.map(x=>x.excessCAGR)),beatSpyRate:xs.length?xs.filter(x=>x.beatSpy).length/xs.length:null});
+  return {horizonYears:horizon,topN,maxRank,weighting:'mild Alpha sizing (alphaSizingTarget), with equal-weight control also reported',all:summarize(cohorts),development:summarize(cohorts.filter(x=>x.signalYear>=2019&&x.signalYear<=2021)),validation:summarize(cohorts.filter(x=>x.signalYear>=2022&&x.signalYear<=2025)),cohorts};
+}
+function buildStarterSelectionComparisonLab(snapshotOutput){
+  const rules=[
+    {key:'top15_rank',label:'A · Top 15 by rank',eligibility:'Supported stocks ranked <=25; select the best 15 by rank. No CAGR, rating, quality, or MOS gate.'},
+    {key:'rank_cagr15',label:'B · Top 15 by rank + >=15% expected CAGR',eligibility:'Supported stocks ranked <=25 with expected CAGR >=15%; select the best 15 by rank. No Valuation Rating gate.'},
+    {key:'rank_cagr15_quality_mos',label:'C · Top 15 by rank + >=15% CAGR + quality/MOS safeguards',eligibility:'Rule B plus the existing v12.52 uncertainty-compensated quality/MOS profile. No Valuation Rating gate.'}
+  ];
+  return {description:'Frozen three-rule starter-portfolio comparison requested after the v12.52 validation. This deliberately removes Valuation Rating as a hidden eligibility gate so the three candidate universes can differ for the intended reasons. Rules are predeclared: rank only; rank + 15% hurdle; rank + 15% hurdle + existing uncertainty-compensated quality/MOS safeguards. No parameter sweep or validation tuning.',developmentYears:'2019-2021',validationYears:'2022-2025',topN:15,maxRank:25,rules:rules.map(rule=>({...rule,horizons:[1,3,5].map(h=>starterSelectionComparisonCohorts(snapshotOutput,{ruleKey:rule.key,horizon:h,topN:15,maxRank:25}))}))};
+}
+
 function buildStarterPortfolioValidationLab(rows,snapshotOutput){
   const year=r=>Number(String(r.asOf||'').slice(0,4));
   const split=(rs,a,b)=>rs.filter(r=>year(r)>=a&&year(r)<=b);
@@ -1802,7 +1830,8 @@ function buildLongTermOwnerLab(rows,snapshotOutput,historyByTicker=null,spyHisto
     alphaGateRecalibrationLab:buildAlphaGateRecalibrationLab(snapshotOutput),
     dynamicMosEntryLab:buildDynamicMosEntryLab(snapshotOutput),
     mosIntegrityAudit:buildMosIntegrityAudit(snapshotOutput),
-    starterPortfolioValidationLab:buildStarterPortfolioValidationLab(rows,snapshotOutput)
+    starterPortfolioValidationLab:buildStarterPortfolioValidationLab(rows,snapshotOutput),
+    starterSelectionComparisonLab:buildStarterSelectionComparisonLab(snapshotOutput)
   };
 }
 
@@ -2018,4 +2047,4 @@ async function main(){
   console.log(`Wrote compact analysis output to data/backtest-summary.json (${(fs.statSync(sp).size/1024).toFixed(1)} KiB).`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,loadCachedIsharesSnapshots,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,contributionConcentration,leaveWinnersOut,buildParameterStability,monotonicitySummary,buildScoreGeneralization,buildPredictivePowerLab,buildLongTermOwnerLab,buildOwnerRobustnessAudit,buildOwnerExitLab,buildOwnerAlphaExitLab,ownerAlphaRulePass,ownerAlphaExitSignal,summarizeOwnerExitEvaluations,buildOwnerWeightingLab,fixedHoldCohorts,buildPortfolioSimulation,economicSecurityGroup,dedupeEconomicSecurities,ownerValuationEntryEligible,ownerDynamicEntryEligible,dynamicMosProfile,buildDynamicMosEntryLab,buildMosIntegrityAudit,buildStarterPortfolioValidationLab,starterPortfolioCohorts};
+module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,loadCachedIsharesSnapshots,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,contributionConcentration,leaveWinnersOut,buildParameterStability,monotonicitySummary,buildScoreGeneralization,buildPredictivePowerLab,buildLongTermOwnerLab,buildOwnerRobustnessAudit,buildOwnerExitLab,buildOwnerAlphaExitLab,ownerAlphaRulePass,ownerAlphaExitSignal,summarizeOwnerExitEvaluations,buildOwnerWeightingLab,fixedHoldCohorts,buildPortfolioSimulation,economicSecurityGroup,dedupeEconomicSecurities,ownerValuationEntryEligible,ownerDynamicEntryEligible,dynamicMosProfile,buildDynamicMosEntryLab,buildMosIntegrityAudit,buildStarterPortfolioValidationLab,starterPortfolioCohorts,buildStarterSelectionComparisonLab,starterSelectionComparisonCohorts};
