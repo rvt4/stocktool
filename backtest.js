@@ -1723,6 +1723,56 @@ function buildAlphaGateRecalibrationLab(snapshotOutput){
   return {description:'v12.45 Alpha-gate recalibration after redefining Alpha as expected CAGR minus the user\'s 15% hurdle. Each gate reruns the same Model-D percentile ranking within that gate, then selects up to the top 15 among rank<=25. This is a small predeclared 0/5/10-point comparison, not a threshold sweep.',alphaHurdle:.15,results};
 }
 
+
+function starterCagrBucket(v){
+  const x=finite(v);if(x==null)return null;
+  if(x<.10)return '<10%';if(x<.15)return '10-15%';if(x<.20)return '15-20%';if(x<.25)return '20-25%';return '>=25%';
+}
+function starterRankBand(r){
+  const x=finite(r?.rank);if(x==null)return null;
+  return x<=10?'Rank 1-10':x<=25?'Rank 11-25':x<=50?'Rank 26-50':x<=100?'Rank 51-100':'Rank 101+';
+}
+function weightedFixedHoldCAGR(rows,horizon,weightFn){
+  const f=`realized${horizon}YTotalReturnCAGR`;
+  const valid=(rows||[]).map(r=>({r,c:finite(r[f]),w:finite(weightFn(r))})).filter(x=>x.c!=null&&x.w!=null&&x.w>0);
+  const sw=valid.reduce((a,x)=>a+x.w,0);if(!(sw>0))return null;
+  const terminal=valid.reduce((a,x)=>a+(x.w/sw)*Math.pow(Math.max(0,1+x.c),horizon),0);
+  return terminal>=0?Math.pow(terminal,1/horizon)-1:null;
+}
+function starterPortfolioCohorts(snapshotOutput,{minExpectedCAGR=.20,minAlpha=.05,maxRank=25,topN=15,horizon=1}={}){
+  const cohorts=[];
+  for(const snap of snapshotOutput||[]){
+    const picks=dedupeEconomicSecurities((snap.rows||[]).filter(r=>ownerValuationEntryEligible(r,{minAlpha,minExpectedCAGR,maxRank})).sort((a,b)=>a.rank-b.rank)).slice(0,topN);
+    const valid=picks.filter(r=>Number.isFinite(r[`realized${horizon}YTotalReturnCAGR`])&&Number.isFinite(r[`spy${horizon}YTotalReturnCAGR`]));
+    if(!valid.length)continue;
+    const portfolioCAGR=weightedFixedHoldCAGR(valid,horizon,r=>ratingAlphaSizingTarget(r)??1),equalWeightCAGR=equalWeightFixedHoldCAGR(valid,horizon),spyCAGR=cohortSpyCAGR(valid,horizon);
+    cohorts.push({asOf:snap.asOf,signalYear:Number(String(snap.asOf).slice(0,4)),holdings:valid.length,portfolioCAGR,equalWeightCAGR,spyCAGR,excessCAGR:portfolioCAGR-spyCAGR,beatSpy:portfolioCAGR>spyCAGR,tickers:valid.map(r=>r.ticker)});
+  }
+  const summarize=xs=>({cohortCount:xs.length,meanHoldings:mean(xs.map(x=>x.holdings)),meanPortfolioCAGR:mean(xs.map(x=>x.portfolioCAGR)),medianPortfolioCAGR:median(xs.map(x=>x.portfolioCAGR)),meanEqualWeightCAGR:mean(xs.map(x=>x.equalWeightCAGR)),meanSpyCAGR:mean(xs.map(x=>x.spyCAGR)),meanExcessCAGR:mean(xs.map(x=>x.excessCAGR)),medianExcessCAGR:median(xs.map(x=>x.excessCAGR)),beatSpyRate:xs.length?xs.filter(x=>x.beatSpy).length/xs.length:null});
+  return {horizonYears:horizon,minExpectedCAGR,minAlpha,maxRank,topN,all:summarize(cohorts),development:summarize(cohorts.filter(x=>x.signalYear>=2019&&x.signalYear<=2021)),validation:summarize(cohorts.filter(x=>x.signalYear>=2022&&x.signalYear<=2025)),cohorts};
+}
+function buildStarterPortfolioValidationLab(rows,snapshotOutput){
+  const year=r=>Number(String(r.asOf||'').slice(0,4));
+  const split=(rs,a,b)=>rs.filter(r=>year(r)>=a&&year(r)<=b);
+  const byHorizon={};
+  for(const h of [1,3,5]){
+    const completed=(rows||[]).filter(r=>Number.isFinite(r[`realized${h}YTotalReturnCAGR`])&&Number.isFinite(r[`spy${h}YTotalReturnCAGR`]));
+    const calc=rs=>({
+      overall:longTermOwnerOutcomeStats(rs,h),
+      byAbsoluteRank:longTermOwnerGrouped(rs,starterRankBand,h),
+      byExpectedCAGR:longTermOwnerGrouped(rs,r=>starterCagrBucket(r.expectedCAGR),h),
+      qualityVsReturn:longTermOwnerGrouped(rs,r=>{const c=finite(r.expectedCAGR),q=finite(r.qualityScore),m=finite(r.moatScore);if(c==null||q==null)return null;if(c>=.20&&q<70)return 'CAGR >=20% / Quality <70';if(c>=.15&&c<.20&&q>=80&&(m==null||m>=70))return 'CAGR 15-20% / Quality >=80 / Moat >=70';return 'Other';},h)
+    });
+    byHorizon[`${h}Y`]={development:{signalYears:'2019-2021',...calc(split(completed,2019,2021))},validation:{signalYears:'2022-2025',...calc(split(completed,2022,2025))}};
+  }
+  const thresholdVariants=[.15,.175,.20].map(minExpectedCAGR=>({
+    minExpectedCAGR,minAlpha:Math.max(0,minExpectedCAGR-.15),
+    horizons:[1,3,5].map(h=>starterPortfolioCohorts(snapshotOutput,{minExpectedCAGR,minAlpha:Math.max(0,minExpectedCAGR-.15),maxRank:25,topN:15,horizon:h}))
+  }));
+  const exactCurrentRule=[1,3,5].map(h=>starterPortfolioCohorts(snapshotOutput,{minExpectedCAGR:.20,minAlpha:.05,maxRank:25,topN:15,horizon:h}));
+  return {description:'Validation of the live “Portfolio if started today” decision rule. It tests absolute rank bands, predicted-CAGR calibration, the 15%/17.5%/20% entry hurdles, a quality/moat interaction, and the exact live Buy-or-better + rank<=25 + alpha>=5% (CAGR>=20%) portfolio. Development and validation are separated by signal date; unavailable forward horizons remain empty rather than being backfilled.',developmentYears:'2019-2021',validationYears:'2022-2025',liveRule:{rating:'Buy / Strong Buy / Exceptional Buy',maxRank:25,minExpectedAlpha:.05,minExpectedCAGR:.20,topN:15,weighting:'ratingAlphaSizingTarget normalized across selected holdings'},byHorizon,thresholdVariants,exactCurrentRule};
+}
+
 function buildLongTermOwnerLab(rows,snapshotOutput,historyByTicker=null,spyHistory=null){
   const dynamicSnapshots=(snapshotOutput||[]).map(s=>({...s,rows:dynamicRankSnapshotRows(s.rows||[]).map(r=>({...r,asOf:s.asOf}))}));
   const eligible=dynamicSnapshots.flatMap(s=>s.rows).filter(r=>ownerDynamicEntryEligible(r));
@@ -1751,7 +1801,8 @@ function buildLongTermOwnerLab(rows,snapshotOutput,historyByTicker=null,spyHisto
     v1254WeightingLab:buildV1254WeightingLab(snapshotOutput),
     alphaGateRecalibrationLab:buildAlphaGateRecalibrationLab(snapshotOutput),
     dynamicMosEntryLab:buildDynamicMosEntryLab(snapshotOutput),
-    mosIntegrityAudit:buildMosIntegrityAudit(snapshotOutput)
+    mosIntegrityAudit:buildMosIntegrityAudit(snapshotOutput),
+    starterPortfolioValidationLab:buildStarterPortfolioValidationLab(rows,snapshotOutput)
   };
 }
 
@@ -1967,4 +2018,4 @@ async function main(){
   console.log(`Wrote compact analysis output to data/backtest-summary.json (${(fs.statSync(sp).size/1024).toFixed(1)} KiB).`);
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exit(1);});
-module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,loadCachedIsharesSnapshots,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,contributionConcentration,leaveWinnersOut,buildParameterStability,monotonicitySummary,buildScoreGeneralization,buildPredictivePowerLab,buildLongTermOwnerLab,buildOwnerRobustnessAudit,buildOwnerExitLab,buildOwnerAlphaExitLab,ownerAlphaRulePass,ownerAlphaExitSignal,summarizeOwnerExitEvaluations,buildOwnerWeightingLab,fixedHoldCohorts,buildPortfolioSimulation,economicSecurityGroup,dedupeEconomicSecurities,ownerValuationEntryEligible,ownerDynamicEntryEligible,dynamicMosProfile,buildDynamicMosEntryLab,buildMosIntegrityAudit};
+module.exports={factsAsOf,priceOnOrBefore,totalReturnCAGR,snapshotDates,parseNportHoldingsXml,accessionFromHit,parseSecSeriesAtom,chooseOpenFigiTicker,mapCusipsToTickers,loadCachedIsharesSnapshots,buildHistoricalUniverse,historicalStockFromData,alphaBucket,summarize,buildSignalAnalysis,portfolioStats,adjustedReturnBetween,equalWeightTurnover,endWeightsFromReturns,dailyPortfolioRisk,simulateInvestablePortfolio,simulateThesisHoldPortfolio,thesisSellReason,winnerMomentum,trailingAdjustedReturn,thesisEntryEligible,thesisTargetWeight,forwardCAGRFromSignal,replacementBasketCAGR,buildSellDecisionAudit,simulateOneYearCohorts,contributionConcentration,leaveWinnersOut,buildParameterStability,monotonicitySummary,buildScoreGeneralization,buildPredictivePowerLab,buildLongTermOwnerLab,buildOwnerRobustnessAudit,buildOwnerExitLab,buildOwnerAlphaExitLab,ownerAlphaRulePass,ownerAlphaExitSignal,summarizeOwnerExitEvaluations,buildOwnerWeightingLab,fixedHoldCohorts,buildPortfolioSimulation,economicSecurityGroup,dedupeEconomicSecurities,ownerValuationEntryEligible,ownerDynamicEntryEligible,dynamicMosProfile,buildDynamicMosEntryLab,buildMosIntegrityAudit,buildStarterPortfolioValidationLab,starterPortfolioCohorts};
