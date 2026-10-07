@@ -4102,5 +4102,9 @@
   {
     "ticker": "HNST",
     "sector": "Consumer Staples"
+  },
+  {
+    "ticker": "RH",
+    "sector": "Consumer Discretionary"
   }
 ]
