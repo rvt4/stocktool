@@ -1,12 +1,17 @@
 """Incrementally cache SEC Company Facts into per-ticker history files for GitHub Pages."""
-import os, json, time, datetime, pathlib, urllib.request
+import os, json, time, datetime, pathlib, urllib.request, gzip
 ROOT=pathlib.Path(__file__).resolve().parent
 OUT=ROOT/'data'/'history';OUT.mkdir(parents=True,exist_ok=True)
 UA=os.getenv('SEC_USER_AGENT','Stock Research Studio research-contact example@example.com')
 HEAD={'User-Agent':UA,'Accept-Encoding':'gzip, deflate','Accept':'application/json'}
 def get(url):
     req=urllib.request.Request(url,headers=HEAD)
-    with urllib.request.urlopen(req,timeout=30) as r:return json.load(r)
+    with urllib.request.urlopen(req, timeout=30) as r:
+        payload = r.read()
+        encoding = r.headers.get('Content-Encoding', '').lower()
+        if 'gzip' in encoding or payload.startswith(b'\x1f\x8b'):
+            payload = gzip.decompress(payload)
+        return json.loads(payload.decode('utf-8'))
 def records(facts,tags,unit):
     for tag in tags:
         vals=facts.get('us-gaap',{}).get(tag,{}).get('units',{}).get(unit,[])
