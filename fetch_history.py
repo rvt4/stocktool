@@ -69,6 +69,10 @@ def main():
     obj=json.loads(result.read_text());arr=obj if isinstance(obj,list) else next((obj[k] for k in ('stocks','results','companies','data') if isinstance(obj.get(k),list)),[])
     tickers=sorted({s['ticker'].upper() for s in arr if isinstance(s,dict) and s.get('ticker')})
     limit=int(os.getenv('HISTORY_LIMIT','100'));done=0
+    # Missing histories first, then oldest cached histories. This avoids alphabetical starvation.
+    tickers.sort(key=lambda t: ( (OUT/(t+'.json')).exists(), (OUT/(t+'.json')).stat().st_mtime if (OUT/(t+'.json')).exists() else 0, t))
+    priority=[t.strip().upper() for t in os.getenv('HISTORY_TICKERS','').split(',') if t.strip()]
+    tickers=list(dict.fromkeys(priority+tickers))
     for ticker in tickers:
         if done>=limit:break
         path=OUT/(ticker+'.json')
