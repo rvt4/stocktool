@@ -27,3 +27,11 @@
 .screen-card-verdict{font-weight:650;margin:9px 0 5px}
 .screen-card button{margin-top:10px;font-size:inherit}
 @media(max-width:760px){.screen-controls{gap:7px}.screen-controls input[type=range]{width:110px}.screen-controls select{max-width:110px}}
+
+/* Readable mobile-first research cards; zoom affects density, not page viewport. */
+.screen-priority{display:block;color:#8fbce8;font-size:.78em;font-weight:600;margin-bottom:5px}
+.screen-card-head strong{display:block;font-size:1.18em}
+.screen-card-reasons{display:grid;gap:6px;margin:10px 0}
+.screen-card-reasons>div{border-left:2px solid #4785c5;padding-left:9px;line-height:1.35}
+.screen-caveat{font-size:.83em;color:#a9b9cc;line-height:1.4;margin:10px 0}
+@media(max-width:760px){#screener.cards-mode .screen-cards{grid-template-columns:1fr}.screen-card{padding:14px}.screen-card-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.screen-card-stats span{min-width:0}.screen-card button{width:100%}}
