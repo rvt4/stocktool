@@ -35,3 +35,13 @@
 .screen-card-reasons>div{border-left:2px solid #4785c5;padding-left:9px;line-height:1.35}
 .screen-caveat{font-size:.83em;color:#a9b9cc;line-height:1.4;margin:10px 0}
 @media(max-width:760px){#screener.cards-mode .screen-cards{grid-template-columns:1fr}.screen-card{padding:14px}.screen-card-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.screen-card-stats span{min-width:0}.screen-card button{width:100%}}
+
+/* Compact mobile research cards; preserve normal browser zoom and text legibility. */
+.screen-card.compact{padding:10px 12px}
+.screen-card.compact .screen-card-head{margin-bottom:5px}
+.screen-card.compact .screen-card-head strong{font-size:1.04em}
+.screen-card.compact .screen-card-stats{margin:6px 0;gap:7px}
+.screen-card.compact .screen-card-verdict{margin:6px 0}
+.screen-card-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px}
+.screen-card.compact .screen-card-footer button{margin:0;width:auto;padding:7px 12px;white-space:nowrap}
+@media(max-width:760px){.screen-card.compact{padding:10px}.screen-card.compact .screen-card-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.screen-card.compact .screen-card-footer button{width:auto}}
