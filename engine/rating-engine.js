@@ -35,6 +35,15 @@ function rateStock(stock,forecast,quality,v){
   if(v.extremeReturnFlag&&Number.isFinite(c)&&c>.35) rating='Watch';
   if(stock.sector!=='Financials'&&methodCount===1&&['Buy','Strong Buy','Exceptional Buy'].includes(rating)) rating='Watch';
   if(agreement<35&&['Buy','Strong Buy','Exceptional Buy'].includes(rating)) rating='Watch';
+  // A premium Buy requires some resilience to a 20% terminal-multiple miss.
+  // Methods are correlated (they share the same operating forecast), so agreement
+  // alone cannot substitute for this downside sensitivity check.
+  const stressedCAGR=v.multipleSensitivity?.down20CAGR;
+  if(['Exceptional Buy','Strong Buy'].includes(rating)&&Number.isFinite(stressedCAGR)&&stressedCAGR<.15) rating='Buy';
+  if(rating==='Buy'&&Number.isFinite(stressedCAGR)&&stressedCAGR<.10) rating='Watch';
+  // Extraordinary modeled returns warrant independent assumption review even when
+  // their algebra is internally consistent.
+  if(v.extremeReturnFlag&&Number.isFinite(c)&&c>.22&&forecastConf<70&&['Buy','Strong Buy','Exceptional Buy'].includes(rating)) rating='Watch';
 
   // v12.37 hierarchical ranking architecture.
   // 1) Opportunity comes first. Expected CAGR is deliberately dominant; MOS and entry

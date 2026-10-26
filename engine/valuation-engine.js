@@ -162,9 +162,12 @@ function terminalMultipleProfile(stock,forecast,quality,base){
   // Cash conversion, reinvestment quality, moat, capital allocation and forecast stability
   // all matter; no ticker/category override is used.
   const forecastStability=clamp((forecast?.forecastReliabilityScore??60)/100,0,1);
+  // Unverified forecasts cannot independently justify decade-out premium multiples.
+  // This is a smooth, company-agnostic evidence ceiling rather than a ticker override.
+  const evidenceReliability=clamp((forecastStability-.45)/.40,0,1);
   const cashDurability=clamp((margin-.05)/.30,0,1);
   const terminalDurability=clamp(.24*durableQuality+.22*reinvestmentQuality+.16*moat+.12*capital+.12*cashDurability+.08*forecastStability+.06*protection,0,1);
-  return {growth,matureGrowth,growthDurability,maturityGap,maturityPenalty,reinvestmentQuality,durableGrowthCarry,deteriorationRisk,durableQuality,premiumEvidence,terminalDurability,qualityAdj,roicAdj,marginAdj,confidenceAdj,dilutionPenalty};
+  return {evidenceReliability,growth,matureGrowth,growthDurability,maturityGap,maturityPenalty,reinvestmentQuality,durableGrowthCarry,deteriorationRisk,durableQuality,premiumEvidence,terminalDurability,qualityAdj,roicAdj,marginAdj,confidenceAdj,dilutionPenalty};
 }
 
 function justifiedExitMultiple(kind,stock,forecast,quality,base,cfg){
@@ -177,21 +180,21 @@ function justifiedExitMultiple(kind,stock,forecast,quality,base,cfg){
     multiple=11.0+p.growthDurability*56+p.qualityAdj*1.15+p.roicAdj*1.05+p.marginAdj*1.10+p.confidenceAdj-p.dilutionPenalty-p.maturityPenalty*.75;
     // Low/mid-20s FCF exits are reserved for businesses with corroborated premium evidence.
     // The ceiling rises smoothly rather than switching on a category/ticker-specific rule.
-    const evidenceCeiling=18.5+clamp((.55*p.premiumEvidence+.45*p.terminalDurability-.58)/.26,0,1)*15.5;
+    const evidenceCeiling=17.5+clamp((.55*p.premiumEvidence+.45*p.terminalDurability-.58)/.26,0,1)*12.5*p.evidenceReliability;
     multiple=Math.min(multiple,evidenceCeiling);
-    { const a=applyHistoricalMultipleAnchor(stock,'FCF',multiple,8,34,quality); return {...a,profile:p}; }
+    { const a=applyHistoricalMultipleAnchor(stock,'FCF',multiple,8,30,quality); return {...a,multiple:Math.min(a.multiple,evidenceCeiling),profile:p}; }
   }
   if(kind==='EPS'){
     multiple=cfg.basePE+p.growthDurability*58+p.qualityAdj*1.08+p.roicAdj*.95+p.marginAdj*.55+p.confidenceAdj-p.dilutionPenalty-p.maturityPenalty*.80;
-    const evidenceCeiling=19.5+clamp((.50*p.premiumEvidence+.50*p.terminalDurability-.56)/.28,0,1)*18.5;
+    const evidenceCeiling=18.5+clamp((.50*p.premiumEvidence+.50*p.terminalDurability-.56)/.28,0,1)*14.0*p.evidenceReliability;
     multiple=Math.min(multiple,evidenceCeiling);
-    { const a=applyHistoricalMultipleAnchor(stock,'EPS',multiple,8,38,quality); return {...a,profile:p}; }
+    { const a=applyHistoricalMultipleAnchor(stock,'EPS',multiple,8,33,quality); return {...a,multiple:Math.min(a.multiple,evidenceCeiling),profile:p}; }
   }
   if(kind==='EBITDA'){
     multiple=cfg.baseEVEBITDA+p.growthDurability*31+p.qualityAdj*.68+p.roicAdj*.50+p.marginAdj*.38+p.confidenceAdj*.60-p.dilutionPenalty*.70-p.maturityPenalty*.65;
-    const evidenceCeiling=14.0+clamp((.50*p.premiumEvidence+.50*p.terminalDurability-.56)/.28,0,1)*11.0;
+    const evidenceCeiling=13.5+clamp((.50*p.premiumEvidence+.50*p.terminalDurability-.56)/.28,0,1)*9.0*p.evidenceReliability;
     multiple=Math.min(multiple,evidenceCeiling);
-    { const a=applyHistoricalMultipleAnchor(stock,'EBITDA',multiple,6,25,quality); return {...a,profile:p}; }
+    { const a=applyHistoricalMultipleAnchor(stock,'EBITDA',multiple,6,23,quality); return {...a,multiple:Math.min(a.multiple,evidenceCeiling),profile:p}; }
   }
   return {multiple:null,profile:p};
 }
