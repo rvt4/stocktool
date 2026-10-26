@@ -1,0 +1,10 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {validateStock}=require('./engine/validation');
+const total=1000, stressed=700, price=100;
+const hurdle=stressed/Math.pow(1.15,10);
+const stock={ticker:'TEST',currentPrice:price,totalShareholderValue:total,expectedReturn:Math.pow(total/price,0.1)-1,underwrittenTotal:stressed,underwrittenCAGR:Math.pow(stressed/price,0.1)-1,hurdleReturnPrice:hurdle,baseHurdleReturnPrice:total/Math.pow(1.15,10),requiredReturnBuyPrice:hurdle*.8,rating:'Watch'};
+assert.deepEqual(validateStock(stock),[]);
+assert(validateStock({...stock,requiredReturnBuyPrice:stock.requiredReturnBuyPrice+1}).includes('buy_price_reconciliation_mismatch'));
+assert(validateStock({...stock,hurdleReturnPrice:stock.hurdleReturnPrice+1}).includes('hurdle_price_reconciliation_mismatch'));
+console.log('Underwritten buy-price reconciliation passed');
