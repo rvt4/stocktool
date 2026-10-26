@@ -45,3 +45,6 @@
 .screen-card-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px}
 .screen-card.compact .screen-card-footer button{margin:0;width:auto;padding:7px 12px;white-space:nowrap}
 @media(max-width:760px){.screen-card.compact{padding:10px}.screen-card.compact .screen-card-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.screen-card.compact .screen-card-footer button{width:auto}}
+
+/* Research caution flags: compact and legible at phone zoom levels */
+.screen-card-flags{font-size:.82em;line-height:1.45;color:#f4c68d;margin-top:6px;overflow-wrap:anywhere}
