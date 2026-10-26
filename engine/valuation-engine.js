@@ -39,6 +39,49 @@ function weightedMedian(items){
   let acc=0; for(const x of v){acc+=x.weight;if(acc>=total/2)return x.value;} return v.at(-1)?.value??null;
 }
 
+// Conservative underwriting is a separate *decision scenario*, not a rewrite of the
+// base forecast. Method agreement is not independent evidence when all methods consume
+// the same projected revenue, margins and share count.
+function forecastUnderwriting(stock,forecast,quality){
+  const hist=(stock?.financials?.years||[]).filter(y=>finite(y?.revenue)>0);
+  const rows=forecast?.rows||[];
+  const end=rows.at(-1)||{};
+  const last=hist.at(-1)||{};
+  const start=hist.at(-4)||null;
+  const historicalCAGR=start&&finite(start.revenue)>0&&finite(last.revenue)>0
+    ?Math.pow(last.revenue/start.revenue,1/Math.max(1,hist.length-1-(hist.length-4)))-1:null;
+  const futureRevenue=finite(end.revenue),currentRevenue=finite(last.revenue);
+  const projectedCAGR=futureRevenue>0&&currentRevenue>0
+    ?Math.pow(futureRevenue/currentRevenue,1/Math.max(1,rows.length))-1:null;
+  const historicalMargins=hist.slice(-5).map(y=>finite(y?.fcfMargin??y?.margins?.fcf))
+    .filter(x=>Number.isFinite(x)&&x>0);
+  const observedMargin=historicalMargins.length>=2?median(historicalMargins):null;
+  const futureMargin=finite(end.fcfMargin);
+  const flags=[];
+  let annualStress=0;
+  // A 10-year forecast with scarce historical evidence deserves a modest reserve.
+  if(hist.length<4){annualStress+=.006;flags.push('short_financial_history');}
+  if(Number.isFinite(projectedCAGR)){
+    if(projectedCAGR>.20){annualStress+=Math.min(.020,(projectedCAGR-.20)*.12);flags.push('very_high_decade_revenue_growth');}
+    if(Number.isFinite(historicalCAGR)&&projectedCAGR>Math.max(.12,historicalCAGR+.06)){
+      annualStress+=Math.min(.015,(projectedCAGR-Math.max(.12,historicalCAGR+.06))*.12);
+      flags.push('growth_accelerates_beyond_history');
+    }
+  }
+  if(Number.isFinite(observedMargin)&&Number.isFinite(futureMargin)&&futureMargin>observedMargin+.05){
+    annualStress+=Math.min(.018,(futureMargin-observedMargin-.05)*.16);
+    flags.push('large_unproven_fcf_margin_expansion');
+  }
+  const rel=finite(forecast?.forecastReliabilityScore);
+  if(rel!=null&&rel<70){annualStress+=Math.min(.012,(70-rel)*.0004);flags.push('forecast_reliability_below_70');}
+  // This is an explicit scenario stress, capped at 5% annualized. It is not a
+  // statistically calibrated probability or a claim about actual future returns.
+  annualStress=clamp(annualStress,0,.05);
+  return {annualStress,terminalFactor:Math.pow(1-annualStress,HORIZON_YEARS),flags,
+    historicalRevenueCAGR:historicalCAGR,projectedRevenueCAGR:projectedCAGR,
+    historicalFCFMargin:observedMargin,projectedFCFMargin:futureMargin};
+}
+
 function inferShareCount(stock,forecast,years){
   const last=years.at(-1)||{};
   const direct=[last.sharesOutTTM,last.weightedAverageDilutedShares,last.dilutedShares,last.sharesDiluted]
@@ -936,8 +979,14 @@ function valuate(stock,forecast,quality){
   // rate, while the user's conservatism is imposed explicitly through a 15% hurdle and
   // then a separate 20% margin of safety.
   const fair=total!=null?pv(total,fairDiscountRate,HORIZON_YEARS):null;
+  const underwriting=forecastUnderwriting(stock,forecast,quality);
+  const underwrittenTotal=total!=null?total*underwriting.terminalFactor:null;
+  const underwrittenCAGR=cagr(price,underwrittenTotal);
   const hurdleReturnPrice=total!=null?pv(total,INVESTOR_HURDLE_RETURN,HORIZON_YEARS):null;
-  const requiredReturnBuyPrice=hurdleReturnPrice!=null?hurdleReturnPrice*(1-INVESTOR_MARGIN_OF_SAFETY):null;
+  // The displayed investor entry price must reflect the stressed assumptions;
+  // otherwise warnings have no consequence for the actual buy decision.
+  const requiredReturnBuyPrice=underwrittenTotal!=null
+    ?pv(underwrittenTotal,INVESTOR_HURDLE_RETURN,HORIZON_YEARS)*(1-INVESTOR_MARGIN_OF_SAFETY):null;
   // MOS is never a negative percentage. Overvaluation is represented separately by
   // premiumToFairValue / valuationGap, avoiding outputs such as -165% MOS.
   const rawMos=fair>0&&price>0?1-price/fair:null;
@@ -988,6 +1037,6 @@ function valuate(stock,forecast,quality){
   const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
   const lowReliability=methods.length>0&&Math.max(...methods.map(m=>m.reliability??0))<.40;
 
-  return {requiredReturn:req,intrinsicDiscountRate:intrinsicRate,methods,valuationArchetype:archetype.name,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget,tenYearPriceTarget:target,fiveYearTotalShareholderValue,fiveYearExpectedCAGR,tenYearExpectedCAGR:expected,horizonCAGRSpread,horizonDivergenceFlag,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,hurdleReturnPrice,requiredReturnBuyPrice,investorMarginOfSafety:INVESTOR_MARGIN_OF_SAFETY,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,multipleSensitivity:{down20CAGR:lowMultipleCAGR,up20CAGR:highMultipleCAGR,spread:multipleSensitivitySpread},returnAttribution,preUncertaintyCAGR,riskAdjustedTotal,riskAdjustedCAGR,uncertaintyHaircutRate,valuationConfidenceScore:valuationConfidence,cyclicalBusiness,cycleDispersion,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},methodDispersionRatio,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(horizonDivergenceFlag?'large_5y_10y_return_divergence':(consensus.hasConsensusOutlier?'isolated_method_outlier':(Number.isFinite(agreement)&&agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null))))};
+  return {requiredReturn:req,intrinsicDiscountRate:intrinsicRate,methods,valuationArchetype:archetype.name,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget,tenYearPriceTarget:target,fiveYearTotalShareholderValue,fiveYearExpectedCAGR,tenYearExpectedCAGR:expected,horizonCAGRSpread,horizonDivergenceFlag,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,hurdleReturnPrice,requiredReturnBuyPrice,underwriting,underwrittenCAGR,underwrittenTotal,investorMarginOfSafety:INVESTOR_MARGIN_OF_SAFETY,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,multipleSensitivity:{down20CAGR:lowMultipleCAGR,up20CAGR:highMultipleCAGR,spread:multipleSensitivitySpread},returnAttribution,preUncertaintyCAGR,riskAdjustedTotal,riskAdjustedCAGR,uncertaintyHaircutRate,valuationConfidenceScore:valuationConfidence,cyclicalBusiness,cycleDispersion,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},methodDispersionRatio,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(horizonDivergenceFlag?'large_5y_10y_return_divergence':(consensus.hasConsensusOutlier?'isolated_method_outlier':(Number.isFinite(agreement)&&agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null))))};
 }
 module.exports={valuate};

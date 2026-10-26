@@ -13,6 +13,8 @@ function rateStock(stock,forecast,quality,v){
   const conf=v.valuationConfidenceScore??rawConf;
   const methodCount=(v.methods||[]).length, independent=v.independentMethodCount??methodCount;
   const forecastConf=forecast.forecastReliabilityScore??rawConf;
+  const underwritingCAGR=Number.isFinite(v.underwrittenCAGR)?v.underwrittenCAGR:c;
+  const underwritingFlags=v.underwriting?.flags||[];
 
   // Recommendation contract: a stock is not a Buy until today's price is at/below
   // the 15% CAGR hurdle price AFTER the investor's additional 20% margin of safety.
@@ -30,6 +32,9 @@ function rateStock(stock,forecast,quality,v){
   // large additive ranking weights: the validation lab showed that evidence/confidence
   // is most useful after an attractive expected-return opportunity already exists.
   if(v.modelSupport==='unsupported') rating='Unrated';
+  // A Buy must survive the same stressed scenario used for the investor entry price.
+  if(['Buy','Strong Buy','Exceptional Buy'].includes(rating)&&underwritingCAGR<.15) rating='Watch';
+  if(['Strong Buy','Exceptional Buy'].includes(rating)&&underwritingFlags.length>=2) rating='Buy';
   if(v.modelSupport==='limited'&&['Buy','Strong Buy','Exceptional Buy'].includes(rating)) rating='Watch';
   if(forecastConf<45&&['Buy','Strong Buy','Exceptional Buy'].includes(rating)) rating='Watch';
   if(v.extremeReturnFlag&&Number.isFinite(c)&&c>.35) rating='Watch';
@@ -48,7 +53,7 @@ function rateStock(stock,forecast,quality,v){
   // v12.37 hierarchical ranking architecture.
   // 1) Opportunity comes first. Expected CAGR is deliberately dominant; MOS and entry
   //    readiness add context without allowing a wonderful-but-expensive company to win.
-  const returnScore=Number.isFinite(c)?clamp((c-.04)/.20,0,1)*100:0; // 4% -> 0, 24% -> 100
+  const returnScore=Number.isFinite(underwritingCAGR)?clamp((underwritingCAGR-.04)/.20,0,1)*100:0; // 4% -> 0, 24% -> 100
   const mosScore=Number.isFinite(mos)?clamp(mos/.35,0,1)*100:0;
   const entryScore=meetsFinalBuyPrice?100:meetsHurdlePrice?70:(Number.isFinite(c)&&c>=.15&&mos>0?45:15);
   const opportunityScore=.78*returnScore+.17*mosScore+.05*entryScore;
@@ -95,6 +100,7 @@ function rateStock(stock,forecast,quality,v){
     meetsInvestorBuyPrice:meetsFinalBuyPrice,
     meetsHurdlePrice,
     evidenceScore,
+    underwrittenCAGR:underwritingCAGR,underwritingFlags,
     expectedAlpha:Number.isFinite(c)?c-INVESTOR_ALPHA_HURDLE:null
   };
 }
