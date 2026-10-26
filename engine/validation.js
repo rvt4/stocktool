@@ -9,7 +9,16 @@ function validateStock(s){
   if(Number.isFinite(s.bullCAGR)&&Number.isFinite(s.baseCAGR)&&s.bullCAGR<s.baseCAGR-1e-9)issues.push('bull_below_base');
   if(Number.isFinite(s.fairValueEstimate)&&Number.isFinite(s.marginOfSafety)&&p>0){const calc=Math.max(0,1-p/s.fairValueEstimate);if(!near(calc,s.marginOfSafety))issues.push('mos_math_mismatch');}
   if(fut>0&&Number.isFinite(s.fairValueEstimate)&&Number.isFinite(s.intrinsicDiscountRate)){const calc=fut/Math.pow(1+s.intrinsicDiscountRate,HORIZON_YEARS);if(!near(calc,s.fairValueEstimate))issues.push('fair_value_reconciliation_mismatch');}
-  if(fut>0&&Number.isFinite(s.hurdleReturnPrice)){const calc=fut/Math.pow(1+INVESTOR_HURDLE_RETURN,HORIZON_YEARS);if(!near(calc,s.hurdleReturnPrice))issues.push('hurdle_price_reconciliation_mismatch');}
+  if(fut>0&&Number.isFinite(s.hurdleReturnPrice)){
+    const underwritten=Number(s.underwrittenTotal);
+    const basis=Number.isFinite(underwritten)&&underwritten>0?underwritten:fut;
+    const calc=basis/Math.pow(1+INVESTOR_HURDLE_RETURN,HORIZON_YEARS);
+    if(!near(calc,s.hurdleReturnPrice))issues.push('hurdle_price_reconciliation_mismatch');
+  }
+  if(fut>0&&Number.isFinite(s.baseHurdleReturnPrice)){
+    const calc=fut/Math.pow(1+INVESTOR_HURDLE_RETURN,HORIZON_YEARS);
+    if(!near(calc,s.baseHurdleReturnPrice))issues.push('base_hurdle_price_reconciliation_mismatch');
+  }
   if(Number.isFinite(s.hurdleReturnPrice)&&Number.isFinite(s.requiredReturnBuyPrice)){const calc=s.hurdleReturnPrice*(1-INVESTOR_MARGIN_OF_SAFETY);if(!near(calc,s.requiredReturnBuyPrice))issues.push('buy_price_reconciliation_mismatch');}
   if(['Buy','Strong Buy','Exceptional Buy'].includes(s.rating)&&(!Number.isFinite(c)||!Number.isFinite(s.marginOfSafety)))issues.push('buy_without_canonical_valuation');
   if(['Buy','Strong Buy','Exceptional Buy'].includes(s.rating)&&!(Number.isFinite(s.requiredReturnBuyPrice)&&Number.isFinite(s.currentPrice)&&s.currentPrice<=s.requiredReturnBuyPrice*(1+1e-6)))issues.push('buy_above_investor_buy_price');
