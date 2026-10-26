@@ -137,19 +137,23 @@ function opportunity(s){
  const conf=present(s.valuationConfidenceScore)?bounded(Number(s.valuationConfidenceScore)):null;
  const methods=present(s.independentMethodCount)?Number(s.independentMethodCount):0;
  const flags=researchFlags(s);
- // Saturation avoids allowing extreme, unverified model upside to dominate discovery.
- const valuation=mos!==null?bounded(50+Math.min(mos,0.50)*100):r!==null?bounded(45+Math.min(r,0.25)*160):null;
- const qualityPart=quality??0;
- const growthPart=growth!==null?bounded(45+Math.min(growth,0.25)*110):0;
- const completeness=[valuation!==null,quality!==null,growth!==null,conf!==null].filter(Boolean).length;
- const score=(valuation??0)*.25+qualityPart*.40+growthPart*.15+(conf??0)*.20-(4-completeness)*8-(methods<2?12:0)-(quality!==null&&quality<75?10:0)-(growth!==null&&growth>0.35?8:0)-(mos!==null&&mos>=0.60?10:mos!==null&&mos>=0.40?5:0)-(r!==null&&r<0.15?15:0);
- const verdict=valuation===null?'Valuation unverified':conf!==null&&conf<40?'Low-confidence estimate':r!==null&&r<0.15?'Below return hurdle':quality!==null&&quality<75?'Higher-risk research':mos!==null&&mos>=.20&&quality!==null&&quality>=75?'Research candidate':mos!==null&&mos>0?'Potential value candidate':'Needs valuation review';
+ // A modeled discount is not proof of cheapness. Keep upside separate from evidence quality.
+ // Scores are research-priority heuristics, NOT calibrated valuation probabilities.
+ const upside=mos===null?null:bounded(50+25*Math.tanh(mos/.35));
+ const returnScore=r===null?null:bounded(50+30*Math.tanh((r-.15)/.10));
+ const growthRisk=growth===null?8:growth>.50?22:growth>.35?15:growth>.25?8:0;
+ const extremeDiscountRisk=mos===null?8:mos>=.65?16:mos>=.50?11:mos>=.40?6:0;
+ const methodRisk=methods<2?16:methods===2?7:0;
+ const missingRisk=[quality,growth,r,mos,conf].filter(x=>x===null).length*7;
+ const valuation=upside===null||returnScore===null?null:bounded(.55*upside+.45*returnScore-growthRisk-extremeDiscountRisk-methodRisk-missingRisk);
+ const confidence=conf===null?null:bounded(.50*conf+.25*(quality??50)+Math.min(3,methods)*5-growthRisk*.55-extremeDiscountRisk*.5-missingRisk);
+ const score=(valuation??0)*.45+(quality??0)*.35+(confidence??0)*.20-(r!==null&&r<.15?20:0);
+ const verdict=valuation===null?'Valuation unverified':r!==null&&r<.15?'Below return hurdle':quality!==null&&quality<75?'Higher-risk research':valuation>=65&&quality!==null&&quality>=80?'Priority research':valuation>=50?'Research candidate':'Assumptions need review';
  const reasons=[];
- if(quality!==null&&quality>=85)reasons.push('Model quality '+Math.round(quality)+'/100');
- if(growth!==null&&growth>0.12)reasons.push('Modeled growth '+pct(growth));
- if(mos!==null&&mos>0)reasons.push('Modeled MOS '+pct(mos)+' (unverified)');
- if(!reasons.length)reasons.push('Review earnings, cash flow and valuation');
- return {score,verdict,evidence:reasons.slice(0,3),flags,valuation,quality,growth:growthPart,confidence:conf,methods};
+ if(mos!==null)reasons.push('Modeled MOS '+pct(mos)+' (unverified)');
+ if(growth!==null&&growth>.25)reasons.push('Growth assumption '+pct(growth));
+ if(methods<3)reasons.push(methods+' valuation methods');
+ return {score,verdict,evidence:reasons,flags,valuation,quality,confidence,methods,growthRisk,extremeDiscountRisk};
 }
 function setScreenerScale(value){
  const scale=bounded(Number(value),55,110);
@@ -159,17 +163,17 @@ function setScreenerScale(value){
  try{localStorage.setItem('stocktool-screener-zoom',String(scale))}catch(e){}
 }
 function companyFamily(t){const k=String(t||'').toUpperCase();return k==='GOOG'||k==='GOOGL'?'ALPHABET':k;}
-function modelConfidenceLabel(o){return o.confidence===null?'Unverified':Math.round(o.confidence)+'/100 (model; unverified)';}
+function modelConfidenceLabel(o){return o.confidence===null?'Insufficient data':Math.round(o.confidence)+'/100 (heuristic)';}
 function renderScreener(){
  const q=$('search').value.toLowerCase(),sector=$('sector').value,positive=$('positive').checked,sort=$('sort').value;
  let arr=stocks.filter(s=>(s.ticker+' '+(s.name||'')).toLowerCase().includes(q)&&(!sector||s.sector===sector)&&(!positive||present(s.expectedReturn)&&Number(s.expectedReturn)>0));
  const cached=new Map(arr.map(s=>[s,opportunity(s)]));
  arr.sort((a,b)=>sort==='opportunity'?cached.get(b).score-cached.get(a).score:sort==='return'?num(b.expectedReturn,-999)-num(a.expectedReturn,-999):sort==='quality'?num(b.qualityScore,-1)-num(a.qualityScore,-1):sort==='cap'?num(b.marketCap,-1)-num(a.marketCap,-1):num(a.overallRank,99999)-num(b.overallRank,99999));
  const seen=new Set();arr=arr.filter(s=>{const family=companyFamily(s.ticker);if(seen.has(family))return false;seen.add(family);return true;});
- $('count').textContent=`${arr.length} distinct companies of ${stocks.length} ticker listings · showing first ${Math.min(200,arr.length)} · Ranking is a research aid, not a verified undervaluation signal`;
+ $('count').textContent=`${arr.length} distinct companies of ${stocks.length} ticker listings · showing first ${Math.min(200,arr.length)} · Research scores are heuristic, not verified valuations`;
  const top=arr.slice(0,200);
- $('screenRows').innerHTML=top.map(s=>{const o=cached.get(s);return `<tr><td><b>${esc(s.ticker)}</b><br><span class="muted">${esc(s.name||'')}</span></td><td>${esc(s.sector||'—')}</td><td>${money(getPrice(s))}</td><td class="${present(s.expectedReturn)&&Number(s.expectedReturn)<0?'negative':'positive'}">${present(s.expectedReturn)?pct(Number(s.expectedReturn)):'—'}</td><td>${esc(s.qualityScore??'—')}</td><td><strong>${esc(o.verdict)}</strong><div class="muted small">Quality ${esc(o.quality===null?'unavailable':Math.round(o.quality)+'/100')} · Valuation signal ${esc(o.valuation===null?'unavailable':Math.round(o.valuation)+'/100')} (unverified)</div><div class="muted small">${esc(o.evidence.join(' · '))}</div>${o.flags.length?'<div class="screen-card-flags">Review: '+esc(o.flags.slice(0,2).join(' · '))+'</div>':''}</td><td>${esc(s.overallRank??'—')}</td><td><button data-ticker="${esc(s.ticker)}">Research →</button></td></tr>`}).join('');
- $('screenCards').innerHTML=top.map((s,i)=>{const o=cached.get(s);return `<article class="screen-card compact"><div class="screen-card-head"><div><span class="screen-priority">Research #${i+1}</span><strong>${esc(s.ticker)} <span class="muted">${esc(s.name||'')}</span></strong></div><span class="screen-card-rank">Rank #${esc(s.overallRank??'—')}</span></div><div class="screen-card-stats"><span>Price <b>${money(getPrice(s))}</b></span><span>Model CAGR <b>${present(s.expectedReturn)?pct(Number(s.expectedReturn)):'—'}</b></span><span>Quality <b>${esc(s.qualityScore??'—')}</b></span></div><div class="screen-card-verdict">${esc(o.verdict)} <span class="muted small">· Model confidence: ${esc(modelConfidenceLabel(o))}</span></div><div class="muted small">Quality ${esc(o.quality===null?'unavailable':Math.round(o.quality)+'/100')} · Valuation signal ${esc(o.valuation===null?'unavailable':Math.round(o.valuation)+'/100')} (unverified)</div><div class="muted small">${esc(o.evidence.join(' · '))}</div>${o.flags.length?'<div class="screen-card-flags">Review: '+esc(o.flags.slice(0,2).join(' · '))+'</div>':''}<div class="screen-card-footer"><span class="muted small">${o.methods} model methods · assumptions unverified</span><button data-ticker="${esc(s.ticker)}">Research →</button></div></article>`}).join('');
+ $('screenRows').innerHTML=top.map(s=>{const o=cached.get(s);return `<tr><td><b>${esc(s.ticker)}</b><br><span class="muted">${esc(s.name||'')}</span></td><td>${esc(s.sector||'—')}</td><td>${money(getPrice(s))}</td><td>${present(s.expectedReturn)?pct(Number(s.expectedReturn)):'—'}</td><td>${esc(s.qualityScore??'—')}</td><td><strong>${esc(o.verdict)}</strong><div class="muted small">Valuation evidence ${o.valuation===null?'—':Math.round(o.valuation)+'/100'} · Model reliability ${esc(modelConfidenceLabel(o))}</div>${o.flags.length?'<div class="screen-card-flags">Review: '+esc(o.flags.slice(0,2).join(' · '))+'</div>':''}</td><td>${esc(s.overallRank??'—')}</td><td><button data-ticker="${esc(s.ticker)}">Research →</button></td></tr>`}).join('');
+ $('screenCards').innerHTML=top.map((s,i)=>{const o=cached.get(s);return `<article class="screen-card compact"><div class="screen-card-head"><div><span class="screen-priority">Research #${i+1}</span><strong>${esc(s.ticker)} <span class="muted">${esc(s.name||'')}</span></strong></div><span class="screen-card-rank">Rank #${esc(s.overallRank??'—')}</span></div><div class="screen-card-stats"><span>Price <b>${money(getPrice(s))}</b></span><span>Model CAGR <b>${present(s.expectedReturn)?pct(Number(s.expectedReturn)):'—'}</b></span><span>Quality <b>${esc(s.qualityScore??'—')}</b></span></div><div class="screen-card-verdict">${esc(o.verdict)}</div><div class="muted small">Valuation evidence: <b>${o.valuation===null?'—':Math.round(o.valuation)+'/100'}</b> · Model reliability: <b>${esc(modelConfidenceLabel(o))}</b></div>${o.flags.length?'<div class="screen-card-flags">Review: '+esc(o.flags.slice(0,2).join(' · '))+'</div>':''}<div class="screen-card-footer"><span class="muted small">${o.methods} methods · estimates unverified</span><button data-ticker="${esc(s.ticker)}">Research →</button></div></article>`}).join('');
  document.querySelectorAll('#screenRows [data-ticker],#screenCards [data-ticker]').forEach(b=>b.onclick=()=>choose(b.dataset.ticker));
 }
 
