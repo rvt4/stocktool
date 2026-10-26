@@ -134,26 +134,29 @@ function opportunity(s){
  const growth=present(s.fundamentalGrowthRate)?Number(s.fundamentalGrowthRate):null;
  const r=present(s.expectedReturn)?Number(s.expectedReturn):null;
  const mos=present(s.marginOfSafety)?Number(s.marginOfSafety):null;
+ const entry=present(s.requiredReturnBuyPrice)&&present(getPrice(s))&&Number(getPrice(s))>0?Number(s.requiredReturnBuyPrice)/Number(getPrice(s))-1:null;
  const conf=present(s.valuationConfidenceScore)?bounded(Number(s.valuationConfidenceScore)):null;
  const methods=present(s.independentMethodCount)?Number(s.independentMethodCount):0;
  const flags=researchFlags(s);
  // A modeled discount is not proof of cheapness. Keep upside separate from evidence quality.
  // Scores are research-priority heuristics, NOT calibrated valuation probabilities.
- const upside=mos===null?null:bounded(50+25*Math.tanh(mos/.35));
+ // Rank against the investor's actual 15% hurdle plus 20% MOS entry price, not the looser intrinsic-value discount.
+ const upside=entry===null?null:bounded(50+30*Math.tanh(entry/.40));
  const returnScore=r===null?null:bounded(50+30*Math.tanh((r-.15)/.10));
  const growthRisk=growth===null?8:growth>.50?22:growth>.35?15:growth>.25?8:0;
  const extremeDiscountRisk=mos===null?8:mos>=.65?16:mos>=.50?11:mos>=.40?6:0;
  const methodRisk=methods<2?16:methods===2?7:0;
- const missingRisk=[quality,growth,r,mos,conf].filter(x=>x===null).length*7;
+ const missingRisk=[quality,growth,r,entry,conf].filter(x=>x===null).length*7;
  const valuation=upside===null||returnScore===null?null:bounded(.55*upside+.45*returnScore-growthRisk-extremeDiscountRisk-methodRisk-missingRisk);
  const confidence=conf===null?null:bounded(.50*conf+.25*(quality??50)+Math.min(3,methods)*5-growthRisk*.55-extremeDiscountRisk*.5-missingRisk);
  const score=(valuation??0)*.45+(quality??0)*.35+(confidence??0)*.20-(r!==null&&r<.15?20:0);
- const verdict=valuation===null?'Valuation unverified':r!==null&&r<.15?'Below return hurdle':quality!==null&&quality<75?'Higher-risk research':valuation>=65&&quality!==null&&quality>=80?'Priority research':valuation>=50?'Research candidate':'Assumptions need review';
+ const verdict=valuation===null?'Entry valuation unverified':entry!==null&&entry<0?'Above 15% + MOS buy price':r!==null&&r<.15?'Below return hurdle':quality!==null&&quality<75?'Higher-risk research':valuation>=65&&quality!==null&&quality>=80?'Priority research':valuation>=50?'Research candidate':'Assumptions need review';
  const reasons=[];
- if(mos!==null)reasons.push('Modeled MOS '+pct(mos)+' (unverified)');
+ if(mos!==null)reasons.push('Discount to intrinsic fair value '+pct(mos)+' (unverified)');
+ if(entry!==null)reasons.push('Versus 15% + 20% MOS buy price '+pct(entry)+' (unverified)');
  if(growth!==null&&growth>.25)reasons.push('Growth assumption '+pct(growth));
  if(methods<3)reasons.push(methods+' valuation methods');
- return {score,verdict,evidence:reasons,flags,valuation,quality,confidence,methods,growthRisk,extremeDiscountRisk};
+ return {score,verdict,evidence:reasons,flags,valuation,quality,confidence,methods,growthRisk,extremeDiscountRisk,entry};
 }
 function setScreenerScale(value){
  const scale=bounded(Number(value),55,110);
@@ -172,8 +175,8 @@ function renderScreener(){
  const seen=new Set();arr=arr.filter(s=>{const family=companyFamily(s.ticker);if(seen.has(family))return false;seen.add(family);return true;});
  $('count').textContent=`${arr.length} distinct companies of ${stocks.length} ticker listings · showing first ${Math.min(200,arr.length)} · Research scores are heuristic, not verified valuations`;
  const top=arr.slice(0,200);
- $('screenRows').innerHTML=top.map(s=>{const o=cached.get(s);return `<tr><td><b>${esc(s.ticker)}</b><br><span class="muted">${esc(s.name||'')}</span></td><td>${esc(s.sector||'—')}</td><td>${money(getPrice(s))}</td><td>${present(s.expectedReturn)?pct(Number(s.expectedReturn)):'—'}</td><td>${esc(s.qualityScore??'—')}</td><td><strong>${esc(o.verdict)}</strong><div class="muted small">Valuation evidence ${o.valuation===null?'—':Math.round(o.valuation)+'/100'} · Model reliability ${esc(modelConfidenceLabel(o))}</div>${o.flags.length?'<div class="screen-card-flags">Review: '+esc(o.flags.slice(0,2).join(' · '))+'</div>':''}</td><td>${esc(s.overallRank??'—')}</td><td><button data-ticker="${esc(s.ticker)}">Research →</button></td></tr>`}).join('');
- $('screenCards').innerHTML=top.map((s,i)=>{const o=cached.get(s);return `<article class="screen-card compact"><div class="screen-card-head"><div><span class="screen-priority">Research #${i+1}</span><strong>${esc(s.ticker)} <span class="muted">${esc(s.name||'')}</span></strong></div><span class="screen-card-rank">Rank #${esc(s.overallRank??'—')}</span></div><div class="screen-card-stats"><span>Price <b>${money(getPrice(s))}</b></span><span>Model CAGR <b>${present(s.expectedReturn)?pct(Number(s.expectedReturn)):'—'}</b></span><span>Quality <b>${esc(s.qualityScore??'—')}</b></span></div><div class="screen-card-verdict">${esc(o.verdict)}</div><div class="muted small">Valuation evidence: <b>${o.valuation===null?'—':Math.round(o.valuation)+'/100'}</b> · Model reliability: <b>${esc(modelConfidenceLabel(o))}</b></div>${o.flags.length?'<div class="screen-card-flags">Review: '+esc(o.flags.slice(0,2).join(' · '))+'</div>':''}<div class="screen-card-footer"><span class="muted small">${o.methods} methods · estimates unverified</span><button data-ticker="${esc(s.ticker)}">Research →</button></div></article>`}).join('');
+ $('screenRows').innerHTML=top.map(s=>{const o=cached.get(s);return `<tr><td><b>${esc(s.ticker)}</b><br><span class="muted">${esc(s.name||'')}</span></td><td>${esc(s.sector||'—')}</td><td>${money(getPrice(s))}</td><td>${present(s.expectedReturn)?pct(Number(s.expectedReturn)):'—'}</td><td>${esc(s.qualityScore??'—')}</td><td><strong>${esc(o.verdict)}</strong><div class="muted small">Entry-price evidence ${o.valuation===null?'—':Math.round(o.valuation)+'/100'} · Model reliability ${esc(modelConfidenceLabel(o))}</div>${o.flags.length?'<div class="screen-card-flags">Review: '+esc(o.flags.slice(0,2).join(' · '))+'</div>':''}</td><td>${esc(s.overallRank??'—')}</td><td><button data-ticker="${esc(s.ticker)}">Research →</button></td></tr>`}).join('');
+ $('screenCards').innerHTML=top.map((s,i)=>{const o=cached.get(s);return `<article class="screen-card compact"><div class="screen-card-head"><div><span class="screen-priority">Research #${i+1}</span><strong>${esc(s.ticker)} <span class="muted">${esc(s.name||'')}</span></strong></div><span class="screen-card-rank">Rank #${esc(s.overallRank??'—')}</span></div><div class="screen-card-stats"><span>Price <b>${money(getPrice(s))}</b></span><span>Model CAGR <b>${present(s.expectedReturn)?pct(Number(s.expectedReturn)):'—'}</b></span><span>Quality <b>${esc(s.qualityScore??'—')}</b></span></div><div class="screen-card-verdict">${esc(o.verdict)}</div><div class="muted small">Entry-price evidence: <b>${o.valuation===null?'—':Math.round(o.valuation)+'/100'}</b> · Model reliability: <b>${esc(modelConfidenceLabel(o))}</b></div><div class="muted small">15% + 20% MOS buy price: ${money(s.requiredReturnBuyPrice)} · ${o.entry===null?'Entry comparison unavailable':o.entry>=0?'Below entry threshold by '+pct(o.entry/(1+o.entry)):'Above entry threshold by '+pct(-o.entry)}</div>${o.flags.length?'<div class="screen-card-flags">Review: '+esc(o.flags.slice(0,2).join(' · '))+'</div>':''}<div class="screen-card-footer"><span class="muted small">${o.methods} methods · estimates unverified</span><button data-ticker="${esc(s.ticker)}">Research →</button></div></article>`}).join('');
  document.querySelectorAll('#screenRows [data-ticker],#screenCards [data-ticker]').forEach(b=>b.onclick=()=>choose(b.dataset.ticker));
 }
 
