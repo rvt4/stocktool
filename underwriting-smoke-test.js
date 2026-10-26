@@ -1,0 +1,10 @@
+'use strict';
+const assert=require('assert');
+const {rateStock}=require('./engine/rating-engine');
+const stock={price:{current:100},sector:'Technology'};
+const forecast={forecastReliabilityScore:75};
+const quality={qualityScore:90,confidenceScore:90};
+const v={expectedCAGR:.23,underwrittenCAGR:.14,marginOfSafety:.40,requiredReturnBuyPrice:120,hurdleReturnPrice:150,methodAgreementScore:85,valuationConfidenceScore:85,methods:[{},{},{}],independentMethodCount:3,modelSupport:'standard',underwriting:{flags:['large_unproven_fcf_margin_expansion']}};
+assert.strictEqual(rateStock(stock,forecast,quality,v).rating,'Watch','stressed return below 15% cannot be Buy');
+assert.strictEqual(rateStock(stock,forecast,quality,{...v,underwrittenCAGR:.20}).rating,'Exceptional Buy');
+console.log('Underwriting rating gates passed');
