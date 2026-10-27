@@ -89,6 +89,12 @@ function forecastUnderwriting(stock,forecast,quality){
     annualStress+=.004;
     flags.push('acquisition_or_structural_growth_step_requires_organic_validation');
   }
+  // Correlated optimistic assumptions compound risk: expanding both earnings
+  // and cash margins is not two independent confirmations of the same outcome.
+  if(flags.includes('large_unproven_fcf_margin_expansion')&&flags.includes('large_unproven_net_margin_expansion')){
+    annualStress+=.006;
+    flags.push('correlated_margin_expansion_assumptions');
+  }
   const rel=finite(forecast?.forecastReliabilityScore);
   if(rel!=null&&rel<70){annualStress+=Math.min(.012,(70-rel)*.0004);flags.push('forecast_reliability_below_70');}
   // This is an explicit scenario stress, capped at 5% annualized. It is not a
