@@ -916,9 +916,24 @@ function buildForecast(stock){
   const reportedShares=shareInfo.source==='reported'?shareInfo.shares:null;
   const inferredShares=shareInfo.shares;
   let revenue=finite(last.revenue)>0?finite(last.revenue):null, shares=inferredShares, dividend=Math.max(0,finite(last.dividendPerShare)||0);
+  // Cash-funded capital allocation: retire shares only with owner cash after dividends,
+  // a reinvestment reserve and priority deleveraging. Do not treat buybacks as free EPS.
+  const startingDebt=Math.max(0,finite(last.totalDebt)??((finite(last.longTermDebt)||0)+(finite(last.shortTermDebt)||0)));
+  const startingCash=Math.max(0,finite(last.cash)||0);
+  let projectedNetDebt=startingDebt-startingCash;
+  const startingEbitda=Math.max(0,finite(last.ebitda)||0);
+  const debtBurden=startingEbitda>0?Math.max(0,projectedNetDebt)/startingEbitda:null;
+  const leverageGuard=debtBurden!=null&&debtBurden>2.5;
+  // Price-independent repurchase-cost proxy. Market quotations must not change
+  // intrinsic value simply because today's price moved.
+  const earnings0=finite(last.netIncome);
+  const sharePrice0=inferredShares>0&&earnings0>0?15*earnings0/inferredShares:
+    (inferredShares>0&&finite(last.revenue)>0?1.5*finite(last.revenue)/inferredShares:null);
+  let priorRepurchasePrice=sharePrice0>0?sharePrice0:null;
+  const capitalAllocationFlags=[];
   const dividendGrowth=clamp(Math.min(Math.max(growth.y2,0),.07),0,.07), rows=[];
   for(let i=0;i<HORIZON_YEARS;i++){
-    if(revenue!=null)revenue*=1+growth.growthPath[i]; if(shares!=null)shares*=1+dilutionPath[i]; dividend*=1+dividendGrowth;
+    if(revenue!=null)revenue*=1+growth.growthPath[i]; dividend*=1+dividendGrowth;
     // Two-stage margin path: years 1-5 move toward the near/medium-term normalized
     // target; years 6-10 move toward mature economics. This is especially important for
     // temporary investment cycles, where FCF can recover after the explicit buildout.
@@ -950,10 +965,35 @@ function buildForecast(stock){
       : (firstPhase?interp(margins.currentCFO,margins.targetCFO):interp(margins.targetCFO,margins.matureCFO));
     const fcf=revenue!=null&&fcfMargin!=null?revenue*fcfMargin:null, ebitda=revenue!=null&&ebitdaMargin!=null?revenue*ebitdaMargin:null, netIncome=revenue!=null&&netMargin!=null?revenue*netMargin:null;
     const gaapNetIncome=revenue!=null&&gaapNetMargin!=null?revenue*gaapNetMargin:null;
+    const priorShares=shares;
+    const requestedChange=dilutionPath[i];
+    const dividendCash=priorShares>0?dividend*priorShares:0;
+    const ownerCashAvailable=fcf!=null?Math.max(0,fcf-dividendCash):null;
+    const reserve=ownerCashAvailable!=null?ownerCashAvailable*clamp(.12+Math.max(0,growth.growthPath[i]||0)*.6,.12,.40):0;
+    const allocatable=ownerCashAvailable!=null?Math.max(0,ownerCashAvailable-reserve):0;
+    const leverageNow=ebitda>0?Math.max(0,projectedNetDebt)/ebitda:null;
+    const debtPriority=leverageNow!=null?clamp((leverageNow-1.75)/2.5,0,.85):.35;
+    const debtRepayment=Math.min(Math.max(0,projectedNetDebt),allocatable*debtPriority);
+    projectedNetDebt-=debtRepayment;
+    const buybackBudget=Math.max(0,allocatable-debtRepayment);
+    // A rising stock price raises the cost of retiring a fixed percentage of shares.
+    // Price path is an underwriting proxy, not an independent market-price forecast.
+    if(priorRepurchasePrice>0)priorRepurchasePrice*=1+clamp((growth.growthPath[i]||0)*.65,-.08,.16);
+    const desiredSpend=requestedChange<0&&priorShares>0&&priorRepurchasePrice>0
+      ?-requestedChange*priorShares*priorRepurchasePrice:0;
+    const actualSpend=ownerCashAvailable==null?0:Math.min(desiredSpend,buybackBudget);
+    const actualRepurchase=priorRepurchasePrice>0?actualSpend/priorRepurchasePrice:0;
+    const actualChange=requestedChange<0&&priorShares>0
+      ?-actualRepurchase/priorShares:requestedChange;
+    if(shares!=null)shares*=1+actualChange;
+    if(desiredSpend>actualSpend+1)capitalAllocationFlags.push('buybacks_limited_by_owner_cash');
+    // No assumption of borrowing to fund buybacks. Excess cash after allocations
+    // reduces net debt, but avoid negative net debt (cash buildup) in this conservative bridge.
+    projectedNetDebt-=Math.max(0,buybackBudget-actualSpend);
     rows.push({year:(finite(last.year)||new Date().getFullYear())+i+1,revenueGrowth:growth.growthPath[i],revenue,
       grossMargin,rdMargin,sgaMargin,sbcMargin,intangibleAmortizationMargin,taxRate:margins.normalizedTaxRate,
       operatingMargin,fcfMargin,cfoMargin,capexMargin,ebitdaMargin,gaapNetMargin,netMargin,
-      fcf,ebitda,gaapNetIncome,netIncome,shares,eps:shares>0&&netIncome!=null?netIncome/shares:null,
+      fcf,ebitda,gaapNetIncome,netIncome,shares,netDebt:projectedNetDebt,buybackSpend:actualSpend,debtRepayment,requestedDilution:requestedChange,actualDilution:actualChange,eps:shares>0&&netIncome!=null?netIncome/shares:null,
       gaapEps:shares>0&&gaapNetIncome!=null?gaapNetIncome/shares:null,fcfPerShare:shares>0&&fcf!=null?fcf/shares:null,dividendPerShare:dividend});
   }
 
@@ -972,7 +1012,7 @@ function buildForecast(stock){
       operatingDriverTarget:margins.driverTargetOperating,operatingDriverCoverage:margins.driverCoverage,operatingDriverReliable:margins.driverModelReliable,operatingDriverReconciliation:margins.driverReconciliation,operatingDriverResidual:margins.driverResidual,operatingLeverageIntensity:margins.leverageIntensity,residualOpexStart:margins.residualOpexNow,residualOperatingDriverTarget:margins.residualDriverTargetOperating,residualOperatingDriverWeight:margins.residualDriverWeight,economicSbcCostStart:margins.economicSbcCostNow,economicSbcCostTarget:margins.economicSbcCostTarget,economicSbcCostMature:margins.economicSbcCostMature,structuralMarginGuardrailApplied:margins.structuralMarginGuardrailApplied,structuralTargetNetCeiling:margins.structuralTargetNetCeiling,structuralMatureNetCeiling:margins.structuralMatureNetCeiling},
     shares:{recent:recentShareGrowth,normalized:medianShareGrowth,observed:observedDilution,model:dilutionRate,mature:matureDilutionRate,path:dilutionPath,sbcNow,sbcNormalized,normalizedSbc,sbcImpliedDilution,buybackCapacity},
   };
-  const forecastFlags=[];
+  const forecastFlags=[...new Set(capitalAllocationFlags)];
   if(growth.structuralStepUp)forecastFlags.push('structural_revenue_step_up_detected');
   if(growth.structuralStepDown)forecastFlags.push('structural_revenue_step_down_detected');
   if(margins.abnormalCapexCycle)forecastFlags.push('abnormal_capex_cycle_normalized');
@@ -990,6 +1030,6 @@ function buildForecast(stock){
   if((margins.currentNormalizationAddback||0)>.015)forecastFlags.push('normalized_earnings_bridge');
   if(growth.recentQuarter!=null&&Math.abs(growth.recentQuarter-growth.historicalAnchor)>.12)forecastFlags.push('recent_growth_inflection');
 
-  return {horizonYears:HORIZON_YEARS,category,rows,terminalGrowth:growth.matureGrowth,year5OperatingGrowth:growth.year5Growth,revenueGrowthAnchor:growth.y1,sustainableGrowth,historicalGrowth:growth.historicalAnchor,dilutionRate,matureDilutionRate,dilutionPath,startRevenue:finite(last.revenue),startShares:inferredShares,shareCountSource:shareInfo.source,marginAssumptions:{fcf:margins.currentFCF,ebitda:margins.currentEBITDA,net:margins.currentNet},marginTargets:{fcf:margins.targetFCF,ebitda:margins.targetEBITDA,net:margins.targetNet,matureFCF:margins.matureTargetFCF,matureEBITDA:margins.matureTargetEBITDA,matureNet:margins.matureTargetNet},analystUsed:growth.analystUsed,forecastReliabilityScore:growth.forecastReliabilityScore,historyReliability:growth.historyReliability,reinvestmentPersistence:growth.reinvestmentPersistence,historyGrowthDispersion:growth.histDispersion,forecastBridge,forecastFlags};
+  return {horizonYears:HORIZON_YEARS,category,rows,terminalGrowth:growth.matureGrowth,year5OperatingGrowth:growth.year5Growth,revenueGrowthAnchor:growth.y1,sustainableGrowth,historicalGrowth:growth.historicalAnchor,dilutionRate,matureDilutionRate,dilutionPath,capitalAllocation:{startingNetDebt:startingDebt-startingCash,terminalNetDebt:projectedNetDebt,startingLeverage:debtBurden,leverageGuard,annual:rows.map(r=>({year:r.year,netDebt:r.netDebt,buybackSpend:r.buybackSpend,debtRepayment:r.debtRepayment,requestedDilution:r.requestedDilution,actualDilution:r.actualDilution}))},startRevenue:finite(last.revenue),startShares:inferredShares,shareCountSource:shareInfo.source,marginAssumptions:{fcf:margins.currentFCF,ebitda:margins.currentEBITDA,net:margins.currentNet},marginTargets:{fcf:margins.targetFCF,ebitda:margins.targetEBITDA,net:margins.targetNet,matureFCF:margins.matureTargetFCF,matureEBITDA:margins.matureTargetEBITDA,matureNet:margins.matureTargetNet},analystUsed:growth.analystUsed,forecastReliabilityScore:growth.forecastReliabilityScore,historyReliability:growth.historyReliability,reinvestmentPersistence:growth.reinvestmentPersistence,historyGrowthDispersion:growth.histDispersion,forecastBridge,forecastFlags};
 }
 module.exports={buildForecast};
