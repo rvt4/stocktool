@@ -57,6 +57,12 @@ function forecastUnderwriting(stock,forecast,quality){
     .filter(x=>Number.isFinite(x)&&x>0);
   const observedMargin=historicalMargins.length>=2?median(historicalMargins):null;
   const futureMargin=finite(end.fcfMargin);
+  const historicalNetMargins=hist.slice(-5).map(y=>{
+    const rev=finite(y.revenue), income=finite(y.netIncome);
+    return rev>0&&income!=null?income/rev:finite(y.netMargin??y.margins?.net);
+  }).filter(x=>Number.isFinite(x)&&x>0);
+  const observedNetMargin=historicalNetMargins.length>=2?median(historicalNetMargins):null;
+  const futureNetMargin=finite(end.netMargin);
   const flags=[];
   let annualStress=0;
   // A 10-year forecast with scarce historical evidence deserves a modest reserve.
@@ -72,6 +78,17 @@ function forecastUnderwriting(stock,forecast,quality){
     annualStress+=Math.min(.018,(futureMargin-observedMargin-.05)*.16);
     flags.push('large_unproven_fcf_margin_expansion');
   }
+  // Earnings expansion is a separate assumption from FCF conversion. Stress the
+  // investor entry price when a decade-out earnings margin requires a major step-up.
+  if(Number.isFinite(observedNetMargin)&&Number.isFinite(futureNetMargin)&&futureNetMargin>observedNetMargin+.05){
+    annualStress+=Math.min(.020,(futureNetMargin-observedNetMargin-.05)*.16);
+    flags.push('large_unproven_net_margin_expansion');
+  }
+  const growthBridge=forecast?.forecastBridge?.revenue||{};
+  if(growthBridge.structuralStepUp===true&&Number.isFinite(projectedCAGR)&&projectedCAGR>.12){
+    annualStress+=.004;
+    flags.push('acquisition_or_structural_growth_step_requires_organic_validation');
+  }
   const rel=finite(forecast?.forecastReliabilityScore);
   if(rel!=null&&rel<70){annualStress+=Math.min(.012,(70-rel)*.0004);flags.push('forecast_reliability_below_70');}
   // This is an explicit scenario stress, capped at 5% annualized. It is not a
@@ -79,7 +96,8 @@ function forecastUnderwriting(stock,forecast,quality){
   annualStress=clamp(annualStress,0,.05);
   return {annualStress,terminalFactor:Math.pow(1-annualStress,HORIZON_YEARS),flags,
     historicalRevenueCAGR:historicalCAGR,projectedRevenueCAGR:projectedCAGR,
-    historicalFCFMargin:observedMargin,projectedFCFMargin:futureMargin};
+    historicalFCFMargin:observedMargin,projectedFCFMargin:futureMargin,
+    historicalNetMargin:observedNetMargin,projectedNetMargin:futureNetMargin};
 }
 
 function inferShareCount(stock,forecast,years){
@@ -298,9 +316,9 @@ function coherentExitMultiples(stock,forecast,quality,base,cfg,netDebt,intrinsic
     return clamp(x,lo,hi);
   };
   return {
-    EPS:{...epsExit,multiple:clamp(dcfAnchor('EPS',pe),8,38),coherentReference:pe,gordonReference:gordonPFCF},
-    FCF:{...fcfExit,multiple:reconcile('FCF',fcfExit.multiple,coherentPFCF,8,34),coherentReference:coherentPFCF,gordonReference:gordonPFCF},
-    EBITDA:{...ebitdaExit,multiple:reconcile('EBITDA',ebitdaExit.multiple,coherentEVEBITDA,6,25),coherentReference:coherentEVEBITDA,gordonReference:gordonPFCF},
+    EPS:{...epsExit,multiple:Math.min(pe,clamp(dcfAnchor('EPS',pe),8,38)),coherentReference:pe,gordonReference:gordonPFCF},
+    FCF:{...fcfExit,multiple:Math.min(fcfExit.multiple,reconcile('FCF',fcfExit.multiple,coherentPFCF,8,34)),coherentReference:coherentPFCF,gordonReference:gordonPFCF},
+    EBITDA:{...ebitdaExit,multiple:Math.min(ebitdaExit.multiple,reconcile('EBITDA',ebitdaExit.multiple,coherentEVEBITDA,6,25)),coherentReference:coherentEVEBITDA,gordonReference:gordonPFCF},
     equityFromEPS
   };
 }
