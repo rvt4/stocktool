@@ -50,6 +50,14 @@ function rateStock(stock,forecast,quality,v){
   // their algebra is internally consistent.
   if(v.extremeReturnFlag&&Number.isFinite(c)&&c>.22&&forecastConf<70&&['Buy','Strong Buy','Exceptional Buy'].includes(rating)) rating='Watch';
 
+  // A large implied re-rating is not independent confirmation from three methods:
+  // all methods share the same operating forecast and related exit assumptions.
+  // Keep such names researchable, but do not label them decision-ready Buys.
+  if(v.reratingRelianceFlag&&['Buy','Strong Buy','Exceptional Buy'].includes(rating)) rating='Watch';
+  // The five-year checkpoint is a diagnostic, not a separate investment thesis.
+  // Large disagreement means the timing of returns is too uncertain for a premium label.
+  if(v.horizonDivergenceFlag&&['Exceptional Buy','Strong Buy'].includes(rating)) rating='Buy';
+
   // v12.37 hierarchical ranking architecture.
   // 1) Opportunity comes first. Expected CAGR is deliberately dominant; MOS and entry
   //    readiness add context without allowing a wonderful-but-expensive company to win.
