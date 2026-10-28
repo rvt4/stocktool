@@ -299,32 +299,14 @@ function coherentExitMultiples(stock,forecast,quality,base,cfg,netDebt,intrinsic
     const boundedRef=clamp(ref,multiple*.88,multiple*1.12);
     return .85*multiple+.15*boundedRef;
   };
-  const reconcile=(kind,raw,coherent,lo,hi)=>{
-    if(!(raw>0))return null;
-    let x=raw;
-    if(coherent>0){
-      // When terminal cash flow and earnings describe the same owner economics, P/FCF
-      // should not sit dramatically below the P/E lens simply because the standalone
-      // FCF formula started from a conservative base. Let the common-equity bridge carry
-      // materially more weight when cash conversion is close to earnings, while retaining
-      // a smaller reconciliation weight when the two metrics genuinely diverge.
-      let w=.34, lower=.78, upper=1.40;
-      if(kind==='FCF'&&eps>0&&fcfps>0){
-        const conversion=fcfps/eps;
-        const alignment=clamp(1-Math.abs(Math.log(conversion))/Math.log(2),0,1);
-        w=.34+.24*alignment;
-        lower=.72; upper=1.65;
-      }
-      const boundedCoherent=clamp(coherent,raw*lower,raw*upper);
-      x=(1-w)*raw+w*boundedCoherent;
-    }
-    x=dcfAnchor(kind,x);
-    return clamp(x,lo,hi);
-  };
+  // Keep the earnings, cash-conversion and enterprise lenses independently
+  // underwritten. The old reconciliation pulled FCF and EBITDA toward the EPS
+  // outcome, manufacturing apparent agreement between correlated methods.
+  // Gordon growth remains a bounded sanity anchor, not a second EPS anchor.
   return {
-    EPS:{...epsExit,multiple:Math.min(pe,clamp(dcfAnchor('EPS',pe),8,38)),coherentReference:pe,gordonReference:gordonPFCF},
-    FCF:{...fcfExit,multiple:Math.min(fcfExit.multiple,reconcile('FCF',fcfExit.multiple,coherentPFCF,8,34)),coherentReference:coherentPFCF,gordonReference:gordonPFCF},
-    EBITDA:{...ebitdaExit,multiple:Math.min(ebitdaExit.multiple,reconcile('EBITDA',ebitdaExit.multiple,coherentEVEBITDA,6,25)),coherentReference:coherentEVEBITDA,gordonReference:gordonPFCF},
+    EPS:{...epsExit,multiple:clamp(dcfAnchor('EPS',pe),8,32.5),coherentReference:equityFromEPS,gordonReference:gordonPFCF},
+    FCF:{...fcfExit,multiple:clamp(dcfAnchor('FCF',fcfExit.multiple),8,30),coherentReference:coherentPFCF,gordonReference:gordonPFCF},
+    EBITDA:{...ebitdaExit,multiple:clamp(dcfAnchor('EBITDA',ebitdaExit.multiple),6,22.5),coherentReference:coherentEVEBITDA,gordonReference:gordonPFCF},
     equityFromEPS
   };
 }
@@ -342,9 +324,9 @@ function horizonExitMultiple(kind,terminalMultiple,forecast,quality){
   const durability=.45*q+.30*moat+.25*comp;
   const excessGrowth=Math.max(0,g5-g10);
   const weakGrowth=Math.max(0,g10-g5);
-  const premium=excessGrowth*(kind==='EPS'?16:kind==='FCF'?14:11)*(.55+.45*durability);
+  const premium=excessGrowth*(kind==='EPS'?7:kind==='FCF'?6:5)*(.55+.45*durability);
   const penalty=weakGrowth*(kind==='EPS'?18:kind==='FCF'?16:12);
-  const cap=kind==='EPS'?1.25:kind==='FCF'?1.22:1.20;
+  const cap=kind==='EPS'?1.10:kind==='FCF'?1.10:1.08;
   return clamp(terminalMultiple+premium-penalty,terminalMultiple*.80,terminalMultiple*cap);
 }
 
