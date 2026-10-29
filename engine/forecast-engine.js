@@ -839,6 +839,33 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   if(Number.isFinite(finalTargetNetCeiling)&&Number.isFinite(targetNet)&&targetNet>finalTargetNetCeiling){targetNet=clamp(finalTargetNetCeiling,-.10,netCeiling);structuralMarginGuardrailApplied=true;}
   if(Number.isFinite(finalMatureNetCeiling)&&Number.isFinite(matureTargetNet)&&matureTargetNet>finalMatureNetCeiling){matureTargetNet=clamp(finalMatureNetCeiling,-.10,netCeiling);structuralMarginGuardrailApplied=true;}
 
+  // Evidence-based expansion budget: a decade-long profitability step-up must be
+  // supported by observed economics, not simply by compounding growth and leverage.
+  // Use a multi-year GAAP anchor (rather than a one-year trough); preserve upside
+  // when independent expansion signals agree. This applies to every ticker alike.
+  const historicalNetAnchor=median(netSeries.filter(Number.isFinite).slice(-5));
+  const historicalCashAnchor=median(fcfSeries.filter(Number.isFinite).slice(-5));
+  const expansionEvidence=clamp((expansionVotes-1)/3,0,1);
+  let unsupportedMarginExpansionLimited=false;
+  if(Number.isFinite(historicalNetAnchor)&&historicalNetAnchor>-.05){
+    const netBudget=.055+.065*expansionEvidence;
+    const matureBudget=.065+.070*expansionEvidence;
+    const nearCeiling=Math.max(currentNet??historicalNetAnchor,historicalNetAnchor+netBudget);
+    const farCeiling=Math.max(currentNet??historicalNetAnchor,historicalNetAnchor+matureBudget);
+    if(Number.isFinite(targetNet)&&targetNet>nearCeiling){targetNet=nearCeiling;unsupportedMarginExpansionLimited=true;}
+    if(Number.isFinite(matureTargetNet)&&matureTargetNet>farCeiling){matureTargetNet=farCeiling;unsupportedMarginExpansionLimited=true;}
+  }
+  if(Number.isFinite(historicalCashAnchor)&&historicalCashAnchor>-.05){
+    const cashBudget=.055+.065*expansionEvidence;
+    const cashCeiling=Math.max(currentFCF??historicalCashAnchor,historicalCashAnchor+cashBudget);
+    if(Number.isFinite(targetFCF)&&targetFCF>cashCeiling){targetFCF=cashCeiling;unsupportedMarginExpansionLimited=true;}
+    if(Number.isFinite(matureTargetFCF)&&matureTargetFCF>cashCeiling+.012){matureTargetFCF=cashCeiling+.012;unsupportedMarginExpansionLimited=true;}
+    if(unsupportedMarginExpansionLimited){
+      if(Number.isFinite(targetCapex))targetCFO=clamp(targetFCF+targetCapex,-.08,.70);
+      if(Number.isFinite(matureCapex))matureCFO=clamp(matureTargetFCF+matureCapex,-.08,.70);
+    }
+  }
+
   gaapTargetNet=Number.isFinite(targetNet)?clamp(targetNet-targetNormalizationAddback,-.10,netCeiling):gaapTargetNet;
   gaapMatureTargetNet=Number.isFinite(matureTargetNet)?clamp(matureTargetNet-matureNormalizationAddback,-.10,netCeiling):gaapMatureTargetNet;
   const grossMature=Number.isFinite(grossTarget)?clamp(grossTarget+Math.max(0,grossTrend)*1.2,.05,.85):grossTarget;
@@ -853,7 +880,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     expansionVotes,compressionVotes,abnormalCapexCycle,reportedFCFMargin:latestFCF,normalizedCapexMargin:targetCapex,
     cycleNormalizedFCFMargin:cycleNormalizedFCF,maintenanceCapexMargin:maintenanceAnchor,growthReinvestmentShare,
     matureGrowthReinvestmentShare,normalizedCFO:rawCFO,cashEconomicsTarget:matureTargetFCF,profitabilityConsistencyApplied,driverReconciliation,economicSbcCostNow,economicSbcCostTarget,economicSbcCostMature,
-    structuralCapitalLightCashConversion,recurringFcfCfoRatio,fcfCeiling,crossMarginCoherenceApplied,structuralMarginGuardrailApplied,structuralTargetNetCeiling,structuralMatureNetCeiling,
+    structuralCapitalLightCashConversion,recurringFcfCfoRatio,fcfCeiling,crossMarginCoherenceApplied,structuralMarginGuardrailApplied,unsupportedMarginExpansionLimited,structuralTargetNetCeiling,structuralMatureNetCeiling,
     unexplainedFcfCompressionPrevented,broadCashCompressionEvidence,temporaryMarginReset,
     normalizedTaxRate,gaapCurrentNet,gaapTargetNet,gaapMatureTargetNet,
     currentNormalizationAddback,targetNormalizationAddback,matureNormalizationAddback,
@@ -1027,6 +1054,7 @@ function buildForecast(stock){
   else {forecastFlags.push('operating_driver_fallback');forecastFlags.push('partial_operating_driver_data_rejected');if((margins.residualDriverWeight||0)>0)forecastFlags.push('gross_to_operating_residual_bridge');}
   if((margins.economicSbcCostNow||0)>.01)forecastFlags.push('economic_sbc_charge_applied');
   if(margins.structuralMarginGuardrailApplied)forecastFlags.push('structural_mature_margin_guardrail');
+  if(margins.unsupportedMarginExpansionLimited)forecastFlags.push('historical_margin_expansion_budget_applied');
   if((margins.currentNormalizationAddback||0)>.015)forecastFlags.push('normalized_earnings_bridge');
   if(growth.recentQuarter!=null&&Math.abs(growth.recentQuarter-growth.historicalAnchor)>.12)forecastFlags.push('recent_growth_inflection');
 
