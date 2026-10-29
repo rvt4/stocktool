@@ -190,13 +190,19 @@ function researchFlags(s){
  if(quality!==null&&quality<75)flags.push('Quality below 75/100');
  if(methods<2)flags.push('Fewer than two modeled valuation methods');
  if(confidence!==null&&confidence<60)flags.push('Low model confidence');
+ const rerating=Number(s.returnAttribution?.multipleReratingContribution);
+ if(Number.isFinite(rerating)&&rerating>=.08)flags.push('Return depends on valuation re-rating ('+pct(rerating)+' annual contribution)');
+ const base=Number(s.expectedCAGR),stressed=Number(s.underwrittenCAGR);
+ if(Number.isFinite(base)&&Number.isFinite(stressed)&&base-stressed>=.035)flags.push('Underwriting reduces expected return by '+((base-stressed)*100).toFixed(1)+' points');
  if(cagr!==null&&cagr<0.15)flags.push('Below 15% modeled CAGR hurdle');
  return flags;
 }
 function opportunity(s){
  const quality=present(s.qualityScore)?bounded(Number(s.qualityScore)):null;
  const growth=present(s.fundamentalGrowthRate)?Number(s.fundamentalGrowthRate):null;
- const r=present(s.expectedReturn)?Number(s.expectedReturn):null;
+ const baseReturn=present(s.expectedReturn)?Number(s.expectedReturn):null;
+ const r=present(s.underwrittenCAGR)?Number(s.underwrittenCAGR):baseReturn;
+ const rerating=present(s.returnAttribution?.multipleReratingContribution)?Math.max(0,Number(s.returnAttribution.multipleReratingContribution)):0;
  const mos=present(s.marginOfSafety)?Number(s.marginOfSafety):null;
  const entry=present(s.requiredReturnBuyPrice)&&present(getPrice(s))&&Number(getPrice(s))>0?Number(s.requiredReturnBuyPrice)/Number(getPrice(s))-1:null;
  const conf=present(s.valuationConfidenceScore)?bounded(Number(s.valuationConfidenceScore)):null;
@@ -213,8 +219,11 @@ function opportunity(s){
  const missingRisk=[quality,growth,r,entry,conf].filter(x=>x===null).length*7;
  const valuation=upside===null||returnScore===null?null:bounded(.55*upside+.45*returnScore-growthRisk-extremeDiscountRisk-methodRisk-missingRisk);
  const confidence=conf===null?null:bounded(.50*conf+.25*(quality??50)+Math.min(3,methods)*5-growthRisk*.55-extremeDiscountRisk*.5-missingRisk);
- const score=(valuation??0)*.45+(quality??0)*.35+(confidence??0)*.20-(r!==null&&r<.15?20:0);
- const verdict=valuation===null?'Entry valuation unverified':entry!==null&&entry<0?'Above 15% + MOS buy price':r!==null&&r<.15?'Below return hurdle':quality!==null&&quality<75?'Higher-risk research':valuation>=65&&quality!==null&&quality>=80?'Priority research':valuation>=50?'Research candidate':'Assumptions need review';
+ // Research priority uses the same stressed outcome as the investor buy-price test.
+ // Re-rating is a source of upside, but it is not independently verified operating growth.
+ const reratingPenalty=bounded(Math.max(0,rerating-.05)*160,0,30);
+ const score=(valuation??0)*.45+(quality??0)*.35+(confidence??0)*.20-(r!==null&&r<.15?25:0)-reratingPenalty;
+ const verdict=valuation===null?'Entry valuation unverified':entry!==null&&entry<0?'Above 15% + MOS buy price':r!==null&&r<.15?'Underwritten return below 15%':rerating>=.12?'Re-rating dependent · review':quality!==null&&quality<75?'Higher-risk research':valuation>=65&&quality!==null&&quality>=80?'Priority research':valuation>=50?'Research candidate':'Assumptions need review';
  const reasons=[];
  if(mos!==null)reasons.push('Discount to intrinsic fair value '+pct(mos)+' (unverified)');
  if(entry!==null)reasons.push('Versus 15% + 20% MOS buy price '+pct(entry)+' (unverified)');
@@ -233,14 +242,16 @@ function companyFamily(t){const k=String(t||'').toUpperCase();return k==='GOOG'|
 function modelConfidenceLabel(o){return o.confidence===null?'Insufficient data':Math.round(o.confidence)+'/100 (heuristic)';}
 function renderScreener(){
  const q=$('search').value.toLowerCase(),sector=$('sector').value,positive=$('positive').checked,sort=$('sort').value;
- let arr=stocks.filter(s=>(s.ticker+' '+(s.name||'')).toLowerCase().includes(q)&&(!sector||s.sector===sector)&&(!positive||present(s.expectedReturn)&&Number(s.expectedReturn)>0));
+ let arr=stocks.filter(s=>(s.ticker+' '+(s.name||'')).toLowerCase().includes(q)&&(!sector||s.sector===sector)&&(!positive||present(s.underwrittenCAGR??s.expectedReturn)&&Number(s.underwrittenCAGR??s.expectedReturn)>0));
  const cached=new Map(arr.map(s=>[s,opportunity(s)]));
- arr.sort((a,b)=>sort==='opportunity'?cached.get(b).score-cached.get(a).score:sort==='return'?num(b.expectedReturn,-999)-num(a.expectedReturn,-999):sort==='quality'?num(b.qualityScore,-1)-num(a.qualityScore,-1):sort==='cap'?num(b.marketCap,-1)-num(a.marketCap,-1):num(a.overallRank,99999)-num(b.overallRank,99999));
+ arr.sort((a,b)=>sort==='opportunity'?cached.get(b).score-cached.get(a).score:sort==='return'?num(b.underwrittenCAGR??b.expectedReturn,-999)-num(a.underwrittenCAGR??a.expectedReturn,-999):sort==='quality'?num(b.qualityScore,-1)-num(a.qualityScore,-1):sort==='cap'?num(b.marketCap,-1)-num(a.marketCap,-1):num(a.overallRank,99999)-num(b.overallRank,99999));
  const seen=new Set();arr=arr.filter(s=>{const family=companyFamily(s.ticker);if(seen.has(family))return false;seen.add(family);return true;});
  $('count').textContent=`${arr.length} distinct companies of ${stocks.length} ticker listings · showing first ${Math.min(200,arr.length)} · Research scores are heuristic, not verified valuations`;
  const top=arr.slice(0,200);
- $('screenRows').innerHTML=top.map(s=>{const o=cached.get(s);return `<tr><td><b>${esc(s.ticker)}</b><br><span class="muted">${esc(s.name||'')}</span></td><td>${esc(s.sector||'—')}</td><td>${money(getPrice(s))}</td><td>${present(s.expectedReturn)?pct(Number(s.expectedReturn)):'—'}</td><td>${esc(s.qualityScore??'—')}</td><td><strong>${esc(o.verdict)}</strong><div class="muted small">Entry-price evidence ${o.valuation===null?'—':Math.round(o.valuation)+'/100'} · Model reliability ${esc(modelConfidenceLabel(o))}</div>${o.flags.length?'<div class="screen-card-flags">Review: '+esc(o.flags.slice(0,2).join(' · '))+'</div>':''}</td><td>${esc(s.overallRank??'—')}</td><td><button data-ticker="${esc(s.ticker)}">Research →</button></td></tr>`}).join('');
- $('screenCards').innerHTML=top.map((s,i)=>{const o=cached.get(s);return `<article class="screen-card compact"><div class="screen-card-head"><div><span class="screen-priority">Research #${i+1}</span><strong>${esc(s.ticker)} <span class="muted">${esc(s.name||'')}</span></strong></div><span class="screen-card-rank">Rank #${esc(s.overallRank??'—')}</span></div><div class="screen-card-stats"><span>Price <b>${money(getPrice(s))}</b></span><span>Model CAGR <b>${present(s.expectedReturn)?pct(Number(s.expectedReturn)):'—'}</b></span><span>Quality <b>${esc(s.qualityScore??'—')}</b></span></div><div class="screen-card-verdict">${esc(o.verdict)}</div><div class="muted small">Entry-price evidence: <b>${o.valuation===null?'—':Math.round(o.valuation)+'/100'}</b> · Model reliability: <b>${esc(modelConfidenceLabel(o))}</b></div><div class="muted small">15% + 20% MOS buy price: ${money(s.requiredReturnBuyPrice)} · ${o.entry===null?'Entry comparison unavailable':o.entry>=0?'Below entry threshold by '+pct(o.entry/(1+o.entry)):'Above entry threshold by '+pct(-o.entry)}</div>${o.flags.length?'<div class="screen-card-flags">Review: '+esc(o.flags.slice(0,2).join(' · '))+'</div>':''}<div class="screen-card-footer"><span class="muted small">${o.methods} methods · estimates unverified</span><button data-ticker="${esc(s.ticker)}">Research →</button></div></article>`}).join('');
+ const returnSummary=s=>present(s.underwrittenCAGR)?pct(Number(s.underwrittenCAGR)):'—';
+ const baseSummary=s=>present(s.expectedReturn)?pct(Number(s.expectedReturn)):'—';
+ $('screenRows').innerHTML=top.map(s=>{const o=cached.get(s);return `<tr><td><b>${esc(s.ticker)}</b><br><span class="muted">${esc(s.name||'')}</span></td><td>${esc(s.sector||'—')}</td><td>${money(getPrice(s))}</td><td>${returnSummary(s)}<div class="muted small">Base ${baseSummary(s)}</div></td><td>${esc(s.qualityScore??'—')}</td><td><strong>${esc(o.verdict)}</strong><div class="muted small">Entry-price evidence ${o.valuation===null?'—':Math.round(o.valuation)+'/100'} · Model reliability ${esc(modelConfidenceLabel(o))}</div>${o.flags.length?'<div class="screen-card-flags">Review: '+esc(o.flags.slice(0,2).join(' · '))+'</div>':''}</td><td>${esc(s.overallRank??'—')}</td><td><button data-ticker="${esc(s.ticker)}">Research →</button></td></tr>`}).join('');
+ $('screenCards').innerHTML=top.map((s,i)=>{const o=cached.get(s);return `<article class="screen-card compact"><div class="screen-card-head"><div><span class="screen-priority">Research #${i+1}</span><strong>${esc(s.ticker)} <span class="muted">${esc(s.name||'')}</span></strong></div><span class="screen-card-rank">Rank #${esc(s.overallRank??'—')}</span></div><div class="screen-card-stats"><span>Price <b>${money(getPrice(s))}</b></span><span>Underwritten CAGR <b>${returnSummary(s)}</b></span><span>Quality <b>${esc(s.qualityScore??'—')}</b></span></div><div class="muted small">Base-case CAGR ${baseSummary(s)} · Re-rating contribution ${present(s.returnAttribution?.multipleReratingContribution)?pct(Number(s.returnAttribution.multipleReratingContribution)):'—'}</div><div class="screen-card-verdict">${esc(o.verdict)}</div><div class="muted small">Entry-price evidence: <b>${o.valuation===null?'—':Math.round(o.valuation)+'/100'}</b> · Model reliability: <b>${esc(modelConfidenceLabel(o))}</b></div><div class="muted small">15% + 20% MOS buy price: ${money(s.requiredReturnBuyPrice)} · ${o.entry===null?'Entry comparison unavailable':o.entry>=0?'Below entry threshold by '+pct(o.entry/(1+o.entry)):'Above entry threshold by '+pct(-o.entry)}</div>${o.flags.length?'<div class="screen-card-flags">Review: '+esc(o.flags.slice(0,2).join(' · '))+'</div>':''}<div class="screen-card-footer"><span class="muted small">${o.methods} methods · estimates unverified</span><button data-ticker="${esc(s.ticker)}">Research →</button></div></article>`}).join('');
  document.querySelectorAll('#screenRows [data-ticker],#screenCards [data-ticker]').forEach(b=>b.onclick=()=>choose(b.dataset.ticker));
 }
 
