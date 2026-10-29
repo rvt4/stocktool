@@ -53,35 +53,43 @@ function forecastUnderwriting(stock,forecast,quality){
   const futureRevenue=finite(end.revenue),currentRevenue=finite(last.revenue);
   const projectedCAGR=futureRevenue>0&&currentRevenue>0
     ?Math.pow(futureRevenue/currentRevenue,1/Math.max(1,rows.length))-1:null;
-  const historicalMargins=hist.slice(-5).map(y=>finite(y?.fcfMargin??y?.margins?.fcf))
-    .filter(x=>Number.isFinite(x)&&x>0);
+  // SEC annual rows normally expose absolute FCF, not fcfMargin. Derive the
+  // observed margin from reported cash flow and revenue before using a fallback.
+  const historicalMargins=hist.slice(-5).map(y=>{
+    const revenue=finite(y.revenue), fcf=finite(y.fcf);
+    if(revenue>0&&fcf!=null)return fcf/revenue;
+    return finite(y.fcfMargin??y.margins?.fcf);
+  }).filter(Number.isFinite);
   const observedMargin=historicalMargins.length>=2?median(historicalMargins):null;
   const futureMargin=finite(end.fcfMargin);
   const historicalNetMargins=hist.slice(-5).map(y=>{
     const rev=finite(y.revenue), income=finite(y.netIncome);
     return rev>0&&income!=null?income/rev:finite(y.netMargin??y.margins?.net);
-  }).filter(x=>Number.isFinite(x)&&x>0);
+  }).filter(Number.isFinite);
   const observedNetMargin=historicalNetMargins.length>=2?median(historicalNetMargins):null;
   const futureNetMargin=finite(end.netMargin);
   const flags=[];
   let annualStress=0;
-  // A 10-year forecast with scarce historical evidence deserves a modest reserve.
-  if(hist.length<4){annualStress+=.006;flags.push('short_financial_history');}
+  // Missing historical margins are NOT evidence that forecast margins are safe.
+  // Keep the reserve modest but nonzero, and explicitly flag the missing evidence.
+  if(hist.length<4){annualStress+=.010;flags.push('short_financial_history');}
+  if(observedMargin==null){annualStress+=.007;flags.push('fcf_margin_history_unavailable');}
+  if(observedNetMargin==null){annualStress+=.007;flags.push('net_margin_history_unavailable');}
   if(Number.isFinite(projectedCAGR)){
-    if(projectedCAGR>.20){annualStress+=Math.min(.020,(projectedCAGR-.20)*.12);flags.push('very_high_decade_revenue_growth');}
+    if(projectedCAGR>.15){annualStress+=Math.min(.025,(projectedCAGR-.15)*.20);flags.push('high_decade_revenue_growth');}
     if(Number.isFinite(historicalCAGR)&&projectedCAGR>Math.max(.12,historicalCAGR+.06)){
       annualStress+=Math.min(.015,(projectedCAGR-Math.max(.12,historicalCAGR+.06))*.12);
       flags.push('growth_accelerates_beyond_history');
     }
   }
-  if(Number.isFinite(observedMargin)&&Number.isFinite(futureMargin)&&futureMargin>observedMargin+.05){
-    annualStress+=Math.min(.018,(futureMargin-observedMargin-.05)*.16);
+  if(Number.isFinite(observedMargin)&&Number.isFinite(futureMargin)&&futureMargin>observedMargin+.025){
+    annualStress+=Math.min(.025,(futureMargin-observedMargin-.025)*.25);
     flags.push('large_unproven_fcf_margin_expansion');
   }
   // Earnings expansion is a separate assumption from FCF conversion. Stress the
   // investor entry price when a decade-out earnings margin requires a major step-up.
-  if(Number.isFinite(observedNetMargin)&&Number.isFinite(futureNetMargin)&&futureNetMargin>observedNetMargin+.05){
-    annualStress+=Math.min(.020,(futureNetMargin-observedNetMargin-.05)*.16);
+  if(Number.isFinite(observedNetMargin)&&Number.isFinite(futureNetMargin)&&futureNetMargin>observedNetMargin+.025){
+    annualStress+=Math.min(.025,(futureNetMargin-observedNetMargin-.025)*.25);
     flags.push('large_unproven_net_margin_expansion');
   }
   const growthBridge=forecast?.forecastBridge?.revenue||{};
@@ -96,10 +104,21 @@ function forecastUnderwriting(stock,forecast,quality){
     flags.push('correlated_margin_expansion_assumptions');
   }
   const rel=finite(forecast?.forecastReliabilityScore);
-  if(rel!=null&&rel<70){annualStress+=Math.min(.012,(70-rel)*.0004);flags.push('forecast_reliability_below_70');}
-  // This is an explicit scenario stress, capped at 5% annualized. It is not a
+  if(rel!=null&&rel<75){annualStress+=Math.min(.015,(75-rel)*.0006);flags.push('forecast_reliability_below_75');}
+  // Large terminal returns with no corresponding decade of operating growth
+  // should be stress-tested for implicit multiple expansion / normalization.
+  const startRevenue=finite(rows[0]?.revenue);
+  const operatingGrowth=startRevenue>0&&futureRevenue>0&&rows.length>1
+    ?Math.pow(futureRevenue/startRevenue,1/(rows.length-1))-1:null;
+  const projectedNetMarginLift=Number.isFinite(observedNetMargin)&&Number.isFinite(futureNetMargin)
+    ?Math.max(0,futureNetMargin-observedNetMargin):0;
+  if(Number.isFinite(operatingGrowth)&&operatingGrowth<.10&&projectedNetMarginLift<.03){
+    annualStress+=.006;
+    flags.push('limited_operating_growth_support');
+  }
+  // This is an explicit scenario stress, capped at 6% annualized. It is not a
   // statistically calibrated probability or a claim about actual future returns.
-  annualStress=clamp(annualStress,0,.05);
+  annualStress=clamp(annualStress,0,.06);
   return {annualStress,terminalFactor:Math.pow(1-annualStress,HORIZON_YEARS),flags,
     historicalRevenueCAGR:historicalCAGR,projectedRevenueCAGR:projectedCAGR,
     historicalFCFMargin:observedMargin,projectedFCFMargin:futureMargin,
@@ -1054,4 +1073,4 @@ function valuate(stock,forecast,quality){
 
   return {requiredReturn:req,intrinsicDiscountRate:intrinsicRate,methods,valuationArchetype:archetype.name,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget,tenYearPriceTarget:target,fiveYearTotalShareholderValue,fiveYearExpectedCAGR,tenYearExpectedCAGR:expected,horizonCAGRSpread,horizonDivergenceFlag,reratingRelianceFlag,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,hurdleReturnPrice,baseHurdleReturnPrice,requiredReturnBuyPrice,underwriting,underwrittenCAGR,underwrittenTotal,investorMarginOfSafety:INVESTOR_MARGIN_OF_SAFETY,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,multipleSensitivity:{down20CAGR:lowMultipleCAGR,up20CAGR:highMultipleCAGR,spread:multipleSensitivitySpread},returnAttribution,preUncertaintyCAGR,riskAdjustedTotal,riskAdjustedCAGR,uncertaintyHaircutRate,valuationConfidenceScore:valuationConfidence,cyclicalBusiness,cycleDispersion,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},methodDispersionRatio,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,terminalNetDebt,year5NetDebt,capitalAllocation:forecast.capitalAllocation||null,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(reratingRelianceFlag?'return_reliant_on_multiple_rerating':(horizonDivergenceFlag?'large_5y_10y_return_divergence':(consensus.hasConsensusOutlier?'isolated_method_outlier':(Number.isFinite(agreement)&&agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))))};
 }
-module.exports={valuate};
+module.exports={valuate,forecastUnderwriting};
