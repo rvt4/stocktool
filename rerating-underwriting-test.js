@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {reratingUnderwritingStress}=require('./engine/valuation-engine');
+const methods=[{name:'EPS Exit'},{name:'FCF Exit'},{name:'FCF DCF'}];
+const weights={'EPS Exit':.3,'FCF Exit':.3,'FCF DCF':.4};
+const noStress=reratingUnderwritingStress(.06,methods,weights);
+assert.equal(noStress.reratingTerminalFactor,1);
+const mild=reratingUnderwritingStress(.12,methods,weights);
+const severe=reratingUnderwritingStress(.20,methods,weights);
+assert.ok(severe.reratingTerminalFactor<mild.reratingTerminalFactor);
+assert.ok(severe.reratingTerminalFactor<1);
+assert.ok(severe.reratingTerminalFactor>=.82-1e-9);
+assert.equal(reratingUnderwritingStress(.30,[{name:'FCF DCF'}],{'FCF DCF':1}).reratingTerminalFactor,1);
+const entry=1000/Math.pow(1.15,10)*.8;
+assert.ok(entry*severe.reratingTerminalFactor<entry*mild.reratingTerminalFactor);
+console.log('Re-rating underwriting stress regression passed');
