@@ -34,10 +34,20 @@ function dynamicMosProfile(r){
     return {tier:'Higher uncertainty',requiredMOS:.25,eligibleQuality:true};
   return {tier:'Very high uncertainty',requiredMOS:.35,eligibleQuality:true};
 }
-function thesisEntryEligible(r,{minExpectedCAGR=.15,minAlpha=0,maxRank=25}={}){
-  const c=finite(r?.expectedCAGR??r?.expectedReturn),alpha=finite(r?.expectedAlpha),rank=finite(r?.rank??r?.overallRank),mos=finite(r?.marginOfSafety);
-  const profile=dynamicMosProfile(r);
-  return profile.eligibleQuality&&c!=null&&c>=minExpectedCAGR&&alpha!=null&&alpha>=minAlpha&&rank!=null&&rank<=maxRank&&mos!=null&&profile.requiredMOS!=null&&mos>=profile.requiredMOS&&String(r?.modelSupport||'')!=='unsupported';
+// Single source of truth: rating-engine owns investment underwriting.
+// Rank is a research ordering, never a purchase eligibility criterion.
+function thesisEntryEligible(r,{minExpectedCAGR=.15,minAlpha=0}={}){
+  const c=finite(r?.expectedCAGR??r?.expectedReturn);
+  const alpha=finite(r?.expectedAlpha);
+  const price=finite(r?.currentPrice);
+  const buyPrice=finite(r?.requiredReturnBuyPrice);
+  const underwritten=finite(r?.underwrittenCAGR);
+  return isValuationBuyRating(r?.rating)
+    && String(r?.modelSupport||'standard')==='standard'
+    && c!=null&&c>=minExpectedCAGR
+    && (alpha==null||alpha>=minAlpha)
+    && underwritten!=null&&underwritten>=minExpectedCAGR
+    && price!=null&&price>0&&buyPrice!=null&&buyPrice>0&&price<=buyPrice;
 }
 
 function thesisTargetWeight(r,{maxInitialWeight=.10}={}){
@@ -60,11 +70,11 @@ function isStrongWinnerMomentum(momentum){
   return stock3!=null&&stock3>0&&rel6!=null&&rel6>0&&rel12!=null&&rel12>0&&(rel6>=.05||rel12>=.05);
 }
 
-function livePortfolioGuidance(r,momentum,{minExpectedCAGR=.15,maxRank=25,sellExpectedCAGR=.06,maxInitialWeight=.10}={}){
+function livePortfolioGuidance(r,momentum,{minExpectedCAGR=.15,sellExpectedCAGR=.06,maxInitialWeight=.10}={}){
   const c=finite(r?.expectedCAGR??r?.expectedReturn);
   const forecast=finite(r?.forecastConfidence??r?.forecastReliabilityScore??r?.forecastConfidenceScore);
   const supported=String(r?.modelSupport||'')!=='unsupported';
-  const entryEligible=thesisEntryEligible(r,{minExpectedCAGR,maxRank});
+  const entryEligible=thesisEntryEligible(r,{minExpectedCAGR});
   const rawSizingPoints=entryEligible?Math.max(4.5,4.5+4*clamp((finite(r?.expectedAlpha)??0)/.20,0,1)):null;
   const suggestedInitialWeight=null; // normalized across the selected Starter Portfolio after all stocks are ranked
   const strongMomentum=isStrongWinnerMomentum(momentum);
@@ -92,7 +102,7 @@ function livePortfolioGuidance(r,momentum,{minExpectedCAGR=.15,maxRank=25,sellEx
   return {
     entryEligible,newPositionAction,existingHolderAction,portfolioAction,
     suggestedInitialWeight,rawSizingPoints,strongMomentum,
-    rules:{minExpectedCAGR,maxRank,sellExpectedCAGR,maxInitialWeight,dynamicMOS:dynamicMosProfile(r)},
+    rules:{minExpectedCAGR,requiredMOS:.20,sellExpectedCAGR,maxInitialWeight},
     holderReason,
   };
 }
