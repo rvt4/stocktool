@@ -125,6 +125,14 @@ function forecastUnderwriting(stock,forecast,quality){
     historicalNetMargin:observedNetMargin,projectedNetMargin:futureNetMargin};
 }
 
+function reratingUnderwritingStress(residual,methods,weights){
+  const exitWeight=methods.reduce((sum,m)=>sum+(/exit$/i.test(m.name)?(weights?.[m.name]??0):0),0);
+  const totalWeight=methods.reduce((sum,m)=>sum+(weights?.[m.name]??0),0);
+  const exitExposure=totalWeight>0?clamp(exitWeight/totalWeight,0,1):0;
+  const reratingStress=clamp((residual-.08)*2.5,0,.30);
+  return {exitExposure,reratingStress,reratingTerminalFactor:1-exitExposure*reratingStress};
+}
+
 function inferShareCount(stock,forecast,years){
   const last=years.at(-1)||{};
   const direct=[last.sharesOutTTM,last.weightedAverageDilutedShares,last.dilutedShares,last.sharesDiluted]
@@ -323,7 +331,7 @@ function coherentExitMultiples(stock,forecast,quality,base,cfg,netDebt,intrinsic
   // outcome, manufacturing apparent agreement between correlated methods.
   // Gordon growth remains a bounded sanity anchor, not a second EPS anchor.
   return {
-    EPS:{...epsExit,multiple:clamp(dcfAnchor('EPS',pe),8,32.5),coherentReference:equityFromEPS,gordonReference:gordonPFCF},
+    EPS:{...epsExit,multiple:clamp(dcfAnchor('EPS',pe),8,32.5),coherentReference:pe,gordonReference:gordonPFCF},
     FCF:{...fcfExit,multiple:clamp(dcfAnchor('FCF',fcfExit.multiple),8,30),coherentReference:coherentPFCF,gordonReference:gordonPFCF},
     EBITDA:{...ebitdaExit,multiple:clamp(dcfAnchor('EBITDA',ebitdaExit.multiple),6,22.5),coherentReference:coherentEVEBITDA,gordonReference:gordonPFCF},
     equityFromEPS
@@ -1007,7 +1015,33 @@ function valuate(stock,forecast,quality){
   // then a separate 20% margin of safety.
   const fair=total!=null?pv(total,fairDiscountRate,HORIZON_YEARS):null;
   const underwriting=forecastUnderwriting(stock,forecast,quality);
-  const underwrittenTotal=total!=null?total*underwriting.terminalFactor:null;
+  // A separate valuation-normalization stress. The residual return attribution is
+  // diagnostic (not a measured multiple change), so use it as a *bounded stress
+  // signal*, not as a prediction or a one-for-one subtraction from CAGR.
+  // Stress the exit-multiple-dependent slice only: DCF/perpetuity and dividends
+  // are not themselves exit-multiple assumptions. This avoids penalizing genuine
+  // operating compounding as if it were speculative multiple expansion.
+  const underwritingEndShares=finite(f.shares);
+  const underwritingShareGrowth=shares0>0&&underwritingEndShares>0
+    ?Math.pow(shares0/underwritingEndShares,1/HORIZON_YEARS)-1:0;
+  const underwritingStartMargin=Number.isFinite(base.margins?.net)&&base.margins.net>0
+    ?base.margins.net:(Number.isFinite(base.margins?.fcf)&&base.margins.fcf>0?base.margins.fcf:null);
+  const underwritingEndMargin=Number.isFinite(f.netMargin)&&f.netMargin>0
+    ?f.netMargin:(Number.isFinite(f.fcfMargin)&&f.fcfMargin>0?f.fcfMargin:null);
+  const underwritingMarginGrowth=underwritingStartMargin>0&&underwritingEndMargin>0
+    ?Math.pow(underwritingEndMargin/underwritingStartMargin,1/HORIZON_YEARS)-1:0;
+  const underwritingOperatingReturn=(modeledRevenueCAGR??0)+underwritingMarginGrowth+underwritingShareGrowth;
+  const underwritingResidual=Number.isFinite(expected)
+    ?expected-underwritingOperatingReturn:0;
+  const rerating=reratingUnderwritingStress(underwritingResidual,methods,canonical.weights);
+  const {exitExposure,reratingStress,reratingTerminalFactor}=rerating;
+  underwriting.reratingResidual=underwritingResidual;
+  underwriting.exitMethodExposure=exitExposure;
+  underwriting.reratingStress=reratingStress;
+  underwriting.reratingTerminalFactor=reratingTerminalFactor;
+  if(reratingStress>.0001&&exitExposure>.0001)
+    underwriting.flags.push('exit_value_reliant_on_unverified_rerating');
+  const underwrittenTotal=total!=null?total*underwriting.terminalFactor*reratingTerminalFactor:null;
   const underwrittenCAGR=cagr(price,underwrittenTotal);
   const baseHurdleReturnPrice=total!=null?pv(total,INVESTOR_HURDLE_RETURN,HORIZON_YEARS):null;
   // Public hurdle price and investor buy price must use the SAME underwritten cash flows.
@@ -1073,4 +1107,4 @@ function valuate(stock,forecast,quality){
 
   return {requiredReturn:req,intrinsicDiscountRate:intrinsicRate,methods,valuationArchetype:archetype.name,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget,tenYearPriceTarget:target,fiveYearTotalShareholderValue,fiveYearExpectedCAGR,tenYearExpectedCAGR:expected,horizonCAGRSpread,horizonDivergenceFlag,reratingRelianceFlag,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,hurdleReturnPrice,baseHurdleReturnPrice,requiredReturnBuyPrice,underwriting,underwrittenCAGR,underwrittenTotal,investorMarginOfSafety:INVESTOR_MARGIN_OF_SAFETY,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,multipleSensitivity:{down20CAGR:lowMultipleCAGR,up20CAGR:highMultipleCAGR,spread:multipleSensitivitySpread},returnAttribution,preUncertaintyCAGR,riskAdjustedTotal,riskAdjustedCAGR,uncertaintyHaircutRate,valuationConfidenceScore:valuationConfidence,cyclicalBusiness,cycleDispersion,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},methodDispersionRatio,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,terminalNetDebt,year5NetDebt,capitalAllocation:forecast.capitalAllocation||null,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(reratingRelianceFlag?'return_reliant_on_multiple_rerating':(horizonDivergenceFlag?'large_5y_10y_return_divergence':(consensus.hasConsensusOutlier?'isolated_method_outlier':(Number.isFinite(agreement)&&agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))))};
 }
-module.exports={valuate,forecastUnderwriting};
+module.exports={valuate,forecastUnderwriting,reratingUnderwritingStress};
