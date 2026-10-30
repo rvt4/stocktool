@@ -143,6 +143,8 @@ function liveMomentum(history,spyHistory){
 function economicSecurityGroup(ticker){
   const t=String(ticker||'').toUpperCase();
   if(t==='GOOG'||t==='GOOGL')return 'ALPHABET';
+  if(t==='FOX'||t==='FOXA')return 'FOX_CORP';
+  if(t==='NWS'||t==='NWSA')return 'NEWS_CORP';
   return t;
 }
 function enforceMutuallyExclusiveShareClasses(stocks){
@@ -158,7 +160,7 @@ function enforceMutuallyExclusiveShareClasses(stocks){
       s.portfolioAction=s.existingHolderAction||'HOLD';
       s.suggestedInitialWeight=null;
       s.shareClassDuplicateOf=keep.ticker;
-      s.portfolioPolicy={...(s.portfolioPolicy||{}),newPositionAction:'PASS',portfolioAction:s.portfolioAction,suggestedInitialWeight:null,shareClassDuplicateOf:keep.ticker,holderReason:`Do not open ${s.ticker} while ${keep.ticker} is the preferred Alphabet share class; they represent the same underlying company.`};
+      s.portfolioPolicy={...(s.portfolioPolicy||{}),newPositionAction:'PASS',portfolioAction:s.portfolioAction,suggestedInitialWeight:null,shareClassDuplicateOf:keep.ticker,holderReason:`Do not open ${s.ticker} while ${keep.ticker} is the selected share class of the same company.`};
       s.decisionDashboard=s.decisionDashboard||{};
       s.decisionDashboard.positionTier='Duplicate share class — no new position';
       s.decisionDashboard.suggestedWeight='—';
@@ -228,6 +230,8 @@ async function run(){
   applyLivePortfolioPolicy(stocks);
   enforceMutuallyExclusiveShareClasses(stocks);
   applyStarterPortfolioWeights(stocks,15);
+  // A portfolio Buy must always have a Buy-family rating.
+  for(const s of stocks){if(s.newPositionAction==='BUY'&&!s.qualifiesForBuyList)throw new Error(`Inconsistent investment decision: ${s.ticker}`);}
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
   const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.52-uncertainty-compensated-entry',stocks}; writeJson('results.json',output);
