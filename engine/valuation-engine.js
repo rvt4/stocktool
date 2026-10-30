@@ -637,6 +637,37 @@ function dcfValueAtYear5(forecast,discountRate,currentShares,cfg){
   return value/currentShares;
 }
 
+// Economic scenarios revalue each supported method using explicit changes to
+// revenue, profitability, dilution and terminal pricing. They are NOT CAGR
+// offsets applied to an already-calculated target.
+function economicScenarioOutcomes(methods, forecast, price, dividendValue, uncertainty){
+  const rows=forecast?.rows||[];
+  const last=rows.at(-1)||{};
+  const years=Math.max(1,rows.length);
+  const scenarios={};
+  for(const [name,sign] of [['bear',-1],['bull',1]]){
+    const revenueFactor=Math.pow(1+sign*(.025+.025*uncertainty),years);
+    const margin=finite(last.operatingMargin)??finite(last.netMargin)??finite(last.fcfMargin);
+    const marginShift=sign*(.025+.025*uncertainty);
+    const marginFactor=margin>0?clamp((margin+marginShift)/margin,.20,2):1;
+    const shareFactor=Math.pow(1-sign*.0075,years);
+    const multipleFactor=1+sign*(.15+.10*uncertainty);
+    const scenarioMethods=methods.map(m=>{
+      if(!(m.target>0))return {...m};
+      const family=m.family;
+      const economicFactor=revenueFactor*shareFactor*(family==='sales'?1:marginFactor);
+      // A DCF/residual-income model is cash-flow inclusive; do not append
+      // dividend value a second time. Exit models retain their distribution leg.
+      const target=m.target*economicFactor*(m.audit?.exitMultiple>0?multipleFactor:1);
+      const distribution=m.cashFlowInclusive?0:dividendValue;
+      return {...m,target,outcome:target+distribution};
+    });
+    const result=robustOutcomeBlend(scenarioMethods,price,valuationConsensus(scenarioMethods,price));
+    scenarios[name]={outcome:result.outcome,revenueFactor,marginFactor,shareFactor,multipleFactor};
+  }
+  return scenarios;
+}
+
 function valuate(stock,forecast,quality){
   const rows=forecast.rows||[], f=rows.at(-1)||{}, years=stock.financials?.years||[], last=years.at(-1)||{};
   const price=finite(stock.price?.current), cfg=sectorConfig(stock.sector), req=requiredReturn(quality,forecast.category), intrinsicRate=intrinsicDiscountRate(quality,forecast);
@@ -1101,10 +1132,12 @@ function valuate(stock,forecast,quality){
   const returnAttribution={revenueContribution,marginContribution,shareCountContribution,dividendContribution,multipleReratingContribution,reratingRelianceFlag,uncertaintyAdjustment,preUncertaintyCAGR,uncertaintyHaircutRate};
 
   const uncertainty=clamp((100-valuationConfidence)/100+(cyclicalBusiness?.08:0),.10,.55);
-  const bear=total!=null?total*Math.pow(1-(.035+.04*uncertainty),HORIZON_YEARS):null, bull=total!=null?total*Math.pow(1+(.035+.035*uncertainty),HORIZON_YEARS):null;
+  const economicScenarios=total!=null?economicScenarioOutcomes(methods,forecast,price,terminalDividendValue,uncertainty):null;
+  const bear=economicScenarios?.bear?.outcome??null;
+  const bull=economicScenarios?.bull?.outcome??null;
   const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
   const lowReliability=methods.length>0&&Math.max(...methods.map(m=>m.reliability??0))<.40;
 
-  return {requiredReturn:req,intrinsicDiscountRate:intrinsicRate,methods,valuationArchetype:archetype.name,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget,tenYearPriceTarget:target,fiveYearTotalShareholderValue,fiveYearExpectedCAGR,tenYearExpectedCAGR:expected,horizonCAGRSpread,horizonDivergenceFlag,reratingRelianceFlag,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,hurdleReturnPrice,baseHurdleReturnPrice,requiredReturnBuyPrice,underwriting,underwrittenCAGR,underwrittenTotal,investorMarginOfSafety:INVESTOR_MARGIN_OF_SAFETY,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,multipleSensitivity:{down20CAGR:lowMultipleCAGR,up20CAGR:highMultipleCAGR,spread:multipleSensitivitySpread},returnAttribution,preUncertaintyCAGR,riskAdjustedTotal,riskAdjustedCAGR,uncertaintyHaircutRate,valuationConfidenceScore:valuationConfidence,cyclicalBusiness,cycleDispersion,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},methodDispersionRatio,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),netDebt,terminalNetDebt,year5NetDebt,capitalAllocation:forecast.capitalAllocation||null,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(reratingRelianceFlag?'return_reliant_on_multiple_rerating':(horizonDivergenceFlag?'large_5y_10y_return_divergence':(consensus.hasConsensusOutlier?'isolated_method_outlier':(Number.isFinite(agreement)&&agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))))};
+  return {requiredReturn:req,intrinsicDiscountRate:intrinsicRate,methods,valuationArchetype:archetype.name,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget,tenYearPriceTarget:target,fiveYearTotalShareholderValue,fiveYearExpectedCAGR,tenYearExpectedCAGR:expected,horizonCAGRSpread,horizonDivergenceFlag,reratingRelianceFlag,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,hurdleReturnPrice,baseHurdleReturnPrice,requiredReturnBuyPrice,underwriting,underwrittenCAGR,underwrittenTotal,investorMarginOfSafety:INVESTOR_MARGIN_OF_SAFETY,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,multipleSensitivity:{down20CAGR:lowMultipleCAGR,up20CAGR:highMultipleCAGR,spread:multipleSensitivitySpread},returnAttribution,preUncertaintyCAGR,riskAdjustedTotal,riskAdjustedCAGR,uncertaintyHaircutRate,valuationConfidenceScore:valuationConfidence,cyclicalBusiness,cycleDispersion,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},methodDispersionRatio,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),economicScenarios,netDebt,terminalNetDebt,year5NetDebt,capitalAllocation:forecast.capitalAllocation||null,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(reratingRelianceFlag?'return_reliant_on_multiple_rerating':(horizonDivergenceFlag?'large_5y_10y_return_divergence':(consensus.hasConsensusOutlier?'isolated_method_outlier':(Number.isFinite(agreement)&&agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))))};
 }
-module.exports={valuate,forecastUnderwriting,reratingUnderwritingStress};
+module.exports={valuate,forecastUnderwriting,reratingUnderwritingStress,economicScenarioOutcomes};
