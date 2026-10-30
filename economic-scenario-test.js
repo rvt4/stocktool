@@ -1,0 +1,13 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {economicScenarioOutcomes}=require('./engine/valuation-engine');
+const forecast={rows:Array.from({length:10},(_,i)=>({operatingMargin:.18,revenue:100*Math.pow(1.08,i+1)}))};
+const methods=[{name:'EPS exit',target:200,outcome:205,weight:1,reliability:.8,family:'earnings',cashFlowInclusive:false,audit:{exitMultiple:18}},{name:'10Y DCF',target:180,outcome:180,weight:1,reliability:.8,family:'cashflow',cashFlowInclusive:true,audit:{}}];
+const a=economicScenarioOutcomes(methods,forecast,100,5,.3);
+assert(a.bear.outcome>0 && a.bear.outcome<a.bull.outcome);
+assert(a.bear.revenueFactor<1 && a.bull.revenueFactor>1);
+assert(a.bear.marginFactor<1 && a.bull.marginFactor>1);
+assert(a.bear.multipleFactor<1 && a.bull.multipleFactor>1);
+const lowerMargin=economicScenarioOutcomes(methods,{rows:forecast.rows.map(r=>({...r,operatingMargin:.08}))},100,5,.3);
+assert(lowerMargin.bear.outcome<a.bear.outcome,'bear case must respond to operating margin exposure');
+console.log('Economic scenario regression passed');
