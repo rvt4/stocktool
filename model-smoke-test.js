@@ -926,27 +926,23 @@ assert.strictEqual(thesisSellReason({expectedCAGR:.03,qualityScore:82,protection
 assert.strictEqual(thesisSellReason({expectedCAGR:.03,qualityScore:55,protectionScore:80,forecastConfidence:85,modelSupport:'full'},thesisEntry,{rideMomentum:true,momentum:mom}),'quality_thesis_deteriorated','momentum improperly overrode a broken fundamental thesis');
 console.log('V12.32 Ride Winner regression passed: stretched winners can run on relative momentum, but momentum cannot override a broken thesis.');
 
-// V12.33 live portfolio-policy regression ------------------------------------
-// The live screener must publish the same Top-25/15% entry sizing and Ride Winner
-// momentum logic used by the historical thesis-hold backtest.
-const {
-  thesisEntryEligible:liveEntryEligible,
-  thesisTargetWeight:liveTargetWeight,
-  isStrongWinnerMomentum,
-  livePortfolioGuidance,
-}=require('./engine/portfolio-policy');
-const liveCandidate={overallRank:7,expectedCAGR:.22,expectedAlpha:.07,rating:'Buy',forecastReliabilityScore:88,valuationConfidenceScore:84,qualityScore:86,moatScore:82,compounderScore:84,downsideProtectionScore:80,marginOfSafety:.12,modelSupport:'standard'};
-assert.strictEqual(liveEntryEligible(liveCandidate),true,'live policy rejected a Buy-rated Top-25 stock that clears CAGR and Alpha entry gates');
-assert.strictEqual(liveEntryEligible({...liveCandidate,rating:'Watch'}),true,'v12.51 should not use Valuation Rating as a hard Starter Portfolio gate');
-assert(liveTargetWeight(liveCandidate)>=.07&&liveTargetWeight(liveCandidate)<=.10,'live conviction sizing drifted from thesis-hold sizing bands');
+// Phase 1 live portfolio-policy regression: the rating and purchase action agree.
+const {thesisEntryEligible:liveEntryEligible,thesisTargetWeight:liveTargetWeight,isStrongWinnerMomentum,livePortfolioGuidance}=require('./engine/portfolio-policy');
+const liveCandidate={overallRank:7,expectedCAGR:.22,expectedAlpha:.07,rating:'Buy',forecastReliabilityScore:88,valuationConfidenceScore:84,qualityScore:86,moatScore:82,compounderScore:84,downsideProtectionScore:80,marginOfSafety:.12,modelSupport:'standard',underwrittenCAGR:.18,currentPrice:80,requiredReturnBuyPrice:100};
+assert.strictEqual(liveEntryEligible(liveCandidate),true,'fully underwritten Buy must qualify');
+assert.strictEqual(liveEntryEligible({...liveCandidate,rating:'Watch'}),false,'Watch rating must not trigger BUY');
+assert.strictEqual(liveEntryEligible({...liveCandidate,overallRank:900}),true,'rank is not a purchase gate');
+assert.strictEqual(liveEntryEligible({...liveCandidate,currentPrice:101}),false,'price above investor buy price must not qualify');
+assert.strictEqual(liveEntryEligible({...liveCandidate,underwrittenCAGR:.14}),false,'underwritten CAGR below hurdle must not qualify');
+assert(liveTargetWeight(liveCandidate)>=.07&&liveTargetWeight(liveCandidate)<=.10,'conviction sizing drifted');
 const liveRideMomentum={stock3:.08,rel6:.06,rel12:.03};
-assert.strictEqual(isStrongWinnerMomentum(liveRideMomentum),true,'live Ride Winner momentum test drifted from the backtest rule');
+assert.strictEqual(isStrongWinnerMomentum(liveRideMomentum),true);
 const liveRide=livePortfolioGuidance({...liveCandidate,overallRank:40,expectedCAGR:.04},liveRideMomentum);
-assert.strictEqual(liveRide.newPositionAction,'WATCH','valuation-stretched Buy-rated stock should be watched rather than opened as a new position');
-assert.strictEqual(liveRide.existingHolderAction,'RIDE WINNER','live policy failed to ride an existing valuation-stretched winner with strong momentum');
+assert.strictEqual(liveRide.newPositionAction,'WATCH');
+assert.strictEqual(liveRide.existingHolderAction,'RIDE WINNER');
 const liveExit=livePortfolioGuidance({...liveCandidate,overallRank:40,expectedCAGR:.04},{stock3:-.02,rel6:-.01,rel12:.02});
-assert.strictEqual(liveExit.existingHolderAction,'HOLD — VALUATION WATCH','live policy incorrectly turned low expected return into a thesis sell');
-console.log('V12.39 live portfolio-policy regression passed: entry logic is unchanged and valuation/forecast weakness no longer masquerades as a thesis sell.');
+assert.strictEqual(liveExit.existingHolderAction,'HOLD — VALUATION WATCH');
+console.log('Phase 1 live portfolio-policy regression passed.');
 
 // V12.45 Alpha semantics regression ------------------------------------------
 const {INVESTOR_ALPHA_HURDLE}=require('./engine/config');
@@ -959,23 +955,19 @@ const rankProbe=[{ticker:'A',expectedAlpha:.049,expectedCAGR:.199,qualityScore:9
 applyModelDRanking(rankProbe);assert.strictEqual(rankProbe.find(x=>x.ticker==='B').rankEligible,true);assert.strictEqual(rankProbe.find(x=>x.ticker==='A').rankEligible,true);
 console.log('V12.52 Alpha regression passed: Alpha uses the 15% hurdle and live candidate ranking starts at Alpha >=0.');
 
-// V12.52 uncertainty-compensated margin-of-safety entry regression ---------------------------
+// Phase 1 retains uncertainty tiers as diagnostics, not independent purchase overrides.
 const {dynamicMosProfile}=require('./engine/portfolio-policy');
-const elite={...liveCandidate,expectedCAGR:.17,expectedAlpha:.02,overallRank:10,qualityScore:86,moatScore:82,compounderScore:84,forecastReliabilityScore:72,valuationConfidenceScore:76,marginOfSafety:.06,rating:'Watch'};
-assert.strictEqual(dynamicMosProfile(elite).requiredMOS,.05,'elite compounder should require 5% MOS');
-assert.strictEqual(liveEntryEligible(elite),true,'elite compounder clearing 15% CAGR and 5% MOS should qualify even when Valuation Rating is Watch');
-const uncertain={...liveCandidate,expectedCAGR:.24,expectedAlpha:.09,overallRank:8,qualityScore:55,moatScore:48,compounderScore:52,forecastReliabilityScore:48,valuationConfidenceScore:50,marginOfSafety:.20,rating:'Buy'};
-assert.strictEqual(dynamicMosProfile(uncertain).requiredMOS,.25,'higher-uncertainty business should require 25% MOS');
-assert.strictEqual(liveEntryEligible(uncertain),false,'higher-uncertainty business must not qualify with only 20% MOS');
-assert.strictEqual(liveEntryEligible({...uncertain,marginOfSafety:.27}),true,'higher-uncertainty business should qualify after clearing its larger MOS requirement');
-const veryUncertain={...liveCandidate,expectedCAGR:.30,expectedAlpha:.15,overallRank:6,qualityScore:45,moatScore:35,compounderScore:40,forecastReliabilityScore:38,valuationConfidenceScore:41,marginOfSafety:.34,rating:'Watch'};
-assert.strictEqual(dynamicMosProfile(veryUncertain).tier,'Very high uncertainty','weak-confidence supported business should move to the 35% MOS tier rather than be vetoed');
-assert.strictEqual(dynamicMosProfile(veryUncertain).requiredMOS,.35,'very-high-uncertainty business should require 35% MOS');
-assert.strictEqual(liveEntryEligible(veryUncertain),false,'very-high-uncertainty business must not qualify below 35% MOS');
-assert.strictEqual(liveEntryEligible({...veryUncertain,marginOfSafety:.36}),true,'very-high-uncertainty business should qualify when extraordinary MOS compensates for uncertainty');
-assert.strictEqual(liveEntryEligible({...elite,expectedCAGR:.149,expectedAlpha:-.001}),false,'no quality tier may bypass the 15% return hurdle');
-console.log('V12.52 dynamic MOS regression passed: uncertainty raises the required cushion instead of becoming a supported-stock veto.');
-console.log('V12.51 dynamic-MOS regression passed: 15% CAGR is the floor and stronger businesses earn a smaller required valuation cushion.');
+const elite={...liveCandidate,qualityScore:86,moatScore:82,compounderScore:84,forecastReliabilityScore:72,valuationConfidenceScore:76};
+assert.strictEqual(dynamicMosProfile(elite).requiredMOS,.05);
+assert.strictEqual(liveEntryEligible({...elite,rating:'Watch'}),false,'quality tier cannot override Watch');
+const uncertain={...liveCandidate,qualityScore:55,moatScore:48,compounderScore:52,forecastReliabilityScore:48,valuationConfidenceScore:50};
+assert.strictEqual(dynamicMosProfile(uncertain).requiredMOS,.25);
+assert.strictEqual(liveEntryEligible({...uncertain,currentPrice:101}),false,'uncertainty cannot override buy price');
+const veryUncertain={...liveCandidate,qualityScore:45,moatScore:35,compounderScore:40,forecastReliabilityScore:38,valuationConfidenceScore:41};
+assert.strictEqual(dynamicMosProfile(veryUncertain).requiredMOS,.35);
+assert.strictEqual(liveEntryEligible({...veryUncertain,rating:'Watch'}),false);
+assert.strictEqual(liveEntryEligible({...elite,expectedCAGR:.149,expectedAlpha:-.001}),false);
+console.log('Phase 1 uncertainty and rating-consistency regression passed.');
 
 // V12.55.3 historical identity regression -----------------------------------
 const {chooseFigi:chooseHistoricalIdentityFigi}=require('./historical-security-identity-audit');
