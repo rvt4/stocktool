@@ -1,0 +1,22 @@
+Phase 2 audit — StockResearch Rebuild 24 / results (12)
+
+Results contain 988 stocks. Rating distribution: Buy 4, Watch 85, Avoid 412, Hold 287, Sell 121, Unrated 79. New-position actions: BUY 4, WATCH 905, PASS 79.
+
+Important: META is Buy/BUY in the actual JSON, despite the screenshot research card showing 'Assumptions need review'. The card is not an investment rating. Review flags and ratings must be displayed separately and clearly.
+
+Five-name spot check:
+IESC: Watch/WATCH, underwritten CAGR 24.99%, extreme-blended-return review flag.
+META: Buy/BUY, underwritten CAGR 17.75%, isolated-method-outlier review flag.
+ADBE: Watch/WATCH, underwritten CAGR 18.71%, re-rating-reliant review flag.
+DECK: Watch/WATCH, underwritten CAGR 17.81%, re-rating-reliant review flag.
+EEFT: Watch/WATCH, underwritten CAGR 23.77%, extreme-blended-return review flag.
+
+Verified source-code issue: EPS coherentMultipleReference was populated with equityFromEPS (total dollars), while FCF and EBITDA references are multiples. Changed the EPS diagnostic to the dimensionless P/E reference (pe). This is a diagnostic correction; exit valuation economics are intentionally unchanged.
+
+Remaining issues NOT fixed in this patch:
+1. Multiple-rerating contribution is a residual approximation, not a measured exit-multiple effect; label and calculation require redesign.
+2. Extreme valuations and buy-price sensitivity require source-data/forecast reconciliation; no ticker-specific overrides were made.
+3. 'Model reliability' and 'entry-price evidence' labels may be confused with Buy eligibility; clarify UI.
+4. Run the nightly job to regenerate JSON after merging this patch; prior results retain old diagnostic fields.
+
+Validation: node phase2-valuation-audit-test.js; node model-smoke-test.js (both passed).
