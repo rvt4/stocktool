@@ -581,7 +581,10 @@ function robustOutcomeBlend(methods,price,consensus=null){
   const capped=normalizeWithCaps(adjusted,methodCap,familyCap);
   const totalW=capped.reduce((s,x)=>s+x.w,0);
   if(!(totalW>0))return {outcome:null,weights:{}};
-  const outcome=capped.reduce((s,x)=>s+x.outcome*x.w,0)/totalW;
+  // Blend in log value space: a 4x optimistic method must not overpower a
+  // 0.25x pessimistic method merely because arithmetic averaging rewards upside.
+  // This is symmetric for proportional valuation errors and reduces tail inflation.
+  const outcome=Math.exp(capped.reduce((s,x)=>s+Math.log(x.outcome)*x.w,0)/totalW);
   return {outcome,weights:Object.fromEntries(capped.map(x=>[x.name,x.w/totalW]))};
 }
 
