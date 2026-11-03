@@ -300,6 +300,12 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   pullAnnual('PaymentsForCapitalImprovements', 'capex');
   pullAnnual('PaymentsToAcquireOtherPropertyPlantAndEquipment', 'capex');
   pullAnnual('PaymentsToAcquirePropertyPlantAndEquipment', 'capex');
+  // Build 29: oil & gas producers (MTDR, etc.) report drilling/completion spend under
+  // E&P-specific tags, so FCF was computed as CFO minus ~0 capex (62% FCF margin). Take the
+  // LARGEST available fact for each year so a partial tag can never understate capex.
+  pullAnnual('PaymentsToAcquireOilAndGasPropertyAndEquipment', 'capex', { preferLargest: true });
+  pullAnnual('PaymentsToExploreAndDevelopOilAndGasProperties', 'capex', { preferLargest: true });
+  pullAnnual('PaymentsToAcquireProductiveAssets', 'capex', { preferLargest: true });
   pullAnnual('CommonStockDividendsPerShareDeclared', 'dividendPerShare');
   pullAnnual('CommonStockSharesOutstanding', 'sharesOutTTM'); // cover-page fallback, noisy
   // Diluted weighted-average share count (income statement denominator) is a much

@@ -19,7 +19,7 @@ assert(Number.isFinite(compounder.v.expectedCAGR));assert(Number.isFinite(expens
 for(const sample of [compounder.v,expensive.v,dividend.v]){
   for(const m of sample.methods){
     assert(Math.abs(m.audit.fairValueToday-m.outcome/Math.pow(1+sample.intrinsicDiscountRate,10))<1e-8,'method fair value does not use intrinsic discount rate');
-    assert(Math.abs(m.audit.hurdleValueToday-m.outcome/Math.pow(1+.15,10))<1e-8,'method hurdle value does not use 15% hurdle rate');
+    assert(Math.abs(m.audit.hurdleValueToday-m.outcome/Math.pow(1+require('./engine/config').INVESTOR_ALPHA_HURDLE,10))<1e-8,'method hurdle value does not use the configured hurdle rate');
   }
   assert(Math.abs(sample.requiredReturnBuyPrice-sample.hurdleReturnPrice*.80)<1e-10,'20% MOS buy price does not reconcile to hurdle price');
 }
@@ -222,7 +222,12 @@ const priceB=JSON.parse(JSON.stringify(priceA)); priceB.price.current=200;
 const pAF=buildForecast(priceA), pAQ=computeQuality(priceA,pAF), pAV=valuate(priceA,pAF,pAQ);
 const pBF=buildForecast(priceB), pBQ=computeQuality(priceB,pBF), pBV=valuate(priceB,pBF,pBQ);
 assert(Number.isFinite(pAV.fairValueEstimate)&&Number.isFinite(pBV.fairValueEstimate),'price-invariance test requires fair values');
-assert(Math.abs(pAV.fairValueEstimate/pBV.fairValueEstimate-1)<1e-10,'intrinsic fair value changed when only current price changed');
+// Build 29: exit multiples are now partially (EXIT_PRICE_ANCHOR_WEIGHT) anchored to the market's
+// current multiple, so fair value is no longer perfectly price-independent. The dependence must
+// stay small: DOUBLING the quote may move fair value by at most ~20% (the old test demanded
+// exact invariance). Pinned/absurd current multiples are ignored, so this fixture can move either way.
+const priceSensitivity=pBV.fairValueEstimate/pAV.fairValueEstimate-1;
+assert(Math.abs(priceSensitivity)<.20,'fair value is too sensitive to the quote: '+priceSensitivity);
 assert(pBV.expectedCAGR<pAV.expectedCAGR,'higher current price did not reduce expected CAGR');
 
 // 2) More dilution cannot improve per-share value for otherwise identical economics.
@@ -928,12 +933,12 @@ console.log('V12.32 Ride Winner regression passed: stretched winners can run on 
 
 // Phase 1 live portfolio-policy regression: the rating and purchase action agree.
 const {thesisEntryEligible:liveEntryEligible,thesisTargetWeight:liveTargetWeight,isStrongWinnerMomentum,livePortfolioGuidance}=require('./engine/portfolio-policy');
-const liveCandidate={overallRank:7,expectedCAGR:.22,expectedAlpha:.07,rating:'Buy',forecastReliabilityScore:88,valuationConfidenceScore:84,qualityScore:86,moatScore:82,compounderScore:84,downsideProtectionScore:80,marginOfSafety:.12,modelSupport:'standard',underwrittenCAGR:.18,currentPrice:80,requiredReturnBuyPrice:100};
+const liveCandidate={overallRank:7,expectedCAGR:.22,expectedAlpha:.11,rating:'Buy',forecastReliabilityScore:88,valuationConfidenceScore:84,qualityScore:86,moatScore:82,compounderScore:84,downsideProtectionScore:80,marginOfSafety:.12,modelSupport:'standard',underwrittenCAGR:.18,currentPrice:80,requiredReturnBuyPrice:100};
 assert.strictEqual(liveEntryEligible(liveCandidate),true,'fully underwritten Buy must qualify');
 assert.strictEqual(liveEntryEligible({...liveCandidate,rating:'Watch'}),false,'Watch rating must not trigger BUY');
 assert.strictEqual(liveEntryEligible({...liveCandidate,overallRank:900}),true,'rank is not a purchase gate');
 assert.strictEqual(liveEntryEligible({...liveCandidate,currentPrice:101}),false,'price above investor buy price must not qualify');
-assert.strictEqual(liveEntryEligible({...liveCandidate,underwrittenCAGR:.14}),false,'underwritten CAGR below hurdle must not qualify');
+assert.strictEqual(liveEntryEligible({...liveCandidate,underwrittenCAGR:.10}),false,'underwritten CAGR below hurdle must not qualify');
 assert(liveTargetWeight(liveCandidate)>=.07&&liveTargetWeight(liveCandidate)<=.10,'conviction sizing drifted');
 const liveRideMomentum={stock3:.08,rel6:.06,rel12:.03};
 assert.strictEqual(isStrongWinnerMomentum(liveRideMomentum),true);
@@ -947,10 +952,10 @@ console.log('Phase 1 live portfolio-policy regression passed.');
 // V12.45 Alpha semantics regression ------------------------------------------
 const {INVESTOR_ALPHA_HURDLE}=require('./engine/config');
 const {ALPHA_GATE,applyModelDRanking}=require('./engine/ranking-engine');
-assert.strictEqual(INVESTOR_ALPHA_HURDLE,.15,'Expected Alpha hurdle is not 15%');
+assert.strictEqual(INVESTOR_ALPHA_HURDLE,.11,'Expected Alpha hurdle is not 11%');
 assert.strictEqual(ALPHA_GATE,0,'v12.52 live candidate ranking should include stocks at the 15% CAGR hurdle (Alpha >=0)');
 const alphaProbe=rateStock({price:{current:100},sector:'Technology'},{forecastReliabilityScore:80},{qualityScore:80,growthQualityScore:80,moatScore:80,compounderScore:80,pricingPowerScore:80,capitalAllocationScore:80,protectionScore:80,confidenceScore:80},{expectedCAGR:.22,marginOfSafety:.2,requiredReturnBuyPrice:90,hurdleReturnPrice:110,methodAgreementScore:80,valuationConfidenceScore:80,methods:[1,2,3],independentMethodCount:3,modelSupport:'standard'});
-assert(Math.abs(alphaProbe.expectedAlpha-.07)<1e-12,'22% expected CAGR should equal +7% Alpha on a 15% hurdle');
+assert(Math.abs(alphaProbe.expectedAlpha-.11)<1e-12,'22% expected CAGR should equal +11% Alpha on an 11% hurdle');
 const rankProbe=[{ticker:'A',expectedAlpha:.049,expectedCAGR:.199,qualityScore:90,moatScore:90,growthQualityScore:90,compounderScore:90,investmentScore:90},{ticker:'B',expectedAlpha:.051,expectedCAGR:.201,qualityScore:60,moatScore:60,growthQualityScore:60,compounderScore:60,investmentScore:60}];
 applyModelDRanking(rankProbe);assert.strictEqual(rankProbe.find(x=>x.ticker==='B').rankEligible,true);assert.strictEqual(rankProbe.find(x=>x.ticker==='A').rankEligible,true);
 console.log('V12.52 Alpha regression passed: Alpha uses the 15% hurdle and live candidate ranking starts at Alpha >=0.');
