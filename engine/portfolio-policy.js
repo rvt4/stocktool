@@ -1,11 +1,12 @@
 'use strict';
+const { INVESTOR_ALPHA_HURDLE } = require('./config');
 
 function finite(v){const n=Number(v);return Number.isFinite(n)?n:null;}
 function mean(xs){return xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null;}
 function clamp(v,lo=0,hi=1){return Math.max(lo,Math.min(hi,v));}
 
 
-// v12.52: 15% is the investor return hurdle. Margin of safety is separate and
+// v12.52: the investor return hurdle (config.INVESTOR_ALPHA_HURDLE, now 11%). Margin of safety is separate and
 // scales with uncertainty. Very uncertain but still supported businesses are no
 // longer vetoed outright; they must clear a substantially larger valuation cushion.
 function isValuationBuyRating(rating){
@@ -36,7 +37,7 @@ function dynamicMosProfile(r){
 }
 // Single source of truth: rating-engine owns investment underwriting.
 // Rank is a research ordering, never a purchase eligibility criterion.
-function thesisEntryEligible(r,{minExpectedCAGR=.15,minAlpha=0}={}){
+function thesisEntryEligible(r,{minExpectedCAGR=INVESTOR_ALPHA_HURDLE,minAlpha=0}={}){
   const c=finite(r?.expectedCAGR??r?.expectedReturn);
   const alpha=finite(r?.expectedAlpha);
   const price=finite(r?.currentPrice);
@@ -70,7 +71,7 @@ function isStrongWinnerMomentum(momentum){
   return stock3!=null&&stock3>0&&rel6!=null&&rel6>0&&rel12!=null&&rel12>0&&(rel6>=.05||rel12>=.05);
 }
 
-function livePortfolioGuidance(r,momentum,{minExpectedCAGR=.15,sellExpectedCAGR=.06,maxInitialWeight=.10}={}){
+function livePortfolioGuidance(r,momentum,{minExpectedCAGR=INVESTOR_ALPHA_HURDLE,sellExpectedCAGR=.06,maxInitialWeight=.10}={}){
   const c=finite(r?.expectedCAGR??r?.expectedReturn);
   const forecast=finite(r?.forecastConfidence??r?.forecastReliabilityScore??r?.forecastConfidenceScore);
   const supported=String(r?.modelSupport||'')!=='unsupported';

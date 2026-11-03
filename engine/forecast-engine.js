@@ -1,5 +1,5 @@
 'use strict';
-const { HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, sectorConfig, clamp, rate, median, avg } = require('./config');
+const { HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, TERMINAL_GROWTH_CAP, sectorConfig, clamp, rate, median, avg } = require('./config');
 
 function cagr(a,b,n){ if(!(a>0)||!(b>0)||!(n>0))return null; return Math.pow(b/a,1/n)-1; }
 function yoySeries(years,field){const out=[];for(let i=1;i<years.length;i++){const a=Number(years[i-1]?.[field]),b=Number(years[i]?.[field]);if(a>0&&Number.isFinite(b))out.push(b/a-1);}return out;}
@@ -122,7 +122,7 @@ function buildGrowthForecast(stock,years,cfg){
   const qualityHint=clamp((roic!=null?clamp(roic/.22,0,1):.45)*.55+(fcfM>0?.45:.15),0,1)||.5;
   const scale=Math.max(0,finite(last.revenue)||0);
   const scalePenalty=scale>100e9?.010:scale>30e9?.006:scale>10e9?.003:0;
-  const matureGrowth=clamp(cfg.terminalGrowth+(qualityHint-.5)*.012-scalePenalty,.012,.055);
+  const matureGrowth=clamp(cfg.terminalGrowth+(qualityHint-.5)*.012-scalePenalty,.012,TERMINAL_GROWTH_CAP);
 
   // IMPORTANT: terminalGrowth is a steady-state valuation assumption, not the growth
   // rate a healthy company must reach by year 5. The old model forced year-5 growth

@@ -1,6 +1,7 @@
 'use strict';
 const { clamp, INVESTOR_ALPHA_HURDLE }=require('./config');
 
+const H=INVESTOR_ALPHA_HURDLE; // single source of truth for all return tiers
 function requiredMOS(){return .20;}
 
 function rateStock(stock,forecast,quality,v){
@@ -21,11 +22,11 @@ function rateStock(stock,forecast,quality,v){
   let rating='Unrated';
   if(!Number.isFinite(c)||!Number.isFinite(mos)) rating='Unrated';
   else if(c<0) rating='Sell';
-  else if(c<.08) rating='Avoid';
-  else if(meetsFinalBuyPrice&&c>=.18&&q>=82&&conf>=75&&agreement>=68&&independent>=3&&forecastConf>=68) rating='Exceptional Buy';
-  else if(meetsFinalBuyPrice&&c>=.15&&q>=72&&conf>=65&&agreement>=55&&independent>=2&&forecastConf>=60) rating='Strong Buy';
-  else if(meetsFinalBuyPrice&&c>=.15&&q>=58&&conf>=55&&forecastConf>=52) rating='Buy';
-  else if((c>=.15||meetsHurdlePrice)&&mos>0) rating='Watch';
+  else if(c<Math.min(.08,H-.03)) rating='Avoid';
+  else if(meetsFinalBuyPrice&&c>=H+.03&&q>=82&&conf>=75&&agreement>=68&&independent>=3&&forecastConf>=68) rating='Exceptional Buy';
+  else if(meetsFinalBuyPrice&&c>=H&&q>=72&&conf>=65&&agreement>=55&&independent>=2&&forecastConf>=60) rating='Strong Buy';
+  else if(meetsFinalBuyPrice&&c>=H&&q>=58&&conf>=55&&forecastConf>=52) rating='Buy';
+  else if((c>=H||meetsHurdlePrice)&&mos>0) rating='Watch';
   else rating='Hold';
 
   // Trust guardrails remain recommendation gates. They intentionally do not become
@@ -33,7 +34,7 @@ function rateStock(stock,forecast,quality,v){
   // is most useful after an attractive expected-return opportunity already exists.
   if(v.modelSupport==='unsupported') rating='Unrated';
   // A Buy must survive the same stressed scenario used for the investor entry price.
-  if(['Buy','Strong Buy','Exceptional Buy'].includes(rating)&&underwritingCAGR<.15) rating='Watch';
+  if(['Buy','Strong Buy','Exceptional Buy'].includes(rating)&&underwritingCAGR<H) rating='Watch';
   if(['Strong Buy','Exceptional Buy'].includes(rating)&&underwritingFlags.length>=2) rating='Buy';
   if(v.modelSupport==='limited'&&['Buy','Strong Buy','Exceptional Buy'].includes(rating)) rating='Watch';
   if(forecastConf<45&&['Buy','Strong Buy','Exceptional Buy'].includes(rating)) rating='Watch';
@@ -44,12 +45,14 @@ function rateStock(stock,forecast,quality,v){
   // Methods are correlated (they share the same operating forecast), so agreement
   // alone cannot substitute for this downside sensitivity check.
   const stressedCAGR=v.multipleSensitivity?.down20CAGR;
-  if(['Exceptional Buy','Strong Buy'].includes(rating)&&Number.isFinite(stressedCAGR)&&stressedCAGR<.15) rating='Buy';
-  if(rating==='Buy'&&Number.isFinite(stressedCAGR)&&stressedCAGR<.10) rating='Watch';
+  if(['Exceptional Buy','Strong Buy'].includes(rating)&&Number.isFinite(stressedCAGR)&&stressedCAGR<H) rating='Buy';
+  if(rating==='Buy'&&Number.isFinite(stressedCAGR)&&stressedCAGR<H-.05) rating='Watch';
   // Extraordinary modeled returns warrant independent assumption review even when
   // their algebra is internally consistent.
   if(v.extremeReturnFlag&&Number.isFinite(c)&&c>.22&&forecastConf<70&&['Buy','Strong Buy','Exceptional Buy'].includes(rating)) rating='Watch';
 
+  // Build 29: a Buy cannot rest on a fair value the market's own analysts put at less than half.
+  if(v.analystCheck?.divergence==='model_far_above_analysts'&&['Buy','Strong Buy','Exceptional Buy'].includes(rating)) rating='Watch';
   // A large implied re-rating is not independent confirmation from three methods:
   // all methods share the same operating forecast and related exit assumptions.
   // Keep such names researchable, but do not label them decision-ready Buys.
@@ -63,7 +66,7 @@ function rateStock(stock,forecast,quality,v){
   //    readiness add context without allowing a wonderful-but-expensive company to win.
   const returnScore=Number.isFinite(underwritingCAGR)?clamp((underwritingCAGR-.04)/.20,0,1)*100:0; // 4% -> 0, 24% -> 100
   const mosScore=Number.isFinite(mos)?clamp(mos/.35,0,1)*100:0;
-  const entryScore=meetsFinalBuyPrice?100:meetsHurdlePrice?70:(Number.isFinite(c)&&c>=.15&&mos>0?45:15);
+  const entryScore=meetsFinalBuyPrice?100:meetsHurdlePrice?70:(Number.isFinite(c)&&c>=H&&mos>0?45:15);
   const opportunityScore=.78*returnScore+.17*mosScore+.05*entryScore;
 
   // 2) Business quality differentiates genuinely attractive opportunities. The weights

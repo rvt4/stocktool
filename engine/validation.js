@@ -1,6 +1,6 @@
 'use strict';
-const { HORIZON_YEARS } = require('./config');
-const INVESTOR_HURDLE_RETURN=.15, INVESTOR_MARGIN_OF_SAFETY=.20;
+const { HORIZON_YEARS, INVESTOR_ALPHA_HURDLE } = require('./config');
+const INVESTOR_HURDLE_RETURN=INVESTOR_ALPHA_HURDLE, INVESTOR_MARGIN_OF_SAFETY=.20;
 function near(a,b,tol=0.0005){return Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a-b)<=tol;}
 function validateStock(s){
   const issues=[]; const p=Number(s.currentPrice), fut=Number(s.totalShareholderValue), c=Number(s.expectedReturn);
