@@ -26,8 +26,23 @@ const TERMINAL_GROWTH_CAP = 0.03;
 // Weight placed on the market's CURRENT multiple when setting the year-10 exit multiple.
 // 0 reproduces the old purely fundamental (price-independent) behavior.
 const EXIT_PRICE_ANCHOR_WEIGHT = 0.35;
+// Consensus cross-check (valuation-engine): max log-space weight on the analyst-implied value (0 disables),
+// and the band, as a multiple of the analyst-implied value, the blended value must stay inside.
+const ANALYST_BLEND_MAX_WEIGHT = 0.35;
+const ANALYST_BLEND_RANGE = [0.45, 2.2];
 // Retained only for legacy diagnostics that explicitly need a generic market-return assumption.
 const MARKET_RETURN = 0.10;
+
+// Banks, lenders, insurers (SIC 60xx/61xx/63xx) and mortgage REITs (Financials + SIC 6798): FCF/EBITDA
+// are not owner economics, so every stage (forecast, quality, valuation) must agree they are
+// financial. Detecting this in only one stage produced null valuations.
+function isStructuralFinancial(stock) {
+  const sic = String(stock?.sic || '');
+  return /^(60|61|63)\d\d$/.test(sic) || (stock?.sector === 'Financials' && sic === '6798');
+}
+function isFinancialLike(stock) {
+  return stock?.financials?.dataQuality?.financialLikeRevenue === true || isStructuralFinancial(stock);
+}
 
 function sectorConfig(sector) {
   return SECTOR[sector] || SECTOR.Unknown;
@@ -56,4 +71,4 @@ function avg(values) {
   return a.length ? a.reduce((s, v) => s + v, 0) / a.length : null;
 }
 
-module.exports = { SECTOR, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, MARKET_RETURN, sectorConfig, clamp, rate, median, avg };
+module.exports = { SECTOR, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, MARKET_RETURN, isStructuralFinancial, isFinancialLike, sectorConfig, clamp, rate, median, avg };
