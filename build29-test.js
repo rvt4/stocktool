@@ -60,4 +60,18 @@ const probeV={expectedCAGR:.25,underwrittenCAGR:.20,marginOfSafety:.5,requiredRe
 const q={qualityScore:85,confidenceScore:85,growthQualityScore:80,moatScore:80,compounderScore:80,pricingPowerScore:80,capitalAllocationScore:80,protectionScore:80};
 assert.strictEqual(rateStock({price:{current:100},sector:'Technology'},{forecastReliabilityScore:85},q,probeV).rating,'Watch');
 assert.notStrictEqual(rateStock({price:{current:100},sector:'Technology'},{forecastReliabilityScore:85},q,{...probeV,analystCheck:null}).rating,'Watch');
+// 9) return-cap path (slow-growth value name with an implausible implied return, e.g. HXL) must keep
+// bear <= base <= bull, or run-screener's validation aborts the whole nightly run.
+{
+  const {validateStock}=require('./engine/validation');
+  const mk=price=>{const s=stock({ticker:'CAPPED',sector:'Industrials',price,growth:.025,margin:.18,roic:.15});for(const y of s.financials.years)y.dividendPerShare=.10;return s;};
+  let sawCap=false;
+  for(const price of [33,36,40,45,50,60,70,100]){
+    const {v}=run(mk(price));
+    if(v.returnCapApplied){sawCap=true;assert.strictEqual(v.modelSupport,'limited');}
+    if(Number.isFinite(v.bearCAGR)&&Number.isFinite(v.baseCAGR)) assert(v.bearCAGR<=v.baseCAGR+1e-9,'bear above base at price '+price);
+    if(Number.isFinite(v.bullCAGR)&&Number.isFinite(v.baseCAGR)) assert(v.bullCAGR>=v.baseCAGR-1e-9,'bull below base at price '+price);
+  }
+  assert(sawCap,'fixture no longer exercises the return-cap path');
+}
 console.log('Build 29 regression passed.');
