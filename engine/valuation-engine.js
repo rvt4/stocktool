@@ -1055,9 +1055,11 @@ function valuate(stock,forecast,quality){
   // to 'limited' model support instead (limited support cannot reach Buy). Only reject outright
   // when the claimed return is absurd (> ceiling + 12 points), which indicates bad input data.
   const returnCapApplied=returnDecompositionFailure&&Number.isFinite(expected)&&expected<=returnSupportCeiling+.12&&price>0;
+  let returnCapScale=1;
   if(returnCapApplied){
-    const cappedCAGR=returnSupportCeiling+.015;
+    const cappedCAGR=returnSupportCeiling+.015, uncappedTotal=total;
     total=price*Math.pow(1+cappedCAGR,HORIZON_YEARS); expected=cappedCAGR;
+    returnCapScale=total/uncappedTotal; // applied to bear/bull below so scenarios stay ordered around the capped base
   }
   let hasValuation=Number.isFinite(expected)&&methods.length>0&&Number.isFinite(total)&&total>0&&(!returnDecompositionFailure||returnCapApplied);
   if(!hasValuation){total=null;expected=null;}
@@ -1173,8 +1175,11 @@ function valuate(stock,forecast,quality){
 
   const uncertainty=clamp((100-valuationConfidence)/100+(cyclicalBusiness?.08:0),.10,.55);
   const economicScenarios=total!=null?economicScenarioOutcomes(methods,forecast,price,terminalDividendValue,uncertainty):null;
-  const bear=economicScenarios?.bear?.outcome??null;
-  const bull=economicScenarios?.bull?.outcome??null;
+  // Scenarios are built from the uncapped methods, so scale them with any return cap and keep
+  // bear <= base <= bull (validation.js rejects bear_above_base / bull_below_base).
+  const bearRaw=economicScenarios?.bear?.outcome, bullRaw=economicScenarios?.bull?.outcome;
+  const bear=Number.isFinite(bearRaw)&&Number.isFinite(total)?Math.min(bearRaw*returnCapScale,total):(bearRaw??null);
+  const bull=Number.isFinite(bullRaw)&&Number.isFinite(total)?Math.max(bullRaw*returnCapScale,total):(bullRaw??null);
   const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
   const lowReliability=methods.length>0&&Math.max(...methods.map(m=>m.reliability??0))<.40;
 
