@@ -39,6 +39,13 @@ assert(mreit.v.methods.every(m=>/EPS exit|Book|Residual/.test(m.name)),'mortgage
 const exch=run(stock({ticker:'EXCH',sector:'Financials',sic:'6200',growth:.08,margin:.35}));
 assert(exch.v.methods.some(m=>/FCF exit|DCF/.test(m.name)),'exchanges should keep the operating-company path');
 
+// 4b) the financial route must PRODUCE a valuation (regression: SIC-routed insurers were Unrated because the
+// archetype weights were not financial)
+for(const [sic,sector] of [['6324','Healthcare'],['6331','Financials'],['6022','Financials']]){
+  const r=run(stock({ticker:'FV'+sic,sector,sic,growth:.06,margin:.12}));
+  assert(Number.isFinite(r.v.expectedCAGR)&&Number.isFinite(r.v.fairValueEstimate),sic+' financial route produced no valuation');
+}
+
 // 5) price anchoring is bounded: a stock priced at 3x moves fair value by < 20%, and higher price never raises CAGR
 const lo=run(stock({ticker:'LO',price:100})), hi=run(stock({ticker:'HI',price:300}));
 assert(Math.abs(hi.v.fairValueEstimate/lo.v.fairValueEstimate-1)<.20,'price anchoring moved fair value too much');
@@ -73,5 +80,30 @@ assert.notStrictEqual(rateStock({price:{current:100},sector:'Technology'},{forec
     if(Number.isFinite(v.bullCAGR)&&Number.isFinite(v.baseCAGR)) assert(v.bullCAGR>=v.baseCAGR-1e-9,'bull below base at price '+price);
   }
   assert(sawCap,'fixture no longer exercises the return-cap path');
+}
+// ---- Build 30 ----
+// 10) SBC is counted once in the EPS lens: dilutive SBC payers get an add-back, buyback-offset payers do not.
+{
+  const mk=(dilution)=>{const t=stock({ticker:'SBC'+dilution,price:100,growth:.18,margin:.25,roic:.25,dilution});for(const y of t.financials.years){y.sbcIntensity=.15;y.sbc=y.revenue*.15;}return t;};
+  const dil=run(mk(.03)), buy=run(mk(-.02));
+  const e1=dil.v.methods.find(m=>m.name==='EPS exit')?.audit, e2=buy.v.methods.find(m=>m.name==='EPS exit')?.audit;
+  assert(e1&&e1.sbcAddBackFraction>0&&e1.metric>e1.reportedYear10EPS,'dilutive SBC payer got no EPS add-back');
+  assert(e2&&e2.sbcAddBackFraction===0&&Math.abs(e2.metric-e2.reportedYear10EPS)<1e-9,'buyback-offset SBC payer must not get an add-back');
+}
+// 11) analyst cross-check: pulls toward consensus, stays bounded, keeps the pre-blend value, needs >=5 analysts
+{
+  const base=run(stock({ticker:'AB0',price:100,growth:.12,margin:.22}));
+  const withT=(target,n=25,lo,hi)=>{const t=stock({ticker:'AB'+target,price:100,growth:.12,margin:.22});Object.assign(t.analystEstimates,{analystTargetMean:target,numAnalysts:n,analystTargetLow:lo??target*.8,analystTargetHigh:hi??target*1.2});return run(t);};
+  const hiT=withT(base.v.fairValueEstimate*6), loT=withT(base.v.fairValueEstimate/6), thin=withT(base.v.fairValueEstimate*6,3);
+  assert(hiT.v.fairValueEstimate>base.v.fairValueEstimate,'high consensus did not raise fair value');
+  assert(loT.v.fairValueEstimate<base.v.fairValueEstimate,'low consensus did not lower fair value');
+  const thinBaseStock=stock({ticker:'AB0',price:100,growth:.12,margin:.22}); thinBaseStock.analystEstimates.numAnalysts=3;
+  const thinBase=run(thinBaseStock);   // numAnalysts also feeds the forecast, so compare like with like
+  assert(Math.abs(thin.v.fairValueEstimate/thinBase.v.fairValueEstimate-1)<1e-9,'<5 analysts must not move fair value');
+  assert(hiT.v.analystCheck.modelFairValue>0&&Math.abs(hiT.v.analystCheck.modelFairValue/base.v.fairValueEstimate-1)<1e-9,'pre-blend model value not preserved');
+  const implied=hiT.v.analystCheck.target/(1+hiT.v.intrinsicDiscountRate);
+  assert(hiT.v.fairValueEstimate/implied<=2.2+1e-9&&loT.v.fairValueEstimate/(loT.v.analystCheck.target/(1+loT.v.intrinsicDiscountRate))>=.45-1e-9,'blend left the allowed band');
+  for(const r of [hiT,loT]){ if(Number.isFinite(r.v.bearCAGR)){assert(r.v.bearCAGR<=r.v.baseCAGR+1e-9&&r.v.bullCAGR>=r.v.baseCAGR-1e-9,'scenarios out of order after blend');}
+    assert(require('./engine/validation').validateStock({ticker:'X',currentPrice:100,totalShareholderValue:r.v.totalShareholderValue,expectedReturn:r.v.expectedCAGR,fairValueEstimate:r.v.fairValueEstimate,intrinsicDiscountRate:r.v.intrinsicDiscountRate,marginOfSafety:r.v.marginOfSafety,rating:'Hold'}).length===0,'blended record fails reconciliation'); }
 }
 console.log('Build 29 regression passed.');

@@ -27,3 +27,16 @@ Changes
 
 Run: node build29-test.js && node model-smoke-test.js (plus the other *-test.js), then nightly.
 NOT validated against live data: regenerate data/results.json and re-check the sanity basket.
+
+Build 30
+1. SBC double-count: the EPS lens added back after-tax SBC in proportion to net dilution (>=2%/yr dilution =>
+   100%, net buybacks => 0). Audit fields: sbcAddBackFraction, reportedYear10EPS. (CRWD EPS lens was $12/share.)
+2. Consensus cross-check: model intrinsic value is pulled in log space toward the analyst-implied value
+   (weight <=35%, scaled by analyst count, cut 40% when targets are widely dispersed) and kept inside
+   0.45x-2.2x of it. analystCheck.modelFairValue keeps the pre-blend value and drives the 'model far above
+   analysts' Buy guard. Set ANALYST_BLEND_MAX_WEIGHT=0 in engine/config.js to disable.
+   Offline simulation on results (18): rank correlation with analyst targets 0.05 -> 0.20; FV/price 5th-95th
+   percentile 0.19-1.67 (full range 0.01-6.5) -> 0.47-1.55 (0.25-3.05).
+3. Data: 20-F/40-F annual facts (US-GAAP tags) accepted; tickers with <2 usable years now log a [diag] line
+   (entity, CIK, us-gaap vs ifrs tag counts, annual forms per tag). WBD, EA, AVB, EQR, WBS, QRVO, LBRDK/A
+   have no SEC ticker (acquired/delisted): drop them from watchlist.json. OZK files with the FDIC, not the SEC.

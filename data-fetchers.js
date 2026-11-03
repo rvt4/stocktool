@@ -203,7 +203,9 @@ function parseAnnualFinancials(facts, maxYears = 10) {
     // some use an amendment form. Accept annual-duration 10-K/10-K/A facts and keep
     // the most recently filed fact for each fiscal year.
     const candidates = arr
-      .filter(x => (x.form === '10-K' || x.form === '10-K/A') && x.val != null)
+      // Build 30: also accept foreign-private-issuer annual reports that use US-GAAP tags (20-F/40-F);
+      // IFRS-taxonomy filers still return nothing and are reported by the [diag] line below.
+      .filter(x => ['10-K', '10-K/A', '20-F', '20-F/A', '40-F', '40-F/A'].includes(x.form) && x.val != null)
       .filter(x => {
         if (!x.start || !x.end) return x.fp === 'FY';
         const days = (new Date(x.end) - new Date(x.start)) / 86400000;
@@ -901,6 +903,20 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   ]);
 
   const years = parseAnnualFinancials(facts);
+  if (years.length < 2) {
+    // Self-diagnosing nightly log: says WHY a ticker produced no usable years (IFRS filer, no annual
+    // forms, missing tags, truncated payload) instead of just "0 usable annual years".
+    try {
+      const gaap = facts?.facts?.['us-gaap'] || {};
+      const forms = {};
+      for (const t of ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'SalesRevenueNet', 'NetIncomeLoss', 'NetCashProvidedByUsedInOperatingActivities']) {
+        const u = gaap[t]?.units;
+        const arr = u ? (u.USD || Object.values(u)[0] || []) : [];
+        forms[t] = arr.reduce((m, x) => { m[x.form] = (m[x.form] || 0) + 1; return m; }, {});
+      }
+      console.log(`[diag ${secTicker}] entity=${facts?.entityName} cik=${facts?.cik} topLevelKeys=${Object.keys(facts || {}).join(',')} usGaapTags=${Object.keys(gaap).length} ifrsTags=${Object.keys(facts?.facts?.['ifrs-full'] || {}).length} annualFormsByTag=${JSON.stringify(forms)}`);
+    } catch (e) { console.log(`[diag ${secTicker}] diagnostics failed: ${e.message}`); }
+  }
   const quarters = parseQuarterlyRevenue(facts);
   // Normalize stock splits/reverse splits BEFORE any market-cap, dilution or per-share
   // calculations. The latest 10-Q can be on a new share basis while the last 10-K is not.
