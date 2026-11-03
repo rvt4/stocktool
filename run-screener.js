@@ -14,6 +14,7 @@ const { buildStockRecord, fetchBacktestHistory } = require('./data-fetchers');
 const { buildForecast } = require('./engine/forecast-engine');
 const { computeQuality } = require('./engine/quality-engine');
 const { valuate } = require('./engine/valuation-engine');
+const { crosscheck } = require('./engine/economic-crosscheck');
 const { rateStock } = require('./engine/rating-engine');
 const { validateUniverse } = require('./engine/validation');
 const { writeProspectiveSnapshot } = require('./engine/history-snapshot');
@@ -224,7 +225,14 @@ async function run(){
   const stocks=[];
   for(const stock of records){
     const forecast=buildForecast(stock); const quality=computeQuality(stock,forecast); const valuation=valuate(stock,forecast,quality); const decision=rateStock(stock,forecast,quality,valuation);
-    const rec=flattenRecord(stock,forecast,quality,valuation,decision); rec.momentum=liveMomentum(stock.priceHistory||[],spyHistory); stocks.push(rec);
+    const rec=flattenRecord(stock,forecast,quality,valuation,decision);
+    rec.economicCrosscheck=crosscheck(stock,forecast);
+    rec.economicCrosscheck.valueRatio=rec.economicCrosscheck.independentDCF>0&&valuation.fairValueEstimate>0?valuation.fairValueEstimate/rec.economicCrosscheck.independentDCF:null;
+    if(rec.economicCrosscheck.valueRatio>2 || rec.economicCrosscheck.valueRatio<0.5){
+      rec.economicCrosscheck.reasons.push('material_disagreement_with_independent_dcf');
+      rec.economicCrosscheck.status='review';
+    }
+    rec.momentum=liveMomentum(stock.priceHistory||[],spyHistory); stocks.push(rec);
   }
   rank(stocks);
   applyLivePortfolioPolicy(stocks);

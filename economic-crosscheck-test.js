@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {crosscheck}=require('./engine/economic-crosscheck');
+const rows=Array.from({length:10},(_,i)=>({fcfPerShare:2*(1.05**i),shares:100,revenue:1000*(1.05**(i+1)),operatingIncome:200*(1.05**(i+1))}));
+const stock={price:{current:50},financials:{years:[{revenue:900,operatingIncome:180,fcf:190},{revenue:1000,operatingIncome:200,fcf:200}]}};
+const f={rows,startShares:100,terminalGrowth:.02};
+const base=crosscheck(stock,f);
+assert(base.independentDCF>0);
+const cheap=crosscheck({...stock,price:{current:25}},f);
+assert.equal(cheap.independentDCF,base.independentDCF,'Intrinsic value must be price-independent');
+assert(cheap.comparisonCAGR>base.comparisonCAGR);
+const stronger=crosscheck(stock,{...f,rows:rows.map(r=>({...r,fcfPerShare:r.fcfPerShare*1.2}))});
+assert(stronger.independentDCF>base.independentDCF);
+const missing=crosscheck(stock,{...f,rows:rows.map((r,i)=>i===4?{...r,fcfPerShare:null}:r)});
+assert.equal(missing.independentDCF,null,'Missing cash flow must fail closed');
+console.log('Economic cross-check invariants passed');

@@ -1,10 +1,14 @@
-Upload the five files to the repository root, replacing app.js, index.html, style.css, and .github/workflows/nightly.yml; add fetch_history.py at the root.
-IMPORTANT: nightly.yml goes in .github/workflows/, NOT the root. The other four files go at the root.
+Build 27 — independent economic valuation cross-check (first rebuild stage)
 
-The next nightly run generates SEC financial history for up to 100 companies; additional companies populate over subsequent runs. This is intentional to avoid flooding SEC with 1000+ requests. Existing data/results.json remains unchanged.
+Replace run-screener.js and add engine/economic-crosscheck.js and economic-crosscheck-test.js.
+Run node economic-crosscheck-test.js and node model-smoke-test.js, then nightly.
 
-SEC_USER_AGENT should be configured in GitHub Actions secrets as a descriptive app/contact identifier. GitHub Pages must publish data/history/*.json for history to appear. Missing tickers show an honest unavailable message.
+Each screener record gains economicCrosscheck: an independently computed FCF DCF,
+forecast growth, historical median operating margin, terminal margin, FCF/NOPAT,
+terminal value share, and discrepancy versus the production valuation.
 
-No Supabase schema changes needed. Saved projections continue to use existing Supabase tables.
-
-Notes: SEC Company Facts coverage and tags vary. Reported financials are not adjusted for acquisitions, divestitures, tax anomalies or other one-offs. The quarter extraction is conservative and missing metrics remain blank; compare against original filings before investing.
+IMPORTANT: This deliberately does NOT overwrite production valuations or buy
+recommendations. The existing FCF path is not yet independently verified and
+some companies (financials, REITs, negative-FCF companies) are not appropriate
+for this generic cross-check. We must inspect discrepancy data before making
+it authoritative. This is NOT a completed fix or validated replacement engine.
