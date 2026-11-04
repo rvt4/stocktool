@@ -1,5 +1,5 @@
 'use strict';
-const { HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, TERMINAL_GROWTH_CAP, sectorConfig, clamp, rate, median, avg } = require('./config');
+const { HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, TERMINAL_GROWTH_CAP, isFinancialLike, sectorConfig, clamp, rate, median, avg } = require('./config');
 
 function cagr(a,b,n){ if(!(a>0)||!(b>0)||!(n>0))return null; return Math.pow(b/a,1/n)-1; }
 function yoySeries(years,field){const out=[];for(let i=1;i<years.length;i++){const a=Number(years[i-1]?.[field]),b=Number(years[i]?.[field]);if(a>0&&Number.isFinite(b))out.push(b/a-1);}return out;}
@@ -54,7 +54,7 @@ function inferShareCount(stock,years){
 
 function classifyCategory(stock,growth,qualityHint,dividendYield){
   const sector=stock.sector||'Unknown';
-  const financialLike=stock.financials?.dataQuality?.financialLikeRevenue===true;
+  const financialLike=isFinancialLike(stock);
   // Category is descriptive, not a return override. High-yield payout vehicles should
   // not be mislabeled Growth merely because reported revenue is volatile (mortgage REITs
   // are the classic failure mode). A very high yield is therefore a strong category signal.
@@ -82,7 +82,12 @@ function buildGrowthForecast(stock,years,cfg){
   const analysts=Math.max(0,finite(a.numAnalysts)||0);
   // V12.5: explicit consensus should be the primary near-term underwriting input.
   // History is a cross-check, not a 25-55% drag on a well-covered inflecting business.
-  const analystWeight=clamp(0.62+Math.min(analysts,30)/120,0.62,0.87);
+  // Build 31: a single analyst's estimate (often acquisition-inflated, e.g. IESC +48% from n=1) used to get
+  // the same 62% weight as a 30-analyst consensus. Scale the weight with coverage: 1 analyst => 30%,
+  // 7+ analysts => the full consensus weight.
+  const coverage=clamp((analysts-1)/6,0,1);
+  const fullAnalystWeight=clamp(0.62+Math.min(analysts,30)/120,0.62,0.87);
+  const analystWeight=0.30+(fullAnalystWeight-0.30)*coverage;
   const analystWeightYear2=Math.min(.80,analystWeight+.05);
 
   // Detect a likely acquisition / divestiture / accounting step change. We keep the new
@@ -199,7 +204,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   // profitability first, translate it into EBITDA / net income / CFO using the company's
   // own historical relationships, and derive FCF as CFO minus capex. This avoids three
   // independent margin targets drifting into economically contradictory futures.
-  if(stock.financials?.dataQuality?.financialLikeRevenue===true) return {
+  if(isFinancialLike(stock)) return {
     rawFCF:null,rawEBITDA:null,rawNet:null,currentFCF:null,currentEBITDA:null,currentNet:null,
     targetFCF:null,targetEBITDA:null,targetNet:null,matureTargetFCF:null,matureTargetEBITDA:null,matureTargetNet:null,
     currentOperating:null,targetOperating:null,matureOperating:null,currentCFO:null,targetCFO:null,matureCFO:null,
