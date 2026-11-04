@@ -308,6 +308,9 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   pullAnnual('PaymentsToAcquireOilAndGasPropertyAndEquipment', 'capex', { preferLargest: true });
   pullAnnual('PaymentsToExploreAndDevelopOilAndGasProperties', 'capex', { preferLargest: true });
   pullAnnual('PaymentsToAcquireProductiveAssets', 'capex', { preferLargest: true });
+  // Build 40: many payers (KO, JNJ, HD, O...) tag only "cash paid", not "declared"; take paid first,
+  // let declared overwrite where present.
+  pullAnnual('CommonStockDividendsPerShareCashPaid', 'dividendPerShare');
   pullAnnual('CommonStockDividendsPerShareDeclared', 'dividendPerShare');
   pullAnnual('CommonStockSharesOutstanding', 'sharesOutTTM'); // cover-page fallback, noisy
   // Diluted weighted-average share count (income statement denominator) is a much
@@ -972,6 +975,14 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   }
 
 
+  // Build 40: last-resort dividend per share = common dividends paid / diluted shares, for filers
+  // that tag neither per-share fact. Without this their total return silently excluded dividends.
+  for (const y of years) {
+    if (!(Number(y.dividendPerShare) > 0) && Number(y.dividendsPaid) > 0 && Number(y.sharesOutTTM) > 0) {
+      y.dividendPerShare = Math.abs(Number(y.dividendsPaid)) / Number(y.sharesOutTTM);
+      y.dividendSource = 'cash_paid_divided_by_shares';
+    }
+  }
   const sharesOut = last.sharesOutTTM;
   const marketCap = currentPrice && sharesOut ? currentPrice * sharesOut : null;
   const eps = last.netIncome && sharesOut ? last.netIncome / sharesOut : null;

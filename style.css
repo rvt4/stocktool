@@ -67,3 +67,25 @@
 .path-table input{width:5.2em;min-width:5.2em;padding:4px 4px;font-size:.88em;box-sizing:border-box}
 .path-table th{font-size:.8em}
 .path-table td,.path-table th{white-space:nowrap}
+
+/* Build 39: history next to projections */
+.hist-row td{color:var(--muted,#8a9aaa);font-size:.9em}
+.hist-tag{font-size:.7em;border:1px solid currentColor;border-radius:999px;padding:0 5px;margin-left:4px}
+.proj-divider td{font-size:.72em;text-transform:uppercase;letter-spacing:.08em;color:#3a91ce;padding-top:8px;border-bottom:1px solid #3a91ce}
+.history-bar-item.projected .history-bar{background:transparent;border:1.5px dashed #3a91ce;border-bottom:none}
+.history-bar-item.projected .history-bar.negative-bar{border-color:#c86b6b}
+.history-divider{align-self:stretch;border-left:1px dashed var(--muted,#8a9aaa);margin:0 3px;min-height:120px}
+.lg{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 3px 0 8px;vertical-align:middle}
+.lg-hist{background:#3a91ce}.lg-proj{border:1.5px dashed #3a91ce}
+.history-chart .history-bar-item{min-width:15px}.history-chart{gap:3px}
+
+/* Build 40 */
+.start-inputs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.start-inputs .field{display:block}.start-inputs .history-hint{max-width:none}
+.path-shape-box{margin-bottom:8px}
+.start-inputs{grid-template-columns:repeat(2,minmax(0,1fr))}
+.start-inputs .field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.start-inputs .field>div{display:flex;flex-direction:column;gap:4px;min-width:0}
+.start-inputs label{font-size:.82rem}
+.start-inputs input{width:100%;box-sizing:border-box}
+.today-row td{font-weight:600;border-top:1px solid #35435a}
