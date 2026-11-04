@@ -31,3 +31,4 @@ const sim=L.simulateOwnerStrategy(snaps,hist,spy,{name:'x',sizing:'conviction',m
 for(const p of sim.periods)assert.ok(p.maxHoldingWeight<=RP.SIZING.trimAbove+1e-9,'post-review weight above trim line');
 assert.ok(sim.periods.every(p=>p.cashWeight>=-1e-9));
 console.log('owner-strategy-lab tests passed',JSON.stringify({C:+arm('C').portfolioCAGR.toFixed(3),A:+arm('A').portfolioCAGR.toFixed(3),U:+lab.benchmarks.equalWeightUniverse.portfolioCAGR.toFixed(3)}));
+{const f=L.entryFunnel(snaps);assert.strictEqual(f.byQuarter.length,snaps.length);assert.strictEqual(f.summary.plusQuality75.median,14);console.log('funnel ok');}

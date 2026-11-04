@@ -148,6 +148,23 @@ function compact(s){
   return o;
 }
 
+// How many names pass each entry gate per quarter. If almost nothing qualifies, the owner arms are
+// mostly SPY and say little about the model; this makes that visible instead of hiding it.
+function entryFunnel(snapshotOutput){
+  const per=[];
+  for(const snap of snapshotOutput||[]){
+    const rows=liveRankedRows(snap.rows);
+    const u=r=>finite(r.underwrittenCAGR??r.expectedCAGR),q=r=>finite(r.qualityScore);
+    const ret=rows.filter(r=>(u(r)??-1)>=RP.SIZING.hurdle),qual=ret.filter(r=>(q(r)??0)>=RP.BANDS.reviewQuality);
+    per.push({asOf:snap.asOf,modeled:rows.length,returnAboveHurdle:ret.length,plusQuality75:qual.length,
+      shortlistEligible:rows.filter(r=>shortlistEligible(r)).length,buyRated:rows.filter(r=>['Buy','Strong Buy','Exceptional Buy'].includes(r.rating)).length,
+      buyRatedEntryEligible:rows.filter(r=>RP.entryEligible(r)&&shortlistEligible(r,{maxRank:Infinity})).length});
+  }
+  const keys=['modeled','returnAboveHurdle','plusQuality75','shortlistEligible','buyRated','buyRatedEntryEligible'];
+  const summary=Object.fromEntries(keys.map(k=>{const v=per.map(x=>x[k]);return [k,{median:median(v),min:v.length?Math.min(...v):null,max:v.length?Math.max(...v):null}];}));
+  return {summary,byQuarter:per};
+}
+
 function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers,{splitYear=2022,transactionCostBps=10}={}){
   const H=helpers;
   const split=s=>{
@@ -173,10 +190,11 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
       question2:'Does arm C beat both SPY and the equal-weight universe, in development AND validation?',
       question3:'Does conviction sizing (C) beat equal weight (B)? Does concentration (E vs C vs F) help or just add volatility?'
     },
+    entryFunnel:entryFunnel(snapshotOutput),
     rankBuckets:rankBucketOutcomes(snapshotOutput),
     benchmarks:{equalWeightUniverse:compact(universe)},
     arms:arms.map(compact)
   };
 }
 
-module.exports={liveRankedRows,shortlistEligible,simulateOwnerStrategy,simulateMechanicalTopN,simulateUniverseEqualWeight,rankBucketOutcomes,buildOwnerStrategyLab};
+module.exports={entryFunnel,liveRankedRows,shortlistEligible,simulateOwnerStrategy,simulateMechanicalTopN,simulateUniverseEqualWeight,rankBucketOutcomes,buildOwnerStrategyLab};
