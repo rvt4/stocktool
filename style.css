@@ -60,3 +60,10 @@
 .status-sell{color:#c53030}
 #reviewPanel details{margin-top:8px}
 .status-cell{white-space:normal;min-width:230px}
+
+/* Build 38: year-by-year path editor */
+.path-shapes{display:flex;flex-wrap:wrap;gap:8px 14px;margin-bottom:8px}
+.path-shapes select{margin-left:4px}
+.path-table input{width:5.2em;min-width:5.2em;padding:4px 4px;font-size:.88em;box-sizing:border-box}
+.path-table th{font-size:.8em}
+.path-table td,.path-table th{white-space:nowrap}
