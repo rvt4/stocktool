@@ -191,6 +191,7 @@ function researchFlags(s){
  if(mos!==null&&mos>=0.40)flags.push('Large modeled discount ('+pct(mos)+'); check assumptions and data');
  if(quality!==null&&quality<75)flags.push('Quality below 75/100');
  if(methods<2)flags.push('Fewer than two modeled valuation methods');
+ { const na=Number(s.analystEstimates?.numAnalysts); if(!(na>=3))flags.push('Thin analyst coverage ('+(Number.isFinite(na)?na:0)+'); no outside check on estimates'); }
  if(confidence!==null&&confidence<60)flags.push('Low model confidence');
  const rerating=Number(s.returnAttribution?.multipleReratingContribution);
  if(Number.isFinite(rerating)&&rerating>=.08)flags.push('Return depends on valuation re-rating ('+pct(rerating)+' annual contribution)');
@@ -223,8 +224,11 @@ function opportunity(s){
  const confidence=conf===null?null:bounded(.50*conf+.25*(quality??50)+Math.min(3,methods)*5-growthRisk*.55-extremeDiscountRisk*.5-missingRisk);
  // Research priority uses the same stressed outcome as the investor buy-price test.
  // Re-rating is a source of upside, but it is not independently verified operating growth.
+ const nA=present(s.analystEstimates?.numAnalysts)?Number(s.analystEstimates.numAnalysts):0;
+ const mc=present(s.marketCap)?Number(s.marketCap):null;
+ const thinPenalty=(nA<1?14:nA<3?10:nA<5?5:0)+(mc!==null&&mc<2.5e9?5:0)+(s.analystCheck?.divergence==='model_far_above_analysts'?10:0)+(r!==null&&r>.22?Math.min(12,(r-.22)*100):0);
  const reratingPenalty=bounded(Math.max(0,rerating-.05)*160,0,30);
- const score=(valuation??0)*.45+(quality??0)*.35+(confidence??0)*.20-(r!==null&&r<HURDLE?25:0)-reratingPenalty;
+ const score=(valuation??0)*.45+(quality??0)*.35+(confidence??0)*.20-(r!==null&&r<HURDLE?25:0)-reratingPenalty-thinPenalty;
  const verdict=valuation===null?'Entry valuation unverified':entry!==null&&entry<0?'Above '+HURDLE_LABEL+' + MOS buy price':r!==null&&r<HURDLE?'Underwritten return below '+HURDLE_LABEL:rerating>=.12?'Re-rating dependent · review':quality!==null&&quality<75?'Higher-risk research':valuation>=65&&quality!==null&&quality>=80?'Priority research':valuation>=50?'Research candidate':'Assumptions need review';
  const reasons=[];
  if(mos!==null)reasons.push('Discount to intrinsic fair value '+pct(mos)+' (unverified)');

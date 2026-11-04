@@ -119,9 +119,9 @@ function rank(stocks){
   // v12.45: Expected Alpha >=5% on the 15% hurdle scale is the opportunity gate (same >=20% expected CAGR as the validated v12.38 gate). Eligible names are ordered
   // by the exact frozen Model-D blend; below-gate names remain behind them and are
   // ordered by expected return, so business quality cannot rescue an inadequate return.
-  applyModelDRanking(stocks,{rankField:'overallRank',universeSizeField:'globalUniverseSize'});
+  applyModelDRanking(stocks,{rankField:'overallRank',universeSizeField:'globalUniverseSize',reliability:true});
   const q=[...stocks].sort((a,b)=>(b.qualityScore||0)-(a.qualityScore||0)); q.forEach((s,i)=>s.qualityRank=i+1);
-  const o=[...stocks].sort((a,b)=>(b.expectedReturn||-99)-(a.expectedReturn||-99)); o.forEach((s,i)=>s.opportunityRank=i+1);
+  const o=[...stocks].sort((a,b)=>(b.expectedReturn||-99)-(a.expectedReturn||-99)); // raw return order; overallRank is the evidence-adjusted one o.forEach((s,i)=>s.opportunityRank=i+1);
   const groups={}; for(const s of stocks)(groups[s.category]??=[]).push(s);
   for(const g of Object.values(groups)){g.sort(compareRank);g.forEach((s,i)=>{s.categoryRank=i+1;s.categoryUniverseSize=g.length;});}
 }

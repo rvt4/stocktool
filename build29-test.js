@@ -113,3 +113,16 @@ assert.notStrictEqual(rateStock({price:{current:100},sector:'Technology'},{forec
   assert(one.f.rows[0].revenueGrowth<many.f.rows[0].revenueGrowth,'1-analyst estimate carried as much weight as a 25-analyst consensus');
 }
 console.log('Build 29 regression passed.');
+
+// Build 32: evidence-adjusted live ranking
+{
+  const {applyModelDRanking,reliabilityAdjustedAlpha}=require('./engine/ranking-engine');
+  const mk=(t,alpha,n,cap)=>({ticker:t,expectedAlpha:alpha,expectedCAGR:alpha+.11,qualityScore:80,moatScore:80,growthQualityScore:80,compounderScore:80,marketCap:cap,analystEstimates:{numAnalysts:n}});
+  const rows=[mk('THIN',.153,1,4e9),mk('SOLID',.079,16,1e11),mk('MID',.05,30,5e10)];
+  applyModelDRanking(rows,{reliability:true});
+  assert.strictEqual(rows.find(r=>r.ticker==='SOLID').overallRank<rows.find(r=>r.ticker==='THIN').overallRank,true,'thin-coverage extreme name must not outrank well-covered one');
+  const raw=rows.map(r=>({...r}));applyModelDRanking(raw);
+  assert.strictEqual(raw.find(r=>r.ticker==='THIN').overallRank,1,'default (backtest) ranking unchanged');
+  assert.ok(reliabilityAdjustedAlpha(mk('X',.05,10,1e10))<=.05);
+  console.log('Build 32 ranking assertions passed');
+}
