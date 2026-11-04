@@ -106,4 +106,10 @@ assert.notStrictEqual(rateStock({price:{current:100},sector:'Technology'},{forec
   for(const r of [hiT,loT]){ if(Number.isFinite(r.v.bearCAGR)){assert(r.v.bearCAGR<=r.v.baseCAGR+1e-9&&r.v.bullCAGR>=r.v.baseCAGR-1e-9,'scenarios out of order after blend');}
     assert(require('./engine/validation').validateStock({ticker:'X',currentPrice:100,totalShareholderValue:r.v.totalShareholderValue,expectedReturn:r.v.expectedCAGR,fairValueEstimate:r.v.fairValueEstimate,intrinsicDiscountRate:r.v.intrinsicDiscountRate,marginOfSafety:r.v.marginOfSafety,rating:'Hold'}).length===0,'blended record fails reconciliation'); }
 }
+// 12) thin analyst coverage must not drive the near-term forecast as hard as a full consensus
+{
+  const mk=n=>{const t=stock({ticker:'COV'+n,price:100,growth:.10,margin:.20});Object.assign(t.analystEstimates,{revenueGrowthCurrentYear:.40,revenueGrowthNextYear:.45,numAnalysts:n});return run(t);};
+  const one=mk(1), many=mk(25);
+  assert(one.f.rows[0].revenueGrowth<many.f.rows[0].revenueGrowth,'1-analyst estimate carried as much weight as a 25-analyst consensus');
+}
 console.log('Build 29 regression passed.');

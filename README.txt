@@ -40,3 +40,8 @@ Build 30
 3. Data: 20-F/40-F annual facts (US-GAAP tags) accepted; tickers with <2 usable years now log a [diag] line
    (entity, CIK, us-gaap vs ifrs tag counts, annual forms per tag). WBD, EA, AVB, EQR, WBS, QRVO, LBRDK/A
    have no SEC ticker (acquired/delisted): drop them from watchlist.json. OZK files with the FDIC, not the SEC.
+
+Build 31
+Analyst weight in the revenue forecast now scales with coverage (1 analyst => 30%, 7+ => full consensus weight).
+A single analyst's estimate had the same 62% weight as a 30-analyst consensus (IESC: n=1, +48% next-year revenue
+=> 28% expected CAGR, 4.7x fair value/price).
