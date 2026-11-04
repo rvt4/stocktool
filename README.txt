@@ -50,3 +50,9 @@ Build 32-35
 - 32/33: Live ranking uses an evidence-adjusted alpha (compressed extreme returns; haircuts for thin analyst coverage, small caps, model far above analysts). Top 10 requires 3+ analysts. Backtest ranking unchanged.
 - 34: Research priority penalizes quality under 75 and leans toward the engine rank; screener gets a minimum market-cap filter.
 - 35: Quarterly review. review-policy.js sets Add/Hold/Review/Sell-candidate bands for holdings; the Portfolio page can save quarterly snapshots (Supabase table review_snapshots, or this device if the table is missing) and tracks the research shortlist against an equal-weight universe. Run the new block at the end of supabase.sql once.
+- 36: Position sizing + owner strategy backtest.
+  Sizing (review-policy.js SIZING): 3-10% at cost by conviction (return over 11%, quality, confidence, coverage); max 15 positions;
+  30% sector cap on new buys; positions above 20% get a trim review (toward 15%); winners are otherwise left to run.
+  Portfolio page shows weight vs target per holding and an "Invest new money" planner.
+  owner-strategy-lab.js backtests the app's actual rules (live ranking, review statuses, sizing; idle cash in SPY) against SPY and an
+  equal-weight universe. Run from Actions -> "Owner Strategy Backtest". Output: data/backtest-owner-summary.json.

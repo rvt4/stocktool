@@ -33,9 +33,10 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {rateStock}=require('./engine/rating-engine');
 const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
+const {buildOwnerStrategyLab}=require('./owner-strategy-lab');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='simple-v12.55.4-historical-modelability-audit';
+const MODEL_VERSION='simple-v12.56-owner-strategy-lab';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -538,7 +539,7 @@ function historicalStockFromData(ticker,sector,rawFacts,priceHistory,asOf,diagno
 }
 
 function compactModel(stock,f,q,v,d){return {
-  ticker:stock.ticker,name:stock.name||stock.ticker,sector:stock.sector,industry:stock.industry||null,sic:stock.sic||null,isBiopharma:!!stock.isBiopharma,marketCap:stock.valuation?.marketCap??null,category:f.category||null,dividendYield:stock.valuation?.dividendYield??0,price:stock.price.current,rating:d.rating,
+  ticker:stock.ticker,name:stock.name||stock.ticker,sector:stock.sector,industry:stock.industry||null,sic:stock.sic||null,isBiopharma:!!stock.isBiopharma,marketCap:stock.valuation?.marketCap??null,category:f.category||null,dividendYield:stock.valuation?.dividendYield??0,price:stock.price.current,rating:d.rating,underwrittenCAGR:d.underwrittenCAGR??null,
   investmentScore:d.investmentScore,opportunityScore:d.opportunityScore,opportunityQualityScore:d.opportunityQualityScore,activatedQualityScore:d.activatedQualityScore,qualityActivation:d.qualityActivation,reliabilityScore:d.reliabilityScore,expectedCAGR:v.expectedCAGR,expectedAlpha:d.expectedAlpha,
   fiveYearExpectedCAGR:v.fiveYearExpectedCAGR,bearCAGR:v.bearCAGR,bullCAGR:v.bullCAGR,
   fairValue:v.fairValueEstimate,buyPrice:v.requiredReturnBuyPrice,marginOfSafety:v.marginOfSafety,
@@ -2035,6 +2036,20 @@ async function main(){
   if(skipExamples.length) console.log('Representative skips:', JSON.stringify(skipExamples.slice(0,10)));
   const flat=[]; const snapshotOutput=[];
   for(const asOf of dates){const rows=snapshots.get(asOf);rank(rows);flat.push(...rows.map(r=>({...r,asOf})));snapshotOutput.push({asOf,count:rows.length,rows});}
+  // Build 36: the strategy the app actually recommends. Written to its own small file first,
+  // so a later failure in the legacy labs cannot lose it.
+  let ownerStrategyLab=null;
+  try{
+    ownerStrategyLab=FREQUENCY==='quarterly'
+      ?buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,{adjustedReturnBetween,portfolioStats},{transactionCostBps:Math.max(0,finite(process.env.BACKTEST_TRANSACTION_COST_BPS)??10)})
+      :{skipped:'Owner strategy lab needs BACKTEST_FREQUENCY=quarterly'};
+  }catch(e){ownerStrategyLab={error:e.message};console.error('Owner strategy lab failed:',e);}
+  {
+    const op=path.join(__dirname,'data','backtest-owner-summary.json');
+    fs.writeFileSync(op,JSON.stringify({generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,frequency:FREQUENCY,start:dates[0],end:dates.at(-1),observations:flat.length,diagnostics,ownerStrategyLab},null,2));
+    console.log('Wrote data/backtest-owner-summary.json');
+  }
+  if(process.env.BACKTEST_OWNER_ONLY==='1'){console.log('BACKTEST_OWNER_ONLY=1: skipping legacy labs.');return;}
   const longTermOwnerLab=buildLongTermOwnerLab(flat,snapshotOutput,historyByTicker,spyHistory);
   const output={
     generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,backtestMode:'historical_core_point_in_time',frequency:FREQUENCY,requestedStartYear:START,startYear:historicalUniverse.effectiveStart||START,effectiveStartYear:historicalUniverse.effectiveStart||START,effectiveStartDate:historicalUniverse.effectiveStartDate||`${historicalUniverse.effectiveStart||START}-01-01`,endYear:END,

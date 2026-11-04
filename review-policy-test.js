@@ -23,3 +23,24 @@ const pf=RP.shortlistPerformance(snap,later);
 assert.ok(Math.abs(pf.shortlistReturn-.10)<1e-9);assert.ok(Math.abs(pf.universeReturn-(.2/3))<1e-9);assert.strictEqual(pf.days,30);
 assert.ok(/^\d{4}-\d\d-\d\d$/.test(RP.nextReviewDate(snap)));
 console.log('review-policy tests passed');
+// Build 36 sizing
+{
+  const s=(o)=>({ticker:'S',currentPrice:50,underwrittenCAGR:.14,qualityScore:85,valuationConfidenceScore:80,rating:'Buy',requiredReturnBuyPrice:60,sector:'Tech',analystEstimates:{numAnalysts:10},...o});
+  const lo=RP.targetWeight(s({underwrittenCAGR:.11,qualityScore:75,valuationConfidenceScore:60,analystEstimates:{numAnalysts:1}}));
+  const hi=RP.targetWeight(s({underwrittenCAGR:.20,qualityScore:97,valuationConfidenceScore:95}));
+  assert.ok(lo>=RP.SIZING.minWeight&&hi<=RP.SIZING.maxWeightAtCost&&hi>lo,'sizing range');
+  assert.strictEqual(RP.entryEligible(s({})),true);
+  assert.strictEqual(RP.entryEligible(s({rating:'Watch'})),false);
+  assert.strictEqual(RP.entryEligible(s({currentPrice:70})),false,'above buy price');
+  assert.strictEqual(RP.holdingStatus(s({}),null,{weight:.25}).status,'Review','oversized position gets a trim review');
+  const cands=Array.from({length:30},(_,i)=>s({ticker:'C'+i,sector:i<20?'Tech':'Health'}));
+  const plan=RP.planContribution({holdings:[],candidates:cands,cash:10000});
+  const tech=plan.lines.filter(l=>l.ticker.match(/^C1?\d$/)).reduce((a,l)=>a+l.amount,0);
+  assert.ok(tech<=RP.SIZING.sectorCapAtPurchase*10000+1e-6,'sector cap on new buys');
+  assert.ok(plan.lines.length<=RP.SIZING.maxPositions);
+  assert.ok(Math.abs(plan.lines.reduce((a,l)=>a+l.amount,0)+plan.leftover-10000)<1e-6,'money conserved');
+  const top=RP.planContribution({holdings:[{ticker:'H',value:100,stock:s({ticker:'H'})}],candidates:[],cash:10000});
+  assert.ok(top.lines[0]&&top.lines[0].ticker==='H'&&!top.lines[0].isNew,'tops up an under-target holding');
+  console.log('sizing tests passed');
+}
+assert.strictEqual(RP.holdingStatus({ticker:'Z',currentPrice:50,underwrittenCAGR:.14,qualityScore:85,rating:'Buy',requiredReturnBuyPrice:60},null,{weight:.15}).status,'Hold','full-size position is not an add candidate');
