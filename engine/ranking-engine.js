@@ -38,11 +38,28 @@ function qualityValue(row,key){
   return finite(row[key]);
 }
 
-function buildModelDScores(rows,{alphaGate=ALPHA_GATE}={}){
+// Live-only evidence haircut (opt-in; the backtest keeps the frozen rule).
+// Ranking should reward return that is both high AND well supported. Extreme alpha is
+// compressed (a 26% CAGR is not 2x as believable as 16%), and thin analyst coverage,
+// small size, or a model far above analysts shrink the alpha used for ordering.
+function reliabilityAdjustedAlpha(r){
+  const a=finite(r.expectedAlpha); if(a==null) return null;
+  const KNEE=0.06;
+  let adj=a>KNEE?KNEE+0.35*(a-KNEE):a;
+  const n=finite(r.analystEstimates?.numAnalysts);
+  let f=1;
+  if(n==null||n<1) f*=0.55; else if(n<3) f*=0.65; else if(n<5) f*=0.8; else if(n<8) f*=0.92;
+  const cap=finite(r.marketCap);
+  if(cap!=null&&cap<2.5e9) f*=0.85; else if(cap!=null&&cap<5e9) f*=0.93;
+  if(r.analystCheck?.divergence==='model_far_above_analysts') f*=0.7;
+  return adj>0?adj*f:adj;
+}
+
+function buildModelDScores(rows,{alphaGate=ALPHA_GATE,reliability=false}={}){
   const eligible=(rows||[]).filter(r=>(finite(r.expectedAlpha)??-Infinity)>=alphaGate);
   if(!eligible.length) return eligible;
 
-  const alpha=percentileRanks(eligible.map(r=>r.expectedAlpha));
+  const alpha=percentileRanks(eligible.map(r=>reliability?reliabilityAdjustedAlpha(r):r.expectedAlpha));
   const quality=percentileRanks(eligible.map(r=>qualityValue(r,'qualityScore')));
   const moat=percentileRanks(eligible.map(r=>qualityValue(r,'moatScore')));
   const growth=percentileRanks(eligible.map(r=>qualityValue(r,'growthQualityScore')));
@@ -84,18 +101,18 @@ function compareRank(a,b){
   return String(a.ticker||'').localeCompare(String(b.ticker||''));
 }
 
-function applyModelDRanking(rows,{rankField='overallRank',universeSizeField='globalUniverseSize',alphaGate=ALPHA_GATE}={}){
+function applyModelDRanking(rows,{rankField='overallRank',universeSizeField='globalUniverseSize',alphaGate=ALPHA_GATE,reliability=false}={}){
   for(const r of rows||[]){
     r.rankEligible=false;
     r.rankScore=null;
     r.rankAlphaPercentile=null;
     r.rankQualityBasketPercentile=null;
   }
-  buildModelDScores(rows||[],{alphaGate});
+  buildModelDScores(rows||[],{alphaGate,reliability});
   const sorted=[...(rows||[])].sort(compareRank);
   sorted.forEach((r,i)=>{r[rankField]=i+1;});
   if(universeSizeField) for(const r of rows||[]) r[universeSizeField]=(rows||[]).length;
   return sorted;
 }
 
-module.exports={ALPHA_GATE,percentileRanks,buildModelDScores,compareRank,applyModelDRanking};
+module.exports={ALPHA_GATE,reliabilityAdjustedAlpha,percentileRanks,buildModelDScores,compareRank,applyModelDRanking};
