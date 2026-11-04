@@ -45,10 +45,10 @@ function qualityValue(row,key){
 function reliabilityAdjustedAlpha(r){
   const a=finite(r.expectedAlpha); if(a==null) return null;
   const KNEE=0.06;
-  let adj=a>KNEE?KNEE+0.35*(a-KNEE):a;
+  let adj=a>KNEE?KNEE+0.30*(a-KNEE):a;
   const n=finite(r.analystEstimates?.numAnalysts);
   let f=1;
-  if(n==null||n<1) f*=0.55; else if(n<3) f*=0.65; else if(n<5) f*=0.8; else if(n<8) f*=0.92;
+  if(n==null||n<1) f*=0.45; else if(n<3) f*=0.55; else if(n<5) f*=0.8; else if(n<8) f*=0.92;
   const cap=finite(r.marketCap);
   if(cap!=null&&cap<2.5e9) f*=0.85; else if(cap!=null&&cap<5e9) f*=0.93;
   if(r.analystCheck?.divergence==='model_far_above_analysts') f*=0.7;
@@ -109,7 +109,14 @@ function applyModelDRanking(rows,{rankField='overallRank',universeSizeField='glo
     r.rankQualityBasketPercentile=null;
   }
   buildModelDScores(rows||[],{alphaGate,reliability});
-  const sorted=[...(rows||[])].sort(compareRank);
+  let sorted=[...(rows||[])].sort(compareRank);
+  if(reliability){
+    // Top-10 needs outside corroboration: eligible names with <3 analysts start at #11.
+    const thin=r=>r.rankEligible===true&&!((finite(r.analystEstimates?.numAnalysts)??0)>=3);
+    const top=[],held=[];
+    for(const r of sorted){ if(top.length<10&&!thin(r)) top.push(r); else held.push(r); }
+    sorted=[...top,...held];
+  }
   sorted.forEach((r,i)=>{r[rankField]=i+1;});
   if(universeSizeField) for(const r of rows||[]) r[universeSizeField]=(rows||[]).length;
   return sorted;
