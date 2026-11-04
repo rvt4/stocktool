@@ -1,0 +1,491 @@
+{
+  "generatedAt": "2026-11-04T19:44:11.781Z",
+  "modelVersion": "simple-v12.56-owner-strategy-lab",
+  "frequency": "quarterly",
+  "start": "2019-09-30",
+  "end": "2025-12-31",
+  "observations": 1017,
+  "diagnostics": {
+    "tickerDateAttempts": 1034,
+    "tickersFetched": 43,
+    "tickerFetchFailures": 7,
+    "identityCikFetches": 0,
+    "identityTickerFallbackFetches": 50,
+    "usableFinancialHistory": 1033,
+    "insufficientFinancialHistory": 1,
+    "historicalPriceFound": 1033,
+    "missingHistoricalPrice": 0,
+    "shareCountFound": 1033,
+    "missingShareCount": 0,
+    "modelRuns": 1033,
+    "modelFailures": 0,
+    "missingExpectedCAGR": 16,
+    "modeledObservations": 1017
+  },
+  "ownerStrategyLab": {
+    "description": "Build 36 owner strategy lab. Uses the live ranking, the app review statuses and the app sizing rules. Idle cash earns SPY. Analyst estimates are unavailable historically, so the analyst-based parts of the live model are NOT tested here. Development = before 2022, validation = 2022 onward. Read once; do not tune to it.",
+    "passFail": {
+      "question1": "Do live ranks 1-20 beat ranks 251+ on 1Y and 3Y excess return? (rankBuckets)",
+      "question2": "Does arm C beat both SPY and the equal-weight universe, in development AND validation?",
+      "question3": "Does conviction sizing (C) beat equal weight (B)? Does concentration (E vs C vs F) help or just add volatility?"
+    },
+    "rankBuckets": {
+      "1Y": [
+        {
+          "bucket": "1-20",
+          "n": 500,
+          "meanExcess": 0.031177933915227257,
+          "medianExcess": -0.012334678616750305,
+          "beatSpyRate": 0.494,
+          "medianRealized": 0.1431644256551654
+        },
+        {
+          "bucket": "21-50",
+          "n": 479,
+          "meanExcess": -0.054677489697133146,
+          "medianExcess": -0.0701893403089382,
+          "beatSpyRate": 0.4175365344467641,
+          "medianRealized": 0.10000919769404915
+        },
+        {
+          "bucket": "51-100",
+          "n": 0,
+          "meanExcess": null,
+          "medianExcess": null,
+          "beatSpyRate": null,
+          "medianRealized": null
+        },
+        {
+          "bucket": "101-250",
+          "n": 0,
+          "meanExcess": null,
+          "medianExcess": null,
+          "beatSpyRate": null,
+          "medianRealized": null
+        },
+        {
+          "bucket": "251+",
+          "n": 0,
+          "meanExcess": null,
+          "medianExcess": null,
+          "beatSpyRate": null,
+          "medianRealized": null
+        }
+      ],
+      "3Y": [
+        {
+          "bucket": "1-20",
+          "n": 340,
+          "meanExcess": -0.030988338224060108,
+          "medianExcess": -0.031186387175953678,
+          "beatSpyRate": 0.4,
+          "medianRealized": 0.10805780823438371
+        },
+        {
+          "bucket": "21-50",
+          "n": 331,
+          "meanExcess": -0.05839089158249653,
+          "medianExcess": -0.04422762797092572,
+          "beatSpyRate": 0.3716012084592145,
+          "medianRealized": 0.08225907018212819
+        },
+        {
+          "bucket": "51-100",
+          "n": 0,
+          "meanExcess": null,
+          "medianExcess": null,
+          "beatSpyRate": null,
+          "medianRealized": null
+        },
+        {
+          "bucket": "101-250",
+          "n": 0,
+          "meanExcess": null,
+          "medianExcess": null,
+          "beatSpyRate": null,
+          "medianRealized": null
+        },
+        {
+          "bucket": "251+",
+          "n": 0,
+          "meanExcess": null,
+          "medianExcess": null,
+          "beatSpyRate": null,
+          "medianRealized": null
+        }
+      ],
+      "5Y": [
+        {
+          "bucket": "1-20",
+          "n": 180,
+          "meanExcess": -0.04177881335865801,
+          "medianExcess": -0.028092215030179557,
+          "beatSpyRate": 0.42777777777777776,
+          "medianRealized": 0.11525307585606359
+        },
+        {
+          "bucket": "21-50",
+          "n": 186,
+          "meanExcess": -0.06785222157990929,
+          "medianExcess": -0.07016031743470685,
+          "beatSpyRate": 0.3010752688172043,
+          "medianRealized": 0.08722167272620895
+        },
+        {
+          "bucket": "51-100",
+          "n": 0,
+          "meanExcess": null,
+          "medianExcess": null,
+          "beatSpyRate": null,
+          "medianRealized": null
+        },
+        {
+          "bucket": "101-250",
+          "n": 0,
+          "meanExcess": null,
+          "medianExcess": null,
+          "beatSpyRate": null,
+          "medianRealized": null
+        },
+        {
+          "bucket": "251+",
+          "n": 0,
+          "meanExcess": null,
+          "medianExcess": null,
+          "beatSpyRate": null,
+          "medianRealized": null
+        }
+      ]
+    },
+    "benchmarks": {
+      "equalWeightUniverse": {
+        "name": "Benchmark · every modeled stock, equal weight",
+        "averageHoldings": 39.16,
+        "portfolioCAGR": 0.1304387248503338,
+        "spyCAGR": 0.16192702182436025,
+        "annualizedExcess": -0.03148829697402644,
+        "annualVolatility": 0.24552900143900291,
+        "periodEndMaxDrawdown": -0.347713140763361,
+        "beatSpyRate": 0.4,
+        "periodCount": 25,
+        "yearCount": 6.25,
+        "finalWealth10k": 21517.604242623525,
+        "spyFinalWealth10k": 25548.64217092546,
+        "development": {
+          "portfolioCAGR": 0.18726174923118832,
+          "spyCAGR": 0.20899567555294118,
+          "annualizedExcess": -0.02173392632175286,
+          "annualVolatility": 0.3484581982732676,
+          "periodEndMaxDrawdown": -0.347713140763361,
+          "beatSpyRate": 0.4,
+          "periodCount": 10,
+          "yearCount": 2.5,
+          "finalWealth10k": 15359.114931641778,
+          "spyFinalWealth10k": 16071.70190491504
+        },
+        "validation": {
+          "portfolioCAGR": 0.09407575341730645,
+          "spyCAGR": 0.1315704248017362,
+          "annualizedExcess": -0.037494671384429745,
+          "annualVolatility": 0.15282060855182872,
+          "periodEndMaxDrawdown": -0.14383902960640094,
+          "beatSpyRate": 0.4,
+          "periodCount": 15,
+          "yearCount": 3.75,
+          "finalWealth10k": 14009.66418858841,
+          "spyFinalWealth10k": 15896.662545185818
+        }
+      }
+    },
+    "arms": [
+      {
+        "name": "A · Mechanical top 20, equal weight, rebalanced quarterly",
+        "topN": 20,
+        "averageHoldings": 20,
+        "vsEqualWeightUniverse": 0.024251080238141487,
+        "portfolioCAGR": 0.1546898050884753,
+        "spyCAGR": 0.16192702182436025,
+        "annualizedExcess": -0.007237216735884955,
+        "annualVolatility": 0.2700511192112835,
+        "periodEndMaxDrawdown": -0.35803237440932245,
+        "beatSpyRate": 0.44,
+        "periodCount": 25,
+        "yearCount": 6.25,
+        "finalWealth10k": 24570.179041315372,
+        "spyFinalWealth10k": 25548.64217092546,
+        "development": {
+          "portfolioCAGR": 0.21331613901061686,
+          "spyCAGR": 0.20899567555294118,
+          "annualizedExcess": 0.004320463457675672,
+          "annualVolatility": 0.3940438129735009,
+          "periodEndMaxDrawdown": -0.35803237440932245,
+          "beatSpyRate": 0.4,
+          "periodCount": 10,
+          "yearCount": 2.5,
+          "finalWealth10k": 16215.671437686768,
+          "spyFinalWealth10k": 16071.70190491504
+        },
+        "validation": {
+          "portfolioCAGR": 0.11718793269057026,
+          "spyCAGR": 0.1315704248017362,
+          "annualizedExcess": -0.014382492111165934,
+          "annualVolatility": 0.15091717828962486,
+          "periodEndMaxDrawdown": -0.12134163464833625,
+          "beatSpyRate": 0.4666666666666667,
+          "periodCount": 15,
+          "yearCount": 3.75,
+          "finalWealth10k": 15152.119439354161,
+          "spyFinalWealth10k": 15896.662545185818
+        }
+      },
+      {
+        "name": "B · Owner rules, shortlist entry, equal weight, max 15",
+        "entry": "shortlist",
+        "sizing": "equal",
+        "maxPositions": 15,
+        "averageHoldings": 0.64,
+        "averageCash": 0.9574199659505979,
+        "annualTurnover": 0.07229157853630695,
+        "buys": 5,
+        "sells": 2,
+        "trims": 0,
+        "sellReasons": {
+          "low_return_two_reviews": 2
+        },
+        "vsEqualWeightUniverse": 0.032749074661314825,
+        "portfolioCAGR": 0.16318779951164863,
+        "spyCAGR": 0.16192702182436025,
+        "annualizedExcess": 0.0012607776872883836,
+        "annualVolatility": 0.2018885396490137,
+        "periodEndMaxDrawdown": -0.25365552748195663,
+        "beatSpyRate": 0.24,
+        "periodCount": 25,
+        "yearCount": 6.25,
+        "finalWealth10k": 25722.40010853003,
+        "spyFinalWealth10k": 25548.64217092546,
+        "development": {
+          "portfolioCAGR": 0.20168049268678523,
+          "spyCAGR": 0.20899567555294118,
+          "annualizedExcess": -0.007315182866155956,
+          "annualVolatility": 0.2707619717274529,
+          "periodEndMaxDrawdown": -0.25365552748195663,
+          "beatSpyRate": 0.3,
+          "periodCount": 10,
+          "yearCount": 2.5,
+          "finalWealth10k": 15829.694299783647,
+          "spyFinalWealth10k": 16071.70190491504
+        },
+        "validation": {
+          "portfolioCAGR": 0.13821347564628228,
+          "spyCAGR": 0.1315704248017362,
+          "annualizedExcess": 0.006643050844546083,
+          "annualVolatility": 0.14848055143614725,
+          "periodEndMaxDrawdown": -0.1837278010593616,
+          "beatSpyRate": 0.2,
+          "periodCount": 15,
+          "yearCount": 3.75,
+          "finalWealth10k": 16249.46105805821,
+          "spyFinalWealth10k": 15896.662545185818
+        }
+      },
+      {
+        "name": "C · Owner rules, shortlist entry, conviction sizing, max 15 (app default)",
+        "entry": "shortlist",
+        "sizing": "conviction",
+        "maxPositions": 15,
+        "averageHoldings": 0.64,
+        "averageCash": 0.9718712756679416,
+        "annualTurnover": 0.047334725031486044,
+        "buys": 5,
+        "sells": 2,
+        "trims": 0,
+        "sellReasons": {
+          "low_return_two_reviews": 2
+        },
+        "vsEqualWeightUniverse": 0.03312578945189415,
+        "portfolioCAGR": 0.16356451430222796,
+        "spyCAGR": 0.16192702182436025,
+        "annualizedExcess": 0.001637492477867708,
+        "annualVolatility": 0.1997463257903024,
+        "periodEndMaxDrawdown": -0.24734707555878688,
+        "beatSpyRate": 0.32,
+        "periodCount": 25,
+        "yearCount": 6.25,
+        "finalWealth10k": 25774.510407543625,
+        "spyFinalWealth10k": 25548.64217092546,
+        "development": {
+          "portfolioCAGR": 0.20461443906184118,
+          "spyCAGR": 0.20899567555294118,
+          "annualizedExcess": -0.004381236491100005,
+          "annualVolatility": 0.2671013456380437,
+          "periodEndMaxDrawdown": -0.24734707555878688,
+          "beatSpyRate": 0.3,
+          "periodCount": 10,
+          "yearCount": 2.5,
+          "finalWealth10k": 15926.493228772491,
+          "spyFinalWealth10k": 16071.70190491504
+        },
+        "validation": {
+          "portfolioCAGR": 0.13697802309181673,
+          "spyCAGR": 0.1315704248017362,
+          "annualizedExcess": 0.005407598290080529,
+          "annualVolatility": 0.14761484539029607,
+          "periodEndMaxDrawdown": -0.1837278010593616,
+          "beatSpyRate": 0.3333333333333333,
+          "periodCount": 15,
+          "yearCount": 3.75,
+          "finalWealth10k": 16183.418431987218,
+          "spyFinalWealth10k": 15896.662545185818
+        }
+      },
+      {
+        "name": "D · Owner rules, Buy-rated entry only, conviction sizing, max 15",
+        "entry": "buyRated",
+        "sizing": "conviction",
+        "maxPositions": 15,
+        "averageHoldings": 0,
+        "averageCash": 1,
+        "annualTurnover": 0,
+        "buys": 0,
+        "sells": 0,
+        "trims": 0,
+        "sellReasons": {},
+        "vsEqualWeightUniverse": 0.03148829697402644,
+        "portfolioCAGR": 0.16192702182436025,
+        "spyCAGR": 0.16192702182436025,
+        "annualizedExcess": 0,
+        "annualVolatility": 0.19640436483960855,
+        "periodEndMaxDrawdown": -0.23785704441536548,
+        "beatSpyRate": 0,
+        "periodCount": 25,
+        "yearCount": 6.25,
+        "finalWealth10k": 25548.64217092546,
+        "spyFinalWealth10k": 25548.64217092546,
+        "development": {
+          "portfolioCAGR": 0.20899567555294118,
+          "spyCAGR": 0.20899567555294118,
+          "annualizedExcess": 0,
+          "annualVolatility": 0.2616410182148724,
+          "periodEndMaxDrawdown": -0.23785704441536548,
+          "beatSpyRate": 0,
+          "periodCount": 10,
+          "yearCount": 2.5,
+          "finalWealth10k": 16071.70190491504,
+          "spyFinalWealth10k": 16071.70190491504
+        },
+        "validation": {
+          "portfolioCAGR": 0.1315704248017362,
+          "spyCAGR": 0.1315704248017362,
+          "annualizedExcess": 0,
+          "annualVolatility": 0.14573705878694693,
+          "periodEndMaxDrawdown": -0.1837278010593616,
+          "beatSpyRate": 0,
+          "periodCount": 15,
+          "yearCount": 3.75,
+          "finalWealth10k": 15896.662545185818,
+          "spyFinalWealth10k": 15896.662545185818
+        }
+      },
+      {
+        "name": "E · Concentrated: conviction sizing, max 10",
+        "entry": "shortlist",
+        "sizing": "conviction",
+        "maxPositions": 10,
+        "averageHoldings": 0.64,
+        "averageCash": 0.9718712756679416,
+        "annualTurnover": 0.047334725031486044,
+        "buys": 5,
+        "sells": 2,
+        "trims": 0,
+        "sellReasons": {
+          "low_return_two_reviews": 2
+        },
+        "vsEqualWeightUniverse": 0.03312578945189415,
+        "portfolioCAGR": 0.16356451430222796,
+        "spyCAGR": 0.16192702182436025,
+        "annualizedExcess": 0.001637492477867708,
+        "annualVolatility": 0.1997463257903024,
+        "periodEndMaxDrawdown": -0.24734707555878688,
+        "beatSpyRate": 0.32,
+        "periodCount": 25,
+        "yearCount": 6.25,
+        "finalWealth10k": 25774.510407543625,
+        "spyFinalWealth10k": 25548.64217092546,
+        "development": {
+          "portfolioCAGR": 0.20461443906184118,
+          "spyCAGR": 0.20899567555294118,
+          "annualizedExcess": -0.004381236491100005,
+          "annualVolatility": 0.2671013456380437,
+          "periodEndMaxDrawdown": -0.24734707555878688,
+          "beatSpyRate": 0.3,
+          "periodCount": 10,
+          "yearCount": 2.5,
+          "finalWealth10k": 15926.493228772491,
+          "spyFinalWealth10k": 16071.70190491504
+        },
+        "validation": {
+          "portfolioCAGR": 0.13697802309181673,
+          "spyCAGR": 0.1315704248017362,
+          "annualizedExcess": 0.005407598290080529,
+          "annualVolatility": 0.14761484539029607,
+          "periodEndMaxDrawdown": -0.1837278010593616,
+          "beatSpyRate": 0.3333333333333333,
+          "periodCount": 15,
+          "yearCount": 3.75,
+          "finalWealth10k": 16183.418431987218,
+          "spyFinalWealth10k": 15896.662545185818
+        }
+      },
+      {
+        "name": "F · Diversified: conviction sizing, max 25",
+        "entry": "shortlist",
+        "sizing": "conviction",
+        "maxPositions": 25,
+        "averageHoldings": 0.64,
+        "averageCash": 0.9718712756679416,
+        "annualTurnover": 0.047334725031486044,
+        "buys": 5,
+        "sells": 2,
+        "trims": 0,
+        "sellReasons": {
+          "low_return_two_reviews": 2
+        },
+        "vsEqualWeightUniverse": 0.03312578945189415,
+        "portfolioCAGR": 0.16356451430222796,
+        "spyCAGR": 0.16192702182436025,
+        "annualizedExcess": 0.001637492477867708,
+        "annualVolatility": 0.1997463257903024,
+        "periodEndMaxDrawdown": -0.24734707555878688,
+        "beatSpyRate": 0.32,
+        "periodCount": 25,
+        "yearCount": 6.25,
+        "finalWealth10k": 25774.510407543625,
+        "spyFinalWealth10k": 25548.64217092546,
+        "development": {
+          "portfolioCAGR": 0.20461443906184118,
+          "spyCAGR": 0.20899567555294118,
+          "annualizedExcess": -0.004381236491100005,
+          "annualVolatility": 0.2671013456380437,
+          "periodEndMaxDrawdown": -0.24734707555878688,
+          "beatSpyRate": 0.3,
+          "periodCount": 10,
+          "yearCount": 2.5,
+          "finalWealth10k": 15926.493228772491,
+          "spyFinalWealth10k": 16071.70190491504
+        },
+        "validation": {
+          "portfolioCAGR": 0.13697802309181673,
+          "spyCAGR": 0.1315704248017362,
+          "annualizedExcess": 0.005407598290080529,
+          "annualVolatility": 0.14761484539029607,
+          "periodEndMaxDrawdown": -0.1837278010593616,
+          "beatSpyRate": 0.3333333333333333,
+          "periodCount": 15,
+          "yearCount": 3.75,
+          "finalWealth10k": 16183.418431987218,
+          "spyFinalWealth10k": 15896.662545185818
+        }
+      }
+    ]
+  }
+}
