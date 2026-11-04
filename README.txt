@@ -56,3 +56,4 @@ Build 32-35
   Portfolio page shows weight vs target per holding and an "Invest new money" planner.
   owner-strategy-lab.js backtests the app's actual rules (live ranking, review statuses, sizing; idle cash in SPY) against SPY and an
   equal-weight universe. Run from Actions -> "Owner Strategy Backtest". Output: data/backtest-owner-summary.json.
+- 37: App entry rule now matches the backtested strategy (arm C): model rank top 20, expected return >= 11%, quality 75+. Planner buys in model-rank order; snapshots track the top 20 by model rank. Legacy Buy-rated rule kept only for comparison.

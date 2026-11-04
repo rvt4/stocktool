@@ -20,10 +20,7 @@ function liveRankedRows(rows){
   return c;
 }
 
-function shortlistEligible(r,{maxRank=20}={}){
-  const u=finite(r?.underwrittenCAGR??r?.expectedCAGR),q=finite(r?.qualityScore);
-  return !!r&&r.rating!=='Unrated'&&finite(r.liveRank)!==null&&r.liveRank<=maxRank&&u!==null&&u>=RP.SIZING.hurdle&&q!==null&&q>=RP.BANDS.reviewQuality;
-}
+function shortlistEligible(r,{maxRank=20}={}){return RP.shortlistEntry(r,{rankField:'liveRank',maxRank});}
 
 // helpers: {adjustedReturnBetween, portfolioStats, dailyPortfolioRisk?}
 function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,helpers){

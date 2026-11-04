@@ -1,7 +1,7 @@
 'use strict';
 // Quarterly review policy for long-horizon holdings (Build 35).
 // Different bars for buying and for selling, so ordinary model noise does not cause churn:
-//   Add candidate : rated Buy or better AND price at or below the hurdle + MOS buy price.
+//   Add candidate : passes the backtested entry rule (model rank top 20, return >= hurdle, quality >= 75) and is below target size.
 //   Hold          : default. Falling in rank is NOT a reason to sell.
 //   Review        : something worth a look (first low-return reading, quality slipping, unrated).
 //   Sell candidate: quality broke (<70) OR expected return stayed below the floor two reviews running.
@@ -57,6 +57,13 @@
   function sizeTier(w){return w>=.075?'High conviction':w>=.05?'Standard':'Starter';}
   // A stock you would buy today (not merely keep): above hurdle, quality 75+, rated Buy or better
   // and at/below the hurdle + MOS buy price.
+  // The entry rule the Build 36 backtest validated (arm C). One definition, used by the app and the backtest.
+  function shortlistEntry(s,{rankField='overallRank',maxRank=20}={}){
+    if(!s||s.rating==='Unrated') return false;
+    const u=returnOf(s), q=num(s.qualityScore), rk=num(s[rankField]);
+    return rk!==null&&rk<=maxRank&&u!==null&&u>=SIZING.hurdle&&q!==null&&q>=BANDS.reviewQuality;
+  }
+  // Stricter legacy rule (Buy rating + below buy price). Kept for comparison; historically it almost never fired.
   function entryEligible(s){
     if(!s) return false;
     const u=returnOf(s), q=num(s.qualityScore), price=priceOf(s), buy=num(s.requiredReturnBuyPrice);
@@ -81,14 +88,14 @@
       lines.push({ticker:String(stock.ticker).toUpperCase(),amount:amt,isNew,targetWeight:target/total,resultingWeight:(current+amt)/total,tier:sizeTier(target/total)});
     };
     const held=new Map(holdings.map(h=>[String(h.ticker).toUpperCase(),h]));
-    for(const h of holdings) if(entryEligible(h.stock)) buy(h.stock,num(h.value)||0,false);
+    for(const h of holdings) if(shortlistEntry(h.stock)) buy(h.stock,num(h.value)||0,false);
     let positions=holdings.length;
     const seen=new Set();
     for(const s of candidates){
       const t=String(s.ticker).toUpperCase(), fam=t==='GOOGL'?'GOOG':t;
       if(held.has(t)||held.has(fam==='GOOG'?'GOOGL':t)||seen.has(fam)) continue; seen.add(fam);
       if(positions>=SIZING.maxPositions||left<=0) break;
-      if(!entryEligible(s)) continue;
+      if(!shortlistEntry(s)) continue;
       const before=lines.length; buy(s,0,true); if(lines.length>before) positions++;
     }
     return {total,lines,leftover:left};
@@ -113,10 +120,9 @@
     if(w!==null&&w>SIZING.trimAbove) review.push('Position is '+pctTxt(w)+' of the portfolio; consider trimming toward '+pctTxt(SIZING.trimTo));
     if(sell.length) return {status:'Sell candidate',reasons:[...sell,...review]};
     if(review.length) return {status:'Review',reasons:review};
-    const price=priceOf(s), buy=num(s.requiredReturnBuyPrice);
-    if(BUY_TIERS.includes(rating)&&price!==null&&buy!==null&&price<=buy){
-      if(w!==null&&w>=targetWeight(s)) return {status:'Hold',reasons:['Still buyable, but already at or above its '+pctTxt(targetWeight(s))+' target size']};
-      return {status:'Add candidate',reasons:['Rated '+rating+' and at or below the buy price']};
+    if(shortlistEntry(s)){
+      if(w!==null&&w>=targetWeight(s)) return {status:'Hold',reasons:['Still passes the buy rules, but already at or above its '+pctTxt(targetWeight(s))+' target size']};
+      return {status:'Add candidate',reasons:['Passes the buy rules (rank '+num(s.overallRank)+', '+pctTxt(u)+' expected return, quality '+q+')']};
     }
     return {status:'Hold',reasons:['Nothing has changed enough to act on']};
   }
@@ -152,6 +158,6 @@
     return new Date(Date.parse(snap.takenAt)+BANDS.reviewDays*864e5).toISOString().slice(0,10);
   }
 
-  const api={BANDS,SIZING,convictionScore,targetWeight,sizeTier,entryEligible,planContribution,holdingStatus,buildSnapshot,shortlistPerformance,nextReviewDate};
+  const api={BANDS,SIZING,convictionScore,targetWeight,sizeTier,shortlistEntry,entryEligible,planContribution,holdingStatus,buildSnapshot,shortlistPerformance,nextReviewDate};
   if(typeof module!=='undefined'&&module.exports) module.exports=api; else root.ReviewPolicy=api;
 })(typeof window!=='undefined'?window:globalThis);

@@ -281,6 +281,12 @@ async function loadSnapshots(){
 let reviewCompareIdx=null;
 function priorSnapshotIndex(){const i=snapshots.findIndex(x=>Date.now()-Date.parse(x.takenAt)>=30*864e5);return i;}
 function priorSnapshot(){const i=priorSnapshotIndex();return i>=0?snapshots[i]:null;}
+// Model-rank order: the order the backtested strategy buys in.
+function rankedList(){
+ const seen=new Set(),out=[];
+ for(const s of [...stocks].filter(s=>present(s.overallRank)).sort((a,b)=>Number(a.overallRank)-Number(b.overallRank))){const f=companyFamily(s.ticker);if(seen.has(f))continue;seen.add(f);out.push(s);}
+ return out;
+}
 function researchShortlist(){
  const scored=stocks.map(s=>[s,opportunity(s).score]).sort((a,b)=>b[1]-a[1]);
  const seen=new Set(),out=[];
@@ -291,7 +297,7 @@ async function saveSnapshot(){
  if(!stocks.length)return toast('Nightly data not loaded yet');
  if(!holdings.length&&!confirm('No holdings saved. Save a snapshot of the research shortlist only?'))return;
  reviewCompareIdx=null;
- const snap=window.ReviewPolicy.buildSnapshot({stocks,holdings,shortlist:researchShortlist(),prev:priorSnapshot(),generatedAt:window.__generatedAt||null});
+ const snap=window.ReviewPolicy.buildSnapshot({stocks,holdings,shortlist:rankedList(),prev:priorSnapshot(),generatedAt:window.__generatedAt||null});
  if(client&&user){const {error}=await client.from('review_snapshots').insert({user_id:user.id,taken_at:snap.takenAt,data:snap});if(!error){toast('Quarterly snapshot saved');await loadSnapshots();return renderPortfolio();}
   toast('Cloud snapshot table missing; saved on this device instead (run the new SQL to sync)');}
  const list=[snap,...localSnapshots()].slice(0,40);try{localStorage.setItem(SNAP_KEY,JSON.stringify(list))}catch(e){return toast('Could not save snapshot: '+e.message)}
@@ -302,11 +308,11 @@ function renderPlanner(){
  const cash=Number($('plannerCash')?.value||0);
  if(!(cash>0)){el.innerHTML='<p class="muted small">Enter an amount to see how to split it.</p>';return;}
  const hs=holdings.map(h=>{const t=String(h.ticker).toUpperCase(),s=byTicker.get(t),px=getPrice(s);return {ticker:t,value:Number.isFinite(px)?px*h.shares:0,stock:s}});
- const plan=window.ReviewPolicy.planContribution({holdings:hs,candidates:researchShortlist(),cash});
+ const plan=window.ReviewPolicy.planContribution({holdings:hs,candidates:rankedList(),cash});
  const rows=plan.lines.map(l=>{const s=byTicker.get(l.ticker),px=getPrice(s);return `<tr><td><b>${esc(l.ticker)}</b>${l.isNew?' <span class="muted small">new</span>':''}</td><td>${money(l.amount)}</td><td>${Number.isFinite(px)&&px>0?(l.amount/px).toFixed(2):'—'}</td><td>${pct(l.resultingWeight)}</td><td>${esc(l.tier)}</td></tr>`}).join('');
  el.innerHTML=(rows?`<div class="table-scroll"><table><thead><tr><th>Ticker</th><th>Amount</th><th>≈ Shares</th><th>Weight after</th><th>Size</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="small">Nothing qualifies to buy right now.</p>')+
  (plan.leftover>1?`<p class="small">Unallocated: <b>${money(plan.leftover)}</b>. Not enough names pass the buy rules today; holding cash or an index fund until next review is fine.</p>`:'')+
- `<p class="muted small">Buys only stocks rated Buy or better, at or below the buy price, with quality 75+. Sizes run 3–10% at cost by conviction (return over ${HURDLE_LABEL}, quality, confidence, analyst coverage), max ${window.ReviewPolicy.SIZING.maxPositions} positions, 30% per sector on new buys. Existing holdings below target are topped up first. Suggestions, not orders.</p>`;
+ `<p class="muted small">Buys only stocks ranked top 20 by the model with expected return ≥ ${HURDLE_LABEL} and quality 75+ (the rule the backtest tested), in rank order. Sizes run 3–10% at cost by conviction (return over ${HURDLE_LABEL}, quality, confidence, analyst coverage), max ${window.ReviewPolicy.SIZING.maxPositions} positions, 30% per sector on new buys. Existing holdings below target are topped up first. Suggestions, not orders.</p>`;
 }
 function renderReview(){
  const el=$('reviewPanel');if(!el||!window.ReviewPolicy)return;
@@ -319,11 +325,11 @@ function renderReview(){
  let perf='';
  const pf=base?RP.shortlistPerformance(base,stocks):null;
  if(pf&&pf.pickCount){const diff=pf.universeReturn===null?null:pf.shortlistReturn-pf.universeReturn;
-  perf=`<div class="metrics">${[['Top '+pf.pickCount+' shortlist since '+base.takenAt.slice(0,10),pct(pf.shortlistReturn)],['All stocks (equal weight)',pct(pf.universeReturn)],['Shortlist vs all',diff===null?'—':(diff>=0?'+':'')+(diff*100).toFixed(1)+' pts'],['Days elapsed',pf.days]].map(([k,v])=>`<div class="metric"><small>${esc(k)}</small><strong>${v}</strong></div>`).join('')}</div>
+  perf=`<div class="metrics">${[['Top '+pf.pickCount+' ranked since '+base.takenAt.slice(0,10),pct(pf.shortlistReturn)],['All stocks (equal weight)',pct(pf.universeReturn)],['Shortlist vs all',diff===null?'—':(diff>=0?'+':'')+(diff*100).toFixed(1)+' pts'],['Days elapsed',pf.days]].map(([k,v])=>`<div class="metric"><small>${esc(k)}</small><strong>${v}</strong></div>`).join('')}</div>
   <p class="muted small">Price-only returns from nightly snapshot prices; dividends excluded. Under a year, this is mostly noise; judge after several quarters.</p>
   <details><summary class="small">Shortlist picks from that snapshot</summary><div class="table-scroll"><table><thead><tr><th>#</th><th>Ticker</th><th>Then</th><th>Now</th><th>Return</th></tr></thead><tbody>${(base.shortlist||[]).map(x=>{const s=byTicker.get(x.ticker),p=getPrice(s),r=x.price>0&&p>0?p/x.price-1:null;return `<tr><td>${x.position}</td><td>${esc(x.ticker)}</td><td>${money(x.price)}</td><td>${money(p)}</td><td>${r===null?'—':pct(r)}</td></tr>`}).join('')}</tbody></table></div></details>`;}
  el.innerHTML=`<p class="small">${head}</p><div class="toolbar"><button id="saveSnapshot" class="primary">Save quarterly snapshot</button>${snapshots.length?`<label class="small">Compare with <select id="reviewCompare">${opts}</select></label>`:''}</div>${perf}
- <p class="muted small">Rules: <b>Add candidate</b> = rated Buy+ and at or below the buy price. <b>Hold</b> = default; a lower rank alone is not a reason to sell. <b>Review</b> = quality under ${RP.BANDS.reviewQuality}, a quality drop of ${RP.BANDS.qualityDropReview}+ points, or a first reading of expected return under ${pct(RP.BANDS.lowReturn)}. <b>Sell candidate</b> = quality under ${RP.BANDS.sellQuality}, or expected return under ${pct(RP.BANDS.lowReturn)} at two reviews in a row. Statuses are prompts to do your own work, not trade signals.${snapshotStore==='local'?' Snapshots are stored on this device only.':''}</p>`;
+ <p class="muted small">Rules: <b>Add candidate</b> = model rank top 20, expected return ≥ ${HURDLE_LABEL}, quality 75+, and below its target size. <b>Hold</b> = default; a lower rank alone is not a reason to sell. <b>Review</b> = quality under ${RP.BANDS.reviewQuality}, a quality drop of ${RP.BANDS.qualityDropReview}+ points, or a first reading of expected return under ${pct(RP.BANDS.lowReturn)}. <b>Sell candidate</b> = quality under ${RP.BANDS.sellQuality}, or expected return under ${pct(RP.BANDS.lowReturn)} at two reviews in a row. Statuses are prompts to do your own work, not trade signals.${snapshotStore==='local'?' Snapshots are stored on this device only.':''}</p>`;
  $('saveSnapshot').onclick=()=>requireAuth()&&saveSnapshot();
  renderPlanner();
  if($('reviewCompare'))$('reviewCompare').onchange=e=>{reviewCompareIdx=Number(e.target.value);renderReview();};

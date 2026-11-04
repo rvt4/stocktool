@@ -3,8 +3,10 @@ const assert=require('assert');
 const RP=require('./review-policy');
 const st=(o)=>({ticker:'X',currentPrice:100,underwrittenCAGR:.12,qualityScore:85,rating:'Hold',requiredReturnBuyPrice:90,...o});
 assert.strictEqual(RP.holdingStatus(st({})).status,'Hold');
-assert.strictEqual(RP.holdingStatus(st({rating:'Buy',requiredReturnBuyPrice:110})).status,'Add candidate');
-assert.strictEqual(RP.holdingStatus(st({rating:'Buy'})).status,'Hold','Buy above buy price is just Hold');
+assert.strictEqual(RP.holdingStatus(st({overallRank:5})).status,'Add candidate','top-20, above hurdle, quality 75+');
+assert.strictEqual(RP.holdingStatus(st({overallRank:35})).status,'Hold','outside top 20 is just Hold');
+assert.strictEqual(RP.holdingStatus(st({overallRank:5,underwrittenCAGR:.10})).status,'Hold','below hurdle is not an add');
+assert.strictEqual(RP.shortlistEntry(st({overallRank:5,rating:'Unrated'})),false);
 assert.strictEqual(RP.holdingStatus(st({qualityScore:65})).status,'Sell candidate');
 assert.strictEqual(RP.holdingStatus(st({qualityScore:72})).status,'Review');
 // low return: first time Review, second consecutive time Sell candidate
@@ -25,7 +27,7 @@ assert.ok(/^\d{4}-\d\d-\d\d$/.test(RP.nextReviewDate(snap)));
 console.log('review-policy tests passed');
 // Build 36 sizing
 {
-  const s=(o)=>({ticker:'S',currentPrice:50,underwrittenCAGR:.14,qualityScore:85,valuationConfidenceScore:80,rating:'Buy',requiredReturnBuyPrice:60,sector:'Tech',analystEstimates:{numAnalysts:10},...o});
+  const s=(o)=>({ticker:'S',currentPrice:50,underwrittenCAGR:.14,qualityScore:85,valuationConfidenceScore:80,rating:'Buy',requiredReturnBuyPrice:60,sector:'Tech',overallRank:5,analystEstimates:{numAnalysts:10},...o});
   const lo=RP.targetWeight(s({underwrittenCAGR:.11,qualityScore:75,valuationConfidenceScore:60,analystEstimates:{numAnalysts:1}}));
   const hi=RP.targetWeight(s({underwrittenCAGR:.20,qualityScore:97,valuationConfidenceScore:95}));
   assert.ok(lo>=RP.SIZING.minWeight&&hi<=RP.SIZING.maxWeightAtCost&&hi>lo,'sizing range');
@@ -43,4 +45,4 @@ console.log('review-policy tests passed');
   assert.ok(top.lines[0]&&top.lines[0].ticker==='H'&&!top.lines[0].isNew,'tops up an under-target holding');
   console.log('sizing tests passed');
 }
-assert.strictEqual(RP.holdingStatus({ticker:'Z',currentPrice:50,underwrittenCAGR:.14,qualityScore:85,rating:'Buy',requiredReturnBuyPrice:60},null,{weight:.15}).status,'Hold','full-size position is not an add candidate');
+assert.strictEqual(RP.holdingStatus({ticker:'Z',currentPrice:50,underwrittenCAGR:.14,qualityScore:85,rating:'Buy',requiredReturnBuyPrice:60,overallRank:5},null,{weight:.15}).status,'Hold','full-size position is not an add candidate');
