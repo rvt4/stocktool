@@ -123,6 +123,8 @@ console.log('Build 29 regression passed.');
   assert.strictEqual(rows.find(r=>r.ticker==='SOLID').overallRank<rows.find(r=>r.ticker==='THIN').overallRank,true,'thin-coverage extreme name must not outrank well-covered one');
   const raw=rows.map(r=>({...r}));applyModelDRanking(raw);
   assert.strictEqual(raw.find(r=>r.ticker==='THIN').overallRank,1,'default (backtest) ranking unchanged');
+  const t2=[mk('T1',.30,1,9e9),...Array.from({length:12},(_,i)=>mk('N'+i,.05+i*.001,20,1e10))];applyModelDRanking(t2,{reliability:true});
+  assert.ok(t2.find(r=>r.ticker==='T1').overallRank>10,'thin-coverage name excluded from top 10');
   assert.ok(reliabilityAdjustedAlpha(mk('X',.05,10,1e10))<=.05);
   console.log('Build 32 ranking assertions passed');
 }
