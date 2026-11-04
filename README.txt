@@ -45,3 +45,8 @@ Build 31
 Analyst weight in the revenue forecast now scales with coverage (1 analyst => 30%, 7+ => full consensus weight).
 A single analyst's estimate had the same 62% weight as a 30-analyst consensus (IESC: n=1, +48% next-year revenue
 => 28% expected CAGR, 4.7x fair value/price).
+
+Build 32-35
+- 32/33: Live ranking uses an evidence-adjusted alpha (compressed extreme returns; haircuts for thin analyst coverage, small caps, model far above analysts). Top 10 requires 3+ analysts. Backtest ranking unchanged.
+- 34: Research priority penalizes quality under 75 and leans toward the engine rank; screener gets a minimum market-cap filter.
+- 35: Quarterly review. review-policy.js sets Add/Hold/Review/Sell-candidate bands for holdings; the Portfolio page can save quarterly snapshots (Supabase table review_snapshots, or this device if the table is missing) and tracks the research shortlist against an equal-weight universe. Run the new block at the end of supabase.sql once.
