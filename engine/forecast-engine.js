@@ -1033,6 +1033,14 @@ function buildForecast(stock){
   const reportedShares=shareInfo.source==='reported'?shareInfo.shares:null;
   const inferredShares=shareInfo.shares;
   let revenue=finite(last.revenue)>0?finite(last.revenue):null, shares=inferredShares, dividend=Math.max(0,finite(last.dividendPerShare)||0);
+  // Build 50 dividend sanity: SEC per-share dividend facts are sometimes mis-tagged or stale
+  // (e.g. a $76 "dividend" on an $83 stock, or a dividend since cut). Cap the starting dividend
+  // at 15% of the price and at 125% of the larger of earnings or free cash flow per share.
+  const px0=finite(stock.price?.current);
+  const earnPerShare0=shares>0?Math.max(finite(last.netIncome)??-Infinity,finite(last.fcf)??-Infinity)/shares:null;
+  let dividendSanityCapped=false;
+  const startCap=Math.min(px0>0?px0*.15:Infinity,Number.isFinite(earnPerShare0)?Math.max(0,earnPerShare0)*1.25:Infinity);
+  if(dividend>startCap){dividend=startCap;dividendSanityCapped=true;}
   // Cash-funded capital allocation: retire shares only with owner cash after dividends,
   // a reinvestment reserve and priority deleveraging. Do not treat buybacks as free EPS.
   const startingDebt=Math.max(0,finite(last.totalDebt)??((finite(last.longTermDebt)||0)+(finite(last.shortTermDebt)||0)));
@@ -1048,7 +1056,9 @@ function buildForecast(stock){
     (inferredShares>0&&finite(last.revenue)>0?1.5*finite(last.revenue)/inferredShares:null);
   let priorRepurchasePrice=sharePrice0>0?sharePrice0:null;
   const capitalAllocationFlags=[];
-  const dividendGrowth=clamp(Math.min(Math.max(growth.y2,0),.07),0,.07), rows=[];
+  // High-yield payers (REITs, mREITs, utilities) rarely compound dividends quickly.
+  const startYield=px0>0?dividend/px0:0;
+  const dividendGrowth=clamp(Math.min(Math.max(growth.y2,0),startYield>.06?.02:.07),0,.07), rows=[];
   for(let i=0;i<HORIZON_YEARS;i++){
     if(revenue!=null)revenue*=1+growth.growthPath[i]; dividend*=1+dividendGrowth;
     // Two-stage margin path: years 1-5 move toward the near/medium-term normalized
@@ -1082,6 +1092,8 @@ function buildForecast(stock){
       : (firstPhase?interp(margins.currentCFO,margins.targetCFO):interp(margins.targetCFO,margins.matureCFO));
     const fcf=revenue!=null&&fcfMargin!=null?revenue*fcfMargin:null, ebitda=revenue!=null&&ebitdaMargin!=null?revenue*ebitdaMargin:null, netIncome=revenue!=null&&netMargin!=null?revenue*netMargin:null;
     const gaapNetIncome=revenue!=null&&gaapNetMargin!=null?revenue*gaapNetMargin:null;
+    // Never pay out more than 125% of what the business earns (earnings or FCF, whichever is larger).
+    if(shares>0&&(netIncome!=null||fcf!=null)){const cap=Math.max(0,Math.max(netIncome??-Infinity,fcf??-Infinity)/shares)*1.25;if(dividend>cap){dividend=cap;dividendSanityCapped=true;}}
     const priorShares=shares;
     const requestedChange=dilutionPath[i];
     const dividendCash=priorShares>0?dividend*priorShares:0;
@@ -1140,6 +1152,7 @@ function buildForecast(stock){
   if(margins.unexplainedFcfCompressionPrevented)forecastFlags.push('unexplained_fcf_compression_prevented');
   if(margins.temporaryMarginReset)forecastFlags.push('temporary_margin_reset_normalized');
   if(margins.analystMarginAnchor?.applied)forecastFlags.push('analyst_anchored_margin_recovery');
+  if(dividendSanityCapped)forecastFlags.push('dividend_sanity_capped');
   if(margins.driverReconciliation==='full'){forecastFlags.push('full_operating_driver_reconciliation');forecastFlags.push('spreadsheet_operating_driver_model');}
   else if(margins.driverReconciliation==='partial')forecastFlags.push('partial_operating_driver_reconciliation');
   else {forecastFlags.push('operating_driver_fallback');forecastFlags.push('partial_operating_driver_data_rejected');if((margins.residualDriverWeight||0)>0)forecastFlags.push('gross_to_operating_residual_bridge');}
