@@ -850,8 +850,16 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   // and with that margin plus the company's own after-tax SBC. Whichever it sits closer to
   // decides whether the company's historical SBC is deducted in full or not at all.
   const sbcAfterTax=Math.max(0,sbcNow)*(1-normalizedTaxRate);
-  const rawImplied=(eps,rev)=>{const e=finite(eps),r=finite(rev);return e!=null&&r>0&&lastShares>0?e*lastShares/r:null;};
+  // Consensus EPS is optimistic on average (estimates tend to be revised down), so haircut it:
+  // 3% for the current year (mostly reported) and 8% for next year. Losses are not haircut.
+  const haircut=(e,h)=>e>0?e*(1-h):e;
+  const rawImplied=(eps,rev,h=0)=>{const e=finite(eps),r=finite(rev);return e!=null&&r>0&&lastShares>0?haircut(e,h)*lastShares/r:null;};
   const raw1=rawImplied(aCov.epsCurrentYear,aCov.revenueCurrentYear);
+  // Skip the anchor when analysts' revenue base doesn't match the company we model (spin-offs,
+  // big divestitures, different fiscal year): EPS on one base vs revenue on another is meaningless.
+  const modelRev1=finite(years.at(-1)?.revenue)>0&&Number.isFinite(growthInfo.y1)?finite(years.at(-1).revenue)*(1+growthInfo.y1):null;
+  const analystRev1=finite(aCov.revenueCurrentYear);
+  const revenueBaseMismatch=modelRev1>0&&analystRev1>0&&Math.abs(analystRev1/modelRev1-1)>.25;
   const gaapLatest=Number.isFinite(latestNet)?latestNet:null;
   let sbcDeduction=sbcAfterTax*.5; // only if the basis can't be inferred
   let consensusBasis='unknown';
@@ -859,9 +867,9 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     const exSbc=Math.abs(raw1-(gaapLatest+sbcAfterTax)),inclSbc=Math.abs(raw1-gaapLatest);
     if(exSbc<inclSbc){sbcDeduction=sbcAfterTax;consensusBasis='excludes_sbc';}else{sbcDeduction=0;consensusBasis='includes_sbc';}
   }
-  const impliedNet=(eps,rev)=>{const x=rawImplied(eps,rev);return x!=null?clamp(x-sbcDeduction,-.10,netCeiling):null;};
-  const analystNet1=impliedNet(aCov.epsCurrentYear,aCov.revenueCurrentYear);
-  const analystNet2=impliedNet(aCov.epsNextYear,aCov.revenueNextYear);
+  const impliedNet=(eps,rev,h)=>{const x=rawImplied(eps,rev,h);return x!=null?clamp(x-sbcDeduction,-.10,netCeiling):null;};
+  const analystNet1=impliedNet(aCov.epsCurrentYear,aCov.revenueCurrentYear,.03);
+  const analystNet2=impliedNet(aCov.epsNextYear,aCov.revenueNextYear,.08);
   // "Improvement" means margins recovering, not just EPS growing with revenue: next year's
   // implied margin is clearly higher than this year's, or EPS turns from a loss to a profit.
   const analystExpectsImprovement=Number.isFinite(finite(aCov.epsNextYear))&&finite(aCov.epsNextYear)>0&&(
@@ -870,11 +878,11 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   const provenSeries=netSeries.filter(Number.isFinite).slice(-10).sort((x,y)=>x-y);
   const provenNet=provenSeries.length>=6?provenSeries[Math.floor(.70*(provenSeries.length-1))]:null;
   let analystAnchorApplied=false, analystAnchorDelta={start:0,target:0,mature:0};
-  if(anchorW>0&&Number.isFinite(currentNet)&&Number.isFinite(targetNet)&&Number.isFinite(matureTargetNet)){
+  if(anchorW>0&&!revenueBaseMismatch&&Number.isFinite(currentNet)&&Number.isFinite(targetNet)&&Number.isFinite(matureTargetNet)){
     const oldStart=currentNet,oldTarget=targetNet,oldMature=matureTargetNet;
-    if(Number.isFinite(analystNet1)&&Math.abs(analystNet1-currentNet)>.01) currentNet=clamp(currentNet+anchorW*(analystNet1-currentNet),-.10,netCeiling);
+    if(Number.isFinite(analystNet1)&&Math.abs(analystNet1-currentNet)>.015) currentNet=clamp(currentNet+anchorW*(analystNet1-currentNet),-.10,netCeiling);
     const nearAnchor=Number.isFinite(analystNet2)?analystNet2:analystNet1;
-    if(Number.isFinite(nearAnchor)&&Math.abs(nearAnchor-targetNet)>.01) targetNet=clamp(targetNet+anchorW*(nearAnchor-targetNet),-.10,netCeiling);
+    if(Number.isFinite(nearAnchor)&&Math.abs(nearAnchor-targetNet)>.015) targetNet=clamp(targetNet+anchorW*(nearAnchor-targetNet),-.10,netCeiling);
     // Recovery mode only when the model's own start sits well below where analysts see earnings.
     if((analystExpectsImprovement||(Number.isFinite(nearAnchor)&&nearAnchor>oldStart+.02))&&Number.isFinite(nearAnchor)&&nearAnchor>oldStart+.005){
       // Never let the mature margin sit below where analysts already see earnings next year,
@@ -888,14 +896,20 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     analystAnchorApplied=[analystAnchorDelta.start,analystAnchorDelta.target,analystAnchorDelta.mature].some(d=>Math.abs(d)>.0005);
     // Keep one economic story: the same profit change flows to operating, EBITDA and owner cash.
     // (Pre-tax change = net change / (1 - tax). Cash moves by the net change; capex is unchanged.)
-    if(analystAnchorApplied){
+    // Analyst EPS informs EARNINGS. Cash-flow and operating margins come from the company's own
+    // cash history, so only a recovery (positive change) carries over to them, at half strength;
+    // a lower analyst EPS (often from tax, interest or depreciation) never cuts the cash path.
+    analystAnchorDelta.cashTarget=Math.max(0,analystAnchorDelta.target)*.5;
+    analystAnchorDelta.cashMature=Math.max(0,analystAnchorDelta.mature)*.5;
+    if(analystAnchorApplied&&(analystAnchorDelta.cashTarget>0||analystAnchorDelta.cashMature>0)){
       const pre=d=>d/(1-clamp(normalizedTaxRate,0,.35));
-      targetOperating=clamp(targetOperating+pre(analystAnchorDelta.target),-.10,opCeiling);
-      matureOperating=clamp(matureOperating+pre(analystAnchorDelta.mature),-.10,opCeiling);
-      if(Number.isFinite(targetEBITDA)) targetEBITDA=clamp(targetEBITDA+pre(analystAnchorDelta.target),-.05,ebitdaCeiling);
-      if(Number.isFinite(matureTargetEBITDA)) matureTargetEBITDA=clamp(matureTargetEBITDA+pre(analystAnchorDelta.mature),-.05,ebitdaCeiling);
-      if(Number.isFinite(targetFCF)) targetFCF=clamp(targetFCF+analystAnchorDelta.target,-.10,fcfCeiling);
-      if(Number.isFinite(matureTargetFCF)) matureTargetFCF=clamp(matureTargetFCF+analystAnchorDelta.mature,-.10,fcfCeiling);
+      const dT=analystAnchorDelta.cashTarget,dM=Math.max(analystAnchorDelta.cashMature,dT);
+      targetOperating=clamp(targetOperating+pre(dT),-.10,opCeiling);
+      matureOperating=clamp(matureOperating+pre(dM),-.10,opCeiling);
+      if(Number.isFinite(targetEBITDA)) targetEBITDA=clamp(targetEBITDA+pre(dT),-.05,ebitdaCeiling);
+      if(Number.isFinite(matureTargetEBITDA)) matureTargetEBITDA=clamp(matureTargetEBITDA+pre(dM),-.05,ebitdaCeiling);
+      if(Number.isFinite(targetFCF)) targetFCF=clamp(targetFCF+dT,-.10,fcfCeiling);
+      if(Number.isFinite(matureTargetFCF)) matureTargetFCF=clamp(matureTargetFCF+dM,-.10,fcfCeiling);
       if(Number.isFinite(targetCapex)&&Number.isFinite(targetFCF)) targetCFO=clamp(targetFCF+targetCapex,-.08,.70);
       if(Number.isFinite(matureCapex)&&Number.isFinite(matureTargetFCF)) matureCFO=clamp(matureTargetFCF+matureCapex,-.08,.70);
     }
@@ -958,7 +972,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     structuralCapitalLightCashConversion,recurringFcfCfoRatio,fcfCeiling,crossMarginCoherenceApplied,structuralMarginGuardrailApplied,unsupportedMarginExpansionLimited,structuralTargetNetCeiling,structuralMatureNetCeiling,
     unexplainedFcfCompressionPrevented,broadCashCompressionEvidence,temporaryMarginReset,
     normalizedTaxRate,gaapCurrentNet,gaapTargetNet,gaapMatureTargetNet,
-    analystMarginAnchor:{applied:analystAnchorApplied,weight:anchorW,consensusBasis,sbcDeduction,analystNet1,analystNet2,provenNet,expectsImprovement:analystExpectsImprovement,delta:analystAnchorDelta},
+    analystMarginAnchor:{applied:analystAnchorApplied,weight:anchorW,revenueBaseMismatch,consensusBasis,sbcDeduction,analystNet1,analystNet2,provenNet,expectsImprovement:analystExpectsImprovement,delta:analystAnchorDelta},
     currentNormalizationAddback,targetNormalizationAddback,matureNormalizationAddback,
     grossNow,grossTarget,grossMature,rdNow,rdTarget,rdMature,sgaNow,sgaTarget,sgaMature,
     sbcNowForEarnings,sbcTarget,sbcMature,amortNow,amortTarget,amortMature,
