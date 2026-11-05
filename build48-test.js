@@ -153,3 +153,15 @@ console.log('Build 48 tests passed',JSON.stringify({turnY10:[+a0[9].toFixed(3),+
   const fa=buildForecast(am);assert((fa.rows[0].intangibleAmortizationMargin||0)>0,'amortization fallback not used');
   console.log('build 52 ok',JSON.stringify({noBacklog:dn.durability,withBacklog:dw.durability}));
 }
+// 15) A company that grew ~8x and only recently got profitable at scale isn't reverted to start-up margins
+{
+  const yrs=[.02,.03,-.01,.04,.05,.06,.03,.15,.16,.14];
+  const st=Object.assign(stock({ticker:'SCL',netPath:yrs,growth:.40}),{sector:'Consumer Discretionary'});
+  const f=buildForecast(st),pm=f.forecastBridge.margins.peakMarginDiscipline;
+  assert(pm.durabilityEvidence.includes('no_comparable_scale_history')||!pm.applied,'scale check missing');
+  assert(f.rows[9].netMargin>.12,'scaled-up company reverted to start-up margins: '+f.rows[9].netMargin);
+  // an established cyclical of similar size each year still reverts
+  const cyc=Object.assign(stock({ticker:'CYC',netPath:[.04,.05,.04,.05,.04,.05,.04,.08,.11,.13],growth:.05}),{sector:'Industrials'});
+  assert(buildForecast(cyc).forecastFlags.includes('peak_margin_reversion'),'established cyclical should still revert');
+  console.log('scale check ok');
+}
