@@ -13,11 +13,15 @@ def get(url):
             payload = gzip.decompress(payload)
         return json.loads(payload.decode('utf-8'))
 def records(facts,tags,unit):
-    for tag in tags:
-        vals=facts.get('us-gaap',{}).get(tag,{}).get('units',{}).get(unit,[])
-        if vals:return vals
-    return []
-TAGS={'revenue':['RevenueFromContractWithCustomerExcludingAssessedTax','Revenues','SalesRevenueNet','RevenueFromContractWithCustomerIncludingAssessedTax'], 'grossProfit':['GrossProfit'], 'operatingIncome':['OperatingIncomeLoss'], 'netIncome':['NetIncomeLoss','ProfitLoss'], 'eps':['EarningsPerShareDiluted'], 'ocf':['NetCashProvidedByUsedInOperatingActivities'], 'capex':['PaymentsToAcquirePropertyPlantAndEquipment'], 'sbc':['ShareBasedCompensation'], 'shares':['WeightedAverageNumberOfDilutedSharesOutstanding']}
+    # Build 43: merge ALL listed tags instead of stopping at the first one with data. Each value
+    # carries its tag's priority (_p, lower = preferred) so a preferred tag still wins any period
+    # it covers, while older/newer years reported under another tag are no longer dropped.
+    out=[]
+    for i,tag in enumerate(tags):
+        for v in facts.get('us-gaap',{}).get(tag,{}).get('units',{}).get(unit,[]):
+            out.append({**v,'_p':i})
+    return out
+TAGS={'revenue':['RevenueFromContractWithCustomerExcludingAssessedTax','Revenues','SalesRevenueNet','RevenueFromContractWithCustomerIncludingAssessedTax'], 'grossProfit':['GrossProfit'], 'operatingIncome':['OperatingIncomeLoss'], 'netIncome':['NetIncomeLoss','ProfitLoss'], 'eps':['EarningsPerShareDiluted'], 'ocf':['NetCashProvidedByUsedInOperatingActivities'], 'capex':['PaymentsToAcquirePropertyPlantAndEquipment','PaymentsToAcquireProductiveAssets','PaymentsToAcquireOilAndGasPropertyAndEquipment','PaymentsToExploreAndDevelopOilAndGasProperties'], 'sbc':['ShareBasedCompensation'], 'shares':['WeightedAverageNumberOfDilutedSharesOutstanding']}
 FLOW={'revenue','grossProfit','operatingIncome','netIncome','eps','ocf','capex','sbc'}
 def yearquarter(date):
     d=datetime.date.fromisoformat(date);return (d.year-1 if d.month<=3 else d.year), (4 if d.month<=3 else (d.month-1)//3)
@@ -36,15 +40,15 @@ def build(ticker,cik):
             if 330<=days<=380 and form.startswith('10-K'):
                 label=r['end'][:4];bucket=annual.setdefault(label,{})
                 prev=bucket.get(key)
-                if not prev or r['filed']>prev[1]:bucket[key]=(r['val'],r['filed'])
+                if not prev or r['_p']<prev[2] or (r['_p']==prev[2] and r['filed']>prev[1]):bucket[key]=(r['val'],r['filed'],r['_p'])
             if 65<=days<=105:
                 label=r['end'][:7];bucket=qtr.setdefault(label,{})
                 prev=bucket.get(key)
-                if not prev or r['filed']>prev[1]:bucket[key]=(r['val'],r['filed'])
+                if not prev or r['_p']<prev[2] or (r['_p']==prev[2] and r['filed']>prev[1]):bucket[key]=(r['val'],r['filed'],r['_p'])
             if key in ('ocf','capex','sbc') and 150<=days<=295:
                 label=r['end'][:7];bucket=ytd.setdefault(label,{})
                 prev=bucket.get(key)
-                if not prev or r['filed']>prev[1]:bucket[key]=(r['val'],r['filed'])
+                if not prev or r['_p']<prev[2] or (r['_p']==prev[2] and r['filed']>prev[1]):bucket[key]=(r['val'],r['filed'],r['_p'])
     def unpack(items):return {k:v[0] for k,v in items.items()}
     ann=[{'period':p,**unpack(v)} for p,v in sorted(annual.items())][-12:]
     quarter=[{'period':p,**unpack(v)} for p,v in sorted(qtr.items())][-28:]
@@ -61,7 +65,7 @@ def build(ticker,cik):
             if p in cumul and (m<=3 or previous in cumul):row[key]=cumul[p]-(cumul[previous] if previous else 0)
     for row in ann+quarter:
         if 'ocf' in row and 'capex' in row:row['fcf']=row['ocf']-row['capex']
-    return {'ticker':ticker,'cik':cik,'generatedAt':datetime.date.today().isoformat(),'annual':ann,'quarterly':quarter}
+    return {'ticker':ticker,'cik':cik,'schema':2,'generatedAt':datetime.date.today().isoformat(),'annual':ann,'quarterly':quarter}
 def main():
     data=get('https://www.sec.gov/files/company_tickers.json');mapping={x['ticker'].upper():x['cik_str'] for x in data.values()}
     result=ROOT/'data'/'results.json'
@@ -69,14 +73,26 @@ def main():
     obj=json.loads(result.read_text());arr=obj if isinstance(obj,list) else next((obj[k] for k in ('stocks','results','companies','data') if isinstance(obj.get(k),list)),[])
     tickers=sorted({s['ticker'].upper() for s in arr if isinstance(s,dict) and s.get('ticker')})
     limit=int(os.getenv('HISTORY_LIMIT','100'));done=0
-    # Missing histories first, then oldest cached histories. This avoids alphabetical starvation.
-    tickers.sort(key=lambda t: ( (OUT/(t+'.json')).exists(), (OUT/(t+'.json')).stat().st_mtime if (OUT/(t+'.json')).exists() else 0, t))
+    # Build 43: age comes from the file's own generatedAt (or schema), NOT file mtime. A GitHub Actions
+    # checkout stamps every file with "now", so mtime made every cached history look fresh forever.
+    SCHEMA=2
+    def cached(t):
+        path=OUT/(t+'.json')
+        if not path.exists():return None
+        try:
+            d=json.loads(path.read_text());return (int(d.get('schema',1)),datetime.date.fromisoformat(str(d.get('generatedAt'))[:10]))
+        except Exception:return (0,datetime.date(1970,1,1))
+    info={t:cached(t) for t in tickers}
+    def stale(t):
+        c=info[t];return c is None or c[0]<SCHEMA or (datetime.date.today()-c[1]).days>=30 or os.getenv('HISTORY_FORCE')=='1'
+    # Missing first, then old-schema, then oldest. This avoids alphabetical starvation.
+    tickers.sort(key=lambda t:(info[t] is not None, info[t][0]>=SCHEMA if info[t] else False, info[t][1] if info[t] else datetime.date(1970,1,1), t))
     priority=[t.strip().upper() for t in os.getenv('HISTORY_TICKERS','').split(',') if t.strip()]
     tickers=list(dict.fromkeys(priority+tickers))
     for ticker in tickers:
         if done>=limit:break
         path=OUT/(ticker+'.json')
-        if path.exists() and (datetime.date.today()-datetime.date.fromtimestamp(path.stat().st_mtime)).days<30:continue
+        if t_ok:=(ticker in info and not stale(ticker)):continue
         cik=mapping.get(ticker) or mapping.get(ticker.replace('.','-'))
         if not cik:continue
         try:

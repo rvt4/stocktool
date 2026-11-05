@@ -35,9 +35,9 @@ function initial(s){
  a0.firstYear=Number.isFinite(Number(first.year))?Number(first.year):new Date().getFullYear()+1;
  a0.epsToday=trailingEps;a0.peToday=Number.isFinite(trailingEps)&&trailingEps>0&&a0.price>0?clamp(a0.price/trailingEps,3,400):a0.multiple;
  const mp=modelPath(s,a0);
- a0.shapes={growth:'model',net:'model',fcf:'model',pe:'linear',sbc:'model',dil:'model',div:'model'};
+ a0.shapes={growth:'model',net:'model',fcf:'model',pe:'steady',sbc:'model',dil:'model',div:'model'};
  a0.path=mp||linearPath(a0);
- if(!mp)a0.shapes={growth:'linear',net:'linear',fcf:'linear',pe:'linear',sbc:'linear',dil:'linear',div:'linear'};
+ if(!mp)a0.shapes={growth:'linear',net:'linear',fcf:'linear',pe:'steady',sbc:'linear',dil:'linear',div:'linear'};
  syncEndpoints(a0);
  return a0;
 }
@@ -47,7 +47,7 @@ const PATH_SERIES=[['growth','Revenue growth %','growth','terminalGrowth'],['net
 const EXTRA_SERIES=[['sbc','SBC % of revenue','sbc'],['dil','Share change %','dilution'],['div','Dividend / share','dividend']];
 const ALL_KEYS=['growth','net','fcf','sbc','dil','div','pe'];
 const SHAPES={linear:t=>t,front:t=>1-(1-t)*(1-t),back:t=>t*t};
-const SHAPE_LABELS={model:'Model path',linear:'Even steps',front:'Faster early',back:'Faster late',manual:'Manual'};
+const SHAPE_LABELS={steady:'Follows earnings',model:'Model path',linear:'Even steps',front:'Faster early',back:'Faster late',manual:'Manual'};
 function seriesFrom(start,end,shape){const f=SHAPES[shape]||SHAPES.linear;return Array.from({length:10},(_,i)=>start+(end-start)*f(i/9));}
 // P/E is anchored at TODAY's trailing P/E and reaches the exit P/E in year 10.
 function peSeries(today,exit,shape){const f=SHAPES[shape]||SHAPES.linear;return Array.from({length:10},(_,i)=>today+(exit-today)*f((i+1)/10));}
@@ -99,22 +99,23 @@ function renderPathEditor(){
  ensurePath(assumptions);const a=assumptions;
  if(!a.path){el.innerHTML='<p class="muted small">Not enough data to build a path for this company.</p>';return;}
  const hasModel=!!(current&&nativeRows(current).length===10);
- const shapeSel=k=>`<select data-shape="${k}" aria-label="${esc(SERIES_LABELS[k])} shape">${Object.entries(SHAPE_LABELS).filter(([v])=>(v!=='model'||(hasModel&&k!=='pe'))&&(v!=='manual'||a.shapes?.[k]==='manual')).map(([v,l])=>`<option value="${v}"${a.shapes?.[k]===v?' selected':''}>${l}</option>`).join('')}</select>`;
+ const shapeSel=k=>`<select data-shape="${k}" aria-label="${esc(SERIES_LABELS[k])} shape">${Object.entries(SHAPE_LABELS).filter(([v])=>(v!=='model'||(hasModel&&k!=='pe'))&&(v!=='steady'||k==='pe')&&(v!=='manual'||a.shapes?.[k]==='manual')).map(([v,l])=>`<option value="${v}"${a.shapes?.[k]===v?' selected':''}>${l}</option>`).join('')}</select>`;
  const r=calculate(a),n=PATH_COLS.length+4;
  const hcell=(h,k)=>k==='div'||k==='pe'?'—':pct(h[k]);
  el.innerHTML=`<details class="path-shape-box"${shapesOpen?' open':''}><summary class="small">Shapes (redraw a whole line)</summary><div class="path-shapes">${ALL_KEYS.map(k=>`<label class="small">${esc(SERIES_LABELS[k])} ${shapeSel(k)}</label>`).join('')}</div></details>
  <div class="table-scroll"><table class="path-table"><thead><tr><th>Year</th>${PATH_COLS.map(([,l])=>`<th>${l}</th>`).join('')}<th>EPS</th><th>Price*</th><th>CAGR if sold</th></tr></thead><tbody>${reportedPathRows().map(h=>`<tr class="hist-row"><td>${esc(h.period)} <span class="hist-tag">reported</span></td>${PATH_COLS.map(([k])=>`<td>${hcell(h,k)}</td>`).join('')}<td>${money(h.eps)}</td><td>—</td><td>—</td></tr>`).join('')}${history?'':`<tr class="hist-row"><td colspan="${n}" class="muted small">Reported history not loaded for this company yet.</td></tr>`}<tr class="today-row"><td>Today</td>${PATH_COLS.map(([k])=>`<td>${k==='pe'?(Number.isFinite(a.peToday)?a.peToday.toFixed(1)+'×':'—'):'—'}</td>`).join('')}<td>${money(a.epsToday)}</td><td>${money(a.price)}</td><td>—</td></tr><tr class="proj-divider"><td colspan="${n}">Projected</td></tr>${a.path.growth.map((_,i)=>{const y=r?.years?.[i];return `<tr><td>${y?y.year:(Number.isFinite(a.firstYear)?a.firstYear:new Date().getFullYear()+1)+i}</td>${PATH_COLS.map(([k,,,step,dp])=>`<td><input type="number" inputmode="decimal" step="${step}" data-path="${k}" data-i="${i}" value="${Number(a.path[k][i].toFixed(dp))}"></td>`).join('')}<td>${y?money(y.eps):'—'}</td><td>${y?money(y.price):'—'}</td><td>${y&&Number.isFinite(y.cagrToDate)?pct(y.cagrToDate):'—'}</td></tr>`}).join('')}</tbody></table></div>
- <p class="muted small">* P/E is the trailing P/E at the end of each year: it starts from today's P/E (the Today row) and reaches your exit P/E in the final year. Price = that year's EPS × that year's P/E, so the last row is your exit; CAGR if sold includes dividends received. Shares chg is the yearly change in share count (negative = buybacks). Net margin is after SBC; FCF margin is before it, and SBC % is subtracted for owner FCF. Grey rows are reported SEC figures. Any edit switches to Custom.${nativeScenario()?' <b>In Base, this grid uses a simple EPS × P/E price, so its return differs from the blended Base CAGR above.</b>':''}</p>`;
+ <p class="muted small">* P/E is the trailing P/E at the end of each year, from today's P/E (Today row) to your exit P/E in the final year. With the default "Follows earnings" shape the P/E moves from today's P/E toward your exit P/E in proportion to how much of the forecast EPS growth has been delivered: a high multiple is paid for growth still to come, so it shrinks as that growth arrives (half the EPS growth done = halfway to the exit P/E, on a log scale). Change the Year-10 P/E to set the exit; pick "Even steps" to move it by time instead. In-between prices are illustrations of these assumptions, not forecasts; the 10-year result is what the model estimates. Price = that year's EPS × that year's P/E, so the last row is your exit; CAGR if sold includes dividends received. Shares chg is the yearly change in share count (negative = buybacks). Net margin is after SBC; FCF margin is before it, and SBC % is subtracted for owner FCF. Grey rows are reported SEC figures. Any edit switches to Custom.${nativeScenario()?' <b>In Base, this grid uses a simple EPS × P/E price, so its return differs from the blended Base CAGR above.</b>':''}</p>`;
  el.querySelector('.path-shape-box').addEventListener('toggle',e=>{shapesOpen=e.target.open;});
  el.querySelectorAll('[data-shape]').forEach(sel=>sel.onchange=()=>{
   const k=sel.dataset.shape;
-  if(sel.value==='model'){const mp=modelPath(current,a);if(mp)a.path[k]=mp[k];}
+  if(sel.value==='steady'){/* derived in calculatePath */}
+  else if(sel.value==='model'){const mp=modelPath(current,a);if(mp)a.path[k]=mp[k];}
   else a.path[k]=k==='pe'?peSeries(peAnchor(a),a.path.pe[9],sel.value):seriesFrom(a.path[k][0],a.path[k][9],sel.value);
   a.shapes={...(a.shapes||{}),[k]:sel.value};syncEndpoints(a);markCustom();refreshEndpointInputs();renderValuation();
  });
  el.querySelectorAll('[data-path]').forEach(inp=>inp.addEventListener('change',()=>{
   const v=Number(inp.value);if(inp.value===''||!Number.isFinite(v))return;
-  const k=inp.dataset.path;a.path[k][Number(inp.dataset.i)]=v;a.shapes={...(a.shapes||{}),[k]:'manual'};
+  const k=inp.dataset.path,ii=Number(inp.dataset.i);a.path[k][ii]=v;if(!(k==='pe'&&ii===9&&a.shapes?.pe==='steady'))a.shapes={...(a.shapes||{}),[k]:'manual'};
   syncEndpoints(a);markCustom();refreshEndpointInputs();renderValuation();
  }));
 }
@@ -127,6 +128,20 @@ function calculatePath(a){
  const {revenue,shares,price,mos,path}=a;
  if(![revenue,shares,price,mos].every(Number.isFinite)||revenue<=0||shares<=0||price<=0)return null;
  if(path.growth.some(g=>g<=-100)||path.pe.some(x=>x<=0)||path.dil.some(d=>d<=-100))return null;
+ // Steady price: the price compounds evenly from today to the exit price (year-10 EPS x exit P/E), so the
+ // in-between years show no boom-and-bust the model does not actually forecast. P/E_i = price_i / EPS_i.
+ if(a.shapes?.pe==='steady'){
+  let rr=revenue,ss=shares;const eps=[];
+  for(let i=0;i<10;i++){rr*=1+path.growth[i]/100;ss*=1+path.dil[i]/100;eps.push(rr*1000*path.net[i]/100/ss);}
+  const exitPx=eps[9]*path.pe[9];
+  if(eps.every(e=>e>0)&&exitPx>0){
+   // Price moves in step with earnings progress: t = share of the total EPS change achieved so far.
+   // The P/E then glides from today's to the exit P/E, falling fastest in the years EPS grows fastest,
+   // so there is no artificial boom-and-bust. Falls back to even time steps.
+   const e0=Number(a.epsToday),lnTot=e0>0?Math.log(eps[9]/e0):0;
+   for(let i=0;i<9;i++){const t=e0>0&&Math.abs(lnTot)>1e-6?Math.log(eps[i]/e0)/lnTot:(i+1)/10;path.pe[i]=price*Math.pow(exitPx/price,t)/eps[i];}
+  }
+ }
  const years=[];let r=revenue,sh=shares,divs=0;
  for(let i=1;i<=10;i++){
   const g=path.growth[i-1],nm=path.net[i-1],fm=path.fcf[i-1],pe=path.pe[i-1],sbcI=path.sbc[i-1],d=path.dil[i-1],dps=Math.max(0,path.div[i-1]);
