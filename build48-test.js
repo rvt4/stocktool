@@ -91,3 +91,65 @@ console.log('Build 48 tests passed',JSON.stringify({turnY10:[+a0[9].toFixed(3),+
   const g=buildForecast(ok);assert(!g.forecastFlags.includes('dividend_sanity_capped'),'normal dividend should not be capped');assert(Math.abs(g.rows[0].dividendPerShare-1.5)<.2);
   console.log('dividend sanity ok');
 }
+// 11) Build 51 peak-margin discipline
+{
+  const boom=[.04,.05,.04,.06,.05,.04,.06,.08,.11,.13]; // contractor: 4-6% for years, now 13%
+  const st=stock({ticker:'BOOM',netPath:boom,growth:.20});st.sector='Industrials';
+  const f=buildForecast(st),nm=f.rows.map(r=>r.netMargin);
+  assert(f.forecastFlags.includes('peak_margin_reversion'),'peak flag missing');
+  assert(nm[9]<.13,'boom margin should partly revert by year 10: '+nm[9]);
+  assert(nm[9]>.06,'but not all the way to history: '+nm[9]);
+  // a steady high-margin business is untouched
+  const steady=buildForecast(stock({ticker:'STD',netPath:[.20,.21,.20,.21,.20,.21,.20]}));
+  assert(!steady.forecastFlags.includes('peak_margin_reversion'),'steady business should not be reverted');
+  // the CELH-like analyst-supported recovery survives
+  const reset=[.06,.13,.06,.01,-.29,.17,.11,.04];
+  const r1=buildForecast(stock({ticker:'R1',netPath:reset,growth:.15,analyst:{n:24,net1:.11,net2:.13}}));
+  assert(r1.rows[9].netMargin>.10,'recovery undone by peak discipline: '+r1.rows[9].netMargin);
+  console.log('peak discipline ok',JSON.stringify({boomY10:+nm[9].toFixed(3),resetY10:+r1.rows[9].netMargin.toFixed(3)}));
+}
+// 12) Durability: a 5-year sustained step-up with rising gross margins and analyst support reverts far less
+{
+  const spike=[.04,.05,.04,.05,.04,.05,.04,.05,.06,.13];   // one-year spike
+  const durable=[.04,.05,.04,.05,.04,.05,.04,.13,.14,.13]; // 3 years at the new level, analysts expect it to hold
+  // (4+ elevated years out of 10 already count as the company's normal level and are not reverted at all)
+  const six=buildForecast(Object.assign(stock({ticker:'SIX',netPath:[.04,.05,.04,.05,.13,.13,.14,.13,.14,.13],growth:.10}),{sector:'Industrials'}));
+  assert(!six.forecastFlags.includes('peak_margin_reversion'),'a 6-year step-up is the new normal, not a peak');
+  const a=buildForecast(Object.assign(stock({ticker:'SPK',netPath:spike,growth:.10}),{sector:'Industrials'}));
+  const b=buildForecast(Object.assign(stock({ticker:'DUR',netPath:durable,growth:.10,analyst:{n:20,net1:.13,net2:.135}}),{sector:'Industrials'}));
+  const pa=a.forecastBridge.margins.peakMarginDiscipline,pb=b.forecastBridge.margins.peakMarginDiscipline;
+  assert(pb.durability>pa.durability,'durable boom should score higher: '+pa.durability+' vs '+pb.durability);
+  assert(pb.reversionShare<pa.reversionShare,'durable boom should revert less');
+  assert(b.rows[9].netMargin>a.rows[9].netMargin,'durable boom keeps more margin: '+a.rows[9].netMargin+' vs '+b.rows[9].netMargin);
+  console.log('durability ok',JSON.stringify({spike:{dur:pa.durability,share:pa.reversionShare,y10:+a.rows[9].netMargin.toFixed(3)},durable:{dur:pb.durability,share:pb.reversionShare,yrs:pb.elevatedYears,y10:+b.rows[9].netMargin.toFixed(3)}}));
+}
+// 13) Young company that lost money for years then turned very profitable: baseline floored at 0
+{
+  const young=[-.40,-.30,-.25,-.20,-.10,-.05,.02,.09,.16,.23];
+  const f=buildForecast(Object.assign(stock({ticker:'YNG',netPath:young,growth:.30,analyst:{n:22,net1:.24,net2:.26}}),{sector:'Technology'}));
+  const pm=f.forecastBridge.margins.peakMarginDiscipline;
+  assert(f.rows[9].netMargin>.18,'young profitable grower reverted toward start-up losses: '+f.rows[9].netMargin);
+  console.log('young grower ok',JSON.stringify({dur:pm.durability,share:+pm.reversionShare.toFixed(3),y10:+f.rows[9].netMargin.toFixed(3)}));
+}
+// 14) Build 52: one-time charges, backlog, amortization fallback
+{
+  // a big impairment in the latest year should barely move the projection vs the same company without it
+  const clean=stock({ticker:'CLN',netPath:[.10,.10,.11,.10,.10,.11]});
+  const hit=stock({ticker:'HIT',netPath:[.10,.10,.11,.10,.10,-.05]});
+  const y=hit.financials.years.at(-1);y.goodwillImpairment=y.revenue*.19;y.operatingIncome+=0; // the -5% year was caused by a 19%-of-revenue charge
+  const fc=buildForecast(clean),fh=buildForecast(hit);
+  assert(Math.abs(fh.rows[0].netMargin-fc.rows[0].netMargin)<.02,'one-time charge leaked into year 1: '+fc.rows[0].netMargin+' vs '+fh.rows[0].netMargin);
+  assert(fh.forecastBridge.margins.oneTimeChargesLatest>.18);
+  // backlog adds durability to a boom
+  const boom=[.04,.05,.04,.05,.04,.05,.04,.08,.11,.13];
+  const nb=Object.assign(stock({ticker:'NB',netPath:boom,growth:.15}),{sector:'Industrials'});
+  const wb=Object.assign(stock({ticker:'WB',netPath:boom,growth:.15}),{sector:'Industrials'});
+  wb.financials.years.at(-2).rpo=wb.financials.years.at(-2).revenue*1.2;wb.financials.years.at(-1).rpo=wb.financials.years.at(-1).revenue*1.6;
+  const dn=buildForecast(nb).forecastBridge.margins.peakMarginDiscipline,dw=buildForecast(wb).forecastBridge.margins.peakMarginDiscipline;
+  assert(dw.durability>dn.durability&&dw.durabilityEvidence.includes('backlog_over_1x_revenue'),'backlog should add durability');
+  // amortization estimated from accumulated amortization when the expense isn't tagged
+  const am=stock({ticker:'AM',netPath:[.08,.08,.08,.08,.08]});
+  am.financials.years.forEach((yy,i)=>{yy.accumulatedAmortization=1e8*(i+1);});
+  const fa=buildForecast(am);assert((fa.rows[0].intangibleAmortizationMargin||0)>0,'amortization fallback not used');
+  console.log('build 52 ok',JSON.stringify({noBacklog:dn.durability,withBacklog:dw.durability}));
+}

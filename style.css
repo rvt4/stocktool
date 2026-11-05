@@ -95,3 +95,4 @@
 .methods-table .mcell{white-space:normal;min-width:110px}
 .methods-table .mcell input{margin:2px 0}
 @media(max-width:760px){.methods-table td,.methods-table th{padding:8px 6px}.methods-table td:first-child .small{display:none}}
+.model-notes{border-left:3px solid #3a91ce;padding:4px 10px;margin-bottom:10px;color:#b4c1d4}.model-notes p{margin:4px 0}

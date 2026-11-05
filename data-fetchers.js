@@ -357,6 +357,18 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   pullAnnual('DividendsPreferredStockCash', 'preferredDividends');
   pullAnnual('PreferredStockDividendsIncomeStatementImpact', 'preferredDividends');
   pullAnnual('PaymentsOfDividendsPreferredStockAndPreferenceStock', 'preferredDividends');
+  // Build 52 (free, structured SEC data):
+  // - backlog: remaining performance obligations = contracted revenue not yet recognized
+  // - one-time charges the model should not treat as recurring (pre-tax expense amounts)
+  // - accumulated amortization, to estimate amortization when the expense itself isn't tagged
+  pullAnnual('RevenueRemainingPerformanceObligation', 'rpo');
+  pullAnnual('RestructuringCharges', 'restructuringCharges');
+  pullAnnual('GoodwillImpairmentLoss', 'goodwillImpairment');
+  pullAnnual('ImpairmentOfIntangibleAssetsExcludingGoodwill', 'intangibleImpairment');
+  pullAnnual('ImpairmentOfIntangibleAssetsFinitelived', 'intangibleImpairment');
+  pullAnnual('AssetImpairmentCharges', 'assetImpairment');
+  pullAnnual('BusinessCombinationAcquisitionRelatedCosts', 'acquisitionCosts');
+  pullAnnual('FiniteLivedIntangibleAssetsAccumulatedAmortization', 'accumulatedAmortization');
   pullAnnual('PaymentsToAcquireBusinessesNetOfCashAcquired', 'acquisitions');
   pullAnnual('PaymentsToAcquireBusinessesGross', 'acquisitions');
   pullAnnual('InventoryNet', 'inventory');
