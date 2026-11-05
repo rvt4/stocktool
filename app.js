@@ -474,6 +474,20 @@ function setScreenerScale(value){
  try{localStorage.setItem('stocktool-screener-zoom',String(scale))}catch(e){}
 }
 function companyFamily(t){const k=String(t||'').toUpperCase();return k==='GOOG'||k==='GOOGL'?'ALPHABET':k;}
+// Build 56: research priority is a reading list, so keep it from being 10 versions of the same
+// trade. At most 3 companies per sector in each block of 15 (3 in the top 15, 6 in the top 30...).
+// A deferred company is not removed: it reappears as soon as its sector has room again.
+const SECTOR_PER_BLOCK=3,SECTOR_BLOCK=15;
+function sectorBalanced(list){
+ const left=list.slice(),out=[],count={};
+ while(left.length){
+  const limit=SECTOR_PER_BLOCK*(1+Math.floor(out.length/SECTOR_BLOCK));
+  let i=left.findIndex(s=>(count[s.sector||'Unknown']||0)<limit);
+  if(i<0)i=0;
+  const [s]=left.splice(i,1);const k=s.sector||'Unknown';count[k]=(count[k]||0)+1;out.push(s);
+ }
+ return out;
+}
 function modelConfidenceLabel(o){return o.confidence===null?'Insufficient data':Math.round(o.confidence)+'/100 (heuristic)';}
 function renderScreener(){
  const minCap=Number($('minCap')?.value||0);try{localStorage.setItem('stocktool-mincap',String(minCap))}catch(e){}
@@ -482,7 +496,9 @@ function renderScreener(){
  const cached=new Map(arr.map(s=>[s,opportunity(s)]));
  arr.sort((a,b)=>sort==='opportunity'?cached.get(b).score-cached.get(a).score:sort==='return'?num(b.underwrittenCAGR??b.expectedReturn,-999)-num(a.underwrittenCAGR??a.expectedReturn,-999):sort==='quality'?num(b.qualityScore,-1)-num(a.qualityScore,-1):sort==='cap'?num(b.marketCap,-1)-num(a.marketCap,-1):num(a.overallRank,99999)-num(b.overallRank,99999));
  const seen=new Set();arr=arr.filter(s=>{const family=companyFamily(s.ticker);if(seen.has(family))return false;seen.add(family);return true;});
- $('count').textContent=`${arr.length} distinct companies of ${stocks.length} ticker listings · showing first ${Math.min(200,arr.length)} · Research scores are heuristic, not verified valuations`;
+ const balanced=sort==='opportunity'&&!sector&&!q;
+ if(balanced)arr=sectorBalanced(arr);
+ $('count').textContent=`${arr.length} distinct companies of ${stocks.length} ticker listings · showing first ${Math.min(200,arr.length)} · Research scores are heuristic, not verified valuations${balanced?' · max 3 per sector in each 15 (pick a sector to see all of it)':''}`;
  const top=arr.slice(0,200);
  const returnSummary=s=>present(s.underwrittenCAGR)?pct(Number(s.underwrittenCAGR)):'—';
  const baseSummary=s=>present(s.expectedReturn)?pct(Number(s.expectedReturn)):'—';
@@ -516,7 +532,7 @@ function researchShortlist(){
  const scored=stocks.map(s=>[s,opportunity(s).score]).sort((a,b)=>b[1]-a[1]);
  const seen=new Set(),out=[];
  for(const [s] of scored){const f=companyFamily(s.ticker);if(seen.has(f))continue;seen.add(f);out.push(s);}
- return out;
+ return sectorBalanced(out);
 }
 async function saveSnapshot(){
  if(!stocks.length)return toast('Nightly data not loaded yet');

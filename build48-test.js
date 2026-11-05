@@ -219,3 +219,38 @@ console.log('Build 48 tests passed',JSON.stringify({turnY10:[+a0[9].toFixed(3),+
   assert(trackForecasts({stocks:[]},{dataDir:dir,now:new Date('2027-02-20')}).snapshots===2);
   console.log('tracking ok');
 }
+// 20) Build 56: deeply covered fast grower (AMD-like). Next-year consensus revenue gets more trust,
+//     and SBC is deducted in dollars so it shrinks as a share of a much bigger revenue base.
+{
+  const st=stock({ticker:'AMDX',netPath:[.03,.07,.12,.06,.04,.06,.10],growth:.20,sbc:.05,analyst:{n:45,net1:.27,net2:.30}});
+  const ae=st.analystEstimates, r0=st.financials.years.at(-1).revenue, sh=200e6;
+  ae.revenueGrowthCurrentYear=.48;ae.revenueGrowthNextYear=.77;ae.revenueCurrentYear=r0*1.48;ae.revenueNextYear=r0*1.48*1.77;
+  ae.epsCurrentYear=.27*ae.revenueCurrentYear/sh;ae.epsNextYear=.30*ae.revenueNextYear/sh;
+  const r=run(st),rows=rowsOf(r),an=r.f.forecastBridge.margins.analystMarginAnchor;
+  assert(rows[1].revenueGrowth>.64,'deep coverage should keep most of the +77% next-year consensus: '+rows[1].revenueGrowth);
+  assert(an.consensusBasis==='excludes_sbc','basis should be ex-SBC: '+an.consensusBasis);
+  assert(an.analystNet2>an.analystNet1-.005,'dollar SBC deduction should not shrink next-year margin below this year: '+an.analystNet1+' '+an.analystNet2);
+  assert(an.weight>.6,'45 analysts should get the deeper anchor weight: '+an.weight);
+  console.log('deep coverage ok',JSON.stringify({g:rows.slice(0,3).map(x=>+x.revenueGrowth.toFixed(3)),net1:+an.analystNet1.toFixed(3),net2:+an.analystNet2.toFixed(3),w:an.weight}));
+}
+// 21) Build 56: recovery analysts expect (BA-like) must not slide back into losses by year 5.
+{
+  const hist=[.05,.09,.10,-.01,-.20,-.07,-.07,-.03,-.18,-.01];
+  const r=run(stock({ticker:'BAX',netPath:hist,growth:.08,analyst:{n:25,net1:-.016,net2:.02}})),nm=m(r);
+  assert(Math.min(...nm.slice(4,10))>=.015&&nm.every((x,i)=>i===0||x>=nm[i-1]-1e-6),'margins should recover to (haircut) next-year consensus and not slide back: '+nm.map(x=>x.toFixed(3)));
+  console.log('recovery floor ok',nm.map(x=>+x.toFixed(3)));
+}
+// 22) Build 56: financial with coverage uses consensus EPS levels for years 1-2 (SOFI-like)
+{
+  const years=[];let rev=2e9;const sh=1.1e9;
+  [.02,.03,.05,.08,.09].forEach((nm,i)=>{rev*=1.3;years.push({year:2021+i,revenue:rev,netIncome:rev*nm,dilutedEPS:rev*nm/sh,sharesOutTTM:sh,stockholdersEquity:6e9+i*1e9,totalDebt:3e9,cash:4e9,dividendPerShare:0,roe:.06});});
+  const eps0=years.at(-1).dilutedEPS;
+  const st={ticker:'SOFX',sector:'Financials',sic:'6199',financials:{years,dataQuality:{}},analystEstimates:{numAnalysts:21,revenueGrowthCurrentYear:.40,revenueGrowthNextYear:.27,epsCurrentYear:eps0*1.6,epsNextYear:eps0*1.6*1.48,epsGrowthCurrentYear:.6,epsGrowthNextYear:.48},growthYear1:.4,price:{current:16},valuation:{dividendYield:0,growthSource:'test'}};
+  const r=run(st),au=r.v.methods.find(x=>x.name==='Normalized EPS exit')?.audit;
+  if(au){
+    assert(au.consensusLevels===true,'should use consensus levels');
+    const y2=au.normalizedEPSBase*(1+au.epsGrowthPath[0])*(1+au.epsGrowthPath[1]);
+    assert(Math.abs(y2/(st.analystEstimates.epsNextYear*.92)-1)<.02,'year-2 EPS should match haircut consensus: '+y2);
+    console.log('financial consensus levels ok',au.epsGrowthPath.slice(0,3).map(x=>+x.toFixed(3)));
+  } else console.log('financial fixture not valued as financial; methods',r.v.methods.map(x=>x.name));
+}
