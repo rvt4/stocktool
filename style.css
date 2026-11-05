@@ -89,3 +89,9 @@
 .start-inputs label{font-size:.82rem}
 .start-inputs input{width:100%;box-sizing:border-box}
 .today-row td{font-weight:600;border-top:1px solid #35435a}
+.methods-table input{width:5em;padding:4px 6px;font-size:.88em}.methods-table td{vertical-align:top}.methods-table .mcell{white-space:nowrap}
+.methods-table,.methods-table td{white-space:normal}
+.methods-table td:first-child{min-width:120px;max-width:170px}
+.methods-table .mcell{white-space:normal;min-width:110px}
+.methods-table .mcell input{margin:2px 0}
+@media(max-width:760px){.methods-table td,.methods-table th{padding:8px 6px}.methods-table td:first-child .small{display:none}}
