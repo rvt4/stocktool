@@ -965,7 +965,12 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
         if(base!=null&&hist[j].x>base+.03)k++;else break;
       }
       elevatedYears=k;
-      const pre=hist.slice(0,hist.length-k).map(o=>o.x);
+      // Only compare against years when the company was a comparable size (>=25% of today's revenue).
+      // A business that has grown 5-10x (CELH, PLTR) earned its early margins at start-up scale;
+      // those aren't a "normal" to revert to.
+      const revNowForScale=finite(years.at(-1)?.revenue);
+      const preAll=hist.slice(0,hist.length-k);
+      const pre=preAll.filter(o=>{const r=finite(years[o.i]?.revenue);return revNowForScale>0&&r>=revNowForScale*.25;}).map(o=>o.x);
       preBoomBaseline=pre.length>=3?median(pre):provenNet;
       if(k>=5){durability+=.45;durabilityEvidence.push('elevated_5plus_years');}
       else if(k>=3){durability+=.25;durabilityEvidence.push('elevated_3plus_years');}
@@ -989,6 +994,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
       if(preVol!=null&&preVol>.04){durability-=.10;durabilityEvidence.push('volatile_margin_history');}
       durability=clamp(durability,0,.8);
       reversionShare=baseReversion*(1-durability);
+      if(pre.length<3){reversionShare=0;durabilityEvidence.push('no_comparable_scale_history');}
       // A loss-making start-up phase is not a 'normal' margin to revert to: floor the baseline at 0.
       const excess=reportedNow-Math.max(0,Math.min(provenNet,preBoomBaseline??provenNet));
       targetNet=Math.min(targetNet,currentNet-excess*reversionShare*.5);
