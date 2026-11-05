@@ -214,12 +214,21 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   };
 
   const fcfSeries=years.map(fcfMargin);
-  const ebitdaSeries=years.map(y=>pctMargin(y,'ebitda'));
-  const netSeries=years.map(y=>pctMargin(y,'netIncome'));
+  // Build 52: strip identifiable one-time charges (restructuring, impairments, deal costs) out of
+  // the history, so a single charge-heavy year doesn't set the company's "normal" margin.
+  // Amounts are pre-tax expenses from SEC tags; capped at 25% of revenue to ignore tagging errors.
+  const oneTimeShare=y=>{
+    const r=finite(y?.revenue);if(!(r>0))return 0;
+    const parts=['restructuringCharges','goodwillImpairment','intangibleImpairment','assetImpairment','acquisitionCosts'].map(k=>Math.max(0,finite(y?.[k])||0));
+    return clamp(parts.reduce((a,b)=>a+b,0)/r,0,.25);
+  };
+  const oneTimeSeries=years.map(oneTimeShare);
+  const ebitdaSeries=years.map((y,i)=>{const m=pctMargin(y,'ebitda');return Number.isFinite(m)?m+oneTimeSeries[i]:m;});
+  const netSeries=years.map((y,i)=>{const m=pctMargin(y,'netIncome');return Number.isFinite(m)?m+oneTimeSeries[i]*.79:m;});
   const cfoSeries=years.map(y=>pctMargin(y,'cfo'));
   const capexSeries=years.map(y=>{const r=finite(y?.revenue),c=finite(y?.capex);return r>0&&c!=null?Math.abs(c)/r:null;});
   const daSeries=years.map(y=>{const r=finite(y?.revenue),d=finite(y?.da);return r>0&&d!=null&&d>=0?d/r:null;});
-  const opSeries=years.map(y=>Number.isFinite(finite(y?.opMargin))?finite(y.opMargin):pctMargin(y,'operatingIncome'));
+  const opSeries=years.map((y,i)=>{const m=Number.isFinite(finite(y?.opMargin))?finite(y.opMargin):pctMargin(y,'operatingIncome');return Number.isFinite(m)?m+oneTimeSeries[i]:m;});
   // V12.7: reconcile ratio fields against the underlying dollar statement before using
   // them. SEC/company feeds occasionally attach a valid-looking percentage from the wrong
   // concept/period (ELF-style gross-margin corruption). A dollar-derived margin has a much
@@ -252,7 +261,14 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     return r>0&&sm!=null&&ga!=null?(sm+ga)/r:null;
   });
   const sbcSeriesForEarnings=years.map(y=>pctMargin(y,'sbc'));
-  const amortSeries=years.map(y=>pctMargin(y,'intangibleAmortization'));
+  // Amortization: use the tagged expense; otherwise estimate it from the year-over-year rise in
+  // accumulated amortization (Build 52), which many acquirers report even when the expense isn't tagged.
+  const amortSeries=years.map((y,i)=>{
+    const tagged=pctMargin(y,'intangibleAmortization');if(Number.isFinite(tagged))return tagged;
+    const r=finite(y?.revenue),acc=finite(y?.accumulatedAmortization),prev=finite(years[i-1]?.accumulatedAmortization);
+    if(r>0&&acc!=null&&prev!=null&&acc>prev){const est=(acc-prev)/r;return est<.20?est:null;}
+    return null;
+  });
   const taxSeries=years.map(y=>{
     const pretax=finite(y?.pretaxIncome), tax=finite(y?.incomeTaxExpense);
     return pretax>0&&tax!=null?clamp(tax/pretax,0,.38):null;
@@ -915,6 +931,89 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     }
   }
 
+  // ---- Build 51: peak-margin discipline ------------------------------------------
+  // Mirror image of the recovery logic. When today's margin sits far above what the company has
+  // earned over the last decade (its 70th-percentile year), the model was projecting the boom
+  // forward and even expanding it (contractors at 2-3x their historical margins in an AI/data-
+  // center buildout). Revert part of the excess by year 10: half for cyclical sectors, 30%
+  // otherwise. Also stop the mature margin running more than 4 points above the higher of
+  // today's margin and that long-run level. Needs 6+ years of history; cash flow and operating
+  // margins move by the same profit change so the story stays consistent.
+  const CYCLICAL_SECTORS=new Set(['Industrials','Materials','Energy','Consumer Discretionary','Basic Materials','Consumer Cyclical']);
+  const baseReversion=CYCLICAL_SECTORS.has(String(stock.sector||''))?.5:.3;
+  let reversionShare=baseReversion,durability=0,durabilityEvidence=[],elevatedYears=0,preBoomBaseline=null;
+  let peakMarginApplied=false,peakMarginDelta={target:0,mature:0};
+  if(Number.isFinite(provenNet)&&provenSeries.length>=6&&Number.isFinite(currentNet)&&Number.isFinite(targetNet)&&Number.isFinite(matureTargetNet)){
+    const oldT=targetNet,oldM=matureTargetNet;
+    // Compare like with like: the 10-year history is REPORTED (GAAP) margin, so test today's reported
+    // margin, not the normalized one (which adds back acquisition amortization, e.g. AMD/Xilinx).
+    const reportedNow=Number.isFinite(gaapCurrentNet)?gaapCurrentNet:currentNet;
+    const elevated=reportedNow>provenNet+.03&&reportedNow>Math.max(provenNet,.01)*1.4;
+    if(elevated){
+      // Durability: some booms are structural. Score the evidence and revert less when it's strong.
+      //  - persistence: how many recent years in a row the margin has stayed well above the pre-boom
+      //    baseline (a 1-2 year spike is the classic cycle; 4-5+ years is usually a new business model)
+      //  - gross-margin trend rising (pricing power / mix, not just volume leverage)
+      //  - scale: revenue has compounded strongly (fixed-cost leverage that tends to stick)
+      //  - analysts expect next year's margin to hold, not fall back
+      //  - a historically volatile margin counts against durability
+      const hist=netSeries.map((x,i)=>({x,i})).filter(o=>Number.isFinite(o.x));
+      let k=0;
+      for(let j=hist.length-1;j>=0;j--){
+        const earlier=hist.slice(0,j).map(o=>o.x);
+        const base=earlier.length>=3?median(earlier):null;
+        if(base!=null&&hist[j].x>base+.03)k++;else break;
+      }
+      elevatedYears=k;
+      const pre=hist.slice(0,hist.length-k).map(o=>o.x);
+      preBoomBaseline=pre.length>=3?median(pre):provenNet;
+      if(k>=5){durability+=.45;durabilityEvidence.push('elevated_5plus_years');}
+      else if(k>=3){durability+=.25;durabilityEvidence.push('elevated_3plus_years');}
+      if(grossTrend>.003){durability+=.15;durabilityEvidence.push('gross_margin_rising');}
+      const revs=years.map(y=>finite(y?.revenue)).filter(v=>v>0);
+      const rev5=revs.length>=6?Math.pow(revs.at(-1)/revs.at(-6),1/5)-1:null;
+      if(rev5!=null&&rev5>.15){durability+=.15;durabilityEvidence.push('strong_revenue_scale');}
+      if(Number.isFinite(analystNet2)&&anchorW>0&&!revenueBaseMismatch){
+        if(analystNet2>=reportedNow-.005){durability+=.15;durabilityEvidence.push('analysts_expect_margin_to_hold');}
+        else if(analystNet2<reportedNow-.02){durability-=.10;durabilityEvidence.push('analysts_expect_margin_to_fall');}
+      }
+      // Backlog (remaining performance obligations): contracted future revenue is the best free
+      // evidence that a boom has legs. A big and growing backlog supports durability; a shrinking one doesn't.
+      const rpoNow=finite(years.at(-1)?.rpo),rpoPrev=finite(years.at(-2)?.rpo),revNow=finite(years.at(-1)?.revenue);
+      if(rpoNow>0&&revNow>0){
+        if(rpoNow/revNow>=1){durability+=.15;durabilityEvidence.push('backlog_over_1x_revenue');}
+        if(rpoPrev>0&&rpoNow/rpoPrev-1>.15){durability+=.10;durabilityEvidence.push('backlog_growing');}
+        else if(rpoPrev>0&&rpoNow/rpoPrev-1<-.10){durability-=.15;durabilityEvidence.push('backlog_shrinking');}
+      }
+      const preVol=pre.length>=3?median(pre.map(x=>Math.abs(x-median(pre)))):null;
+      if(preVol!=null&&preVol>.04){durability-=.10;durabilityEvidence.push('volatile_margin_history');}
+      durability=clamp(durability,0,.8);
+      reversionShare=baseReversion*(1-durability);
+      // A loss-making start-up phase is not a 'normal' margin to revert to: floor the baseline at 0.
+      const excess=reportedNow-Math.max(0,Math.min(provenNet,preBoomBaseline??provenNet));
+      targetNet=Math.min(targetNet,currentNet-excess*reversionShare*.5);
+      matureTargetNet=Math.min(matureTargetNet,currentNet-excess*reversionShare);
+    }
+    // Ceiling base also respects analyst-supported recoveries (Build 48), so this never undoes them.
+    const ceilingBase=Math.max(currentNet,reportedNow,provenNet,analystAnchorApplied&&Number.isFinite(analystNet2)?analystNet2:-Infinity);
+    matureTargetNet=Math.min(matureTargetNet,ceilingBase+.04);
+    targetNet=Math.min(targetNet,ceilingBase+.04);
+    peakMarginDelta={target:targetNet-oldT,mature:matureTargetNet-oldM};
+    peakMarginApplied=peakMarginDelta.target<-.0005||peakMarginDelta.mature<-.0005;
+    if(peakMarginApplied){
+      const pre=d=>d/(1-clamp(normalizedTaxRate,0,.35));
+      const dT=peakMarginDelta.target,dM=Math.min(peakMarginDelta.mature,dT);
+      targetOperating=clamp(targetOperating+pre(dT),-.10,opCeiling);
+      matureOperating=clamp(matureOperating+pre(dM),-.10,opCeiling);
+      if(Number.isFinite(targetEBITDA)) targetEBITDA=clamp(targetEBITDA+pre(dT),-.05,ebitdaCeiling);
+      if(Number.isFinite(matureTargetEBITDA)) matureTargetEBITDA=clamp(matureTargetEBITDA+pre(dM),-.05,ebitdaCeiling);
+      if(Number.isFinite(targetFCF)) targetFCF=clamp(targetFCF+dT,-.10,fcfCeiling);
+      if(Number.isFinite(matureTargetFCF)) matureTargetFCF=clamp(matureTargetFCF+dM,-.10,fcfCeiling);
+      if(Number.isFinite(targetCapex)&&Number.isFinite(targetFCF)) targetCFO=clamp(targetFCF+targetCapex,-.08,.70);
+      if(Number.isFinite(matureCapex)&&Number.isFinite(matureTargetFCF)) matureCFO=clamp(matureTargetFCF+matureCapex,-.08,.70);
+    }
+  }
+
   // Re-apply the structural guardrail after all persistence/recovery logic. Those later
   // routines are intentionally allowed to preserve real earnings power, but must not
   // accidentally restore an normalization-driven margin that this guardrail rejected.
@@ -972,6 +1071,8 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     structuralCapitalLightCashConversion,recurringFcfCfoRatio,fcfCeiling,crossMarginCoherenceApplied,structuralMarginGuardrailApplied,unsupportedMarginExpansionLimited,structuralTargetNetCeiling,structuralMatureNetCeiling,
     unexplainedFcfCompressionPrevented,broadCashCompressionEvidence,temporaryMarginReset,
     normalizedTaxRate,gaapCurrentNet,gaapTargetNet,gaapMatureTargetNet,
+    oneTimeChargesLatest:oneTimeSeries.at(-1)??0,backlogCoverage:(()=>{const r=finite(years.at(-1)?.rpo),v=finite(years.at(-1)?.revenue);return r>0&&v>0?r/v:null;})(),
+    peakMarginDiscipline:{applied:peakMarginApplied,baseReversion,reversionShare,durability,durabilityEvidence,elevatedYears,preBoomBaseline,provenNet,delta:peakMarginDelta},
     analystMarginAnchor:{applied:analystAnchorApplied,weight:anchorW,revenueBaseMismatch,consensusBasis,sbcDeduction,analystNet1,analystNet2,provenNet,expectsImprovement:analystExpectsImprovement,delta:analystAnchorDelta},
     currentNormalizationAddback,targetNormalizationAddback,matureNormalizationAddback,
     grossNow,grossTarget,grossMature,rdNow,rdTarget,rdMature,sgaNow,sgaTarget,sgaMature,
@@ -1131,7 +1232,7 @@ function buildForecast(stock){
   const forecastBridge={
     revenue:{model:growth.y1,analystCurrent:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthCurrentYear??stock.analystEstimates?.revenueGrowthFwd),analystNext:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthNextYear),recentQuarter:growth.recentQuarter,recentAnnual:growth.recentAnnual,historicalNormalized:growth.historicalAnchor,terminalOperatingGrowth:growth.year5Growth,analystWeight:growth.analystWeight,analystWeightYear1:growth.analystWeight,analystWeightYear2:growth.analystWeightYear2,directAnalystYears:growth.directAnalystYears,structuralStepUp:growth.structuralStepUp,structuralStepDown:growth.structuralStepDown},
     margins:{fcfStart:margins.currentFCF,fcfNormalized:margins.rawFCF,fcfTarget:margins.targetFCF,fcfMatureTarget:margins.matureTargetFCF,operatingStart:margins.currentOperating,operatingTarget:margins.targetOperating,operatingMatureTarget:margins.matureOperating,ebitdaStart:margins.currentEBITDA,ebitdaNormalized:margins.rawEBITDA,ebitdaTarget:margins.targetEBITDA,ebitdaMatureTarget:margins.matureTargetEBITDA,netStart:margins.currentNet,netNormalized:margins.currentNet,gaapNetNormalized:margins.rawNet,netTarget:margins.targetNet,netMatureTarget:margins.matureTargetNet,cfoStart:margins.currentCFO,cfoTarget:margins.targetCFO,cfoMatureTarget:margins.matureCFO,capexStart:margins.currentCapex,capexTarget:margins.targetCapex,capexMatureTarget:margins.matureCapex,incrementalFCFMargin:margins.incrementalFCFMargin,incrementalOperatingMargin:margins.incrementalOperatingMargin,analystMarginGrowth:margins.analystMarginGrowth,analystMarginDelta:margins.analystMarginDelta,expansionVotes:margins.expansionVotes,compressionVotes:margins.compressionVotes,fcfTrend:margins.fcfTrend,operatingTrend:margins.opTrend,grossMarginTrend:margins.grossTrend,operatingLeverageAdjustment:margins.leverageSignal,abnormalCapexCycle:margins.abnormalCapexCycle,reportedFCFMargin:margins.reportedFCFMargin,normalizedCapexMargin:margins.normalizedCapexMargin,cycleNormalizedFCFMargin:margins.cycleNormalizedFCFMargin,maintenanceCapexMargin:margins.maintenanceCapexMargin,growthReinvestmentShare:margins.growthReinvestmentShare,matureGrowthReinvestmentShare:margins.matureGrowthReinvestmentShare,matureCapexMargin:margins.matureCapex,normalizedCFOMargin:margins.normalizedCFO,cashEconomicsTarget:margins.cashEconomicsTarget,profitabilityConsistencyApplied:margins.profitabilityConsistencyApplied,structuralCapitalLightCashConversion:margins.structuralCapitalLightCashConversion,recurringFcfCfoRatio:margins.recurringFcfCfoRatio,fcfCeiling:margins.fcfCeiling,crossMarginCoherenceApplied:margins.crossMarginCoherenceApplied,unexplainedFcfCompressionPrevented:margins.unexplainedFcfCompressionPrevented,broadCashCompressionEvidence:margins.broadCashCompressionEvidence,temporaryMarginReset:margins.temporaryMarginReset,
-      analystMarginAnchor:margins.analystMarginAnchor??null,normalizedTaxRate:margins.normalizedTaxRate,gaapNetStart:margins.gaapCurrentNet,gaapNetTarget:margins.gaapTargetNet,gaapNetMatureTarget:margins.gaapMatureTargetNet,
+      analystMarginAnchor:margins.analystMarginAnchor??null,oneTimeChargesLatest:margins.oneTimeChargesLatest??0,backlogCoverage:margins.backlogCoverage??null,peakMarginDiscipline:margins.peakMarginDiscipline??null,normalizedTaxRate:margins.normalizedTaxRate,gaapNetStart:margins.gaapCurrentNet,gaapNetTarget:margins.gaapTargetNet,gaapNetMatureTarget:margins.gaapMatureTargetNet,
       earningsNormalizationAddbackStart:margins.currentNormalizationAddback,earningsNormalizationAddbackTarget:margins.targetNormalizationAddback,earningsNormalizationAddbackMature:margins.matureNormalizationAddback,
       grossMarginStart:margins.grossNow,grossMarginTarget:margins.grossTarget,grossMarginMatureTarget:margins.grossMature,
       rdMarginStart:margins.rdNow,rdMarginTarget:margins.rdTarget,rdMarginMatureTarget:margins.rdMature,
@@ -1152,6 +1253,7 @@ function buildForecast(stock){
   if(margins.unexplainedFcfCompressionPrevented)forecastFlags.push('unexplained_fcf_compression_prevented');
   if(margins.temporaryMarginReset)forecastFlags.push('temporary_margin_reset_normalized');
   if(margins.analystMarginAnchor?.applied)forecastFlags.push('analyst_anchored_margin_recovery');
+  if(margins.peakMarginDiscipline?.applied)forecastFlags.push('peak_margin_reversion');
   if(dividendSanityCapped)forecastFlags.push('dividend_sanity_capped');
   if(margins.driverReconciliation==='full'){forecastFlags.push('full_operating_driver_reconciliation');forecastFlags.push('spreadsheet_operating_driver_model');}
   else if(margins.driverReconciliation==='partial')forecastFlags.push('partial_operating_driver_reconciliation');
