@@ -79,3 +79,15 @@ console.log('Build 48 tests passed',JSON.stringify({turnY10:[+a0[9].toFixed(3),+
   const fcf=f=>f.rows.map(r=>r.fcfMargin);fcf(f1).forEach((x,i)=>assert(x>=fcf(f0)[i]-1e-9,'FCF cut by analyst pull-down at year '+(i+1)));
   console.log('guards ok');
 }
+// 10) Build 50 dividend sanity: a mis-tagged $76 dividend on an $83 stock is capped; high yielders grow slowly
+{
+  const st=stock({ticker:'DIVX',netPath:[.10,.10,.11,.10,.10],price:83});
+  st.financials.years.at(-1).dividendPerShare=76;
+  const f=buildForecast(st);
+  assert(f.rows[0].dividendPerShare<=83*.15+1e-9,'starting dividend not capped: '+f.rows[0].dividendPerShare);
+  assert(f.forecastFlags.includes('dividend_sanity_capped'));
+  f.rows.forEach(r=>{if(r.eps!=null&&r.fcfPerShare!=null)assert(r.dividendPerShare<=Math.max(r.eps,r.fcfPerShare)*1.25+1e-9,'payout above 125%');});
+  const ok=stock({ticker:'DIVOK',netPath:[.10,.10,.11,.10,.10],price:83});ok.financials.years.at(-1).dividendPerShare=1.5;
+  const g=buildForecast(ok);assert(!g.forecastFlags.includes('dividend_sanity_capped'),'normal dividend should not be capped');assert(Math.abs(g.rows[0].dividendPerShare-1.5)<.2);
+  console.log('dividend sanity ok');
+}
