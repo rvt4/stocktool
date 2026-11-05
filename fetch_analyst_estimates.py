@@ -148,6 +148,19 @@ def fetch_one(ticker):
         except Exception as e:
             log.warning(f"{ticker}: earnings estimate fetch failed ({e})")
 
+        # Build 54: consensus long-term (next ~5 years, annualized) EPS growth. Free from Yahoo via
+        # yfinance; the column name differs across yfinance versions ("stockTrend" vs "stock").
+        eps_growth_long_term = None
+        try:
+            ge = t.get_growth_estimates()
+            for col in ("stockTrend", "stock"):
+                if ge is not None and col in getattr(ge, "columns", []):
+                    eps_growth_long_term = _row_value(ge, "+5y", col)
+                    if eps_growth_long_term is not None:
+                        break
+        except Exception as e:
+            log.warning(f"{ticker}: growth estimate fetch failed ({e})")
+
         analyst_target_mean = None
         analyst_target_low = None
         analyst_target_high = None
@@ -192,6 +205,7 @@ def fetch_one(ticker):
             "eps_growth_next_year": eps_growth_next_year,
             "eps_current_year": eps_current_year,
             "eps_next_year": eps_next_year,
+            "eps_growth_long_term": eps_growth_long_term,
             "analyst_target_mean": analyst_target_mean,
             "analyst_target_low": analyst_target_low,
             "analyst_target_high": analyst_target_high,
@@ -217,6 +231,12 @@ def upsert_batch(rows):
         "Prefer": "resolution=merge-duplicates",
     }
     resp = requests.post(url, headers=headers, json=rows, timeout=30)
+    # Build 54: if the new column hasn't been added in Supabase yet, retry without it instead of
+    # losing the whole night's estimates.
+    if resp.status_code not in (200, 201, 204) and "eps_growth_long_term" in resp.text:
+        log.warning("Column eps_growth_long_term missing in Supabase; upserting without it. Run the Build 54 SQL to enable long-term growth.")
+        rows = [{k: v for k, v in r.items() if k != "eps_growth_long_term"} for r in rows]
+        resp = requests.post(url, headers=headers, json=rows, timeout=30)
     if resp.status_code not in (200, 201, 204):
         # Log the actual URL that was requested (safe — contains no secret, the key
         # goes in a header, not the URL) so a routing/path problem shows up directly in

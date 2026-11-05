@@ -45,7 +45,7 @@ async function loadAnalystEstimates(){
   for(const r of rows){const t=normalizeTicker(r.ticker);if(!t)continue;map.set(t,{
     revenueGrowthFwd:r.revenue_growth_fwd??null,revenueGrowthCurrentYear:r.revenue_growth_current_year??r.revenue_growth_fwd??null,revenueGrowthNextYear:r.revenue_growth_next_year??null,
     revenueCurrentYear:r.revenue_current_year??null,revenueNextYear:r.revenue_next_year??null,epsGrowthFwd:r.eps_growth_fwd??null,epsGrowthCurrentYear:r.eps_growth_current_year??r.eps_growth_fwd??null,epsGrowthNextYear:r.eps_growth_next_year??null,
-    epsCurrentYear:r.eps_current_year??null,epsNextYear:r.eps_next_year??null,analystTargetMean:r.analyst_target_mean??null,analystTargetLow:r.analyst_target_low??null,analystTargetHigh:r.analyst_target_high??null,numAnalysts:r.num_analysts??null,source:r.source??null,updatedAt:r.updated_at??null
+    epsCurrentYear:r.eps_current_year??null,epsNextYear:r.eps_next_year??null,epsGrowthLongTerm:r.eps_growth_long_term??null,analystTargetMean:r.analyst_target_mean??null,analystTargetLow:r.analyst_target_low??null,analystTargetHigh:r.analyst_target_high??null,numAnalysts:r.num_analysts??null,source:r.source??null,updatedAt:r.updated_at??null
   });}
   console.log(`Mapped ${map.size} analyst records.`); return map;
 }
@@ -243,6 +243,8 @@ async function run(){
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
   const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'simple-v12.52-uncertainty-compensated-entry',stocks}; writeJson('results.json',output);
+  // Build 55: monthly forecast snapshots + accuracy report (never blocks the run).
+  try{const rep=require('./track-forecasts').trackForecasts(output);console.log(`Forecast tracking: ${rep.snapshots} snapshot(s), ${rep.observations} forecast(s) checked against reported revenue.`);}catch(e){console.warn('Forecast tracking skipped:',e.message);}
   const historyFile=writeProspectiveSnapshot(__dirname,output);
   if(historyFile) console.log(`Saved prospective backtest snapshot: ${path.relative(__dirname,historyFile)}`);
   diag.finishedAt=new Date().toISOString();diag.scored=stocks.length;writeJson('screener-diagnostics.json',diag);

@@ -165,3 +165,57 @@ console.log('Build 48 tests passed',JSON.stringify({turnY10:[+a0[9].toFixed(3),+
   assert(buildForecast(cyc).forecastFlags.includes('peak_margin_reversion'),'established cyclical should still revert');
   console.log('scale check ok');
 }
+// 16) Zero reversion must not clamp the margin path or touch cash flow (Build 53 regression)
+{
+  const yrs=[.02,.03,-.01,.04,.05,.06,.03,.15,.16,.14];
+  const st=Object.assign(stock({ticker:'SCL2',netPath:yrs,growth:.40}),{sector:'Consumer Discretionary'});
+  const base=buildForecast(Object.assign(stock({ticker:'SCL3',netPath:yrs,growth:.40}),{sector:'Technology'}));
+  const f=buildForecast(st),pm=f.forecastBridge.margins.peakMarginDiscipline;
+  assert.strictEqual(pm.reversionShare,0);
+  const m=f.forecastBridge.margins;assert(m.fcfMatureTarget>=m.fcfStart-.03,'cash path cut although no reversion: '+m.fcfStart+' -> '+m.fcfMatureTarget);
+  console.log('zero-reversion ok');
+}
+// 17) Build 54: consensus long-term growth shapes years 3-5 (both directions); thin coverage ignored
+{
+  const mk=(ltg,n=25)=>{const st=stock({ticker:'LTG',netPath:[.15,.15,.16,.15,.16],growth:.25,analyst:{n,net1:.16,net2:.17}});st.analystEstimates.revenueGrowthCurrentYear=.30;st.analystEstimates.revenueGrowthNextYear=.28;if(ltg!=null)st.analystEstimates.epsGrowthLongTerm=ltg;return buildForecast(st);};
+  const base=mk(null),hi=mk(.45),lo=mk(.08),thin=mk(.45,3),thinBase=mk(null,3);
+  const g=f=>f.rows.slice(2,5).map(r=>r.revenueGrowth);
+  const avg=a=>a.reduce((x,y)=>x+y,0)/a.length;
+  assert(avg(g(hi))>avg(g(base))+.005,'high LTG should raise years 3-5');
+  assert(avg(g(lo))<avg(g(base))-.005,'low LTG should lower years 3-5');
+  g(thin).forEach((x,i)=>assert(Math.abs(x-g(thinBase)[i])<1e-9,'thin coverage should ignore LTG'));
+  assert(hi.forecastBridge.revenue.longTermConsensus.raw===.45);
+  for(const f of [hi,lo])f.rows.forEach((r,i)=>{if(i>1)assert(r.revenueGrowth<=f.rows[i-1].revenueGrowth+.01,'growth re-accelerates at year '+(i+1));});
+  console.log('LTG ok',JSON.stringify({base:g(base).map(x=>+x.toFixed(3)),hi:g(hi).map(x=>+x.toFixed(3)),lo:g(lo).map(x=>+x.toFixed(3))}));
+}
+// 18) Build 55: backlog growth evidence and the two-source ceiling
+{
+  const mk=(opts={})=>{const st=stock({ticker:'BKL',netPath:[.15,.15,.16,.15,.16],growth:.12,analyst:{n:25,net1:.16,net2:.17}});
+    st.analystEstimates.revenueGrowthCurrentYear=.38;st.analystEstimates.revenueGrowthNextYear=.36;
+    if(opts.ltg!=null)st.analystEstimates.epsGrowthLongTerm=opts.ltg;
+    if(opts.rpo){const ys=st.financials.years;ys.at(-2).rpo=ys.at(-2).revenue*opts.rpo[0];ys.at(-1).rpo=ys.at(-1).revenue*opts.rpo[1];}
+    return buildForecast(st);};
+  const g=f=>f.rows.slice(2,5).map(r=>r.revenueGrowth),avg=a=>a.reduce((x,y)=>x+y,0)/a.length;
+  const none=mk(),ltgOnly=mk({ltg:.60}),both=mk({ltg:.60,rpo:[1.0,1.8]}),shrink=mk({rpo:[1.6,1.1]});
+  assert(none.forecastBridge.revenue.growthCeiling.years3to5===.28,'no evidence keeps the 28% ceiling');
+  assert(ltgOnly.forecastBridge.revenue.growthCeiling.years3to5<=.32+1e-9,'one source caps at 32%');
+  assert(both.forecastBridge.revenue.growthCeiling.sources>=2&&both.forecastBridge.revenue.growthCeiling.years3to5>.32,'two sources can go higher');
+  assert(avg(g(both))>avg(g(ltgOnly)),'backlog growth should add to years 3-5');
+  assert(avg(g(shrink))<avg(g(none)),'shrinking backlog should lower years 3-5');
+  console.log('backlog ok',JSON.stringify({none:g(none).map(x=>+x.toFixed(3)),ltgOnly:g(ltgOnly).map(x=>+x.toFixed(3)),both:g(both).map(x=>+x.toFixed(3)),shrink:g(shrink).map(x=>+x.toFixed(3))}));
+}
+// 19) Forecast tracking: snapshot once a month and score old forecasts against reported revenue
+{
+  const os=require('os'),fs=require('fs'),path=require('path');
+  const {trackForecasts}=require('./track-forecasts');
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ft-'));
+  const mkS=(t,yr,rev,g)=>({ticker:t,sector:'Technology',valuationProjection:[{year:yr,revenue:rev*(1+g),revenueGrowth:g},{year:yr+1,revenue:rev*(1+g)**2,revenueGrowth:g}]});
+  trackForecasts({stocks:[mkS('AAA',2026,100,.20)]},{dataDir:dir,now:new Date('2026-01-15')});
+  // a year later the company reported 2026 revenue of 130 (forecast was 120): model was ~8% too low
+  const rep=trackForecasts({stocks:[mkS('AAA',2027,130,.10)]},{dataDir:dir,now:new Date('2027-02-15')});
+  assert(rep.snapshots===2&&rep.observations===1,'expected one scored forecast: '+JSON.stringify(rep));
+  assert(Math.abs(rep.byHorizon['year 1'].meanError-(130/120-1))<1e-9);
+  // same month again does not add a snapshot
+  assert(trackForecasts({stocks:[]},{dataDir:dir,now:new Date('2027-02-20')}).snapshots===2);
+  console.log('tracking ok');
+}

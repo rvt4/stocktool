@@ -195,6 +195,10 @@ function renderPathEditor(){
  if(pk?.applied)notes.push(`Today's margin is well above this company's long-run level, so the model lets part of it fade (${Math.round((1-(pk.reversionShare||0)/(pk.baseReversion||1))*100)}% durability credit${pk.durabilityEvidence?.length?': '+pk.durabilityEvidence.map(ev).join(', '):''}).`);
  if(an?.applied)notes.push(`Near-term margins are anchored part-way to analyst EPS (${Math.round((an.weight||0)*100)}% weight${an.consensusBasis&&an.consensusBasis!=='unknown'?', consensus '+ev(an.consensusBasis):''}).`);
  if(Number.isFinite(mb.backlogCoverage))notes.push(`Backlog (contracted revenue not yet recognized): ${mb.backlogCoverage.toFixed(1)}× annual revenue.`);
+ const rb=current?.projectionAssumptions?.forecastBridge?.revenue||{};
+ if(Number.isFinite(rb.longTermConsensus?.raw)&&rb.longTermConsensus.weight>0)notes.push(`Years 3–5 growth leans on the analyst long-term EPS growth estimate of ${pct(rb.longTermConsensus.raw)} (haircut, ${Math.round(rb.longTermConsensus.weight*100)}% weight).`);
+ if(Number.isFinite(rb.backlogEvidence?.growth)&&rb.backlogEvidence.weight>0)notes.push(`Backlog grew ${pct(rb.backlogEvidence.growth)} last year and is used as evidence for years 3–5.`);
+ if(rb.growthCeiling&&rb.growthCeiling.years3to5>.28)notes.push(`Growth ceiling for years 3–5 raised to ${pct(rb.growthCeiling.years3to5)} (${rb.growthCeiling.sources} supporting source${rb.growthCeiling.sources===1?'':'s'}).`);
  if(mb.oneTimeChargesLatest>.005)notes.push(`One-time charges of ${pct(mb.oneTimeChargesLatest)} of revenue were excluded from last year's margin.`);
  const modelNotes=notes.length&&nativeScenario()!==null?`<div class="model-notes small">${notes.map(n=>'<p>'+esc(n)+'</p>').join('')}</div>`:'';
  el.innerHTML=modelNotes+`<details class="path-shape-box"${shapesOpen?' open':''}><summary class="small">Shapes (redraw a whole line)</summary><div class="path-shapes">${[...ALL_KEYS,...OPT_KEYS.filter(k=>Array.isArray(a.path[k]))].map(k=>`<label class="small">${esc(SERIES_LABELS[k])} ${shapeSel(k)}</label>`).join('')}</div></details>
