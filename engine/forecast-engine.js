@@ -183,20 +183,51 @@ function buildGrowthForecast(stock,years,cfg){
   // a terminal valuation is applied. This avoids pretending we can forecast year 10 with
   // the same precision as year 2, while also avoiding a cliff from year-5 growth straight
   // to a perpetual-growth assumption.
+  // Build 54: consensus long-term EPS growth (next ~5 years) shapes years 3-5 instead of a generic
+  // template. Haircut 10-25% (long-term estimates are the most optimistic analysts publish) and
+  // convert EPS growth to revenue growth (x0.85: part of EPS growth comes from margins/buybacks).
+  // Blend weight scales with coverage (max 50%). It can lower years 3-5 as well as raise them.
+  const ltgRaw=finite(a.epsGrowthLongTerm);
+  const ltgUsable=ltgRaw!=null&&ltgRaw>-.20&&ltgRaw<1.0&&analysts>=5;
+  // Optimism is worst for the highest estimates: haircut 10% for modest LTG, rising to 25% at 30%+.
+  const ltgHaircut=ltgUsable?.10+.15*clamp(ltgRaw/.30,0,1):0;
+  const ltgRevenue=ltgUsable?clamp(ltgRaw*(1-ltgHaircut)*.85,-.05,.40):null;
+  const ltgWeight=ltgUsable?clamp((analysts-4)/16,0,1)*.5:0;
+  // Build 55: backlog growth as independent forward evidence. Remaining performance obligations
+  // (contracted revenue not yet booked) that grow fast usually turn into revenue over 1-3 years.
+  // Only meaningful when backlog is material (>=30% of revenue). Backlog growth overstates revenue
+  // growth somewhat (multi-year contracts), so it is scaled by 0.7.
+  const rpoNow=finite(last.rpo),rpoPrev=finite(years.at(-2)?.rpo),revLast=finite(last.revenue);
+  const backlogCoverage=rpoNow>0&&revLast>0?rpoNow/revLast:null;
+  const backlogGrowth=rpoNow>0&&rpoPrev>0?rpoNow/rpoPrev-1:null;
+  const backlogSignal=backlogCoverage!=null&&backlogCoverage>=.30&&backlogGrowth!=null&&backlogGrowth>-.5&&backlogGrowth<2
+    ?clamp(backlogGrowth*.7,-.10,.45):null;
+  const backlogWeight=backlogSignal!=null?clamp((backlogCoverage-.30)/.90,0,1)*.35:0;
+  // Two-source rule: the 28% ceiling on years 3-5 only rises when evidence supports it, and the
+  // highest rates need two independent sources to agree (consensus, backlog, or a long, reliable
+  // record of fast growth). One source alone can lift the ceiling to 32%.
+  const strongSources=[ltgRevenue,backlogSignal,historyReliability>=.6?historicalAnchor:null].filter(v=>v!=null&&v>.28);
+  const midCap=strongSources.length>=2?Math.min(.40,Math.max(...strongSources)+.03):strongSources.length===1?.32:.28;
   const growthPath=[y1,y2];
   for(let i=2;i<EXPLICIT_FORECAST_YEARS;i++){
     const t=(i-1)/(EXPLICIT_FORECAST_YEARS-2);
     const curved=t*t*(3-2*t);
-    growthPath.push(clamp(y2*(1-curved)+year5Growth*curved,-.10,.28));
+    let g=y2*(1-curved)+year5Growth*curved;
+    if(ltgRevenue!=null) g=g+ltgWeight*(ltgRevenue-g);
+    // Backlog matters most for the nearest years it covers: year 3 full weight, year 4 70%, year 5 40%.
+    if(backlogSignal!=null) g=g+backlogWeight*[1,.7,.4][i-2]*(backlogSignal-g);
+    growthPath.push(clamp(g,-.10,midCap));
   }
+  // Years 6-10 fade from the (possibly adjusted) year-5 rate, so the path stays continuous.
+  const year5Adj=clamp(growthPath[EXPLICIT_FORECAST_YEARS-1]??year5Growth,matureGrowth,.30);
   for(let i=EXPLICIT_FORECAST_YEARS;i<HORIZON_YEARS;i++){
     const t=(i-EXPLICIT_FORECAST_YEARS+1)/(HORIZON_YEARS-EXPLICIT_FORECAST_YEARS);
     const curved=t*t*(3-2*t);
-    growthPath.push(clamp(year5Growth*(1-curved)+matureGrowth*curved,-.06,.18));
+    growthPath.push(clamp(year5Adj*(1-curved)+matureGrowth*curved,-.06,Math.max(.18,year5Adj)));
   }
   const analystCoverage=(a1!=null?1:0)+(a2!=null?1:0);
   const forecastReliabilityScore=Math.round(100*clamp(.20+.35*historyReliability+.25*(analystCoverage/2)+.20*clamp(analysts/20,0,1)-((structuralStepUp||structuralStepDown)?.10:0),.20,.95));
-  return {growthPath,y1,y2,matureGrowth,year5Growth,historicalAnchor,recentAnnual,recentQuarter,qualityHint,reinvestmentPersistence,analystWeight,analystWeightYear2,directAnalystYears:2,structuralStepUp,structuralStepDown,analystUsed:a1!=null||a2!=null,historyReliability,histDispersion,forecastReliabilityScore};
+  return {longTermConsensus:{raw:ltgRaw,revenueEquivalent:ltgRevenue,weight:ltgWeight},backlogEvidence:{coverage:backlogCoverage,growth:backlogGrowth,signal:backlogSignal,weight:backlogWeight},growthCeiling:{years3to5:midCap,sources:strongSources.length},growthPath,y1,y2,matureGrowth,year5Growth:year5Adj,historicalAnchor,recentAnnual,recentQuarter,qualityHint,reinvestmentPersistence,analystWeight,analystWeightYear2,directAnalystYears:2,structuralStepUp,structuralStepDown,analystUsed:a1!=null||a2!=null,historyReliability,histDispersion,forecastReliabilityScore};
 }
 
 function buildMarginForecast(stock,years,cfg,growthInfo){
@@ -997,18 +1028,25 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
       if(pre.length<3){reversionShare=0;durabilityEvidence.push('no_comparable_scale_history');}
       // A loss-making start-up phase is not a 'normal' margin to revert to: floor the baseline at 0.
       const excess=reportedNow-Math.max(0,Math.min(provenNet,preBoomBaseline??provenNet));
-      targetNet=Math.min(targetNet,currentNet-excess*reversionShare*.5);
-      matureTargetNet=Math.min(matureTargetNet,currentNet-excess*reversionShare);
+      // No reversion means no reversion: don't even cap the path at today's margin (Build 53 bug:
+      // a zero share still clamped CELH's mature margin to today's level and dragged cash flow with it).
+      if(reversionShare>0){
+        targetNet=Math.min(targetNet,currentNet-excess*reversionShare*.5);
+        matureTargetNet=Math.min(matureTargetNet,currentNet-excess*reversionShare);
+      }
     }
+    // Only the REVERSION moves cash flow and operating margins. The ceiling below caps net-margin
+    // expansion, but FCF has its own history and guardrails, so the ceiling never cuts cash.
+    const revDelta={target:targetNet-oldT,mature:matureTargetNet-oldM};
     // Ceiling base also respects analyst-supported recoveries (Build 48), so this never undoes them.
     const ceilingBase=Math.max(currentNet,reportedNow,provenNet,analystAnchorApplied&&Number.isFinite(analystNet2)?analystNet2:-Infinity);
     matureTargetNet=Math.min(matureTargetNet,ceilingBase+.04);
     targetNet=Math.min(targetNet,ceilingBase+.04);
     peakMarginDelta={target:targetNet-oldT,mature:matureTargetNet-oldM};
     peakMarginApplied=peakMarginDelta.target<-.0005||peakMarginDelta.mature<-.0005;
-    if(peakMarginApplied){
+    if(peakMarginApplied&&(revDelta.target<-.0005||revDelta.mature<-.0005)){
       const pre=d=>d/(1-clamp(normalizedTaxRate,0,.35));
-      const dT=peakMarginDelta.target,dM=Math.min(peakMarginDelta.mature,dT);
+      const dT=Math.min(0,revDelta.target),dM=Math.min(revDelta.mature,dT);
       targetOperating=clamp(targetOperating+pre(dT),-.10,opCeiling);
       matureOperating=clamp(matureOperating+pre(dM),-.10,opCeiling);
       if(Number.isFinite(targetEBITDA)) targetEBITDA=clamp(targetEBITDA+pre(dT),-.05,ebitdaCeiling);
@@ -1236,7 +1274,7 @@ function buildForecast(stock){
   const sustainableGrowth=median([growth.y1,growth.y2,growth.historicalAnchor].filter(Number.isFinite))??growth.y1;
   const category=classifyCategory(stock,sustainableGrowth,growth.qualityHint,Number(stock.valuation?.dividendYield)||0);
   const forecastBridge={
-    revenue:{model:growth.y1,analystCurrent:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthCurrentYear??stock.analystEstimates?.revenueGrowthFwd),analystNext:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthNextYear),recentQuarter:growth.recentQuarter,recentAnnual:growth.recentAnnual,historicalNormalized:growth.historicalAnchor,terminalOperatingGrowth:growth.year5Growth,analystWeight:growth.analystWeight,analystWeightYear1:growth.analystWeight,analystWeightYear2:growth.analystWeightYear2,directAnalystYears:growth.directAnalystYears,structuralStepUp:growth.structuralStepUp,structuralStepDown:growth.structuralStepDown},
+    revenue:{longTermConsensus:growth.longTermConsensus??null,backlogEvidence:growth.backlogEvidence??null,growthCeiling:growth.growthCeiling??null,model:growth.y1,analystCurrent:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthCurrentYear??stock.analystEstimates?.revenueGrowthFwd),analystNext:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthNextYear),recentQuarter:growth.recentQuarter,recentAnnual:growth.recentAnnual,historicalNormalized:growth.historicalAnchor,terminalOperatingGrowth:growth.year5Growth,analystWeight:growth.analystWeight,analystWeightYear1:growth.analystWeight,analystWeightYear2:growth.analystWeightYear2,directAnalystYears:growth.directAnalystYears,structuralStepUp:growth.structuralStepUp,structuralStepDown:growth.structuralStepDown},
     margins:{fcfStart:margins.currentFCF,fcfNormalized:margins.rawFCF,fcfTarget:margins.targetFCF,fcfMatureTarget:margins.matureTargetFCF,operatingStart:margins.currentOperating,operatingTarget:margins.targetOperating,operatingMatureTarget:margins.matureOperating,ebitdaStart:margins.currentEBITDA,ebitdaNormalized:margins.rawEBITDA,ebitdaTarget:margins.targetEBITDA,ebitdaMatureTarget:margins.matureTargetEBITDA,netStart:margins.currentNet,netNormalized:margins.currentNet,gaapNetNormalized:margins.rawNet,netTarget:margins.targetNet,netMatureTarget:margins.matureTargetNet,cfoStart:margins.currentCFO,cfoTarget:margins.targetCFO,cfoMatureTarget:margins.matureCFO,capexStart:margins.currentCapex,capexTarget:margins.targetCapex,capexMatureTarget:margins.matureCapex,incrementalFCFMargin:margins.incrementalFCFMargin,incrementalOperatingMargin:margins.incrementalOperatingMargin,analystMarginGrowth:margins.analystMarginGrowth,analystMarginDelta:margins.analystMarginDelta,expansionVotes:margins.expansionVotes,compressionVotes:margins.compressionVotes,fcfTrend:margins.fcfTrend,operatingTrend:margins.opTrend,grossMarginTrend:margins.grossTrend,operatingLeverageAdjustment:margins.leverageSignal,abnormalCapexCycle:margins.abnormalCapexCycle,reportedFCFMargin:margins.reportedFCFMargin,normalizedCapexMargin:margins.normalizedCapexMargin,cycleNormalizedFCFMargin:margins.cycleNormalizedFCFMargin,maintenanceCapexMargin:margins.maintenanceCapexMargin,growthReinvestmentShare:margins.growthReinvestmentShare,matureGrowthReinvestmentShare:margins.matureGrowthReinvestmentShare,matureCapexMargin:margins.matureCapex,normalizedCFOMargin:margins.normalizedCFO,cashEconomicsTarget:margins.cashEconomicsTarget,profitabilityConsistencyApplied:margins.profitabilityConsistencyApplied,structuralCapitalLightCashConversion:margins.structuralCapitalLightCashConversion,recurringFcfCfoRatio:margins.recurringFcfCfoRatio,fcfCeiling:margins.fcfCeiling,crossMarginCoherenceApplied:margins.crossMarginCoherenceApplied,unexplainedFcfCompressionPrevented:margins.unexplainedFcfCompressionPrevented,broadCashCompressionEvidence:margins.broadCashCompressionEvidence,temporaryMarginReset:margins.temporaryMarginReset,
       analystMarginAnchor:margins.analystMarginAnchor??null,oneTimeChargesLatest:margins.oneTimeChargesLatest??0,backlogCoverage:margins.backlogCoverage??null,peakMarginDiscipline:margins.peakMarginDiscipline??null,normalizedTaxRate:margins.normalizedTaxRate,gaapNetStart:margins.gaapCurrentNet,gaapNetTarget:margins.gaapTargetNet,gaapNetMatureTarget:margins.gaapMatureTargetNet,
       earningsNormalizationAddbackStart:margins.currentNormalizationAddback,earningsNormalizationAddbackTarget:margins.targetNormalizationAddback,earningsNormalizationAddbackMature:margins.matureNormalizationAddback,
