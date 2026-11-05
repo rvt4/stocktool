@@ -88,7 +88,11 @@ function buildGrowthForecast(stock,years,cfg){
   const coverage=clamp((analysts-1)/6,0,1);
   const fullAnalystWeight=clamp(0.62+Math.min(analysts,30)/120,0.62,0.87);
   const analystWeight=0.30+(fullAnalystWeight-0.30)*coverage;
-  const analystWeightYear2=Math.min(.80,analystWeight+.05);
+  // Build 56: deep coverage (20+ analysts) earns more trust in next year's revenue too. Year-2
+  // consensus for widely followed companies has been the best free near-term evidence available
+  // (AMD's +77% next year was being diluted to 60% by 3-year history from a different business mix).
+  const deepCoverage=clamp((analysts-15)/15,0,1);
+  const analystWeightYear2=Math.min(.80+.08*deepCoverage,analystWeight+.05+.08*deepCoverage);
 
   // Detect a likely acquisition / divestiture / accounting step change. We keep the new
   // revenue base, but do not teach the model that the one-time jump is organic growth.
@@ -116,9 +120,10 @@ function buildGrowthForecast(stock,years,cfg){
   // expands only when analysts actually underwrite the growth, so noisy history alone can
   // never manufacture a 50%+ forecast.
   const consensusPeak=Math.max(a1??-.99,a2??-.99);
-  const analystCeiling=Math.max(.10,Math.min(.60,consensusPeak+.05));
-  const y1Cap=a1!=null?Math.min(.55,analystCeiling):.35;
-  const y2Cap=a2!=null?Math.min(.60,analystCeiling):.32;
+  const hardCap=.60+.25*deepCoverage;
+  const analystCeiling=Math.max(.10,Math.min(hardCap,consensusPeak+.05));
+  const y1Cap=a1!=null?Math.min(.55+.25*deepCoverage,analystCeiling):.35;
+  const y2Cap=a2!=null?Math.min(hardCap,analystCeiling):.32;
   y1=clamp(y1,-0.18,y1Cap); y2=clamp(y2,-0.15,y2Cap);
 
   // Maturity is company-specific: durable high-growth businesses fade more slowly, but
@@ -889,7 +894,8 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   // Analyst EPS may be "adjusted" (ex-SBC): the basis is inferred per company below.
   const aCov=stock.analystEstimates||{};
   const covN=finite(aCov.numAnalysts)??0;
-  const anchorW=clamp((covN-4)/16,0,1)*.5;
+  // Build 56: up to 65% for very deeply covered companies (35+ analysts).
+  const anchorW=clamp((covN-4)/16,0,1)*.5+clamp((covN-20)/15,0,1)*.15;
   const lastShares=finite(years.at(-1)?.sharesOutTTM);
   const sbcNow=medianRecent(sbcSeriesForEarnings.filter(Number.isFinite),3)??0;
   // Is consensus EPS before or after SBC? Infer it per company: the current-year estimate (a
@@ -914,9 +920,21 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     const exSbc=Math.abs(raw1-(gaapLatest+sbcAfterTax)),inclSbc=Math.abs(raw1-gaapLatest);
     if(exSbc<inclSbc){sbcDeduction=sbcAfterTax;consensusBasis='excludes_sbc';}else{sbcDeduction=0;consensusBasis='includes_sbc';}
   }
-  const impliedNet=(eps,rev,h)=>{const x=rawImplied(eps,rev,h);return x!=null?clamp(x-sbcDeduction,-.10,netCeiling):null;};
-  const analystNet1=impliedNet(aCov.epsCurrentYear,aCov.revenueCurrentYear,.03);
-  const analystNet2=impliedNet(aCov.epsNextYear,aCov.revenueNextYear,.08);
+  // Build 56: SBC is deducted in DOLLARS, not as a fixed share of revenue. Stock pay grows more
+  // slowly than revenue at a fast grower, so a constant % overstated the deduction (AMD: 5% of
+  // today's revenue applied to a revenue base 2.6x larger). SBC dollars grow at half the revenue
+  // growth rate (5-20%/yr).
+  const revNowAnchor=finite(years.at(-1)?.revenue);
+  const sbcShare=(rev,t)=>{
+    const r=finite(rev);
+    if(!(revNowAnchor>0)||!(r>0)||!(sbcDeduction>0))return sbcDeduction;
+    const revCagr=Math.pow(r/revNowAnchor,1/t)-1;
+    const sbcGrowth=clamp(revCagr*.5,.05,.20);
+    return clamp(sbcDeduction*revNowAnchor*Math.pow(1+sbcGrowth,t)/r,0,sbcDeduction*1.25);
+  };
+  const impliedNet=(eps,rev,h,t)=>{const x=rawImplied(eps,rev,h);return x!=null?clamp(x-sbcShare(rev,t),-.10,netCeiling):null;};
+  const analystNet1=impliedNet(aCov.epsCurrentYear,aCov.revenueCurrentYear,.03,1);
+  const analystNet2=impliedNet(aCov.epsNextYear,aCov.revenueNextYear,.08,2);
   // "Improvement" means margins recovering, not just EPS growing with revenue: next year's
   // implied margin is clearly higher than this year's, or EPS turns from a loss to a profit.
   const analystExpectsImprovement=Number.isFinite(finite(aCov.epsNextYear))&&finite(aCov.epsNextYear)>0&&(
@@ -930,6 +948,10 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     if(Number.isFinite(analystNet1)&&Math.abs(analystNet1-currentNet)>.015) currentNet=clamp(currentNet+anchorW*(analystNet1-currentNet),-.10,netCeiling);
     const nearAnchor=Number.isFinite(analystNet2)?analystNet2:analystNet1;
     if(Number.isFinite(nearAnchor)&&Math.abs(nearAnchor-targetNet)>.015) targetNet=clamp(targetNet+anchorW*(nearAnchor-targetNet),-.10,netCeiling);
+    // Build 56: in a recovery analysts expect (BA: a loss this year, a profit next year), the year-5
+    // margin should not sit BELOW the margin analysts already see next year. The model was letting
+    // a decade of losses pull BA's margins negative again by 2028 against a 25-analyst recovery.
+    if(analystExpectsImprovement&&Number.isFinite(nearAnchor)&&nearAnchor>targetNet) targetNet=Math.min(nearAnchor,netCeiling);
     // Recovery mode only when the model's own start sits well below where analysts see earnings.
     if((analystExpectsImprovement||(Number.isFinite(nearAnchor)&&nearAnchor>oldStart+.02))&&Number.isFinite(nearAnchor)&&nearAnchor>oldStart+.005){
       // Never let the mature margin sit below where analysts already see earnings next year,

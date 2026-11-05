@@ -737,8 +737,25 @@ function valuate(stock,forecast,quality){
       // operating leverage in fast-scaling lenders/fintechs and understated their earnings
       // power even when consensus expected EPS to grow much faster than revenue.
       const growthFinancial=forecast.category==='Growth'||forecast.category==='Hyper Growth';
-      const near1=clamp(Number.isFinite(analystEPS1)?analystEPS1:analystRevenue,-.10,growthFinancial?.40:.24);
-      const near2=clamp(Number.isFinite(analystEPS2)?analystEPS2:(Number.isFinite(near1)?near1*.85:analystRevenue),-.08,growthFinancial?.34:.22);
+      let near1=clamp(Number.isFinite(analystEPS1)?analystEPS1:analystRevenue,-.10,growthFinancial?.40:.24);
+      let near2=clamp(Number.isFinite(analystEPS2)?analystEPS2:(Number.isFinite(near1)?near1*.85:analystRevenue),-.08,growthFinancial?.34:.22);
+      // Build 56: with real coverage, use consensus EPS LEVELS for the next two years (haircut 3% / 8%
+      // like the main engine) instead of growth rates clipped at 40% / 34%. SOFI's consensus is
+      // $0.61 then $0.90; the clipped rates put the model at $0.55 then $0.73.
+      const nFin=finite(a.numAnalysts)??0, eCY=finite(a.epsCurrentYear), eNY=finite(a.epsNextYear);
+      let consensusLevels=false;
+      if(nFin>=5&&eCY>0&&epsBase>0){
+        const l1=eCY*.97;
+        const g1=l1/epsBase-1;
+        // Sanity: consensus must be within reach of the LATEST reported EPS (the normalized base is
+        // a multi-year blend, so a fast grower's base can sit well below the latest year).
+        const latestEPS=finite(last.dilutedEPS)>0?finite(last.dilutedEPS):epsBase;
+        const vsLatest=l1/latestEPS-1;
+        if(g1>-.30&&vsLatest>-.30&&vsLatest<(growthFinancial?1.0:.50)&&g1<(growthFinancial?2.0:.70)){
+          near1=g1;consensusLevels=true;
+          if(eNY>0){const g2=eNY*.92/l1-1;if(g2>-.25&&g2<(growthFinancial?.80:.40))near2=g2;}
+        }
+      }
       const qualityGrowth=((quality?.growthQualityScore??50)/100);
       const compounder=((quality?.compounderScore??50)/100);
       const terminalRevenue=clamp(forecast.terminalGrowth??growth,.01,.12);
@@ -765,7 +782,7 @@ function valuate(stock,forecast,quality){
       const m=boundedExit(currentPE,justified,7,growthFinancial?36:22);
       const rel=methodReliability(stock,forecast,'FINANCIAL_EPS',epsBase,futureEPS,quality);
       const epsWeight=archetypeMethodWeight(archetype,'FINANCIAL_EPS',rel.score);
-      addMethod(methods,{name:'Normalized EPS exit',target:futureEPS*m,weight:epsWeight,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:futureEPS,normalizedEPSBase:epsBase,epsGrowth,epsGrowthPath:epsPath,matureEpsGrowth,reliabilityReasons:rel.reasons}});
+      addMethod(methods,{name:'Normalized EPS exit',target:futureEPS*m,weight:epsWeight,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:futureEPS,normalizedEPSBase:epsBase,consensusLevels,epsGrowth,epsGrowthPath:epsPath,matureEpsGrowth,reliabilityReasons:rel.reasons}});
 
       // Financial companies should not be forced into a single P/E lens. Common equity is
       // already available from SEC Company Facts, so use it as a second economic anchor.
