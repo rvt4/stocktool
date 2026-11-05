@@ -350,6 +350,13 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   pullAnnual('ProceedsFromStockIssued', 'shareIssuanceProceeds');
   pullAnnual('PaymentsOfDividends', 'dividendsPaid');
   pullAnnual('PaymentsOfDividendsCommonStock', 'dividendsPaid');
+  // Build 47: keep common vs preferred apart for the per-share fallback. Generic "dividends paid"
+  // includes preferred dividends (e.g. Boeing's convertible preferred), which are NOT a common dividend.
+  pullAnnual('PaymentsOfDividendsCommonStock', 'commonDividendsPaid');
+  pullAnnual('DividendsPreferredStock', 'preferredDividends');
+  pullAnnual('DividendsPreferredStockCash', 'preferredDividends');
+  pullAnnual('PreferredStockDividendsIncomeStatementImpact', 'preferredDividends');
+  pullAnnual('PaymentsOfDividendsPreferredStockAndPreferenceStock', 'preferredDividends');
   pullAnnual('PaymentsToAcquireBusinessesNetOfCashAcquired', 'acquisitions');
   pullAnnual('PaymentsToAcquireBusinessesGross', 'acquisitions');
   pullAnnual('InventoryNet', 'inventory');
@@ -977,12 +984,26 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
 
   // Build 40: last-resort dividend per share = common dividends paid / diluted shares, for filers
   // that tag neither per-share fact. Without this their total return silently excluded dividends.
-  for (const y of years) {
-    if (!(Number(y.dividendPerShare) > 0) && Number(y.dividendsPaid) > 0 && Number(y.sharesOutTTM) > 0) {
-      y.dividendPerShare = Math.abs(Number(y.dividendsPaid)) / Number(y.sharesOutTTM);
-      y.dividendSource = 'cash_paid_divided_by_shares';
+  // Build 49 guards: only fill years where the per-share fact is missing; for the LATEST year use the
+  // median of the last three cash-paid values so one special dividend doesn't become the run-rate;
+  // require the latest year to have cash paid (a suspended dividend stays suspended); cap the
+  // implied starting yield at 9%.
+  const cashPaidDps = years.map(y => {
+    const commonPaid = Number(y.commonDividendsPaid) > 0 ? Number(y.commonDividendsPaid)
+      : (Number(y.dividendsPaid) > 0 && !(Number(y.preferredDividends) > 0) ? Number(y.dividendsPaid) : 0);
+    return commonPaid > 0 && Number(y.sharesOutTTM) > 0 ? Math.abs(commonPaid) / Number(y.sharesOutTTM) : null;
+  });
+  years.forEach((y, i) => {
+    if (Number(y.dividendPerShare) > 0 || cashPaidDps[i] == null) return;
+    let dps = cashPaidDps[i];
+    if (i === years.length - 1) {
+      const recent = cashPaidDps.slice(-3).filter(v => v != null).sort((a, b) => a - b);
+      if (recent.length) dps = recent[Math.floor((recent.length - 1) / 2)];
+      if (currentPrice > 0) dps = Math.min(dps, currentPrice * 0.09);
     }
-  }
+    y.dividendPerShare = dps;
+    y.dividendSource = 'cash_paid_divided_by_shares';
+  });
   const sharesOut = last.sharesOutTTM;
   const marketCap = currentPrice && sharesOut ? currentPrice * sharesOut : null;
   const eps = last.netIncome && sharesOut ? last.netIncome / sharesOut : null;

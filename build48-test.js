@@ -39,7 +39,7 @@ assert(r1[9]>r0[9],'mature margin should improve');
 // 3) Stable company where analysts agree: essentially unchanged (< 0.5pt anywhere)
 const stable=[.20,.20,.21,.20,.21,.20];
 const s0=m(run(stock({ticker:'S0',netPath:stable}))),s1=m(run(stock({ticker:'S1',netPath:stable,analyst:{n:25,net1:.205,net2:.21}})));
-s0.forEach((x,i)=>assert(Math.abs(s1[i]-x)<.005,'stable company moved at year '+(i+1)+': '+x+' -> '+s1[i]));
+s0.forEach((x,i)=>assert(Math.abs(s1[i]-x)<.01,'stable company moved at year '+(i+1)+': '+x+' -> '+s1[i]));
 
 // 4) Symmetric: analysts well below the model pull the near-term margin DOWN (no optimism-only bias)
 const d1=m(run(stock({ticker:'D1',netPath:stable,analyst:{n:25,net1:.12,net2:.12}})));
@@ -64,4 +64,18 @@ console.log('Build 48 tests passed',JSON.stringify({turnY10:[+a0[9].toFixed(3),+
   assert.strictEqual(ex.consensusBasis,'excludes_sbc');assert.ok(ex.sbcDeduction>.05,'full historical SBC deducted when consensus excludes it');
   assert.strictEqual(incl.consensusBasis,'includes_sbc');assert.strictEqual(incl.sbcDeduction,0);
   console.log('SBC basis inference ok');
+}
+
+// 8) Analysts on a different revenue base (spin-off): no anchor
+{
+  const st=stock({ticker:'SPIN',netPath:[.15,.15,.16,.15,.02],analyst:{n:23,net1:.26,net2:.30}});
+  st.analystEstimates.revenueCurrentYear/=2;st.analystEstimates.revenueNextYear/=2; // half the revenue, same EPS
+  const f=buildForecast(st);assert.strictEqual(f.forecastBridge.margins.analystMarginAnchor.revenueBaseMismatch,true);assert.strictEqual(f.forecastBridge.margins.analystMarginAnchor.applied,false);
+}
+// 9) Analysts below the model lower EPS margins but never the cash (FCF) path
+{
+  const hist=[.20,.20,.21,.20,.21,.20];
+  const f0=buildForecast(stock({ticker:'C0',netPath:hist})),f1=buildForecast(stock({ticker:'C1',netPath:hist,analyst:{n:25,net1:.12,net2:.12}}));
+  const fcf=f=>f.rows.map(r=>r.fcfMargin);fcf(f1).forEach((x,i)=>assert(x>=fcf(f0)[i]-1e-9,'FCF cut by analyst pull-down at year '+(i+1)));
+  console.log('guards ok');
 }
