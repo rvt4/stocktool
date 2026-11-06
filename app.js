@@ -194,6 +194,7 @@ function renderPathEditor(){
  const ev=x=>String(x).replaceAll('_',' ');
  if(pk?.applied)notes.push(`Today's margin is well above this company's long-run level, so the model lets part of it fade (${Math.round((1-(pk.reversionShare||0)/(pk.baseReversion||1))*100)}% durability credit${pk.durabilityEvidence?.length?': '+pk.durabilityEvidence.map(ev).join(', '):''}).`);
  if(an?.applied)notes.push(`Near-term margins are anchored part-way to analyst EPS (${Math.round((an.weight||0)*100)}% weight${an.consensusBasis&&an.consensusBasis!=='unknown'?', consensus '+ev(an.consensusBasis):''}).`);
+ const cr=mb.crisisRecovery;if(cr?.applied)notes.push(`Recovery from ${cr.lossYears} loss years: margins head back half-way to the pre-crisis ${(cr.preCrisis*100).toFixed(1)}% net margin by year 10 (${(cr.proven*100).toFixed(1)}%).`);
  if(Number.isFinite(mb.backlogCoverage))notes.push(`Backlog (contracted revenue not yet recognized): ${mb.backlogCoverage.toFixed(1)}× annual revenue.`);
  const rb=current?.projectionAssumptions?.forecastBridge?.revenue||{};
  if(Number.isFinite(rb.longTermConsensus?.raw)&&rb.longTermConsensus.weight>0)notes.push(`Years 3–5 growth leans on the analyst long-term EPS growth estimate of ${pct(rb.longTermConsensus.raw)} (haircut, ${Math.round(rb.longTermConsensus.weight*100)}% weight).`);

@@ -254,3 +254,18 @@ console.log('Build 48 tests passed',JSON.stringify({turnY10:[+a0[9].toFixed(3),+
     console.log('financial consensus levels ok',au.epsGrowthPath.slice(0,3).map(x=>+x.toFixed(3)));
   } else console.log('financial fixture not valued as financial; methods',r.v.methods.map(x=>x.name));
 }
+// 23) Build 57: crisis-aware recovery. BA-like history (profitable, then a run of losses) with
+//     analysts seeing a return to profit recovers toward half-way back to the pre-crisis margin.
+//     Same history WITHOUT analysts expecting a recovery is unchanged.
+{
+  const hist=[.05,.09,.10,-.01,-.20,-.07,-.07,-.03,-.18,-.01];
+  const r=run(stock({ticker:'BAC2',netPath:hist,growth:.08,analyst:{n:25,net1:-.016,net2:.02}})),nm=m(r);
+  const cr=r.f.forecastBridge.margins.crisisRecovery;
+  assert(cr&&cr.applied,'crisis recovery should apply: '+JSON.stringify(cr));
+  assert(nm[9]>.035&&nm[9]<.06,'year-10 margin should recover to ~4% (half-way back to the pre-crisis 9%): '+nm.map(x=>x.toFixed(3)));
+  const r2=run(stock({ticker:'BAC3',netPath:hist,growth:.08,analyst:{n:25,net1:-.03,net2:-.025}}));
+  assert(!r2.f.forecastBridge.margins.crisisRecovery?.applied,'no recovery expected by analysts -> no crisis credit');
+  const r3=run(stock({ticker:'BAC4',netPath:hist,growth:.08}));
+  assert(!r3.f.forecastBridge.margins.crisisRecovery?.applied,'no coverage -> no crisis credit');
+  console.log('crisis recovery ok',nm.map(x=>+x.toFixed(3)),JSON.stringify(cr));
+}
