@@ -942,6 +942,25 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     ((finite(aCov.epsCurrentYear)??0)<=0));
   const provenSeries=netSeries.filter(Number.isFinite).slice(-10).sort((x,y)=>x-y);
   const provenNet=provenSeries.length>=6?provenSeries[Math.floor(.70*(provenSeries.length-1))]:null;
+  // Build 57: crisis-aware "proven" margin. When the last decade contains a run of loss years
+  // (BA: the 737 MAX grounding, COVID, the strike) and analysts expect a return to profit, the
+  // 70th-percentile year mostly measures the crisis. Look at the profitable years just before the
+  // first loss and credit half of the gap between that level and the decade's proven margin.
+  // Needs 3+ loss years in the last 10, 2+ profitable years before them and 8+ analysts.
+  let crisisRecovery=null;
+  {
+    const series=netSeries.map((v,i)=>({v,y:years[i]?.year})).filter(x=>Number.isFinite(x.v));
+    const last10=series.slice(-10), lossYears=last10.filter(x=>x.v<0).length;
+    const firstLoss=last10.findIndex(x=>x.v<0);
+    if(lossYears>=3&&firstLoss>=0&&covN>=8&&Number.isFinite(provenNet)){
+      const idx=series.length-last10.length+firstLoss;
+      const pre=series.slice(Math.max(0,idx-5),idx).map(x=>x.v).filter(v=>v>0);
+      if(pre.length>=2){
+        const preCrisis=median(pre);
+        if(preCrisis>provenNet+.01) crisisRecovery={preCrisis,lossYears,proven:Math.min(netCeiling,provenNet+.5*(preCrisis-provenNet)),preCrisisYears:pre.length};
+      }
+    }
+  }
   let analystAnchorApplied=false, analystAnchorDelta={start:0,target:0,mature:0};
   if(anchorW>0&&!revenueBaseMismatch&&Number.isFinite(currentNet)&&Number.isFinite(targetNet)&&Number.isFinite(matureTargetNet)){
     const oldStart=currentNet,oldTarget=targetNet,oldMature=matureTargetNet;
@@ -956,9 +975,12 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     if((analystExpectsImprovement||(Number.isFinite(nearAnchor)&&nearAnchor>oldStart+.02))&&Number.isFinite(nearAnchor)&&nearAnchor>oldStart+.005){
       // Never let the mature margin sit below where analysts already see earnings next year,
       // and when the company has proven better margins before, recover part-way toward them.
-      const recoveryFloor=Number.isFinite(provenNet)&&Number.isFinite(nearAnchor)&&provenNet>nearAnchor
+      let recoveryFloor=Number.isFinite(provenNet)&&Number.isFinite(nearAnchor)&&provenNet>nearAnchor
         ? weightedAverage([[provenNet,.5],[nearAnchor,.5]])
         : nearAnchor;
+      // Build 57: a crisis recovery the analysts already see heads back to the crisis-adjusted level
+      // by year 10 (not halfway between it and next year's still-depressed margin).
+      if(crisisRecovery&&analystExpectsImprovement&&Number.isFinite(recoveryFloor)) {crisisRecovery.applied=true;recoveryFloor=Math.max(recoveryFloor,crisisRecovery.proven);}
       if(Number.isFinite(recoveryFloor)) matureTargetNet=Math.max(matureTargetNet,targetNet,Math.min(recoveryFloor,netCeiling));
     }
     analystAnchorDelta={start:currentNet-oldStart,target:targetNet-oldTarget,mature:matureTargetNet-oldMature};
@@ -1139,7 +1161,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     normalizedTaxRate,gaapCurrentNet,gaapTargetNet,gaapMatureTargetNet,
     oneTimeChargesLatest:oneTimeSeries.at(-1)??0,backlogCoverage:(()=>{const r=finite(years.at(-1)?.rpo),v=finite(years.at(-1)?.revenue);return r>0&&v>0?r/v:null;})(),
     peakMarginDiscipline:{applied:peakMarginApplied,baseReversion,reversionShare,durability,durabilityEvidence,elevatedYears,preBoomBaseline,provenNet,delta:peakMarginDelta},
-    analystMarginAnchor:{applied:analystAnchorApplied,weight:anchorW,revenueBaseMismatch,consensusBasis,sbcDeduction,analystNet1,analystNet2,provenNet,expectsImprovement:analystExpectsImprovement,delta:analystAnchorDelta},
+    crisisRecovery,analystMarginAnchor:{applied:analystAnchorApplied,weight:anchorW,revenueBaseMismatch,consensusBasis,sbcDeduction,analystNet1,analystNet2,provenNet,expectsImprovement:analystExpectsImprovement,delta:analystAnchorDelta},
     currentNormalizationAddback,targetNormalizationAddback,matureNormalizationAddback,
     grossNow,grossTarget,grossMature,rdNow,rdTarget,rdMature,sgaNow,sgaTarget,sgaMature,
     sbcNowForEarnings,sbcTarget,sbcMature,amortNow,amortTarget,amortMature,
@@ -1298,7 +1320,7 @@ function buildForecast(stock){
   const forecastBridge={
     revenue:{longTermConsensus:growth.longTermConsensus??null,backlogEvidence:growth.backlogEvidence??null,growthCeiling:growth.growthCeiling??null,model:growth.y1,analystCurrent:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthCurrentYear??stock.analystEstimates?.revenueGrowthFwd),analystNext:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthNextYear),recentQuarter:growth.recentQuarter,recentAnnual:growth.recentAnnual,historicalNormalized:growth.historicalAnchor,terminalOperatingGrowth:growth.year5Growth,analystWeight:growth.analystWeight,analystWeightYear1:growth.analystWeight,analystWeightYear2:growth.analystWeightYear2,directAnalystYears:growth.directAnalystYears,structuralStepUp:growth.structuralStepUp,structuralStepDown:growth.structuralStepDown},
     margins:{fcfStart:margins.currentFCF,fcfNormalized:margins.rawFCF,fcfTarget:margins.targetFCF,fcfMatureTarget:margins.matureTargetFCF,operatingStart:margins.currentOperating,operatingTarget:margins.targetOperating,operatingMatureTarget:margins.matureOperating,ebitdaStart:margins.currentEBITDA,ebitdaNormalized:margins.rawEBITDA,ebitdaTarget:margins.targetEBITDA,ebitdaMatureTarget:margins.matureTargetEBITDA,netStart:margins.currentNet,netNormalized:margins.currentNet,gaapNetNormalized:margins.rawNet,netTarget:margins.targetNet,netMatureTarget:margins.matureTargetNet,cfoStart:margins.currentCFO,cfoTarget:margins.targetCFO,cfoMatureTarget:margins.matureCFO,capexStart:margins.currentCapex,capexTarget:margins.targetCapex,capexMatureTarget:margins.matureCapex,incrementalFCFMargin:margins.incrementalFCFMargin,incrementalOperatingMargin:margins.incrementalOperatingMargin,analystMarginGrowth:margins.analystMarginGrowth,analystMarginDelta:margins.analystMarginDelta,expansionVotes:margins.expansionVotes,compressionVotes:margins.compressionVotes,fcfTrend:margins.fcfTrend,operatingTrend:margins.opTrend,grossMarginTrend:margins.grossTrend,operatingLeverageAdjustment:margins.leverageSignal,abnormalCapexCycle:margins.abnormalCapexCycle,reportedFCFMargin:margins.reportedFCFMargin,normalizedCapexMargin:margins.normalizedCapexMargin,cycleNormalizedFCFMargin:margins.cycleNormalizedFCFMargin,maintenanceCapexMargin:margins.maintenanceCapexMargin,growthReinvestmentShare:margins.growthReinvestmentShare,matureGrowthReinvestmentShare:margins.matureGrowthReinvestmentShare,matureCapexMargin:margins.matureCapex,normalizedCFOMargin:margins.normalizedCFO,cashEconomicsTarget:margins.cashEconomicsTarget,profitabilityConsistencyApplied:margins.profitabilityConsistencyApplied,structuralCapitalLightCashConversion:margins.structuralCapitalLightCashConversion,recurringFcfCfoRatio:margins.recurringFcfCfoRatio,fcfCeiling:margins.fcfCeiling,crossMarginCoherenceApplied:margins.crossMarginCoherenceApplied,unexplainedFcfCompressionPrevented:margins.unexplainedFcfCompressionPrevented,broadCashCompressionEvidence:margins.broadCashCompressionEvidence,temporaryMarginReset:margins.temporaryMarginReset,
-      analystMarginAnchor:margins.analystMarginAnchor??null,oneTimeChargesLatest:margins.oneTimeChargesLatest??0,backlogCoverage:margins.backlogCoverage??null,peakMarginDiscipline:margins.peakMarginDiscipline??null,normalizedTaxRate:margins.normalizedTaxRate,gaapNetStart:margins.gaapCurrentNet,gaapNetTarget:margins.gaapTargetNet,gaapNetMatureTarget:margins.gaapMatureTargetNet,
+      analystMarginAnchor:margins.analystMarginAnchor??null,crisisRecovery:margins.crisisRecovery??null,oneTimeChargesLatest:margins.oneTimeChargesLatest??0,backlogCoverage:margins.backlogCoverage??null,peakMarginDiscipline:margins.peakMarginDiscipline??null,normalizedTaxRate:margins.normalizedTaxRate,gaapNetStart:margins.gaapCurrentNet,gaapNetTarget:margins.gaapTargetNet,gaapNetMatureTarget:margins.gaapMatureTargetNet,
       earningsNormalizationAddbackStart:margins.currentNormalizationAddback,earningsNormalizationAddbackTarget:margins.targetNormalizationAddback,earningsNormalizationAddbackMature:margins.matureNormalizationAddback,
       grossMarginStart:margins.grossNow,grossMarginTarget:margins.grossTarget,grossMarginMatureTarget:margins.grossMature,
       rdMarginStart:margins.rdNow,rdMarginTarget:margins.rdTarget,rdMarginMatureTarget:margins.rdMature,
@@ -1320,6 +1342,7 @@ function buildForecast(stock){
   if(margins.temporaryMarginReset)forecastFlags.push('temporary_margin_reset_normalized');
   if(margins.analystMarginAnchor?.applied)forecastFlags.push('analyst_anchored_margin_recovery');
   if(margins.peakMarginDiscipline?.applied)forecastFlags.push('peak_margin_reversion');
+  if(margins.crisisRecovery?.applied)forecastFlags.push('crisis_recovery_margin');
   if(dividendSanityCapped)forecastFlags.push('dividend_sanity_capped');
   if(margins.driverReconciliation==='full'){forecastFlags.push('full_operating_driver_reconciliation');forecastFlags.push('spreadsheet_operating_driver_model');}
   else if(margins.driverReconciliation==='partial')forecastFlags.push('partial_operating_driver_reconciliation');
