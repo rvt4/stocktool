@@ -222,12 +222,13 @@ const priceB=JSON.parse(JSON.stringify(priceA)); priceB.price.current=200;
 const pAF=buildForecast(priceA), pAQ=computeQuality(priceA,pAF), pAV=valuate(priceA,pAF,pAQ);
 const pBF=buildForecast(priceB), pBQ=computeQuality(priceB,pBF), pBV=valuate(priceB,pBF,pBQ);
 assert(Number.isFinite(pAV.fairValueEstimate)&&Number.isFinite(pBV.fairValueEstimate),'price-invariance test requires fair values');
-// Build 29: exit multiples are now partially (EXIT_PRICE_ANCHOR_WEIGHT) anchored to the market's
-// current multiple, so fair value is no longer perfectly price-independent. The dependence must
-// stay small: DOUBLING the quote may move fair value by at most ~20% (the old test demanded
-// exact invariance). Pinned/absurd current multiples are ignored, so this fixture can move either way.
+// Build 58: operating exits keep EXIT_MULTIPLE_PERSISTENCE of today's log premium, so doubling the
+// quote may raise fair value by at most 2^p (DCF explicit cash flows dilute it further), and fair
+// value must always rise LESS than the price: a higher quote can never look cheaper.
+const {EXIT_MULTIPLE_PERSISTENCE:persist}=require('./engine/config');
 const priceSensitivity=pBV.fairValueEstimate/pAV.fairValueEstimate-1;
-assert(Math.abs(priceSensitivity)<.20,'fair value is too sensitive to the quote: '+priceSensitivity);
+assert(priceSensitivity>-0.01&&priceSensitivity<=Math.pow(2,persist)-1+.02,'fair value sensitivity to the quote out of bounds: '+priceSensitivity);
+assert(pBV.fairValueEstimate/200<pAV.fairValueEstimate/100*.85,'doubling the quote did not make the stock look clearly more expensive');
 assert(pBV.expectedCAGR<pAV.expectedCAGR,'higher current price did not reduce expected CAGR');
 
 // 2) More dilution cannot improve per-share value for otherwise identical economics.

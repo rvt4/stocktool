@@ -46,9 +46,13 @@ for(const [sic,sector] of [['6324','Healthcare'],['6331','Financials'],['6022','
   assert(Number.isFinite(r.v.expectedCAGR)&&Number.isFinite(r.v.fairValueEstimate),sic+' financial route produced no valuation');
 }
 
-// 5) price anchoring is bounded: a stock priced at 3x moves fair value by < 20%, and higher price never raises CAGR
+// 5) price anchoring is bounded (Build 58 persistence): tripling the quote raises fair value by at most 3^p,
+// fair value/price falls sharply, and a higher price never raises CAGR
+const {EXIT_MULTIPLE_PERSISTENCE:persist}=require('./engine/config');
 const lo=run(stock({ticker:'LO',price:100})), hi=run(stock({ticker:'HI',price:300}));
-assert(Math.abs(hi.v.fairValueEstimate/lo.v.fairValueEstimate-1)<.20,'price anchoring moved fair value too much');
+const fvMove=hi.v.fairValueEstimate/lo.v.fairValueEstimate;
+assert(fvMove>=.99&&fvMove<=Math.pow(3,persist)+.03,'price anchoring moved fair value out of bounds: '+fvMove);
+assert(hi.v.fairValueEstimate/300<lo.v.fairValueEstimate/100*.75,'tripling the quote did not make the stock look clearly more expensive');
 assert(hi.v.expectedCAGR<lo.v.expectedCAGR,'higher price must lower expected CAGR');
 
 // 6) leverage must not create absurd equity multiples: a 6x-levered stock cannot value above 8x its price
