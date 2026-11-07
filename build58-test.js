@@ -47,3 +47,15 @@ if(dcf&&fcf){
 assert(pricey.expectedCAGR<normal.expectedCAGR,'higher quote raised expected CAGR');
 
 console.log('Build 58 exit-persistence tests passed',JSON.stringify({normalExit:+nEps.audit.exitMultiple.toFixed(1),priceyExit:+pEps.audit.exitMultiple.toFixed(1),fvMove:+move.toFixed(2)}));
+
+// 5) Build 58b: consensus near-term recovery shrinks the anchor; normal growth (<=15%/yr) does not.
+{
+  const mk=(gCY,gNY)=>{const s=stock({ticker:'REC',price:300,growth:.14,margin:.20,roic:.22});
+    Object.assign(s.analystEstimates,{numAnalysts:10,epsGrowthCurrentYear:gCY,epsGrowthNextYear:gNY});
+    const f=buildForecast(s),q=computeQuality(s,f);return method(valuate(s,f,q),'EPS exit').audit;};
+  const normalG=mk(.10,.12), recovery=mk(.10,.60);
+  assert.strictEqual(normalG.consensusRecoveryFactor,1,'normal growth should not shrink the anchor');
+  assert(Math.abs(recovery.consensusRecoveryFactor-1.1*1.6/1.3225)<1e-9,'recovery factor wrong');
+  assert(recovery.anchorMultiple<normalG.anchorMultiple,'recovery did not shrink the anchor');
+  console.log('Build 58b consensus-recovery anchor test passed');
+}
