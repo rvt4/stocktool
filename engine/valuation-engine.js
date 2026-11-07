@@ -1,5 +1,5 @@
 'use strict';
-const { HORIZON_YEARS, MARKET_RETURN, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, isFinancialLike, sectorConfig, clamp, median, rate } = require('./config');
+const { HORIZON_YEARS, MARKET_RETURN, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, EXIT_MULTIPLE_PERSISTENCE, EXIT_PREMIUM_BAND, EXIT_ANCHOR_MAX_MULTIPLE, DCF_EXIT_TV_WEIGHT, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, isFinancialLike, sectorConfig, clamp, median, rate } = require('./config');
 
 function cagr(p,f){if(!(p>0)||!(f>0))return null;return Math.pow(f/p,1/HORIZON_YEARS)-1;}
 function pv(v,r,n){return v/Math.pow(1+r,n);}
@@ -203,6 +203,21 @@ function boundedExit(current,justified,lo,hi,opts={}){
   const w=clamp(opts.weight??EXIT_PRICE_ANCHOR_WEIGHT,0,.75);
   const anchor=clamp(c,j*.6,j*1.6);
   return clamp((1-w)*j+w*anchor,lo,hi);
+}
+
+// Build 58: log-space multiple persistence for operating-company exits.
+// boundedExit let today's multiple move the exit by only -14%/+21% and ignored quotes above
+// ~57x, while the justified multiple converges every business to ~3% growth by year 10.
+// Net effect: fair value/price ran from 1.33x (P/E<12) to 0.39x (P/E 60+) while analyst
+// targets were flat (~1.15x) across the same buckets. Here a fixed share of today's log
+// premium (or discount) to the justified multiple persists to year 10.
+function persistentExit(current,justified,lo,hi,opts={}){
+  const j=clamp(justified,lo,hi);
+  const c=finite(current);
+  if(!(j>0)||!(c>0))return j;
+  const p=clamp(opts.persistence??EXIT_MULTIPLE_PERSISTENCE,0,.8);
+  const ratio=clamp(Math.min(c,EXIT_ANCHOR_MAX_MULTIPLE)/j,EXIT_PREMIUM_BAND[0],EXIT_PREMIUM_BAND[1]);
+  return clamp(j*Math.pow(ratio,p),lo,hi);
 }
 
 // V12.2: a company's own observed valuation history is a soft anchor when genuine
@@ -613,7 +628,7 @@ function robustOutcomeBlend(methods,price,consensus=null){
   return {outcome,weights:Object.fromEntries(capped.map(x=>[x.name,x.w/totalW]))};
 }
 
-function dcfFairValue(forecast,discountRate,currentShares,cfg){
+function dcfFairValue(forecast,discountRate,currentShares,cfg,exitPFCF=null){
   const rows=forecast.rows||[];
   if(rows.length!==HORIZON_YEARS||!(discountRate>0)||!(currentShares>0))return null;
 
@@ -639,11 +654,14 @@ function dcfFairValue(forecast,discountRate,currentShares,cfg){
   const sectorCeiling=clamp(finite(cfg?.terminalGrowth)??.025,.02,TERMINAL_GROWTH_CAP);
   const g=clamp(finite(forecast.terminalGrowth)??.02,.005,Math.min(sectorCeiling,discountRate-.045));
   if(!(discountRate>g))return null;
-  const terminalTotal=cashflows.at(-1)*(1+g)/(discountRate-g);
+  const gordonTerminal=cashflows.at(-1)*(1+g)/(discountRate-g);
+  // Build 58: part of the terminal value uses the (market-anchored) FCF exit multiple.
+  const exitWeight=Number.isFinite(exitPFCF)&&exitPFCF>0?clamp(DCF_EXIT_TV_WEIGHT,0,1):0;
+  const terminalTotal=(1-exitWeight)*gordonTerminal+exitWeight*cashflows.at(-1)*exitPFCF;
   const pvTerminalTotal=pv(terminalTotal,discountRate,HORIZON_YEARS);
   const explicit=explicitTotal/currentShares, pvTerminal=pvTerminalTotal/currentShares;
   const fair=explicit+pvTerminal;
-  return fair>0?{fairValue:fair,pvExplicit:explicit,pvTerminal,terminalGrowth:g,terminalShare:pvTerminal/fair,discountRate}:null;
+  return fair>0?{fairValue:fair,pvExplicit:explicit,pvTerminal,terminalGrowth:g,terminalShare:pvTerminal/fair,discountRate,terminalExitWeight:exitWeight,terminalExitMultiple:exitWeight>0?exitPFCF:null}:null;
 }
 
 // V12.7: value the business at the end of year 5 as well as year 10. The 5Y view is
@@ -845,14 +863,19 @@ function valuate(stock,forecast,quality){
     const currentPFCF=safeMultiple(price>0&&normFCF>0?price/normFCF:null,6,35);
     const currentPE=safeMultiple(price>0&&normEPS>0?price/normEPS:null,6,38);
     const currentEVEBITDA=safeMultiple(marketCap>0&&normEBITDA>0?(marketCap+netDebt)/normEBITDA:null,4,24);
-    // A current multiple pinned at safeMultiple's floor/ceiling is a bad-denominator or one-off-
-    // earnings artifact, not market information: give it zero anchoring weight.
-    const pinned=(v,lo,hi)=>!(v>0)||v<=lo*.75+1e-9||v>=hi*1.5-1e-9;
-    const anchorW=(v,lo,hi)=>pinned(v,lo,hi)?{weight:0}:{};
     const coherentExits=coherentExitMultiples(stock,forecast,quality,base,cfg,netDebt,intrinsicRate);
+    // Build 58: the exit anchor uses the market's actual multiple, with no upper cut-off (the old
+    // 57x pin silently gave the most expensive stocks a purely fundamental exit). Multiples below the
+    // floor (P/E or P/FCF < 4.5x, EV/EBITDA < 3x) are usually one-off gains or a bad denominator
+    // (e.g. captive-finance debt), so they still get no anchor.
+    const anchorAbove=(v,floor)=>Number.isFinite(v)&&v>=floor?v:null;
+    const anchorPFCF=anchorAbove(price>0&&normFCF>0?price/normFCF:null,4.5);
+    const anchorPE=anchorAbove(price>0&&normEPS>0?price/normEPS:null,4.5);
+    const anchorEVEBITDA=anchorAbove(marketCap>0&&normEBITDA>0?(marketCap+netDebt)/normEBITDA:null,3);
+    let fcfExitForDCF=null;
 
     if(allowEnterpriseScopeMethods&&Number(f.fcfPerShare)>0&&normFCF>0){
-      const exit=coherentExits.FCF, m=boundedExit(currentPFCF,exit.multiple,8,34,anchorW(currentPFCF,6,35));
+      const exit=coherentExits.FCF, m=persistentExit(anchorPFCF,exit.multiple,8,44); fcfExitForDCF=m;
       const rel=methodReliability(stock,forecast,'FCF',normFCF,f.fcfPerShare,quality);
       // V11.4: an exit-multiple method values the business at the exit date. Do not also
       // add every interim dollar of FCF here. The forecast share path already reflects
@@ -860,35 +883,35 @@ function valuate(stock,forecast,quality){
       // double-counting owner cash and made FCF-exit values track the (also inflated) DCF.
       // Dividends are added later because this is now an exit-only method.
       const terminalFCFValue=f.fcfPerShare*m;
-      { const w=archetypeMethodWeight(archetype,'FCF',rel.score); if(w>0)addMethod(methods,{name:'FCF exit',target:terminalFCFValue,weight:w,reliability:rel.score,price,family:'cashflow',cashFlowInclusive:false,audit:{exitMultiple:m,currentMultiple:currentPFCF,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,terminalExitValue:terminalFCFValue,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
+      { const w=archetypeMethodWeight(archetype,'FCF',rel.score); if(w>0)addMethod(methods,{name:'FCF exit',target:terminalFCFValue,weight:w,reliability:rel.score,price,family:'cashflow',cashFlowInclusive:false,audit:{exitMultiple:m,currentMultiple:currentPFCF,anchorMultiple:anchorPFCF,exitPersistence:EXIT_MULTIPLE_PERSISTENCE,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,terminalExitValue:terminalFCFValue,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
     }
     const sbcFrac=sbcAddBackFraction(forecast), epsX=sbcNeutralEPS(f,sbcFrac);
     if(Number(epsX)>0&&normEPS>0){
-      const exit=coherentExits.EPS, m=boundedExit(currentPE,exit.multiple,8,38,anchorW(currentPE,6,38));
+      const exit=coherentExits.EPS, m=persistentExit(anchorPE,exit.multiple,8,49);
       const rel=methodReliability(stock,forecast,'EPS',normEPS,epsX,quality);
-      { const w=archetypeMethodWeight(archetype,'EPS',rel.score); if(w>0)addMethod(methods,{name:'EPS exit',target:epsX*m,weight:w,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:epsX,sbcAddBackFraction:sbcFrac,reportedYear10EPS:f.eps,normalizedCurrentMetric:normEPS,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
+      { const w=archetypeMethodWeight(archetype,'EPS',rel.score); if(w>0)addMethod(methods,{name:'EPS exit',target:epsX*m,weight:w,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,anchorMultiple:anchorPE,exitPersistence:EXIT_MULTIPLE_PERSISTENCE,metric:epsX,sbcAddBackFraction:sbcFrac,reportedYear10EPS:f.eps,normalizedCurrentMetric:normEPS,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
     }
     if(allowEnterpriseScopeMethods&&Number(f.ebitda)>0&&Number(f.shares)>0&&normEBITDA>0){
       const exit=coherentExits.EBITDA;
       // Leverage amplifies any multiple error into equity value (CHTR: 4.7x EBITDA today vs 12.8x exit => $3,400/share).
       // Lean harder on the market's EV/EBITDA when net debt is a large share of enterprise value.
       const evNow=marketCap>0?marketCap+netDebt:null, levShare=evNow>0?clamp(netDebt/evNow,0,1):0;
-      const levWeight=pinned(currentEVEBITDA,4,24)?0:clamp(EXIT_PRICE_ANCHOR_WEIGHT+Math.max(0,levShare-.30)*1.0,0,.75);
-      const m=boundedExit(currentEVEBITDA,exit.multiple,6,25,{weight:levWeight}), equity=f.ebitda*m-terminalNetDebt;
+      const levPersistence=clamp(EXIT_MULTIPLE_PERSISTENCE+Math.max(0,levShare-.30)*1.0,0,.8);
+      const m=persistentExit(anchorEVEBITDA,exit.multiple,6,32.5,{persistence:levPersistence}), equity=f.ebitda*m-terminalNetDebt;
       if(equity>0){
         const rel=methodReliability(stock,forecast,'EBITDA',normEBITDA,f.ebitda,quality);
-        { const w=archetypeMethodWeight(archetype,'EBITDA',rel.score); if(w>0)addMethod(methods,{name:'EV/EBITDA exit',target:equity/f.shares,weight:w,reliability:rel.score,price,family:'enterprise',audit:{exitMultiple:m,currentMultiple:currentEVEBITDA,metric:f.ebitda,normalizedCurrentMetric:normEBITDA,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
+        { const w=archetypeMethodWeight(archetype,'EBITDA',rel.score); if(w>0)addMethod(methods,{name:'EV/EBITDA exit',target:equity/f.shares,weight:w,reliability:rel.score,price,family:'enterprise',audit:{exitMultiple:m,currentMultiple:currentEVEBITDA,anchorMultiple:anchorEVEBITDA,exitPersistence:levPersistence,metric:f.ebitda,normalizedCurrentMetric:normEBITDA,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
       }
     }
 
-    const dcf=allowEnterpriseScopeMethods?dcfFairValue(forecast,intrinsicRate,shares0,cfg):null;
+    const dcf=allowEnterpriseScopeMethods?dcfFairValue(forecast,intrinsicRate,shares0,cfg,fcfExitForDCF):null;
     if(dcf){
       const terminalOutcome=dcf.fairValue*Math.pow(1+intrinsicRate,HORIZON_YEARS);
       const rel=methodReliability(stock,forecast,'FCF',normFCF,f.fcfPerShare,quality);
       // Terminal-value-heavy DCFs are still useful, but receive less reliability when
       // most of the present value depends on the perpetuity rather than explicit cash flow.
       const terminalPenalty=dcf.terminalShare>.75?.55:(dcf.terminalShare>.65?.72:(dcf.terminalShare>.55?.88:1));
-      { const dcfRel=rel.score*terminalPenalty, w=archetypeMethodWeight(archetype,'DCF',dcfRel); if(w>0)addMethod(methods,{name:'10Y DCF',target:terminalOutcome,weight:w,reliability:dcfRel,price,family:'cashflow',cashFlowInclusive:true,audit:{fairValueToday:dcf.fairValue,year5Value:dcfValueAtYear5(forecast,intrinsicRate,shares0,cfg),pvExplicit:dcf.pvExplicit,pvTerminal:dcf.pvTerminal,discountRate:dcf.discountRate,terminalGrowth:dcf.terminalGrowth,terminalShare:dcf.terminalShare,reliabilityReasons:[...rel.reasons,...(terminalPenalty<1?['terminal_value_concentration']:[])]}}); }
+      { const dcfRel=rel.score*terminalPenalty, w=archetypeMethodWeight(archetype,'DCF',dcfRel); if(w>0)addMethod(methods,{name:'10Y DCF',target:terminalOutcome,weight:w,reliability:dcfRel,price,family:'cashflow',cashFlowInclusive:true,audit:{fairValueToday:dcf.fairValue,year5Value:dcfValueAtYear5(forecast,intrinsicRate,shares0,cfg),pvExplicit:dcf.pvExplicit,pvTerminal:dcf.pvTerminal,discountRate:dcf.discountRate,terminalGrowth:dcf.terminalGrowth,terminalShare:dcf.terminalShare,terminalExitWeight:dcf.terminalExitWeight,terminalExitMultiple:dcf.terminalExitMultiple,reliabilityReasons:[...rel.reasons,...(terminalPenalty<1?['terminal_value_concentration']:[])]}}); }
     }
 
     if(!methods.length&&allowEnterpriseScopeMethods&&Number(f.revenue)>0&&Number(f.shares)>0&&revenue0>0){

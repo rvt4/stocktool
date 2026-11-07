@@ -25,7 +25,17 @@ const INVESTOR_ALPHA_HURDLE = 0.11;
 const TERMINAL_GROWTH_CAP = 0.03;
 // Weight placed on the market's CURRENT multiple when setting the year-10 exit multiple.
 // 0 reproduces the old purely fundamental (price-independent) behavior.
-const EXIT_PRICE_ANCHOR_WEIGHT = 0.35;
+const EXIT_PRICE_ANCHOR_WEIGHT = 0.35; // legacy: still used by the financial (P/E, P/B) and EV/Sales exits
+// Build 58: operating-company exits (EPS, FCF, EV/EBITDA). Share of today's LOG premium/discount
+// to the fundamentally justified multiple that survives to year 10: exit = justified * (current/justified)^p.
+// 0 = purely fundamental (every stock converges to ~15-21x: a hidden value bet worth ~7.5%/yr between a
+// 10x and a 50x stock). 1 = today's multiple never changes. Results (26) simulation: 0.6 cuts that gap to ~4%/yr.
+const EXIT_MULTIPLE_PERSISTENCE = 0.6;
+const EXIT_PREMIUM_BAND = [0.15, 6];     // current/justified ratio is clipped to this band first
+const EXIT_ANCHOR_MAX_MULTIPLE = 150;    // quotes above this (near-zero earnings) are treated as 150x
+// Share of the DCF terminal value set by the anchored FCF exit multiple instead of the Gordon formula
+// (Gordon alone applies ~3% perpetual growth to every company, the same convergence problem). 0 = pure Gordon.
+const DCF_EXIT_TV_WEIGHT = 0.5;
 // Consensus cross-check (valuation-engine): max log-space weight on the analyst-implied value (0 disables),
 // and the band, as a multiple of the analyst-implied value, the blended value must stay inside.
 const ANALYST_BLEND_MAX_WEIGHT = 0.35;
@@ -71,4 +81,4 @@ function avg(values) {
   return a.length ? a.reduce((s, v) => s + v, 0) / a.length : null;
 }
 
-module.exports = { SECTOR, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, MARKET_RETURN, isStructuralFinancial, isFinancialLike, sectorConfig, clamp, rate, median, avg };
+module.exports = { SECTOR, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, EXIT_MULTIPLE_PERSISTENCE, EXIT_PREMIUM_BAND, EXIT_ANCHOR_MAX_MULTIPLE, DCF_EXIT_TV_WEIGHT, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, MARKET_RETURN, isStructuralFinancial, isFinancialLike, sectorConfig, clamp, rate, median, avg };
