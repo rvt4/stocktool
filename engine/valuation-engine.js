@@ -868,9 +868,21 @@ function valuate(stock,forecast,quality){
     // 57x pin silently gave the most expensive stocks a purely fundamental exit). Multiples below the
     // floor (P/E or P/FCF < 4.5x, EV/EBITDA < 3x) are usually one-off gains or a bad denominator
     // (e.g. captive-finance debt), so they still get no anchor.
+    // Build 58b: a trailing multiple inflated by temporarily depressed earnings already prices the recovery
+    // the forecast models explicitly (TFX: 83x trailing, consensus EPS +7% then +46%). Divide the anchor by
+    // consensus two-year EPS growth in excess of 15%/yr. Consensus growth RATES (adjusted vs adjusted) are
+    // used rather than consensus EPS LEVELS (adjusted vs the model's GAAP-based EPS), and nothing here
+    // depends on the model's own forecast, so a stronger forecast still transmits fully to value.
     const anchorAbove=(v,floor)=>Number.isFinite(v)&&v>=floor?v:null;
-    const anchorPFCF=anchorAbove(price>0&&normFCF>0?price/normFCF:null,4.5);
-    const anchorPE=anchorAbove(price>0&&normEPS>0?price/normEPS:null,4.5);
+    const aEstAnchor=stock.analystEstimates||{};
+    const consensusRecovery=(()=>{
+      if((finite(aEstAnchor.numAnalysts)??0)<3)return 1;
+      let fct=1;
+      for(const g of [finite(aEstAnchor.epsGrowthCurrentYear),finite(aEstAnchor.epsGrowthNextYear)])if(Number.isFinite(g)&&g>-.9)fct*=1+Math.min(g,3);
+      return Math.max(1,fct/Math.pow(1.15,2));
+    })();
+    const anchorPFCF=anchorAbove(price>0&&normFCF>0?price/normFCF/consensusRecovery:null,4.5);
+    const anchorPE=anchorAbove(price>0&&normEPS>0?price/normEPS/consensusRecovery:null,4.5);
     const anchorEVEBITDA=anchorAbove(marketCap>0&&normEBITDA>0?(marketCap+netDebt)/normEBITDA:null,3);
     let fcfExitForDCF=null;
 
@@ -889,7 +901,7 @@ function valuate(stock,forecast,quality){
     if(Number(epsX)>0&&normEPS>0){
       const exit=coherentExits.EPS, m=persistentExit(anchorPE,exit.multiple,8,49);
       const rel=methodReliability(stock,forecast,'EPS',normEPS,epsX,quality);
-      { const w=archetypeMethodWeight(archetype,'EPS',rel.score); if(w>0)addMethod(methods,{name:'EPS exit',target:epsX*m,weight:w,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,anchorMultiple:anchorPE,exitPersistence:EXIT_MULTIPLE_PERSISTENCE,metric:epsX,sbcAddBackFraction:sbcFrac,reportedYear10EPS:f.eps,normalizedCurrentMetric:normEPS,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
+      { const w=archetypeMethodWeight(archetype,'EPS',rel.score); if(w>0)addMethod(methods,{name:'EPS exit',target:epsX*m,weight:w,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,anchorMultiple:anchorPE,consensusRecoveryFactor:consensusRecovery,exitPersistence:EXIT_MULTIPLE_PERSISTENCE,metric:epsX,sbcAddBackFraction:sbcFrac,reportedYear10EPS:f.eps,normalizedCurrentMetric:normEPS,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
     }
     if(allowEnterpriseScopeMethods&&Number(f.ebitda)>0&&Number(f.shares)>0&&normEBITDA>0){
       const exit=coherentExits.EBITDA;
