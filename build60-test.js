@@ -76,5 +76,8 @@ console.log('Build 60 split-event tests passed');
   assert(!r2.applied&&r2.rejectedByConsensus&&y2.at(-1).sharesOutTTM===20e6&&y2.at(-1).dilutedEPS===10,'consensus-contradicted split not undone');
   const y3=mkYears(); // IESC: EPS 10 pre-split, consensus 5.8 -> repair to 5 is closer
   assert(applySplitEvents(y3,{value:20e6,filed:'2026-08-01'},[{date:'2026-08-14',ratio:2}],false,5.8).applied,'valid split rejected');
+  // APH-style fast grower: last-year EPS 3.3 pre-split; consensus prior-year equivalent 1.67 post-split
+  const y4=mkYears(); y4.at(-1).dilutedEPS=3.3;
+  assert(applySplitEvents(y4,{value:20e6,filed:'2026-04-30'},[{date:'2026-06-12',ratio:2}],false,1.67).applied,'fast-grower split wrongly rejected');
   console.log('Build 60c split guard tests passed');
 }

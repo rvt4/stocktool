@@ -1029,8 +1029,14 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   // calculations. The latest 10-Q can be on a new share basis while the last 10-K is not.
   const latestShareFact = latestDilutedSharesFromFacts(facts);
   const corporateActionNormalization = normalizeHistoryForCorporateAction(years, latestShareFact);
-  const splitEventRepair = applySplitEvents(years, latestShareFact, priceHistory?.splits, corporateActionNormalization.applied, Number(analystEstimate?.epsCurrentYear ?? analystEstimate?.eps_current_year));
-  if (splitEventRepair.rejectedByConsensus) console.log(`[split ${secTicker}] x${splitEventRepair.factor.toFixed(3)} rejected: EPS ${splitEventRepair.epsBefore.toFixed(2)} -> ${splitEventRepair.epsAfter.toFixed(2)} moves away from consensus ${splitEventRepair.consensusEPS.toFixed(2)}`);
+  // Build 60d: compare against consensus's implied PRIOR-year EPS (current-year EPS / (1 + expected growth)).
+  // Comparing last year's EPS with current-year consensus undid real splits for fast growers
+  // (APH +70%, IESC +54%, SF +37% expected EPS growth) in Build 60c.
+  const consensusCY = Number(analystEstimate?.epsCurrentYear ?? analystEstimate?.eps_current_year);
+  const consensusGrowthCY = Number(analystEstimate?.epsGrowthCurrentYear ?? analystEstimate?.eps_growth_current_year);
+  const consensusPriorEPS = consensusCY > 0 ? (Number.isFinite(consensusGrowthCY) && consensusGrowthCY > -0.9 ? consensusCY/(1+consensusGrowthCY) : consensusCY) : null;
+  const splitEventRepair = applySplitEvents(years, latestShareFact, priceHistory?.splits, corporateActionNormalization.applied, consensusPriorEPS);
+  if (splitEventRepair.rejectedByConsensus) console.log(`[split ${secTicker}] x${splitEventRepair.factor.toFixed(3)} rejected: EPS ${splitEventRepair.epsBefore.toFixed(2)} -> ${splitEventRepair.epsAfter.toFixed(2)} moves away from consensus prior-year EPS ${splitEventRepair.consensusEPS.toFixed(2)}`);
   if (splitEventRepair.applied) console.log(`[split ${secTicker}] share basis rebased x${splitEventRepair.factor.toFixed(3)} (${splitEventRepair.steps.map(x=>x.case+': '+x.splits.map(y=>y.date+' '+y.ratio).join(',')).join('; ')})`);
   const last = years[years.length - 1] || {};
   const currentPrice = quote?.c || (priceHistory.length ? priceHistory[priceHistory.length - 1].close : null);
