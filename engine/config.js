@@ -39,6 +39,10 @@ const DCF_EXIT_TV_WEIGHT = 0.5;
 // Build 58d: extra margin of safety below the STRESSED (underwritten) 11% hurdle price. Was 20%, which
 // stacked on top of the stressed case and left ~6 Buys, all with the most optimistic forecasts.
 const INVESTOR_MARGIN_OF_SAFETY = 0.10;
+// Optional override only. Completed deals and spin-offs are detected automatically from SEC 8-K
+// Item 2.01 filings (Build 60b) and pending deals from analyst estimates; nothing needs adding here.
+// Format if ever needed: { TICKER: 'reason' } holds that stock at Watch.
+const MANUAL_CORPORATE_ACTIONS = {};
 // Consensus cross-check (valuation-engine): max log-space weight on the analyst-implied value (0 disables),
 // and the band, as a multiple of the analyst-implied value, the blended value must stay inside.
 const ANALYST_BLEND_MAX_WEIGHT = 0.35;
@@ -84,4 +88,4 @@ function avg(values) {
   return a.length ? a.reduce((s, v) => s + v, 0) / a.length : null;
 }
 
-module.exports = { SECTOR, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, EXIT_MULTIPLE_PERSISTENCE, EXIT_PREMIUM_BAND, EXIT_ANCHOR_MAX_MULTIPLE, DCF_EXIT_TV_WEIGHT, INVESTOR_MARGIN_OF_SAFETY, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, MARKET_RETURN, isStructuralFinancial, isFinancialLike, sectorConfig, clamp, rate, median, avg };
+module.exports = { SECTOR, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, EXIT_MULTIPLE_PERSISTENCE, EXIT_PREMIUM_BAND, EXIT_ANCHOR_MAX_MULTIPLE, DCF_EXIT_TV_WEIGHT, INVESTOR_MARGIN_OF_SAFETY, MANUAL_CORPORATE_ACTIONS, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, MARKET_RETURN, isStructuralFinancial, isFinancialLike, sectorConfig, clamp, rate, median, avg };

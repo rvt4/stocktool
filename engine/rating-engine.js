@@ -1,8 +1,26 @@
 'use strict';
-const { clamp, INVESTOR_ALPHA_HURDLE, INVESTOR_MARGIN_OF_SAFETY }=require('./config');
+const { clamp, INVESTOR_ALPHA_HURDLE, INVESTOR_MARGIN_OF_SAFETY, MANUAL_CORPORATE_ACTIONS }=require('./config');
 
 const H=INVESTOR_ALPHA_HURDLE; // single source of truth for all return tiers
 function requiredMOS(){return INVESTOR_MARGIN_OF_SAFETY;}
+
+// Build 60: analysts' estimates that include a pending or just-closed acquisition. Consensus revenue
+// jumps far beyond the company's history while consensus EPS grows less than half as fast (new shares
+// or debt pay for it). The SEC history and the forecast's share count/debt do not include the deal
+// yet, so per-share value is overstated (KMB/Kenvue: revenue +70%, shares unchanged). Detected cases
+// on results (31) were mostly real deals: KMB, KDP, OMC, SWKS, FITB, WAT, SNPS, ALSN, AMCR, RYN, IESC.
+function consensusCorporateAction(stock){
+  const a=stock?.analystEstimates||{}, ys=(stock?.financials?.years||[]).filter(y=>Number(y?.revenue)>0).slice(-6);
+  if(ys.length<3)return null;
+  const n=ys.length-1, hist=Math.pow(Number(ys.at(-1).revenue)/Number(ys[0].revenue),1/n)-1;
+  for(const [rk,ek,label] of [['revenueGrowthCurrentYear','epsGrowthCurrentYear','current year'],['revenueGrowthNextYear','epsGrowthNextYear','next year']]){
+    const r=Number(a[rk]), e=Number(a[ek]);
+    if(Number.isFinite(r)&&Number.isFinite(e)&&r>=.35&&r>=hist+.25&&e<.5*r)
+      return {period:label,consensusRevenueGrowth:r,consensusEPSGrowth:e,historicalRevenueCAGR:hist,
+        reason:`Analysts expect revenue ${Math.round(r*100)}% higher (${label}) but EPS only ${Math.round(e*100)}%, versus ${Math.round(hist*100)}%/yr history: likely a pending or recent acquisition the filings don't reflect yet`};
+  }
+  return null;
+}
 
 function rateStock(stock,forecast,quality,v){
   const c=v.expectedCAGR, mos=v.marginOfSafety, req=requiredMOS(), q=quality.qualityScore||0;
@@ -60,6 +78,10 @@ function rateStock(stock,forecast,quality,v){
   // The five-year checkpoint is a diagnostic, not a separate investment thesis.
   // Large disagreement means the timing of returns is too uncertain for a premium label.
   if(v.horizonDivergenceFlag&&['Exceptional Buy','Strong Buy'].includes(rating)) rating='Buy';
+  const manual=MANUAL_CORPORATE_ACTIONS?.[String(stock?.ticker||'').toUpperCase()];
+  const filed=stock?.filingCorporateAction?.pending?{source:'sec_8k_item_2.01',reason:stock.filingCorporateAction.reason,events:stock.filingCorporateAction.events}:null;
+  const corporateAction=manual?{manual:true,reason:manual}:(filed||consensusCorporateAction(stock));
+  if(corporateAction&&['Buy','Strong Buy','Exceptional Buy'].includes(rating)) rating='Watch';
 
   // v12.37 hierarchical ranking architecture.
   // 1) Opportunity comes first. Expected CAGR is deliberately dominant; MOS and entry
@@ -112,7 +134,8 @@ function rateStock(stock,forecast,quality,v){
     meetsHurdlePrice,
     evidenceScore,
     underwrittenCAGR:underwritingCAGR,underwritingFlags,
-    expectedAlpha:Number.isFinite(c)?c-INVESTOR_ALPHA_HURDLE:null
+    expectedAlpha:Number.isFinite(c)?c-INVESTOR_ALPHA_HURDLE:null,
+    corporateAction
   };
 }
-module.exports={rateStock,requiredMOS};
+module.exports={rateStock,requiredMOS,consensusCorporateAction};
