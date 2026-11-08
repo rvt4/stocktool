@@ -708,6 +708,11 @@ async function fetchBacktestHistory(ticker, years = 12) {
           source:'yahoo'
         });
       }
+      // Build 60: keep split events (Yahoo returns them with events=splits) for share-basis repair.
+      out.splits=Object.values(result?.events?.splits||{}).map(x=>({
+        date:new Date(Number(x.date)*1000).toISOString().slice(0,10),
+        ratio:Number(x.numerator)>0&&Number(x.denominator)>0?Number(x.numerator)/Number(x.denominator):null
+      })).filter(x=>x.ratio&&x.ratio>0&&x.ratio!==1).sort((a,b)=>a.date.localeCompare(b.date));
       if(out.length) return out;
     }
   } catch (err) {
@@ -846,6 +851,68 @@ function normalizeHistoryForCorporateAction(years, currentShareFact) {
 
 
 
+// Build 60: share-basis repair from actual split events. The ratio-based checks above only fire at
+// >=3.5x (built for BKNG's 25:1) and the live market-cap audit only when per-share scale is absurd,
+// so ordinary 2:1 / 3:2 splits slipped through: IESC split 2:1 on 2026-08-14, its latest SEC share
+// count (10-Q filed before the split) stayed at ~20M against a post-split quote, doubling every
+// per-share figure (P/E 9.9x, expected return 21%). Two cases:
+//   (a) split AFTER the latest SEC share fact was filed: all SEC shares are pre-split -> rebase all.
+//   (b) split between the last annual year and a post-split 10-Q that the >=3.5x rule ignored ->
+//       rebase the annual history when the 10-Q denominator confirms the split ratio.
+function applySplitEvents(years, latestShareFact, splits, alreadyNormalized) {
+  if (!Array.isArray(years) || !years.length || !Array.isArray(splits) || !splits.length) return { applied:false };
+  const last = years[years.length-1];
+  const rebase = (factor) => {
+    for (const y of years) {
+      if (Number(y.sharesOutTTM) > 0) { y.preSplitEventSharesOutTTM = Number(y.sharesOutTTM); y.sharesOutTTM = Number(y.sharesOutTTM) * factor; y.sharesSource = `${y.sharesSource || 'sec'}_split_event_rebased`; }
+      for (const field of ['dilutedEPS','dividendPerShare']) if (Number.isFinite(Number(y[field]))) y[field] = Number(y[field]) / factor;
+      y.splitEventFactor = (y.splitEventFactor || 1) * factor;
+    }
+  };
+  const basisDate = String(latestShareFact?.filed || latestShareFact?.end || '');
+  const applied = [];
+  if (!alreadyNormalized && latestShareFact?.value > 0 && basisDate) {
+    const lastYearStart = `${last.year}-01-01`;
+    const between = splits.filter(x => x.date >= lastYearStart && x.date <= basisDate);
+    const fBetween = between.reduce((f,x) => f*x.ratio, 1);
+    const annual = Number(last.sharesOutTTM);
+    if (fBetween !== 1 && annual > 0 && Math.abs(Math.log(latestShareFact.value/(annual*fBetween))) < Math.log(1.2)) {
+      rebase(fBetween); last.sharesOutTTM = latestShareFact.value;
+      applied.push({ case:'annual_pre_split_10q_post_split', factor:fBetween, splits:between });
+    }
+  }
+  const after = splits.filter(x => basisDate ? x.date > basisDate : false);
+  const fAfter = after.reduce((f,x) => f*x.ratio, 1);
+  if (fAfter !== 1) { rebase(fAfter); applied.push({ case:'split_after_latest_sec_filing', factor:fAfter, splits:after }); }
+  return applied.length ? { applied:true, steps:applied, factor:applied.reduce((f,x)=>f*x.factor,1) } : { applied:false };
+}
+
+// Build 60b: completed acquisitions/disposals/spin-offs from SEC filings, no manual list needed.
+// A significant completed deal must be reported on an 8-K under Item 2.01 ("Completion of Acquisition
+// or Disposition of Assets"); e.g. Modine's Oct 1, 2026 Performance Technologies spin-off. The model's
+// history is annual (10-K), so it describes the old company until the first 10-K filed after the 8-K.
+// Uses the submissions JSON already downloaded for every ticker (no extra request).
+function detectFilingCorporateAction(submissions, asOf = new Date()) {
+  const r = submissions?.filings?.recent;
+  if (!r || !Array.isArray(r.form)) return { pending:false, events:[] };
+  const cutoff = new Date(asOf.getTime() - 550*86400000).toISOString().slice(0,10);
+  let lastAnnual = '';
+  const events = [];
+  for (let i = 0; i < r.form.length; i++) {
+    const form = String(r.form[i] || ''), filed = String(r.filingDate?.[i] || '');
+    if (['10-K','10-K/A','10-KT'].includes(form) && filed > lastAnnual) lastAnnual = filed;
+    if ((form === '8-K' || form === '8-K/A') && filed >= cutoff && String(r.items?.[i] || '').split(',').map(x=>x.trim()).includes('2.01'))
+      events.push({ filed, reportDate:String(r.reportDate?.[i] || '') || null, form });
+  }
+  events.sort((a,b) => a.filed.localeCompare(b.filed));
+  const pendingEvents = events.filter(e => e.filed > lastAnnual);
+  const first = pendingEvents[0];
+  return {
+    pending: pendingEvents.length > 0, events: pendingEvents, lastAnnualFiling: lastAnnual || null,
+    reason: first ? `Completed a significant acquisition, sale or spin-off on ${first.reportDate || first.filed} (SEC 8-K Item 2.01). The annual history the model uses predates it, so it is held at Watch until the next 10-K reflects the change` : null,
+  };
+}
+
 // Generic live share-count reconciliation. SEC Company Facts is authoritative for
 // accounting totals, but share-denominator facts can occasionally be stale, pre-split,
 // or reported on an unexpected scale. Use an independent live market-cap/price implied
@@ -944,6 +1011,8 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   // calculations. The latest 10-Q can be on a new share basis while the last 10-K is not.
   const latestShareFact = latestDilutedSharesFromFacts(facts);
   const corporateActionNormalization = normalizeHistoryForCorporateAction(years, latestShareFact);
+  const splitEventRepair = applySplitEvents(years, latestShareFact, priceHistory?.splits, corporateActionNormalization.applied);
+  if (splitEventRepair.applied) console.log(`[split ${secTicker}] share basis rebased x${splitEventRepair.factor.toFixed(3)} (${splitEventRepair.steps.map(x=>x.case+': '+x.splits.map(y=>y.date+' '+y.ratio).join(',')).join('; ')})`);
   const last = years[years.length - 1] || {};
   const currentPrice = quote?.c || (priceHistory.length ? priceHistory[priceHistory.length - 1].close : null);
 
@@ -1060,6 +1129,8 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   const materialNoncontrollingInterest = (Number.isFinite(nciIncomeShare) && nciIncomeShare >= 0.20) || (Number.isFinite(nciBalanceShare) && nciBalanceShare >= 0.20);
 
   const metadata = classifyCompanyMetadata(facts, submissions, sector || 'Unknown');
+  const filingCorporateAction = detectFilingCorporateAction(submissions);
+  if (filingCorporateAction.pending) console.log(`[corporate-action ${secTicker}] 8-K Item 2.01 filed ${filingCorporateAction.events.map(e=>e.filed).join(',')} after last 10-K ${filingCorporateAction.lastAnnualFiling}`);
   const stockShell = {
     ticker,
     name: metadata.name || ticker,
@@ -1098,6 +1169,8 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
     priceHistory,
     quarterly: quarters,
     corporateActionNormalization,
+    splitEventRepair,
+    filingCorporateAction,
     shareCountReconciliation,
     historicalMultiples: { evEbitda: [], forwardPe: [] }, // optional: backfill from priceHistory + trailing EPS
     earningsCallText: null, // optional: plug in a free transcript source if you find one
@@ -1113,4 +1186,6 @@ const api = {
   buildStockRecord, latestDilutedSharesFromFacts, normalizeHistoryForCorporateAction, shareDenominatorLooksSuspicious, reconcileSharesWithLiveMarketCap, getTickerCikMap, normalizeSecTicker, normalizeFinnhubTicker, fetchWithTimeout,
 };
 
+api.applySplitEvents = applySplitEvents;
+api.detectFilingCorporateAction = detectFilingCorporateAction;
 if (typeof module !== 'undefined' && module.exports) module.exports = api;

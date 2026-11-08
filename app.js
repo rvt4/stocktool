@@ -81,6 +81,7 @@ function seedMethods(s){
 function ratingWhy(s){
  const H=0.11,c=valid(s.expectedReturn,NaN),u=valid(s.underwrittenCAGR,NaN),p=valid(s.currentPrice,NaN),buy=valid(s.requiredReturnBuyPrice,NaN),hp=valid(s.hurdleReturnPrice,NaN),rt=s.rating||'Unrated';
  if(rt==='Unrated')return s.modelSupportReason||'Model does not support this business type or data is missing';
+ if(s.corporateAction&&rt==='Watch')return `Held at Watch: ${s.corporateAction.reason}`;
  if(!Number.isFinite(c))return 'No expected return';
  if(c<0)return `Expected ${pct(c)} a year: below zero`;
  if(rt==='Avoid'||rt==='Hold'&&c<H)return `Expected ${pct(c)} a year vs ${pct(H)} hurdle`;
