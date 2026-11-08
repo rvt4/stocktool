@@ -69,23 +69,28 @@ function seedMethods(s){
  }
  if(!out.some(m=>m.kind==='eps'))out.unshift({name:'EPS exit',kind:'eps',weight:out.length?0:100,mult:NaN,screenerCAGR:NaN,screenerOutcome:NaN});
  const dr=valid(s?.intrinsicDiscountRate,0.10),tg=valid(s?.projectionAssumptions?.terminalGrowth,0.025);
- return {list:out,dcfRate:dr*100,dcfGrowth:Math.min(tg,0.03)*100};
-}
-// IRR of buying at `price` and receiving per-share cash flows cf[0..9] plus a Gordon terminal value after year 10.
-function dcfIRR(price,cf,g){
- const pv=x=>cf.reduce((t,c,i)=>t+c/Math.pow(1+x,i+1),0)+(x>g?cf[9]*(1+g)/(x-g)/Math.pow(1+x,10):Infinity);
- let lo=g+0.0005,hi=1.5;if(!(pv(hi)<price))return NaN;if(pv(lo)<price)return NaN;
- for(let k=0;k<80;k++){const mid=(lo+hi)/2;if(pv(mid)>price)lo=mid;else hi=mid;}
- return (lo+hi)/2;
+ const vp=s?.valuationProjection||[],ac=s?.analystCheck||{};
+ // Build 58c: mirror the screener exactly — DCF terminal value split with the FCF exit multiple,
+ // SBC add-back tax rate, and the analyst cross-check that turns the method blend into the headline.
+ return {list:out,dcfRate:dr*100,dcfGrowth:Math.min(tg,0.03)*100,
+  dcfExitWeight:valid(audits['10Y DCF']?.terminalExitWeight,0),taxRate:valid(vp.at(-1)?.taxRate,0.21),
+  analyst:{factor:valid(ac.blendFactor,1),weight:valid(ac.blendWeight,0),target:valid(ac.target,NaN),n:valid(ac.numAnalysts,0)}};
 }
 function methodResults(a,r){
  if(!r||!a?.methods?.list?.length)return null;
  const price=a.price,ys=r.years,y10=ys[9],divs=r.value-r.exit;
- const sh10=y10.shares,fcfps=ys.map(y=>y.ownerFCF/y.shares);
+ // Screener basis (Build 58c): share-count dilution already charges stock comp, so FCF is NOT also
+ // reduced by SBC (the old owner-FCF basis counted it twice), and EPS gets the screener's partial
+ // SBC add-back (100% at >=2%/yr dilution, 0% with net buybacks). DCF discounts aggregate FCF over
+ // today's share count, like the screener.
+ const sh10=y10.shares,fcfAgg=ys.map(y=>y.revenue*1000*y.fcfMargin/100),fcfps=ys.map((y,i)=>fcfAgg[i]/y.shares);
+ const avgDil=ys.reduce((t,y)=>t+(Number(y.dilution)||0),0)/ys.length,sbcFrac=Math.min(1,Math.max(0,avgDil/2));
+ const tax=valid(a.methods.taxRate,0.21),sbcAdd=sbcFrac*y10.revenue*1000*(Number(y10.sbc)||0)/100*(1-tax)/sh10;
+ const shares0=valid(r.startShares,ys[0].shares),fcfMethod=a.methods.list.find(m=>m.kind==='fcf');
  const rows=a.methods.list.map(m=>{
   let outcome=NaN,fair=NaN,note='';
-  if(m.kind==='eps'){outcome=r.exit+divs;note='Year-10 EPS × P/E (table)';}
-  else if(m.kind==='fcf'){outcome=fcfps[9]>0&&m.mult>0?fcfps[9]*m.mult+divs:NaN;note='Year-10 owner FCF/share × P/FCF';}
+  if(m.kind==='eps'){const pe10=r.exit/y10.eps;outcome=y10.eps>0&&pe10>0?(y10.eps+sbcAdd)*pe10+divs:NaN;note=sbcAdd>0.005?`Year-10 EPS × P/E, + ${money(sbcAdd)}/sh SBC add-back (dilution already in share count)`:'Year-10 EPS × P/E (table)';}
+  else if(m.kind==='fcf'){outcome=fcfps[9]>0&&m.mult>0?fcfps[9]*m.mult+divs:NaN;note='Year-10 FCF/share × P/FCF';}
   else if(m.kind==='ebitda'){
    const eb=a.path?.ebitda,dt=a.path?.debt;
    if(Array.isArray(eb)&&Array.isArray(dt)&&m.mult>0){const ebitda=ys[9].revenue*1000*eb[9]/100;outcome=(ebitda*m.mult-dt[9]*1000)/sh10+divs;}
@@ -93,9 +98,12 @@ function methodResults(a,r){
   }
   else if(m.kind==='dcf'){
    const rr=a.methods.dcfRate/100,g=a.methods.dcfGrowth/100;
-   if(rr>g){fair=fcfps.reduce((t,c,i)=>t+c/Math.pow(1+rr,i+1),0)+fcfps[9]*(1+g)/(rr-g)/Math.pow(1+rr,10);
-    const irr=dcfIRR(price,fcfps,g);outcome=Number.isFinite(irr)?price*Math.pow(1+irr,10):NaN;}
-   note='Owner FCF years 1–10 + terminal growth';
+   const xw=fcfMethod&&fcfMethod.mult>0?valid(a.methods.dcfExitWeight,0):0;
+   if(rr>g&&fcfAgg.every(c=>c>0)&&shares0>0){
+    const gordon=fcfAgg[9]*(1+g)/(rr-g),tv=(1-xw)*gordon+xw*fcfAgg[9]*(fcfMethod?.mult||0);
+    fair=(fcfAgg.reduce((t,c,i)=>t+c/Math.pow(1+rr,i+1),0)+tv/Math.pow(1+rr,10))/shares0;
+    outcome=fair*Math.pow(1+rr,10);}
+   note=xw>0?`FCF years 1–10; terminal value ${Math.round((1-xw)*100)}% growth formula, ${Math.round(xw*100)}% FCF exit multiple`:'FCF years 1–10 + terminal growth';
   }
   else {outcome=m.screenerOutcome;note='Screener only (not editable here)';}
   const cagr=outcome>0?Math.pow(outcome/price,1/10)-1:NaN;
@@ -117,10 +125,17 @@ function renderMethods(){
   :m.kind==='ebitda'?(a.path?.ebitda?`<input type="number" step="0.5" data-mmult="${i}" value="${fx(m.mult)}" aria-label="Exit EV/EBITDA"> <span class="muted small">EV/EBITDA</span>`:'<span class="muted small">no EBITDA data</span>')
   :m.kind==='dcf'?`<input type="number" step="0.25" data-mdcf="rate" value="${fx(a.methods.dcfRate,2)}" aria-label="Discount rate"> <span class="muted small">% disc.</span> <input type="number" step="0.25" data-mdcf="growth" value="${fx(a.methods.dcfGrowth,2)}" aria-label="Terminal growth"> <span class="muted small">% term. g</span>`
   :'<span class="muted small">—</span>';
+ // Build 58c: the screener headline = method blend x analyst cross-check. Show both steps so the
+ // headline reconciles (AMD: methods ~7.6%, pulled toward the $656 consensus target -> 8.8%).
+ const an=a.methods.analyst||{},headline=valid(current?.expectedReturn,NaN),af=valid(an.factor,1);
+ const screenerMethodsCAGR=Number.isFinite(headline)?(1+headline)/Math.pow(af,1/10)-1:NaN;
+ const yourWithAnalyst=mr.blend>0?Math.pow(mr.blend*af/a.price,1/10)-1:NaN;
+ const analystRow=Math.abs(af-1)>0.001?`<tr><td>+ Analyst cross-check<div class="muted small">${Math.round(valid(an.weight,0)*100)}% pull toward the ${an.n} analysts' ${money(an.target)} target (×${af.toFixed(3)} on value)</div></td><td></td><td>${money(mr.blend*af)}</td><td>${pct(yourWithAnalyst)}</td><td class="muted"><b>${pct(headline)}</b> headline</td><td></td></tr>`:'';
  el.innerHTML=`<div class="table-scroll"><table class="methods-table"><thead><tr><th>Method</th><th>Exit assumption</th><th>Year-10 value/sh</th><th>Your 10Y CAGR</th><th>Screener's</th><th>Weight %</th></tr></thead><tbody>
  ${mr.rows.map((m,i)=>`<tr><td><b>${esc(m.name)}</b><div class="muted small">${esc(m.note)}</div></td><td class="mcell">${multCell(m,i)}</td><td>${money(m.outcome)}${m.kind==='dcf'&&Number.isFinite(m.fair)?`<div class="muted small">value today ${money(m.fair)}</div>`:''}</td><td>${pct(m.cagr)}</td><td class="muted">${pct(m.screenerCAGR)}</td><td><input type="number" step="1" min="0" data-mw="${i}" value="${fx(m.weight,0)}" aria-label="Weight"></td></tr>`).join('')}
- <tr class="today-row"><td>Blended</td><td></td><td>${money(mr.blend)}</td><td>${pct(mr.cagr)}</td><td class="muted">${pct(valid(current?.expectedReturn,NaN))}</td><td>${Math.round(mr.weightSum)}</td></tr></tbody></table></div>
- <p class="muted small">Each method values the same projection (the table above) in a different way; the blend is a weighted geometric average of their year-10 values, plus dividends. Weights don't need to add to 100; they're relative. "Screener's" shows the nightly model's own figure for comparison; it won't match exactly because the screener also caps exit multiples, applies uncertainty haircuts and blends toward analyst targets. When the methods disagree a lot (e.g. EPS far below cash flow), reported earnings are probably distorted: check why before trusting either.</p>`;
+ <tr class="today-row"><td>Blended methods</td><td></td><td>${money(mr.blend)}</td><td>${pct(mr.cagr)}</td><td class="muted">${pct(screenerMethodsCAGR)}</td><td>${Math.round(mr.weightSum)}</td></tr>
+ ${analystRow}</tbody></table></div>
+ <p class="muted small">Each method values the same projection (the table above) in a different way; the blend is a weighted geometric average of their year-10 values, plus dividends. Weights don't need to add to 100; they're relative. "Screener's" shows the nightly model's own figure for each method, computed on the same basis (FCF before SBC because dilution already charges it, EPS with the screener's partial SBC add-back, DCF terminal value partly set by the FCF exit multiple). Small gaps remain because the screener weights methods by reliability and agreement before blending. When the methods disagree a lot (e.g. EPS far below cash flow), reported earnings are probably distorted: check why before trusting either.</p>`;
  const done=()=>{markCustom();renderValuation();};
  el.querySelectorAll('[data-mw]').forEach(inp=>inp.addEventListener('change',()=>{const v=Number(inp.value);if(Number.isFinite(v)&&v>=0){a.methods.list[Number(inp.dataset.mw)].weight=v;done();}}));
  el.querySelectorAll('[data-mmult]').forEach(inp=>inp.addEventListener('change',()=>{const v=Number(inp.value);if(Number.isFinite(v)&&v>0){a.methods.list[Number(inp.dataset.mmult)].mult=v;done();}}));
@@ -253,7 +268,7 @@ function calculatePath(a){
  }
  const exit=years.at(-1).price,value=exit+divs;
  const cagr=value>0?Math.pow(value/price,1/10)-1:NaN,hurdle=value/Math.pow(1+HURDLE,10);
- return {years,exit,cagr,hurdle,buy:hurdle*(1-mos/100),value};
+ return {years,exit,cagr,hurdle,buy:hurdle*(1-mos/100),value,startShares:shares};
 }
 function hideTickerMatches(){$('tickerMatches').hidden=true;$('tickerSearch').setAttribute('aria-expanded','false')}
 function renderTickerMatches(){const q=$('tickerSearch').value.trim().toLowerCase(),matches=stocks.filter(s=>!q||s.ticker.toLowerCase().includes(q)||(s.name||'').toLowerCase().includes(q)).sort((a,b)=>{const score=s=>s.ticker.toLowerCase()===q?0:s.ticker.toLowerCase().startsWith(q)?1:(s.name||'').toLowerCase().startsWith(q)?2:3;return score(a)-score(b)||a.ticker.localeCompare(b.ticker)}).slice(0,12);const box=$('tickerMatches');box.innerHTML=matches.map(s=>`<button type="button" role="option" data-ticker="${esc(s.ticker)}"><strong>${esc(s.ticker)}</strong> <span>${esc(s.name||'')}</span></button>`).join('')||'<p class="muted small">No matching companies</p>';box.hidden=false;$('tickerSearch').setAttribute('aria-expanded','true');box.querySelectorAll('[data-ticker]').forEach(b=>b.onclick=()=>choose(b.dataset.ticker))}
@@ -278,14 +293,14 @@ function calculate(a){
   const fm=fcfStart+(fcfMargin-fcfStart)*i/10;
   const ni=r*1000*nm/100;
   const ownerFCF=r*1000*(fm-sbc)/100;
-  years.push({year:new Date().getFullYear()+i,revenue:r,ni,eps:ni/sh,ownerFCF,growth:g,netMargin:nm,fcfMargin:fm});
+  years.push({year:new Date().getFullYear()+i,revenue:r,ni,eps:ni/sh,ownerFCF,shares:sh,sbc,dilution,growth:g,netMargin:nm,fcfMargin:fm});
  }
  const exit=years.at(-1).eps*multiple;
  const totalDiv=dividend*10;
  const value=exit+totalDiv;
  const cagr=value>0?Math.pow(value/price,1/10)-1:NaN;
  const hurdle=value/Math.pow(1+HURDLE,10);
- return {years,exit,cagr,hurdle,buy:hurdle*(1-mos/100),value};
+ return {years,exit,cagr,hurdle,buy:hurdle*(1-mos/100),value,startShares:shares};
 }
 function historyBasedDefaults(d){
  const rows=(d?.annual||[]).filter(x=>Number.isFinite(x.revenue)&&x.revenue>0).slice(-6);

@@ -59,3 +59,19 @@ console.log('Build 58 exit-persistence tests passed',JSON.stringify({normalExit:
   assert(recovery.anchorMultiple<normalG.anchorMultiple,'recovery did not shrink the anchor');
   console.log('Build 58b consensus-recovery anchor test passed');
 }
+
+// 6) Build 58c: a P/FCF anchor inflated by depressed current FCF is capped at 1.25x the P/E anchor
+// expressed at year-10 FCF conversion, so FCF and EPS exits describe the same year-10 business.
+{
+  const s=stock({ticker:'CAPEX_CYCLE',price:300,growth:.14,margin:.20,roic:.22});
+  for(const y of s.financials.years){ y.fcf*=.25; y.fcfSBCAdjusted=y.fcf-.01*y.revenue; } // cash conversion far below earnings today
+  const f=buildForecast(s),q=computeQuality(s,f),v=valuate(s,f,q);
+  const fcf=method(v,'FCF exit'), eps=method(v,'EPS exit');
+  assert(fcf&&eps&&fcf.audit.anchorMultiple&&eps.audit.anchorMultiple,'fixture needs both anchors');
+  {
+    const cap=eps.audit.anchorMultiple*(eps.audit.metric/fcf.audit.metric)*1.25;
+    assert(fcf.audit.anchorMultiple<=cap+1e-9,'P/FCF anchor above the P/E-consistent cap');
+    assert(fcf.audit.rawAnchorMultiple>fcf.audit.anchorMultiple+1,'fixture should trigger the cap');
+  }
+  console.log('Build 58c FCF-anchor consistency test passed',JSON.stringify({raw:fcf?.audit?.rawAnchorMultiple,anchor:fcf?.audit?.anchorMultiple,peAnchor:eps?.audit?.anchorMultiple}));
+}
