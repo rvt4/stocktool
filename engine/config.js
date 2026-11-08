@@ -36,6 +36,9 @@ const EXIT_ANCHOR_MAX_MULTIPLE = 150;    // quotes above this (near-zero earning
 // Share of the DCF terminal value set by the anchored FCF exit multiple instead of the Gordon formula
 // (Gordon alone applies ~3% perpetual growth to every company, the same convergence problem). 0 = pure Gordon.
 const DCF_EXIT_TV_WEIGHT = 0.5;
+// Build 58d: extra margin of safety below the STRESSED (underwritten) 11% hurdle price. Was 20%, which
+// stacked on top of the stressed case and left ~6 Buys, all with the most optimistic forecasts.
+const INVESTOR_MARGIN_OF_SAFETY = 0.10;
 // Consensus cross-check (valuation-engine): max log-space weight on the analyst-implied value (0 disables),
 // and the band, as a multiple of the analyst-implied value, the blended value must stay inside.
 const ANALYST_BLEND_MAX_WEIGHT = 0.35;
@@ -81,4 +84,4 @@ function avg(values) {
   return a.length ? a.reduce((s, v) => s + v, 0) / a.length : null;
 }
 
-module.exports = { SECTOR, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, EXIT_MULTIPLE_PERSISTENCE, EXIT_PREMIUM_BAND, EXIT_ANCHOR_MAX_MULTIPLE, DCF_EXIT_TV_WEIGHT, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, MARKET_RETURN, isStructuralFinancial, isFinancialLike, sectorConfig, clamp, rate, median, avg };
+module.exports = { SECTOR, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, EXIT_MULTIPLE_PERSISTENCE, EXIT_PREMIUM_BAND, EXIT_ANCHOR_MAX_MULTIPLE, DCF_EXIT_TV_WEIGHT, INVESTOR_MARGIN_OF_SAFETY, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, MARKET_RETURN, isStructuralFinancial, isFinancialLike, sectorConfig, clamp, rate, median, avg };

@@ -1,11 +1,10 @@
 'use strict';
-const { HORIZON_YEARS, MARKET_RETURN, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, EXIT_MULTIPLE_PERSISTENCE, EXIT_PREMIUM_BAND, EXIT_ANCHOR_MAX_MULTIPLE, DCF_EXIT_TV_WEIGHT, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, isFinancialLike, sectorConfig, clamp, median, rate } = require('./config');
+const { HORIZON_YEARS, MARKET_RETURN, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, EXIT_MULTIPLE_PERSISTENCE, EXIT_PREMIUM_BAND, EXIT_ANCHOR_MAX_MULTIPLE, DCF_EXIT_TV_WEIGHT, INVESTOR_MARGIN_OF_SAFETY, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, isFinancialLike, sectorConfig, clamp, median, rate } = require('./config');
 
 function cagr(p,f){if(!(p>0)||!(f>0))return null;return Math.pow(f/p,1/HORIZON_YEARS)-1;}
 function pv(v,r,n){return v/Math.pow(1+r,n);}
 function finite(v){if(v==null||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null;}
 const INVESTOR_HURDLE_RETURN=INVESTOR_ALPHA_HURDLE;
-const INVESTOR_MARGIN_OF_SAFETY=.20;
 function requiredReturn(){return INVESTOR_HURDLE_RETURN;}
 
 // V12.6: intrinsic-value discounting is deliberately separate from the investor's
@@ -1176,7 +1175,7 @@ function valuate(stock,forecast,quality){
   // uncertainty haircut again when converting that forecast into fair value or the
   // investor entry price: forecast risk is already reflected in the intrinsic discount
   // rate, while the user's conservatism is imposed explicitly through a 15% hurdle and
-  // then a separate 20% margin of safety.
+  // then a separate margin of safety (INVESTOR_MARGIN_OF_SAFETY, 10% since Build 58d).
   const fair=total!=null?pv(total,fairDiscountRate,HORIZON_YEARS):null;
   const underwriting=forecastUnderwriting(stock,forecast,quality);
   // A separate valuation-normalization stress. The residual return attribution is

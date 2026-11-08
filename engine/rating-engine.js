@@ -1,8 +1,8 @@
 'use strict';
-const { clamp, INVESTOR_ALPHA_HURDLE }=require('./config');
+const { clamp, INVESTOR_ALPHA_HURDLE, INVESTOR_MARGIN_OF_SAFETY }=require('./config');
 
 const H=INVESTOR_ALPHA_HURDLE; // single source of truth for all return tiers
-function requiredMOS(){return .20;}
+function requiredMOS(){return INVESTOR_MARGIN_OF_SAFETY;}
 
 function rateStock(stock,forecast,quality,v){
   const c=v.expectedCAGR, mos=v.marginOfSafety, req=requiredMOS(), q=quality.qualityScore||0;
@@ -18,7 +18,7 @@ function rateStock(stock,forecast,quality,v){
   const underwritingFlags=v.underwriting?.flags||[];
 
   // Recommendation contract: a stock is not a Buy until today's price is at/below
-  // the 15% CAGR hurdle price AFTER the investor's additional 20% margin of safety.
+  // the STRESSED-case 11% hurdle price AFTER the investor's additional margin of safety (10%).
   let rating='Unrated';
   if(!Number.isFinite(c)||!Number.isFinite(mos)) rating='Unrated';
   else if(c<0) rating='Sell';
