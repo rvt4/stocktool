@@ -881,8 +881,16 @@ function valuate(stock,forecast,quality){
       for(const g of [finite(aEstAnchor.epsGrowthCurrentYear),finite(aEstAnchor.epsGrowthNextYear)])if(Number.isFinite(g)&&g>-.9)fct*=1+Math.min(g,3);
       return Math.max(1,fct/Math.pow(1.15,2));
     })();
-    const anchorPFCF=anchorAbove(price>0&&normFCF>0?price/normFCF/consensusRecovery:null,4.5);
+    const sbcFrac=sbcAddBackFraction(forecast), epsX=sbcNeutralEPS(f,sbcFrac);
     const anchorPE=anchorAbove(price>0&&normEPS>0?price/normEPS/consensusRecovery:null,4.5);
+    // Build 58c: today's FCF can be depressed by a capex or working-capital cycle (AMD 188x P/FCF vs
+    // 96x P/E; ORCL, AMZN, GOOGL, LLY similar). The forecast already models FCF conversion recovering,
+    // so carrying that inflated P/FCF into year 10 counted the recovery twice (AMD: 34.5x P/FCF exit vs
+    // 24.6x P/E on near-identical year-10 FCF and EPS). Cap the P/FCF anchor at 1.25x the P/E anchor
+    // translated to FCF at year-10 conversion (year-10 EPS / FCF per share).
+    const rawAnchorPFCF=price>0&&normFCF>0?price/normFCF/consensusRecovery:null;
+    const fcfConsistentCap=anchorPE>0&&epsX>0&&finite(f.fcfPerShare)>0?anchorPE*(epsX/finite(f.fcfPerShare))*1.25:null;
+    const anchorPFCF=anchorAbove(Number.isFinite(rawAnchorPFCF)&&Number.isFinite(fcfConsistentCap)?Math.min(rawAnchorPFCF,fcfConsistentCap):rawAnchorPFCF,4.5);
     const anchorEVEBITDA=anchorAbove(marketCap>0&&normEBITDA>0?(marketCap+netDebt)/normEBITDA:null,3);
     let fcfExitForDCF=null;
 
@@ -895,9 +903,8 @@ function valuate(stock,forecast,quality){
       // double-counting owner cash and made FCF-exit values track the (also inflated) DCF.
       // Dividends are added later because this is now an exit-only method.
       const terminalFCFValue=f.fcfPerShare*m;
-      { const w=archetypeMethodWeight(archetype,'FCF',rel.score); if(w>0)addMethod(methods,{name:'FCF exit',target:terminalFCFValue,weight:w,reliability:rel.score,price,family:'cashflow',cashFlowInclusive:false,audit:{exitMultiple:m,currentMultiple:currentPFCF,anchorMultiple:anchorPFCF,exitPersistence:EXIT_MULTIPLE_PERSISTENCE,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,terminalExitValue:terminalFCFValue,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
+      { const w=archetypeMethodWeight(archetype,'FCF',rel.score); if(w>0)addMethod(methods,{name:'FCF exit',target:terminalFCFValue,weight:w,reliability:rel.score,price,family:'cashflow',cashFlowInclusive:false,audit:{exitMultiple:m,currentMultiple:currentPFCF,anchorMultiple:anchorPFCF,rawAnchorMultiple:rawAnchorPFCF,exitPersistence:EXIT_MULTIPLE_PERSISTENCE,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,terminalExitValue:terminalFCFValue,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
     }
-    const sbcFrac=sbcAddBackFraction(forecast), epsX=sbcNeutralEPS(f,sbcFrac);
     if(Number(epsX)>0&&normEPS>0){
       const exit=coherentExits.EPS, m=persistentExit(anchorPE,exit.multiple,8,49);
       const rel=methodReliability(stock,forecast,'EPS',normEPS,epsX,quality);
