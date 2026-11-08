@@ -1142,6 +1142,60 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     }
   }
 
+  // Build 59: margin evidence ceiling. The budget above still allows a decade-out net margin
+  // 6.5-13.5 pts above the 5-year median, which let MOD/EME/PPC/HUBB-style forecasts double margins
+  // on trend extrapolation alone. Here the year-5 and year-10 ADJUSTED operating margin (before
+  // intangible amortization, SBC and identified one-offs: the basis analysts' EPS uses, and SBC is
+  // charged separately through dilution) may not exceed what the evidence supports:
+  //   top     = max(today, best 3-year average in history, consensus two-year margin)
+  //             where consensus = today x (consensus EPS growth / consensus revenue growth), 2 years
+  //   ceiling = top + min(1.5 pts, 15% of top) x (independent expansion votes - 1)/3
+  // If consensus expects margins to fall >20% within two years, an elevated current margin gets no
+  // credit: top starts from the 5-year median instead. Cuts flow to EBITDA, net (after tax) and FCF.
+  const adjOpSeries=opSeries.map((o,i)=>Number.isFinite(o)?o+(finite(amortSeries[i])??0)+(finite(sbcSeriesForEarnings[i])??0):null);
+  const adjFinite=adjOpSeries.filter(Number.isFinite);
+  const adjNow=Number.isFinite(currentOperating)?currentOperating+(finite(amortNow)??0)+(finite(sbcNowForEarnings)??0):null;
+  let adjBest3=null;
+  for(let i=2;i<adjOpSeries.length;i++){const w=adjOpSeries.slice(i-2,i+1);if(w.every(Number.isFinite)){const avg=(w[0]+w[1]+w[2])/3;adjBest3=adjBest3==null?avg:Math.max(adjBest3,avg);}}
+  const adjTypical=adjFinite.length>=3?median(adjFinite.slice(-5)):null;
+  const consensusMarginFactor=(()=>{
+    const e=stock.analystEstimates||{};
+    if((finite(e.numAnalysts)??0)<3)return null;
+    const g=[finite(e.epsGrowthCurrentYear),finite(e.epsGrowthNextYear),finite(e.revenueGrowthCurrentYear),finite(e.revenueGrowthNextYear)];
+    if(!g.every(Number.isFinite)||Math.min(...g)<=-.9)return null;
+    return clamp((1+Math.min(g[0],3))*(1+Math.min(g[1],3))/((1+g[2])*(1+g[3])),.3,2);
+  })();
+  const adjConsensus=Number.isFinite(adjNow)&&Number.isFinite(consensusMarginFactor)?adjNow*consensusMarginFactor:null;
+  const consensusContradicts=Number.isFinite(consensusMarginFactor)&&consensusMarginFactor<.80;
+  const evidenceBase=consensusContradicts
+    ?Math.max(adjTypical??-Infinity,adjConsensus??-Infinity)
+    :Math.max(adjNow??-Infinity,adjBest3??-Infinity);
+  const evidenceTop=Math.max(evidenceBase,adjConsensus??-Infinity);
+  let marginEvidence={applied:false,adjustedNow:adjNow,best3YearAverage:adjBest3,typical5Year:adjTypical,consensusFactor:consensusMarginFactor,consensusTwoYear:adjConsensus,consensusContradicts,ceiling:null,cut:{target:0,mature:0}};
+  if(Number.isFinite(evidenceTop)&&evidenceTop>0&&adjFinite.length>=3&&!isFinancialLike(stock)){
+    const allowance=Math.min(.015,.15*evidenceTop)*clamp((expansionVotes-1)/3,0,1);
+    const ceiling=evidenceTop+allowance;
+    const adjTarget=targetOperating+(finite(amortTarget)??0)+(finite(sbcTarget)??0);
+    const adjMature=matureOperating+(finite(amortMature)??0)+(finite(sbcMature)??0);
+    const dT=Number.isFinite(adjTarget)?Math.min(0,ceiling-adjTarget):0;
+    const dM=Number.isFinite(adjMature)?Math.min(0,ceiling-adjMature):0;
+    marginEvidence={...marginEvidence,ceiling,adjustedTarget:adjTarget,adjustedMature:adjMature,cut:{target:dT,mature:dM}};
+    if(dT<-.0005||dM<-.0005){
+      marginEvidence.applied=true;
+      const afterTax=d=>d*(1-clamp(normalizedTaxRate,0,.35));
+      targetOperating=clamp(targetOperating+dT,-.10,opCeiling);
+      matureOperating=clamp(matureOperating+dM,-.10,opCeiling);
+      if(Number.isFinite(targetEBITDA)) targetEBITDA=clamp(targetEBITDA+dT,-.05,ebitdaCeiling);
+      if(Number.isFinite(matureTargetEBITDA)) matureTargetEBITDA=clamp(matureTargetEBITDA+dM,-.05,ebitdaCeiling);
+      if(Number.isFinite(targetNet)) targetNet=clamp(targetNet+afterTax(dT),-.10,netCeiling);
+      if(Number.isFinite(matureTargetNet)) matureTargetNet=clamp(matureTargetNet+afterTax(dM),-.10,netCeiling);
+      if(Number.isFinite(targetFCF)) targetFCF=clamp(targetFCF+afterTax(dT),-.10,fcfCeiling);
+      if(Number.isFinite(matureTargetFCF)) matureTargetFCF=clamp(matureTargetFCF+afterTax(dM),-.10,fcfCeiling);
+      if(Number.isFinite(targetCapex)&&Number.isFinite(targetFCF)) targetCFO=clamp(targetFCF+targetCapex,-.08,.70);
+      if(Number.isFinite(matureCapex)&&Number.isFinite(matureTargetFCF)) matureCFO=clamp(matureTargetFCF+matureCapex,-.08,.70);
+    }
+  }
+
   gaapTargetNet=Number.isFinite(targetNet)?clamp(targetNet-targetNormalizationAddback,-.10,netCeiling):gaapTargetNet;
   gaapMatureTargetNet=Number.isFinite(matureTargetNet)?clamp(matureTargetNet-matureNormalizationAddback,-.10,netCeiling):gaapMatureTargetNet;
   const grossMature=Number.isFinite(grossTarget)?clamp(grossTarget+Math.max(0,grossTrend)*1.2,.05,.85):grossTarget;
@@ -1160,6 +1214,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     unexplainedFcfCompressionPrevented,broadCashCompressionEvidence,temporaryMarginReset,
     normalizedTaxRate,gaapCurrentNet,gaapTargetNet,gaapMatureTargetNet,
     oneTimeChargesLatest:oneTimeSeries.at(-1)??0,backlogCoverage:(()=>{const r=finite(years.at(-1)?.rpo),v=finite(years.at(-1)?.revenue);return r>0&&v>0?r/v:null;})(),
+    marginEvidence,
     peakMarginDiscipline:{applied:peakMarginApplied,baseReversion,reversionShare,durability,durabilityEvidence,elevatedYears,preBoomBaseline,provenNet,delta:peakMarginDelta},
     crisisRecovery,analystMarginAnchor:{applied:analystAnchorApplied,weight:anchorW,revenueBaseMismatch,consensusBasis,sbcDeduction,analystNet1,analystNet2,provenNet,expectsImprovement:analystExpectsImprovement,delta:analystAnchorDelta},
     currentNormalizationAddback,targetNormalizationAddback,matureNormalizationAddback,
@@ -1320,7 +1375,7 @@ function buildForecast(stock){
   const forecastBridge={
     revenue:{longTermConsensus:growth.longTermConsensus??null,backlogEvidence:growth.backlogEvidence??null,growthCeiling:growth.growthCeiling??null,model:growth.y1,analystCurrent:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthCurrentYear??stock.analystEstimates?.revenueGrowthFwd),analystNext:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthNextYear),recentQuarter:growth.recentQuarter,recentAnnual:growth.recentAnnual,historicalNormalized:growth.historicalAnchor,terminalOperatingGrowth:growth.year5Growth,analystWeight:growth.analystWeight,analystWeightYear1:growth.analystWeight,analystWeightYear2:growth.analystWeightYear2,directAnalystYears:growth.directAnalystYears,structuralStepUp:growth.structuralStepUp,structuralStepDown:growth.structuralStepDown},
     margins:{fcfStart:margins.currentFCF,fcfNormalized:margins.rawFCF,fcfTarget:margins.targetFCF,fcfMatureTarget:margins.matureTargetFCF,operatingStart:margins.currentOperating,operatingTarget:margins.targetOperating,operatingMatureTarget:margins.matureOperating,ebitdaStart:margins.currentEBITDA,ebitdaNormalized:margins.rawEBITDA,ebitdaTarget:margins.targetEBITDA,ebitdaMatureTarget:margins.matureTargetEBITDA,netStart:margins.currentNet,netNormalized:margins.currentNet,gaapNetNormalized:margins.rawNet,netTarget:margins.targetNet,netMatureTarget:margins.matureTargetNet,cfoStart:margins.currentCFO,cfoTarget:margins.targetCFO,cfoMatureTarget:margins.matureCFO,capexStart:margins.currentCapex,capexTarget:margins.targetCapex,capexMatureTarget:margins.matureCapex,incrementalFCFMargin:margins.incrementalFCFMargin,incrementalOperatingMargin:margins.incrementalOperatingMargin,analystMarginGrowth:margins.analystMarginGrowth,analystMarginDelta:margins.analystMarginDelta,expansionVotes:margins.expansionVotes,compressionVotes:margins.compressionVotes,fcfTrend:margins.fcfTrend,operatingTrend:margins.opTrend,grossMarginTrend:margins.grossTrend,operatingLeverageAdjustment:margins.leverageSignal,abnormalCapexCycle:margins.abnormalCapexCycle,reportedFCFMargin:margins.reportedFCFMargin,normalizedCapexMargin:margins.normalizedCapexMargin,cycleNormalizedFCFMargin:margins.cycleNormalizedFCFMargin,maintenanceCapexMargin:margins.maintenanceCapexMargin,growthReinvestmentShare:margins.growthReinvestmentShare,matureGrowthReinvestmentShare:margins.matureGrowthReinvestmentShare,matureCapexMargin:margins.matureCapex,normalizedCFOMargin:margins.normalizedCFO,cashEconomicsTarget:margins.cashEconomicsTarget,profitabilityConsistencyApplied:margins.profitabilityConsistencyApplied,structuralCapitalLightCashConversion:margins.structuralCapitalLightCashConversion,recurringFcfCfoRatio:margins.recurringFcfCfoRatio,fcfCeiling:margins.fcfCeiling,crossMarginCoherenceApplied:margins.crossMarginCoherenceApplied,unexplainedFcfCompressionPrevented:margins.unexplainedFcfCompressionPrevented,broadCashCompressionEvidence:margins.broadCashCompressionEvidence,temporaryMarginReset:margins.temporaryMarginReset,
-      analystMarginAnchor:margins.analystMarginAnchor??null,crisisRecovery:margins.crisisRecovery??null,oneTimeChargesLatest:margins.oneTimeChargesLatest??0,backlogCoverage:margins.backlogCoverage??null,peakMarginDiscipline:margins.peakMarginDiscipline??null,normalizedTaxRate:margins.normalizedTaxRate,gaapNetStart:margins.gaapCurrentNet,gaapNetTarget:margins.gaapTargetNet,gaapNetMatureTarget:margins.gaapMatureTargetNet,
+      analystMarginAnchor:margins.analystMarginAnchor??null,crisisRecovery:margins.crisisRecovery??null,oneTimeChargesLatest:margins.oneTimeChargesLatest??0,backlogCoverage:margins.backlogCoverage??null,peakMarginDiscipline:margins.peakMarginDiscipline??null,marginEvidence:margins.marginEvidence??null,normalizedTaxRate:margins.normalizedTaxRate,gaapNetStart:margins.gaapCurrentNet,gaapNetTarget:margins.gaapTargetNet,gaapNetMatureTarget:margins.gaapMatureTargetNet,
       earningsNormalizationAddbackStart:margins.currentNormalizationAddback,earningsNormalizationAddbackTarget:margins.targetNormalizationAddback,earningsNormalizationAddbackMature:margins.matureNormalizationAddback,
       grossMarginStart:margins.grossNow,grossMarginTarget:margins.grossTarget,grossMarginMatureTarget:margins.grossMature,
       rdMarginStart:margins.rdNow,rdMarginTarget:margins.rdTarget,rdMarginMatureTarget:margins.rdMature,
@@ -1342,6 +1397,7 @@ function buildForecast(stock){
   if(margins.temporaryMarginReset)forecastFlags.push('temporary_margin_reset_normalized');
   if(margins.analystMarginAnchor?.applied)forecastFlags.push('analyst_anchored_margin_recovery');
   if(margins.peakMarginDiscipline?.applied)forecastFlags.push('peak_margin_reversion');
+  if(margins.marginEvidence?.applied)forecastFlags.push(margins.marginEvidence.consensusContradicts?'margin_ceiling_consensus_contradicts':'margin_evidence_ceiling');
   if(margins.crisisRecovery?.applied)forecastFlags.push('crisis_recovery_margin');
   if(dividendSanityCapped)forecastFlags.push('dividend_sanity_capped');
   if(margins.driverReconciliation==='full'){forecastFlags.push('full_operating_driver_reconciliation');forecastFlags.push('spreadsheet_operating_driver_model');}
