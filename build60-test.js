@@ -64,3 +64,17 @@ console.log('Build 60 split-event tests passed');
   assert.strictEqual(d.rating,'Watch','filed corporate action did not hold the rating');
   console.log('Build 60b SEC 8-K corporate-action tests passed');
 }
+
+// (g) Build 60c guards: non-standard "split" ratios (spin-off price adjustments) are ignored, and a
+// repair that moves EPS away from consensus is undone.
+{
+  const y1=mkYears();
+  const r1=applySplitEvents(y1,{value:20e6,filed:'2026-05-01'},[{date:'2026-06-02',ratio:6.6667}],false,1.07);
+  assert(!r1.applied&&y1.at(-1).sharesOutTTM===20e6,'CTVA-style spin-off adjustment treated as a split');
+  const y2=mkYears(); // latest EPS 10 already matches consensus 10.5
+  const r2=applySplitEvents(y2,{value:20e6,filed:'2026-05-01'},[{date:'2026-06-02',ratio:3}],false,10.5);
+  assert(!r2.applied&&r2.rejectedByConsensus&&y2.at(-1).sharesOutTTM===20e6&&y2.at(-1).dilutedEPS===10,'consensus-contradicted split not undone');
+  const y3=mkYears(); // IESC: EPS 10 pre-split, consensus 5.8 -> repair to 5 is closer
+  assert(applySplitEvents(y3,{value:20e6,filed:'2026-08-01'},[{date:'2026-08-14',ratio:2}],false,5.8).applied,'valid split rejected');
+  console.log('Build 60c split guard tests passed');
+}

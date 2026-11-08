@@ -45,4 +45,9 @@ if(e3.applied){
   const r10=contra.rows.at(-1), r10b=flat.rows.at(-1);
   assert(r10.netMargin<=r10b.netMargin+1e-9,'net margin did not follow the operating cut');
 }
+// 5) Build 60c: consensus-contradicted near-term dip. Year 1 follows consensus (EPS -50% on revenue up),
+//    year 4+ returns to the normal path.
+assert(Array.isArray(e3.nearTermDip)&&e3.nearTermDip[0]<.6,'near-term dip missing: '+JSON.stringify(e3.nearTermDip));
+assert(contra.rows[0].netMargin<flat.rows[0].netMargin*.75,'year-1 margin ignored the consensus dip');
+assert(Math.abs(contra.rows[4].netMargin/flat.rows[4].netMargin-1)<.35,'dip leaked past year 3');
 console.log('Build 59 margin-evidence tests passed',JSON.stringify({flatCeil:+e1.ceiling.toFixed(3),backedCeil:+e2.ceiling.toFixed(3),contraCeil:+e3.ceiling.toFixed(3),now:+e1.adjustedNow.toFixed(3)}));

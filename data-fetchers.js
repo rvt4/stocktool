@@ -859,8 +859,19 @@ function normalizeHistoryForCorporateAction(years, currentShareFact) {
 //   (a) split AFTER the latest SEC share fact was filed: all SEC shares are pre-split -> rebase all.
 //   (b) split between the last annual year and a post-split 10-Q that the >=3.5x rule ignored ->
 //       rebase the annual history when the 10-Q denominator confirms the split ratio.
-function applySplitEvents(years, latestShareFact, splits, alreadyNormalized) {
-  if (!Array.isArray(years) || !years.length || !Array.isArray(splits) || !splits.length) return { applied:false };
+// Build 60c guards (results (32)): Yahoo also records spin-off price adjustments as "splits" (CTVA 6.67
+// after its 2026 separation), which multiplied shares 6.7x. Only standard split ratios are used, and
+// when consensus EPS exists the repair must move the latest EPS closer to consensus, not further away.
+const STANDARD_SPLIT_RATIOS = [2,3,4,5,6,7,8,10,15,20,25,30,40,50,1.5,1.25,4/3,5/2,5/3,7/4];
+function isStandardSplitRatio(r) {
+  const x = r >= 1 ? r : 1/r;
+  return STANDARD_SPLIT_RATIOS.some(k => Math.abs(x/k - 1) < 0.005);
+}
+function applySplitEvents(years, latestShareFact, splitsIn, alreadyNormalized, consensusEPS = null) {
+  const splits = (Array.isArray(splitsIn) ? splitsIn : []).filter(x => isStandardSplitRatio(x.ratio));
+  if (!Array.isArray(years) || !years.length || !splits.length) return { applied:false, rejected:(splitsIn||[]).filter(x=>!isStandardSplitRatio(x.ratio)) };
+  const lastEPSBefore = Number(years[years.length-1]?.dilutedEPS);
+  const snapshot = years.map(y => ({ sharesOutTTM:y.sharesOutTTM, dilutedEPS:y.dilutedEPS, dividendPerShare:y.dividendPerShare, sharesSource:y.sharesSource, splitEventFactor:y.splitEventFactor, preSplitEventSharesOutTTM:y.preSplitEventSharesOutTTM }));
   const last = years[years.length-1];
   const rebase = (factor) => {
     for (const y of years) {
@@ -884,7 +895,14 @@ function applySplitEvents(years, latestShareFact, splits, alreadyNormalized) {
   const after = splits.filter(x => basisDate ? x.date > basisDate : false);
   const fAfter = after.reduce((f,x) => f*x.ratio, 1);
   if (fAfter !== 1) { rebase(fAfter); applied.push({ case:'split_after_latest_sec_filing', factor:fAfter, splits:after }); }
-  return applied.length ? { applied:true, steps:applied, factor:applied.reduce((f,x)=>f*x.factor,1) } : { applied:false };
+  if (!applied.length) return { applied:false };
+  const factor = applied.reduce((f,x)=>f*x.factor,1);
+  const c = Number(consensusEPS), lastEPSAfter = Number(years[years.length-1]?.dilutedEPS);
+  if (c > 0 && lastEPSBefore > 0 && lastEPSAfter > 0 && Math.abs(Math.log(lastEPSAfter/c)) >= Math.abs(Math.log(lastEPSBefore/c))) {
+    years.forEach((y,i) => Object.assign(y, snapshot[i]));
+    return { applied:false, rejectedByConsensus:true, factor, consensusEPS:c, epsBefore:lastEPSBefore, epsAfter:lastEPSAfter };
+  }
+  return { applied:true, steps:applied, factor };
 }
 
 // Build 60b: completed acquisitions/disposals/spin-offs from SEC filings, no manual list needed.
@@ -1011,7 +1029,8 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   // calculations. The latest 10-Q can be on a new share basis while the last 10-K is not.
   const latestShareFact = latestDilutedSharesFromFacts(facts);
   const corporateActionNormalization = normalizeHistoryForCorporateAction(years, latestShareFact);
-  const splitEventRepair = applySplitEvents(years, latestShareFact, priceHistory?.splits, corporateActionNormalization.applied);
+  const splitEventRepair = applySplitEvents(years, latestShareFact, priceHistory?.splits, corporateActionNormalization.applied, Number(analystEstimate?.epsCurrentYear ?? analystEstimate?.eps_current_year));
+  if (splitEventRepair.rejectedByConsensus) console.log(`[split ${secTicker}] x${splitEventRepair.factor.toFixed(3)} rejected: EPS ${splitEventRepair.epsBefore.toFixed(2)} -> ${splitEventRepair.epsAfter.toFixed(2)} moves away from consensus ${splitEventRepair.consensusEPS.toFixed(2)}`);
   if (splitEventRepair.applied) console.log(`[split ${secTicker}] share basis rebased x${splitEventRepair.factor.toFixed(3)} (${splitEventRepair.steps.map(x=>x.case+': '+x.splits.map(y=>y.date+' '+y.ratio).join(',')).join('; ')})`);
   const last = years[years.length - 1] || {};
   const currentPrice = quote?.c || (priceHistory.length ? priceHistory[priceHistory.length - 1].close : null);
