@@ -1171,7 +1171,17 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     ?Math.max(adjTypical??-Infinity,adjConsensus??-Infinity)
     :Math.max(adjNow??-Infinity,adjBest3??-Infinity);
   const evidenceTop=Math.max(evidenceBase,adjConsensus??-Infinity);
-  let marginEvidence={applied:false,adjustedNow:adjNow,best3YearAverage:adjBest3,typical5Year:adjTypical,consensusFactor:consensusMarginFactor,consensusTwoYear:adjConsensus,consensusContradicts,ceiling:null,cut:{target:0,mature:0}};
+  // Build 60c: when consensus expects margins to fall >20%, the first forecast years follow that dip
+  // (year 1 = consensus current year, year 2 = two-year level, year 3 halfway back) instead of starting
+  // from last year's possibly-peak margin (PPC: 2025 peak, consensus 2026 EPS -60%).
+  const nearTermDip=(()=>{
+    if(!(Number.isFinite(consensusMarginFactor)&&consensusMarginFactor<.80))return null;
+    const e=stock.analystEstimates||{}, e1=finite(e.epsGrowthCurrentYear), r1=finite(e.revenueGrowthCurrentYear);
+    const d1=Number.isFinite(e1)&&Number.isFinite(r1)?clamp((1+Math.min(e1,3))/(1+r1),.3,1):Math.sqrt(consensusMarginFactor);
+    const d2=clamp(consensusMarginFactor,.3,1);
+    return [Math.min(1,d1),Math.min(1,d2),Math.min(1,(1+d2)/2)];
+  })();
+  let marginEvidence={applied:false,nearTermDip,adjustedNow:adjNow,best3YearAverage:adjBest3,typical5Year:adjTypical,consensusFactor:consensusMarginFactor,consensusTwoYear:adjConsensus,consensusContradicts,ceiling:null,cut:{target:0,mature:0}};
   if(Number.isFinite(evidenceTop)&&evidenceTop>0&&adjFinite.length>=3&&!isFinancialLike(stock)){
     const allowance=Math.min(.015,.15*evidenceTop)*clamp((expansionVotes-1)/3,0,1);
     const ceiling=evidenceTop+allowance;
@@ -1314,10 +1324,10 @@ function buildForecast(stock){
       : (i-EXPLICIT_FORECAST_YEARS+1)/(HORIZON_YEARS-EXPLICIT_FORECAST_YEARS);
     const curved=phaseT*phaseT*(3-2*phaseT);
     const interp=(a,b)=>Number.isFinite(a)&&Number.isFinite(b)?a+(b-a)*curved:null;
-    const operatingMargin=firstPhase?interp(margins.currentOperating,margins.targetOperating):interp(margins.targetOperating,margins.matureOperating);
-    const ebitdaMargin=firstPhase?interp(margins.currentEBITDA,margins.targetEBITDA):interp(margins.targetEBITDA,margins.matureTargetEBITDA);
-    const netMargin=firstPhase?interp(margins.currentNet,margins.targetNet):interp(margins.targetNet,margins.matureTargetNet);
-    const gaapNetMargin=firstPhase?interp(margins.gaapCurrentNet,margins.gaapTargetNet):interp(margins.gaapTargetNet,margins.gaapMatureTargetNet);
+    let operatingMargin=firstPhase?interp(margins.currentOperating,margins.targetOperating):interp(margins.targetOperating,margins.matureOperating);
+    let ebitdaMargin=firstPhase?interp(margins.currentEBITDA,margins.targetEBITDA):interp(margins.targetEBITDA,margins.matureTargetEBITDA);
+    let netMargin=firstPhase?interp(margins.currentNet,margins.targetNet):interp(margins.targetNet,margins.matureTargetNet);
+    let gaapNetMargin=firstPhase?interp(margins.gaapCurrentNet,margins.gaapTargetNet):interp(margins.gaapTargetNet,margins.gaapMatureTargetNet);
     const grossMargin=firstPhase?interp(margins.grossNow,margins.grossTarget):interp(margins.grossTarget,margins.grossMature);
     const rdMargin=firstPhase?interp(margins.rdNow,margins.rdTarget):interp(margins.rdTarget,margins.rdMature);
     const sgaMargin=firstPhase?interp(margins.sgaNow,margins.sgaTarget):interp(margins.sgaTarget,margins.sgaMature);
@@ -1330,7 +1340,15 @@ function buildForecast(stock){
     // the very U-shaped trough we removed upstream. CFO is therefore the balancing output.
     const modeledFcfMargin=firstPhase?interp(margins.currentFCF,margins.targetFCF):interp(margins.targetFCF,margins.matureTargetFCF);
     const rowFcfCeiling=Number.isFinite(margins.fcfCeiling)?margins.fcfCeiling:cfg.maxFCFMargin;
-    const fcfMargin=Number.isFinite(modeledFcfMargin)?clamp(modeledFcfMargin,-.10,rowFcfCeiling):modeledFcfMargin;
+    let fcfMargin=Number.isFinite(modeledFcfMargin)?clamp(modeledFcfMargin,-.10,rowFcfCeiling):modeledFcfMargin;
+    // Build 60c: consensus-contradicted near-term dip (see marginEvidence.nearTermDip).
+    const dip=margins.marginEvidence?.nearTermDip?.[i];
+    if(Number.isFinite(dip)&&dip<1&&Number.isFinite(netMargin)&&netMargin>0){
+      const dNet=netMargin*(dip-1), dOp=dNet/(1-clamp(margins.normalizedTaxRate??.21,0,.35));
+      netMargin+=dNet; if(Number.isFinite(gaapNetMargin))gaapNetMargin+=dNet;
+      if(Number.isFinite(operatingMargin))operatingMargin+=dOp; if(Number.isFinite(ebitdaMargin))ebitdaMargin+=dOp;
+      if(Number.isFinite(fcfMargin))fcfMargin+=dNet;
+    }
     const cfoMargin=Number.isFinite(fcfMargin)&&Number.isFinite(capexMargin)
       ? clamp(fcfMargin+capexMargin,-.08,.70)
       : (firstPhase?interp(margins.currentCFO,margins.targetCFO):interp(margins.targetCFO,margins.matureCFO));
