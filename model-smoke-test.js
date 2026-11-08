@@ -21,7 +21,7 @@ for(const sample of [compounder.v,expensive.v,dividend.v]){
     assert(Math.abs(m.audit.fairValueToday-m.outcome/Math.pow(1+sample.intrinsicDiscountRate,10))<1e-8,'method fair value does not use intrinsic discount rate');
     assert(Math.abs(m.audit.hurdleValueToday-m.outcome/Math.pow(1+require('./engine/config').INVESTOR_ALPHA_HURDLE,10))<1e-8,'method hurdle value does not use the configured hurdle rate');
   }
-  assert(Math.abs(sample.requiredReturnBuyPrice-sample.hurdleReturnPrice*.80)<1e-10,'20% MOS buy price does not reconcile to hurdle price');
+  assert(Math.abs(sample.requiredReturnBuyPrice-sample.hurdleReturnPrice*(1-require('./engine/config').INVESTOR_MARGIN_OF_SAFETY))<1e-10,'MOS buy price does not reconcile to hurdle price');
 }
 
 // Forward-looking forecast sanity checks: one-time acquisition-style revenue jumps must
