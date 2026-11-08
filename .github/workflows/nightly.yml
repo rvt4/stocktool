@@ -24,7 +24,7 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: python fetch_analyst_estimates.py
       - name: Verify valuation engine
-        run: node model-smoke-test.js && node build29-test.js && node build58-test.js
+        run: node model-smoke-test.js && node build29-test.js && node build58-test.js && node build59-test.js
       - name: Run screener
         env:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
