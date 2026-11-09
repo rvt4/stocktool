@@ -42,7 +42,11 @@ function initial(s){
   if(e0>0&&e10>0){
    a0.financialPath=true;a0.epsToday=e0;a0.peToday=a0.price>0?clamp(a0.price/e0,3,400):a0.multiple;
    a0.revenue=valid(p[0].revenue,NaN)/(1+Number(p[0].revenueGrowth))/1e9;a0.shares=valid(p[0].shares,NaN)/(1+valid(p[0].actualDilution,0))/1e6;
-   const net=p.map((r,i)=>e0*Math.pow(e10/e0,(i+1)/10)*Number(r.shares)/Number(r.revenue)*100);
+   // Build 62e: follow the screener's own year-by-year EPS growth path (year 1 = consensus), not a smooth
+   // curve from today's EPS to year 10, which hid the consensus jump and showed AXP's margin 3 pts too low.
+   const gp=epsMultipleAudit.epsGrowthPath,useGp=Array.isArray(gp)&&gp.length===10&&gp.every(Number.isFinite);
+   let ec=e0;const epsAt=i=>useGp?(ec*=1+gp[i]):e0*Math.pow(e10/e0,(i+1)/10);
+   const net=p.map((r,i)=>epsAt(i)*Number(r.shares)/Number(r.revenue)*100);
    mp={growth:p.map(r=>Number(r.revenueGrowth)*100),net,fcf:net.slice(),sbc:Array(10).fill(0),dil:p.map(r=>valid(r.actualDilution,0)*100),div:p.map(r=>valid(r.dividendPerShare,0)),pe:peSeries(a0.peToday,a0.multiple,'linear')};
   }
  }
@@ -221,7 +225,7 @@ function renderPathEditor(){
  const COLS=PATH_COLS.filter(([k])=>!OPT_KEYS.includes(k)||Array.isArray(a.path[k])),r=calculate(a),n=COLS.length+4;
  // Build 62c: reported dividends/share and net debt now come from SEC history (schema 3). EBITDA and P/E stay blank:
  // the history has no D&A, and P/E needs historical prices.
- const hcell=(h,k)=>k==='div'?(Number.isFinite(h.div)?'$'+h.div.toFixed(2):'—'):k==='debt'?(Number.isFinite(h.debt)?h.debt.toFixed(1):'—'):k==='pe'||k==='ebitda'?'—':pct(h[k]);
+ const hcell=(h,k)=>k==='fcf'&&a.financialPath?'—':k==='div'?(Number.isFinite(h.div)?'$'+h.div.toFixed(2):'—'):k==='debt'?(Number.isFinite(h.debt)?h.debt.toFixed(1):'—'):k==='pe'||k==='ebitda'?'—':pct(h[k]);
  const mb=current?.projectionAssumptions?.forecastBridge?.margins||{},pk=mb.peakMarginDiscipline,an=mb.analystMarginAnchor,notes=[];
  const ev=x=>String(x).replaceAll('_',' ');
  if(pk?.applied)notes.push(`Today's margin is well above this company's long-run level, so the model lets part of it fade (${Math.round((1-(pk.reversionShare||0)/(pk.baseReversion||1))*100)}% durability credit${pk.durabilityEvidence?.length?': '+pk.durabilityEvidence.map(ev).join(', '):''}).`);
@@ -232,6 +236,7 @@ function renderPathEditor(){
  if(Number.isFinite(rb.longTermConsensus?.raw)&&rb.longTermConsensus.weight>0)notes.push(`Years 3–5 growth leans on the analyst long-term EPS growth estimate of ${pct(rb.longTermConsensus.raw)} (haircut, ${Math.round(rb.longTermConsensus.weight*100)}% weight).`);
  if(Number.isFinite(rb.backlogEvidence?.growth)&&rb.backlogEvidence.weight>0)notes.push(`Backlog grew ${pct(rb.backlogEvidence.growth)} last year and is used as evidence for years 3–5.`);
  if(rb.growthCeiling&&rb.growthCeiling.years3to5>.28)notes.push(`Growth ceiling for years 3–5 raised to ${pct(rb.growthCeiling.years3to5)} (${rb.growthCeiling.sources} supporting source${rb.growthCeiling.sources===1?'':'s'}).`);
+ if(a.financialPath)notes.push('Valued on earnings (lender/insurer): margins here are projected EPS × shares ÷ revenue. Reported FCF is left blank because loan and deposit flows run through operating cash flow, so it says nothing about owner earnings; the FCF column simply mirrors net margin.');
  if(mb.oneTimeChargesLatest>.005)notes.push(`One-time charges of ${pct(mb.oneTimeChargesLatest)} of revenue were excluded from last year's margin.`);
  const modelNotes=notes.length&&nativeScenario()!==null?`<div class="model-notes small">${notes.map(n=>'<p>'+esc(n)+'</p>').join('')}</div>`:'';
  el.innerHTML=modelNotes+`<details class="path-shape-box"${shapesOpen?' open':''}><summary class="small">Shapes (redraw a whole line)</summary><div class="path-shapes">${[...ALL_KEYS,...OPT_KEYS.filter(k=>Array.isArray(a.path[k]))].map(k=>`<label class="small">${esc(SERIES_LABELS[k])} ${shapeSel(k)}</label>`).join('')}</div></details>
