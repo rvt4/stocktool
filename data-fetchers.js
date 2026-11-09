@@ -951,6 +951,20 @@ function shareDenominatorLooksSuspicious(years, currentPrice) {
   return false;
 }
 
+// Build 62c: share-class basis check. Visa reports EPS per class; the SEC parse landed on a basis of
+// ~470M shares (Class C converts 4:1) instead of ~1.94B as-converted Class A, so EPS was ~1.7x consensus,
+// market cap $198B, and the analyst margin anchor (EPS x shares / revenue) read a 14% margin for a ~55%
+// business. U-Haul: 20M voting shares counted, ~196M in total. The sales-multiple check above cannot see
+// this (the numbers look ordinary), so also audit when SEC EPS disagrees with consensus by ~2x. The live
+// market-cap repair below only applies if Finnhub independently confirms a >=1.75x mismatch.
+function shareBasisDisagreesWithConsensus(years, consensusPriorEPS) {
+  const last = Array.isArray(years) ? years.at(-1) : null;
+  const ni = Number(last?.netIncome), sh = Number(last?.sharesOutTTM), c = Number(consensusPriorEPS);
+  if (!(ni > 0 && sh > 0 && c > 0)) return false;
+  const ratio = (ni / sh) / c;
+  return ratio > 1.8 || ratio < 0.45;
+}
+
 function reconcileSharesWithLiveMarketCap(years, currentPrice, profile) {
   const last = Array.isArray(years) ? years.at(-1) : null;
   if (!last) return { reliable:false, applied:false, reason:'missing_financial_history' };
@@ -1044,10 +1058,13 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   // Independent denominator audit. Only spend the extra Finnhub profile request when
   // the SEC-derived denominator creates economically implausible per-share scale.
   let shareCountReconciliation = { reliable:true, applied:false, reason:'sec_denominator_plausible' };
-  if (shareDenominatorLooksSuspicious(years, currentPrice)) {
+  const consensusShareFlag = shareBasisDisagreesWithConsensus(years, consensusPriorEPS);
+  if (shareDenominatorLooksSuspicious(years, currentPrice) || consensusShareFlag) {
     try {
       const profile = await fetchFinnhubProfile(finnhubTicker);
       shareCountReconciliation = reconcileSharesWithLiveMarketCap(years, currentPrice, profile);
+      shareCountReconciliation.trigger = consensusShareFlag ? 'eps_vs_consensus' : 'per_share_scale';
+      if (shareCountReconciliation.applied) console.log(`[shares ${secTicker}] rebased x${(shareCountReconciliation.factor||1).toFixed(3)} via live market cap (trigger: ${shareCountReconciliation.trigger})`);
     } catch (_) {
       shareCountReconciliation = { reliable:false, applied:false, reason:'live_reconciliation_fetch_failed' };
     }
@@ -1212,5 +1229,7 @@ const api = {
 };
 
 api.applySplitEvents = applySplitEvents;
+api.shareBasisDisagreesWithConsensus = shareBasisDisagreesWithConsensus;
+api.reconcileSharesWithLiveMarketCap = reconcileSharesWithLiveMarketCap;
 api.detectFilingCorporateAction = detectFilingCorporateAction;
 if (typeof module !== 'undefined' && module.exports) module.exports = api;

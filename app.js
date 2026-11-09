@@ -207,7 +207,7 @@ function projectedSeries(){
 }
 function reportedPathRows(){
  const ann=(history?.annual||[]).filter(x=>Number.isFinite(x.revenue)&&x.revenue>0).slice(-6);
- return ann.slice(1).map((x,i)=>{const prev=ann[i];return {period:x.period,growth:prev.revenue>0?(x.revenue/prev.revenue-1):NaN,net:Number.isFinite(x.netIncome)?x.netIncome/x.revenue:NaN,fcf:Number.isFinite(x.fcf)?x.fcf/x.revenue:NaN,sbc:Number.isFinite(x.sbc)?x.sbc/x.revenue:NaN,dil:x.shares>0&&prev.shares>0?x.shares/prev.shares-1:NaN,eps:valid(x.eps,NaN)};});
+ return ann.slice(1).map((x,i)=>{const prev=ann[i];return {period:x.period,growth:prev.revenue>0?(x.revenue/prev.revenue-1):NaN,net:Number.isFinite(x.netIncome)?x.netIncome/x.revenue:NaN,fcf:Number.isFinite(x.fcf)?x.fcf/x.revenue:NaN,sbc:Number.isFinite(x.sbc)?x.sbc/x.revenue:NaN,dil:x.shares>0&&prev.shares>0?x.shares/prev.shares-1:NaN,eps:valid(x.eps,Number.isFinite(x.netIncome)&&x.shares>0?x.netIncome/x.shares:NaN),div:valid(x.dps,NaN),debt:Number.isFinite(x.netDebt)?x.netDebt/1e9:NaN};});
 }
 let shapesOpen=false;
 const PATH_COLS=[['growth','Growth %','growth',0.1,2],['net','Net mgn %','net',0.1,2],['fcf','FCF mgn %','fcf',0.1,2],['ebitda','EBITDA mgn %',null,0.1,2],['sbc','SBC %','sbc',0.1,2],['dil','Shares chg %','dil',0.1,2],['div','Div / sh $',null,0.01,2],['debt','Net debt $B',null,0.1,2],['pe','P/E (trailing)',null,0.5,1]];
@@ -219,7 +219,9 @@ function renderPathEditor(){
  const hasModel=!!(current&&nativeRows(current).length===10);
  const shapeSel=k=>`<select data-shape="${k}" aria-label="${esc(SERIES_LABELS[k])} shape">${Object.entries(SHAPE_LABELS).filter(([v])=>(v!=='model'||(hasModel&&k!=='pe'))&&(v!=='steady'||k==='pe')&&(v!=='manual'||a.shapes?.[k]==='manual')).map(([v,l])=>`<option value="${v}"${a.shapes?.[k]===v?' selected':''}>${l}</option>`).join('')}</select>`;
  const COLS=PATH_COLS.filter(([k])=>!OPT_KEYS.includes(k)||Array.isArray(a.path[k])),r=calculate(a),n=COLS.length+4;
- const hcell=(h,k)=>k==='div'||k==='pe'||k==='ebitda'||k==='debt'?'—':pct(h[k]);
+ // Build 62c: reported dividends/share and net debt now come from SEC history (schema 3). EBITDA and P/E stay blank:
+ // the history has no D&A, and P/E needs historical prices.
+ const hcell=(h,k)=>k==='div'?(Number.isFinite(h.div)?'$'+h.div.toFixed(2):'—'):k==='debt'?(Number.isFinite(h.debt)?h.debt.toFixed(1):'—'):k==='pe'||k==='ebitda'?'—':pct(h[k]);
  const mb=current?.projectionAssumptions?.forecastBridge?.margins||{},pk=mb.peakMarginDiscipline,an=mb.analystMarginAnchor,notes=[];
  const ev=x=>String(x).replaceAll('_',' ');
  if(pk?.applied)notes.push(`Today's margin is well above this company's long-run level, so the model lets part of it fade (${Math.round((1-(pk.reversionShare||0)/(pk.baseReversion||1))*100)}% durability credit${pk.durabilityEvidence?.length?': '+pk.durabilityEvidence.map(ev).join(', '):''}).`);

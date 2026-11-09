@@ -21,14 +21,16 @@ def records(facts,tags,unit):
         for v in facts.get('us-gaap',{}).get(tag,{}).get('units',{}).get(unit,[]):
             out.append({**v,'_p':i})
     return out
-TAGS={'revenue':['RevenueFromContractWithCustomerExcludingAssessedTax','Revenues','SalesRevenueNet','RevenueFromContractWithCustomerIncludingAssessedTax'], 'grossProfit':['GrossProfit'], 'operatingIncome':['OperatingIncomeLoss'], 'netIncome':['NetIncomeLoss','ProfitLoss'], 'eps':['EarningsPerShareDiluted'], 'ocf':['NetCashProvidedByUsedInOperatingActivities'], 'capex':['PaymentsToAcquirePropertyPlantAndEquipment','PaymentsToAcquireProductiveAssets','PaymentsToAcquireOilAndGasPropertyAndEquipment','PaymentsToExploreAndDevelopOilAndGasProperties'], 'sbc':['ShareBasedCompensation'], 'shares':['WeightedAverageNumberOfDilutedSharesOutstanding']}
+TAGS={'revenue':['RevenueFromContractWithCustomerExcludingAssessedTax','Revenues','SalesRevenueNet','RevenueFromContractWithCustomerIncludingAssessedTax'], 'grossProfit':['GrossProfit'], 'operatingIncome':['OperatingIncomeLoss'], 'netIncome':['NetIncomeLoss','ProfitLoss'], 'eps':['EarningsPerShareDiluted'], 'ocf':['NetCashProvidedByUsedInOperatingActivities'], 'capex':['PaymentsToAcquirePropertyPlantAndEquipment','PaymentsToAcquireProductiveAssets','PaymentsToAcquireOilAndGasPropertyAndEquipment','PaymentsToExploreAndDevelopOilAndGasProperties'], 'sbc':['ShareBasedCompensation'], 'shares':['WeightedAverageNumberOfDilutedSharesOutstanding'], 'dps':['CommonStockDividendsPerShareDeclared','CommonStockDividendsPerShareCashPaid']}
+# Build 62c: balance-sheet points at fiscal year end (instant facts) for reported net debt.
+INSTANT={'cash':['CashAndCashEquivalentsAtCarryingValue','CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents'],'debtLong':['LongTermDebtNoncurrent','LongTermDebt'],'debtCurrent':['LongTermDebtCurrent','DebtCurrent','ShortTermBorrowings']}
 FLOW={'revenue','grossProfit','operatingIncome','netIncome','eps','ocf','capex','sbc'}
 def yearquarter(date):
     d=datetime.date.fromisoformat(date);return (d.year-1 if d.month<=3 else d.year), (4 if d.month<=3 else (d.month-1)//3)
 def build(ticker,cik):
     facts=get(f'https://data.sec.gov/api/xbrl/companyfacts/CIK{int(cik):010d}.json')['facts'];annual={};qtr={};ytd={}
     for key,tags in TAGS.items():
-        unit='USD/shares' if key=='eps' else 'shares' if key=='shares' else 'USD'
+        unit='USD/shares' if key in ('eps','dps') else 'shares' if key=='shares' else 'USD'
         vals=records(facts,tags,unit)
         for r in vals:
             if not all(k in r for k in ('start','end','val','filed')):continue
@@ -49,6 +51,13 @@ def build(ticker,cik):
                 label=r['end'][:7];bucket=ytd.setdefault(label,{})
                 prev=bucket.get(key)
                 if not prev or r['_p']<prev[2] or (r['_p']==prev[2] and r['filed']>prev[1]):bucket[key]=(r['val'],r['filed'],r['_p'])
+    inst={}
+    for key,tags in INSTANT.items():
+        for r in records(facts,tags,'USD'):
+            if 'start' in r or not all(k in r for k in ('end','val','filed')):continue
+            if r['filed']>datetime.date.today().isoformat() or not str(r.get('form','')).startswith('10-K'):continue
+            label=r['end'][:4];bucket=inst.setdefault(label,{});prev=bucket.get(key)
+            if not prev or r['_p']<prev[2] or (r['_p']==prev[2] and r['filed']>prev[1]):bucket[key]=(r['val'],r['filed'],r['_p'])
     def unpack(items):return {k:v[0] for k,v in items.items()}
     ann=[{'period':p,**unpack(v)} for p,v in sorted(annual.items())][-12:]
     quarter=[{'period':p,**unpack(v)} for p,v in sorted(qtr.items())][-28:]
@@ -65,17 +74,24 @@ def build(ticker,cik):
             if p in cumul and (m<=3 or previous in cumul):row[key]=cumul[p]-(cumul[previous] if previous else 0)
     for row in ann+quarter:
         if 'ocf' in row and 'capex' in row:row['fcf']=row['ocf']-row['capex']
-    return {'ticker':ticker,'cik':cik,'schema':2,'generatedAt':datetime.date.today().isoformat(),'annual':ann,'quarterly':quarter}
+        # Build 62c: companies reporting EPS only per share class (Visa) have no plain diluted EPS fact.
+        if 'eps' not in row and row.get('netIncome') is not None and row.get('shares'):row['eps']=row['netIncome']/row['shares'];row['epsDerived']=True
+    for row in ann:
+        b=unpack(inst.get(row['period'],{}))
+        debt=(b.get('debtLong') or 0)+(b.get('debtCurrent') or 0)
+        if 'cash' in b and ('debtLong' in b or 'debtCurrent' in b):row['netDebt']=debt-b['cash']
+        elif 'cash' in b:row['cash']=b['cash']
+    return {'ticker':ticker,'cik':cik,'schema':3,'generatedAt':datetime.date.today().isoformat(),'annual':ann,'quarterly':quarter}
 def main():
     data=get('https://www.sec.gov/files/company_tickers.json');mapping={x['ticker'].upper():x['cik_str'] for x in data.values()}
     result=ROOT/'data'/'results.json'
     if not result.exists():raise SystemExit('data/results.json missing')
     obj=json.loads(result.read_text());arr=obj if isinstance(obj,list) else next((obj[k] for k in ('stocks','results','companies','data') if isinstance(obj.get(k),list)),[])
     tickers=sorted({s['ticker'].upper() for s in arr if isinstance(s,dict) and s.get('ticker')})
-    limit=int(os.getenv('HISTORY_LIMIT','100'));done=0
+    limit=int(os.getenv('HISTORY_LIMIT','250'));done=0
     # Build 43: age comes from the file's own generatedAt (or schema), NOT file mtime. A GitHub Actions
     # checkout stamps every file with "now", so mtime made every cached history look fresh forever.
-    SCHEMA=2
+    SCHEMA=3  # Build 62c: dividends per share, net debt, derived EPS -> rebuild all histories
     def cached(t):
         path=OUT/(t+'.json')
         if not path.exists():return None

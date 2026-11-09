@@ -81,3 +81,22 @@ console.log('Build 60 split-event tests passed');
   assert(applySplitEvents(y4,{value:20e6,filed:'2026-04-30'},[{date:'2026-06-12',ratio:2}],false,1.67).applied,'fast-grower split wrongly rejected');
   console.log('Build 60c split guard tests passed');
 }
+
+// (h) Build 62c: share-class basis check (Visa: SEC basis ~470M shares vs ~1.94B as-converted Class A).
+{
+  const {shareBasisDisagreesWithConsensus,reconcileSharesWithLiveMarketCap}=require('./data-fetchers');
+  const visa=()=>[{year:2025,netIncome:20e9,sharesOutTTM:470e6,dilutedEPS:42.5},{year:2026,netIncome:22.5e9,sharesOutTTM:470e6,dilutedEPS:47.9}];
+  const y=visa();
+  assert(shareBasisDisagreesWithConsensus(y,12.8),'Visa share-basis error not flagged');
+  const r=reconcileSharesWithLiveMarketCap(y,420,{marketCapitalization:815000});
+  assert(r.applied&&Math.abs(y.at(-1).sharesOutTTM-1.94e9)<0.01e9,'Visa shares not rebased from live market cap');
+  assert(y.at(-1).dilutedEPS<15,'Visa EPS not rebased');
+  // one-off gain: EPS 2x consensus but live market cap confirms the share count -> no change
+  const g=[{year:2026,netIncome:2e9,sharesOutTTM:100e6,dilutedEPS:20}];
+  assert(shareBasisDisagreesWithConsensus(g,9),'one-off-gain case should be audited');
+  const rg=reconcileSharesWithLiveMarketCap(g,150,{marketCapitalization:15000});
+  assert(!rg.applied&&g[0].sharesOutTTM===100e6,'correct share count changed after a one-off gain');
+  // ordinary stock: no audit
+  assert(!shareBasisDisagreesWithConsensus([{netIncome:5e9,sharesOutTTM:1e9}],4.6),'ordinary stock flagged');
+  console.log('Build 62c share-class basis tests passed');
+}
