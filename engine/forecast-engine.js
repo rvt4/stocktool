@@ -324,9 +324,27 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
   const latestCapex=capexSeries.filter(Number.isFinite).at(-1);
   const latestFCF=fcfSeries.filter(Number.isFinite).at(-1);
 
-  const opCeiling=Math.min(.55,Math.max(.30,cfg.maxFCFMargin+.10));
-  const ebitdaCeiling=Math.min(.70,Math.max(.40,cfg.maxFCFMargin+.22));
-  const netCeiling=Math.min(.50,Math.max(.28,cfg.maxFCFMargin+.08));
+  // Build 62d: sector margin rails, relaxed for PROVEN high-margin businesses. Visa (Financials) earns
+  // ~51-55% net, but the Financials rail capped net margin at 43% (35% + 8 pts), so its projected net
+  // margin started ~9 pts below every reported year; CME was capped the same way and NVDA hit the flat 50%
+  // cap. As with the FCF rail below: when 4+ of the last 5 years sit above the sector rail with low
+  // dispersion, the rail moves to the company's own recurring level + 3 pts (hard caps 65/72/80%).
+  // New, unproven expansion is still limited by the Build 59 evidence ceiling.
+  const provenRail=(series,base,hardCap)=>{
+    const recent=series.filter(Number.isFinite).slice(-5);
+    // Utilities/REITs: reported "net margins" of 60-75% there are revenue-tag artifacts or depreciation
+    // effects, not owner economics, so they stay on the sector rail. Histories far above the hard cap are
+    // treated as data errors, not proof.
+    if(recent.length<4||stock?.sector==='Utilities'||stock?.sector==='Real Estate')return {rail:base,proven:false};
+    const med=median(recent),disp=median(recent.map(x=>Math.abs(x-med)));
+    const above=recent.filter(x=>x>base-.02).length;
+    if(above>=4&&med>base-.02&&med<=hardCap+.05&&disp<=.06)return {rail:Math.min(hardCap,Math.max(base,med+.03)),proven:true,recurring:med};
+    return {rail:base,proven:false};
+  };
+  const opRail=provenRail(opSeries,Math.min(.55,Math.max(.30,cfg.maxFCFMargin+.10)),.72);
+  const ebitdaRail=provenRail(ebitdaSeries,Math.min(.70,Math.max(.40,cfg.maxFCFMargin+.22)),.80);
+  const netRail=provenRail(netSeries,Math.min(.50,Math.max(.28,cfg.maxFCFMargin+.08)),.65);
+  const opCeiling=opRail.rail, ebitdaCeiling=Math.max(ebitdaRail.rail,opRail.proven?Math.min(.80,opRail.rail+.10):0), netCeiling=netRail.rail;
 
   // Sector FCF limits are sanity rails, not hard economic destinations. Exceptionally
   // capital-light businesses can sustain cash margins above a generic sector ceiling.
@@ -1225,6 +1243,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     normalizedTaxRate,gaapCurrentNet,gaapTargetNet,gaapMatureTargetNet,
     oneTimeChargesLatest:oneTimeSeries.at(-1)??0,backlogCoverage:(()=>{const r=finite(years.at(-1)?.rpo),v=finite(years.at(-1)?.revenue);return r>0&&v>0?r/v:null;})(),
     marginEvidence,
+    provenMarginRails:{net:netRail,operating:opRail,ebitda:ebitdaRail},
     peakMarginDiscipline:{applied:peakMarginApplied,baseReversion,reversionShare,durability,durabilityEvidence,elevatedYears,preBoomBaseline,provenNet,delta:peakMarginDelta},
     crisisRecovery,analystMarginAnchor:{applied:analystAnchorApplied,weight:anchorW,revenueBaseMismatch,consensusBasis,sbcDeduction,analystNet1,analystNet2,provenNet,expectsImprovement:analystExpectsImprovement,delta:analystAnchorDelta},
     currentNormalizationAddback,targetNormalizationAddback,matureNormalizationAddback,
@@ -1393,7 +1412,7 @@ function buildForecast(stock){
   const forecastBridge={
     revenue:{longTermConsensus:growth.longTermConsensus??null,backlogEvidence:growth.backlogEvidence??null,growthCeiling:growth.growthCeiling??null,model:growth.y1,analystCurrent:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthCurrentYear??stock.analystEstimates?.revenueGrowthFwd),analystNext:safeAnalystGrowth(stock.analystEstimates?.revenueGrowthNextYear),recentQuarter:growth.recentQuarter,recentAnnual:growth.recentAnnual,historicalNormalized:growth.historicalAnchor,terminalOperatingGrowth:growth.year5Growth,analystWeight:growth.analystWeight,analystWeightYear1:growth.analystWeight,analystWeightYear2:growth.analystWeightYear2,directAnalystYears:growth.directAnalystYears,structuralStepUp:growth.structuralStepUp,structuralStepDown:growth.structuralStepDown},
     margins:{fcfStart:margins.currentFCF,fcfNormalized:margins.rawFCF,fcfTarget:margins.targetFCF,fcfMatureTarget:margins.matureTargetFCF,operatingStart:margins.currentOperating,operatingTarget:margins.targetOperating,operatingMatureTarget:margins.matureOperating,ebitdaStart:margins.currentEBITDA,ebitdaNormalized:margins.rawEBITDA,ebitdaTarget:margins.targetEBITDA,ebitdaMatureTarget:margins.matureTargetEBITDA,netStart:margins.currentNet,netNormalized:margins.currentNet,gaapNetNormalized:margins.rawNet,netTarget:margins.targetNet,netMatureTarget:margins.matureTargetNet,cfoStart:margins.currentCFO,cfoTarget:margins.targetCFO,cfoMatureTarget:margins.matureCFO,capexStart:margins.currentCapex,capexTarget:margins.targetCapex,capexMatureTarget:margins.matureCapex,incrementalFCFMargin:margins.incrementalFCFMargin,incrementalOperatingMargin:margins.incrementalOperatingMargin,analystMarginGrowth:margins.analystMarginGrowth,analystMarginDelta:margins.analystMarginDelta,expansionVotes:margins.expansionVotes,compressionVotes:margins.compressionVotes,fcfTrend:margins.fcfTrend,operatingTrend:margins.opTrend,grossMarginTrend:margins.grossTrend,operatingLeverageAdjustment:margins.leverageSignal,abnormalCapexCycle:margins.abnormalCapexCycle,reportedFCFMargin:margins.reportedFCFMargin,normalizedCapexMargin:margins.normalizedCapexMargin,cycleNormalizedFCFMargin:margins.cycleNormalizedFCFMargin,maintenanceCapexMargin:margins.maintenanceCapexMargin,growthReinvestmentShare:margins.growthReinvestmentShare,matureGrowthReinvestmentShare:margins.matureGrowthReinvestmentShare,matureCapexMargin:margins.matureCapex,normalizedCFOMargin:margins.normalizedCFO,cashEconomicsTarget:margins.cashEconomicsTarget,profitabilityConsistencyApplied:margins.profitabilityConsistencyApplied,structuralCapitalLightCashConversion:margins.structuralCapitalLightCashConversion,recurringFcfCfoRatio:margins.recurringFcfCfoRatio,fcfCeiling:margins.fcfCeiling,crossMarginCoherenceApplied:margins.crossMarginCoherenceApplied,unexplainedFcfCompressionPrevented:margins.unexplainedFcfCompressionPrevented,broadCashCompressionEvidence:margins.broadCashCompressionEvidence,temporaryMarginReset:margins.temporaryMarginReset,
-      analystMarginAnchor:margins.analystMarginAnchor??null,crisisRecovery:margins.crisisRecovery??null,oneTimeChargesLatest:margins.oneTimeChargesLatest??0,backlogCoverage:margins.backlogCoverage??null,peakMarginDiscipline:margins.peakMarginDiscipline??null,marginEvidence:margins.marginEvidence??null,normalizedTaxRate:margins.normalizedTaxRate,gaapNetStart:margins.gaapCurrentNet,gaapNetTarget:margins.gaapTargetNet,gaapNetMatureTarget:margins.gaapMatureTargetNet,
+      analystMarginAnchor:margins.analystMarginAnchor??null,provenMarginRails:margins.provenMarginRails??null,crisisRecovery:margins.crisisRecovery??null,oneTimeChargesLatest:margins.oneTimeChargesLatest??0,backlogCoverage:margins.backlogCoverage??null,peakMarginDiscipline:margins.peakMarginDiscipline??null,marginEvidence:margins.marginEvidence??null,normalizedTaxRate:margins.normalizedTaxRate,gaapNetStart:margins.gaapCurrentNet,gaapNetTarget:margins.gaapTargetNet,gaapNetMatureTarget:margins.gaapMatureTargetNet,
       earningsNormalizationAddbackStart:margins.currentNormalizationAddback,earningsNormalizationAddbackTarget:margins.targetNormalizationAddback,earningsNormalizationAddbackMature:margins.matureNormalizationAddback,
       grossMarginStart:margins.grossNow,grossMarginTarget:margins.grossTarget,grossMarginMatureTarget:margins.grossMature,
       rdMarginStart:margins.rdNow,rdMarginTarget:margins.rdTarget,rdMarginMatureTarget:margins.rdMature,

@@ -786,6 +786,22 @@ function valuate(stock,forecast,quality){
         const t=(epsPath.length-4)/(HORIZON_YEARS-5);
         epsPath.push(clamp(prev+(matureEpsGrowth-prev)*clamp(t,0,1),-.03,growthFinancial?.18:.12));
       }
+      // Build 62e: keep the EPS path consistent with the revenue path shown beside it. AXP's revenue grows
+      // ~9%/yr through year 7 while EPS faded to ~6% by year 5, so the implied net margin slid from 15.6% to
+      // 13% for no stated reason. Implied net margin (EPS x shares / revenue) may now fade at most 7% below
+      // its year-1 level (year 2 stays on consensus). AXP: year-10 EPS $29.95 -> $33.18, still ~8%/yr from 2025 EPS.
+      const finRows=Array.isArray(forecast.rows)&&forecast.rows.length===HORIZON_YEARS?forecast.rows:null;
+      let marginFloorApplied=false;
+      if(finRows&&finRows.every(r=>finite(r.revenue)>0&&finite(r.shares)>0)&&epsBase>0){
+        let e=epsBase*(1+epsPath[0]);
+        const m1=e*finRows[0].shares/finRows[0].revenue, floorM=m1*.93;
+        if(m1>0)for(let i=1;i<HORIZON_YEARS;i++){if(i===1){e*=1+epsPath[1];continue;} // year 2 stays on consensus
+          const minE=floorM*finRows[i].revenue/finRows[i].shares;
+          let next=e*(1+epsPath[i]);
+          if(next<minE){const g=clamp(minE/e-1,epsPath[i],growthFinancial?.28:.18);if(g>epsPath[i]+1e-9){epsPath[i]=g;marginFloorApplied=true;}next=e*(1+epsPath[i]);}
+          e=next;
+        }
+      }
       let futureEPS=epsBase;
       for(const g of epsPath) futureEPS*=1+g;
       const epsGrowth=Math.pow(futureEPS/epsBase,1/HORIZON_YEARS)-1;
@@ -799,7 +815,7 @@ function valuate(stock,forecast,quality){
       const m=boundedExit(currentPE,justified,7,growthFinancial?36:22);
       const rel=methodReliability(stock,forecast,'FINANCIAL_EPS',epsBase,futureEPS,quality);
       const epsWeight=archetypeMethodWeight(archetype,'FINANCIAL_EPS',rel.score);
-      addMethod(methods,{name:'Normalized EPS exit',target:futureEPS*m,weight:epsWeight,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:futureEPS,normalizedEPSBase:epsBase,consensusLevels,epsGrowth,epsGrowthPath:epsPath,matureEpsGrowth,reliabilityReasons:rel.reasons}});
+      addMethod(methods,{name:'Normalized EPS exit',target:futureEPS*m,weight:epsWeight,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,metric:futureEPS,normalizedEPSBase:epsBase,consensusLevels,epsGrowth,epsGrowthPath:epsPath,marginFloorApplied,matureEpsGrowth,reliabilityReasons:rel.reasons}});
 
       // Financial companies should not be forced into a single P/E lens. Common equity is
       // already available from SEC Company Facts, so use it as a second economic anchor.
