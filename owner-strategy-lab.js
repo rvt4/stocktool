@@ -24,7 +24,7 @@ function shortlistEligible(r,{maxRank=20}={}){return RP.shortlistEntry(r,{rankFi
 
 // helpers: {adjustedReturnBetween, portfolioStats, dailyPortfolioRisk?}
 function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,helpers){
-  const {name,entry='shortlist',sizing='conviction',maxPositions=RP.SIZING.maxPositions,maxRank=20,transactionCostBps=10,trim=true,thesisBreak=true}=opts||{};
+  const {name,entry='shortlist',sizing='conviction',maxPositions=RP.SIZING.maxPositions,maxRank=20,transactionCostBps=10,trim=true,thesisBreak='review'}=opts||{};
   const {adjustedReturnBetween,portfolioStats}=helpers;
   const snaps=[...(snapshotOutput||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf)));
   let weights=new Map(),cash=1;               // fractions of portfolio; cash is held in SPY
@@ -224,7 +224,7 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
     simulateMechanicalTopN(snapshotOutput,historyByTicker,spyHistory,{name:'A · Mechanical top 20, equal weight, rebalanced quarterly',topN:20,transactionCostBps},H),
     simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'B · Owner rules, shortlist entry, equal weight, max 15',entry:'shortlist',sizing:'equal',maxPositions:15,transactionCostBps},H),
     simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'C · Owner rules, shortlist entry, conviction sizing, max 15 (app default)',entry:'shortlist',sizing:'conviction',maxPositions:15,transactionCostBps},H),
-    simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'C0 · Same as C WITHOUT the Build 62 thesis-broken sell rule (previous rules)',entry:'shortlist',sizing:'conviction',maxPositions:15,transactionCostBps,thesisBreak:false},H),
+    simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'C+ · Same as C WITH the experimental thesis-broken auto-sell (Build 62)',entry:'shortlist',sizing:'conviction',maxPositions:15,transactionCostBps,thesisBreak:'sell'},H),
     simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'D · Owner rules, Buy-rated entry only, conviction sizing, max 15',entry:'buyRated',sizing:'conviction',maxPositions:15,transactionCostBps},H),
     simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'E · Concentrated: conviction sizing, max 10',entry:'shortlist',sizing:'conviction',maxPositions:10,transactionCostBps},H),
     simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'F · Diversified: conviction sizing, max 25',entry:'shortlist',sizing:'conviction',maxPositions:25,transactionCostBps},H),
@@ -238,7 +238,7 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
       question1:'Do live ranks 1-20 beat ranks 251+ on 1Y and 3Y excess return? (rankBuckets)',
       question2:'Does arm C beat both SPY and the equal-weight universe, in development AND validation?',
       question3:'Does conviction sizing (C) beat equal weight (B)? Does concentration (E vs C vs F) help or just add volatility?',
-      question4:'Build 62: does the thesis-broken sell rule (C) beat the previous rules (C0)? See thesisBreakSells for what it sold and when.'
+      question4:'Build 62b: does the experimental thesis-broken auto-sell (C+) beat the default review-only rules (C)? See thesisBreakSells.'
     },
     entryFunnel:entryFunnel(snapshotOutput),
     rankBuckets:rankBucketOutcomes(snapshotOutput),

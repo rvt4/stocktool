@@ -23,7 +23,10 @@ function walk(reviews,opts={}){
   return st;
 }
 // 1) Value trap (PLTK-like): revenue shrinking 3 reviews running, forward EPS 40% below cost -> Sell
-const trap=walk([{revenueGrowthTTM:.01,forwardEPS:1.0},{revenueGrowthTTM:-.02,forwardEPS:.85},{revenueGrowthTTM:-.03,forwardEPS:.7},{revenueGrowthTTM:-.04,forwardEPS:.6}]);
+const trap=walk([{revenueGrowthTTM:.01,forwardEPS:1.0},{revenueGrowthTTM:-.02,forwardEPS:.85},{revenueGrowthTTM:-.03,forwardEPS:.7},{revenueGrowthTTM:-.04,forwardEPS:.6}],{thesisBreak:'sell'});
+const trapDefault=walk([{revenueGrowthTTM:.01,forwardEPS:1.0},{revenueGrowthTTM:-.02,forwardEPS:.85},{revenueGrowthTTM:-.03,forwardEPS:.7},{revenueGrowthTTM:-.04,forwardEPS:.6}]);
+assert.strictEqual(trapDefault.status,'Review','Build 62b default should flag for review, not sell');
+assert(trapDefault.reasons.some(x=>/^Business shrinking/.test(x)),'review reason missing');
 assert.strictEqual(trap.status,'Sell candidate','value trap not sold');
 assert(trap.reasons.some(x=>/^Business shrinking/.test(x)),'reason missing');
 
@@ -43,7 +46,7 @@ assert.notStrictEqual(off.status,'Sell candidate','rule fired while switched off
 const snap=RP.buildSnapshot({stocks:[{ticker:'X',price:10,underwrittenCAGR:.15,qualityScore:85,revenueGrowthTTM:-.02,forwardEPS:.9}],holdings:[{ticker:'X',shares:10}],prev:{holdings:[{ticker:'X',streak:2,entryEPS:1.2}]}});
 assert.strictEqual(snap.holdings[0].streak,3,'streak not carried');
 assert.strictEqual(snap.holdings[0].entryEPS,1.2,'entry EPS not carried');
-assert.strictEqual(snap.holdings[0].status,'Sell candidate','snapshot status ignores thesis rule');
+assert.strictEqual(snap.holdings[0].status,'Review','snapshot status ignores thesis rule');
 
 console.log('Build 62 thesis-broken sell rule tests passed');
 
@@ -61,9 +64,8 @@ console.log('Build 62 thesis-broken sell rule tests passed');
   const snaps=days.slice(0,-1).map((d,qi)=>({asOf:d,rows:tick.map((t,i)=>({ticker:t,sector:'S'+(i%8),liveRank:i+1,rank:i+1,overallRank:i+1,expectedCAGR:.2-i*.003,underwrittenCAGR:.18-i*.003,qualityScore:90-i,confidenceScore:80,rating:'Watch',modelSupport:'standard',
     revenueGrowthTTM:t==='T0'?(qi<1?.02:-.05):.06, forwardEPS:t==='T0'?Math.max(.2,1-.12*qi):1+.03*qi}))}));
   const lab=L.buildOwnerStrategyLab(snaps,hist,spy,{adjustedReturnBetween:arb,portfolioStats:stats},{});
-  const C=lab.arms.find(a=>a.name.startsWith('C ·')), C0=lab.arms.find(a=>a.name.startsWith('C0'));
-  assert(C.thesisBreakSells.some(x=>x.ticker==='T0'),'arm C did not sell the value trap');
-  assert(!C0.thesisBreakSells.length,'arm C0 used the new rule');
-  assert(C.portfolioCAGR>C0.portfolioCAGR,'selling the trap did not help');
-  console.log('Build 62 strategy-lab test passed',JSON.stringify({soldAt:C.thesisBreakSells[0].asOf,C:+C.portfolioCAGR.toFixed(3),C0:+C0.portfolioCAGR.toFixed(3)}));
+  const Cp=lab.arms.find(a=>a.name.startsWith('C+')), C=lab.arms.find(a=>a.name.startsWith('C ·'));
+  assert(Cp.thesisBreakSells.some(x=>x.ticker==='T0'),'experimental arm C+ did not sell the value trap');
+  assert(!C.thesisBreakSells.length,'default arm C auto-sold on the thesis rule');
+  console.log('Build 62b strategy-lab test passed',JSON.stringify({soldAt:Cp.thesisBreakSells[0].asOf,Cplus:+Cp.portfolioCAGR.toFixed(3),C:+C.portfolioCAGR.toFixed(3)}));
 }

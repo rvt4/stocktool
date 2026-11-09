@@ -17,6 +17,9 @@
     // Build 62 thesis-broken rule (backtest: PLTK held 17 quarters while -80%, WSC -55%).
     thesisRevenueStreak:3,   // trailing-12-month revenue down year over year at this many reviews in a row
     thesisEpsRatio:0.80,     // ...and forward EPS at or below this share of its level when bought
+    // Build 62b: backtest (Nov 2026) showed the auto-sell missed PLTK/WSC and sold TPL/LRCX instead
+    // (validation excess +8.6% vs +8.8% without it). Default is a Review flag only; 'sell' is experimental.
+    thesisAction:'review',
   };
   // Position sizing (Build 36). Sizes are set when buying; winners are allowed to run.
   //   target at cost = 3% .. 10%, scaled by conviction (return over hurdle, quality, confidence, coverage)
@@ -133,10 +136,11 @@
       else review.push('Expected return '+pctTxt(u)+' is below '+pctTxt(BANDS.lowReturn)+'; sell candidate if still low next review');
     }
     const memo=thesisMemo(s,prev);
-    if(ctx.thesisBreak!==false){
+    const thesisAction=ctx.thesisBreak===false?'off':(ctx.thesisBreak==='sell'||ctx.thesisBreak===true?'sell':BANDS.thesisAction);
+    if(thesisAction!=='off'){
       const epsDown=memo.entryEPS>0&&memo.fwdEPS!==null&&memo.fwdEPS<=BANDS.thesisEpsRatio*memo.entryEPS;
       const epsTxt=memo.entryEPS>0&&memo.fwdEPS!==null?pctTxt(1-memo.fwdEPS/memo.entryEPS):'';
-      if(memo.streak>=BANDS.thesisRevenueStreak&&epsDown) sell.push('Business shrinking: revenue down year over year for '+memo.streak+' reviews in a row and forward EPS '+epsTxt+' below its level when bought');
+      if(memo.streak>=BANDS.thesisRevenueStreak&&epsDown) (thesisAction==='sell'?sell:review).push('Business shrinking: revenue down year over year for '+memo.streak+' reviews in a row and forward EPS '+epsTxt+' below its level when bought');
       else if(memo.streak>=BANDS.thesisRevenueStreak-1&&memo.rg!==null&&memo.rg<0) review.push('Revenue down year over year for '+memo.streak+' reviews in a row ('+pctTxt(memo.rg)+')');
       else if(epsDown) review.push('Forward EPS is '+epsTxt+' below its level when bought');
     }
