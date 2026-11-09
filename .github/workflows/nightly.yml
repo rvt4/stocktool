@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
       - name: Verify model invariants
-        run: node model-smoke-test.js && node build29-test.js && node build58-test.js && node build59-test.js && node build60-test.js && node build61-test.js && node build62-test.js
+        run: node model-smoke-test.js && node build29-test.js && node build58-test.js && node build59-test.js && node build60-test.js && node build61-test.js && node build62-test.js && node build62d-test.js
       - name: Run simplified screener
         env:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
@@ -42,7 +42,7 @@ jobs:
         env:
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
           HISTORY_LIMIT: '250'
-        run: python fetch_history.py
+        run: python fetch-history-test.py && python fetch_history.py
       - name: Commit results
         run: |
           git config user.name "github-actions"
