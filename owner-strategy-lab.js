@@ -73,14 +73,15 @@ function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,he
     if(!spy)continue;
     let gross=cash*spy.return,end=cash*(1+spy.return);
     const holdingsAtStart=weights.size,maxW=weights.size?Math.max(...weights.values()):0,cashAtStart=cash;
+    const held=[];
     for(const [t,w] of [...weights]){
       const x=adjustedReturnBetween(historyByTicker.get(t)||[],snap.asOf,next.asOf,{executeAfterStart:true});
-      const rr=x?x.return:0;gross+=w*rr;const e=w*(1+rr);weights.set(t,e);end+=e;
+      const rr=x?x.return:0;gross+=w*rr;const e=w*(1+rr);weights.set(t,e);end+=e;held.push([t,w,rr,!!x]);
     }
     cash=cash*(1+spy.return);
     if(end>0){for(const [t,w] of weights)weights.set(t,w/end);cash/=end;}
     const cost=turnover*transactionCostBps/10000;
-    periods.push({asOf:snap.asOf,startYear:Number(String(snap.asOf).slice(0,4)),holdings:holdingsAtStart,cashWeight:cashAtStart,maxHoldingWeight:maxW,turnover,portfolioReturn:gross-cost,spyReturn:spy.return});
+    periods.push({asOf:snap.asOf,startYear:Number(String(snap.asOf).slice(0,4)),holdings:holdingsAtStart,cashWeight:cashAtStart,maxHoldingWeight:maxW,turnover,portfolioReturn:gross-cost,spyReturn:spy.return,held});
   }
   const stats=portfolioStats(periods,{periodsPerYear:4});
   return {name,entry,sizing,maxPositions,maxRank,transactionCostBps,trim,...stats,
@@ -98,9 +99,11 @@ function simulateMechanicalTopN(snapshotOutput,historyByTicker,spyHistory,{name,
     const rows=liveRankedRows(snap.rows).filter(r=>finite(r.liveRank)!==null).sort((a,b)=>a.liveRank-b.liveRank);
     const picks=[],fam=new Set();for(const r of rows){if(fam.has(family(r.ticker)))continue;fam.add(family(r.ticker));picks.push(r);if(picks.length>=topN)break;}
     const spy=adjustedReturnBetween(spyHistory,snap.asOf,next.asOf,{executeAfterStart:true});if(!spy||!picks.length)continue;
-    const rets=picks.map(r=>{const x=adjustedReturnBetween(historyByTicker.get(r.ticker)||[],snap.asOf,next.asOf,{executeAfterStart:true});return x?x.return:0;});
+    const xs=picks.map(r=>adjustedReturnBetween(historyByTicker.get(r.ticker)||[],snap.asOf,next.asOf,{executeAfterStart:true}));
+    const rets=xs.map(x=>x?x.return:0);
+    const held=picks.map((r,j)=>[r.ticker,1/picks.length,rets[j],!!xs[j]]);
     const now=new Set(picks.map(r=>r.ticker));const changed=[...now].filter(t=>!prev.has(t)).length/now.size;prev=now;
-    periods.push({asOf:snap.asOf,startYear:Number(String(snap.asOf).slice(0,4)),holdings:picks.length,portfolioReturn:mean(rets)-changed*2*transactionCostBps/10000,spyReturn:spy.return,turnover:changed});
+    periods.push({asOf:snap.asOf,startYear:Number(String(snap.asOf).slice(0,4)),holdings:picks.length,portfolioReturn:mean(rets)-changed*2*transactionCostBps/10000,spyReturn:spy.return,turnover:changed,held});
   }
   return {name,topN,...portfolioStats(periods,{periodsPerYear:4})};
 }
@@ -136,12 +139,54 @@ function rankBucketOutcomes(snapshotOutput){
   return out;
 }
 
+// Build 61: where did the returns come from? For each arm: every stock's contribution (start weight x
+// quarterly return, summed over quarters), its contribution versus SPY (what it added over just holding
+// SPY with that money), and the strategy's return if its biggest winners had only earned SPY.
+function attribution(periods,H,{splitYear=2022}={}){
+  const per=new Map();
+  for(const p of periods||[])for(const [t,w,r,priced] of (p.held||[])){
+    const a=per.get(t)||{ticker:t,quarters:0,weightSum:0,contribution:0,excessContribution:0,growth:1,first:p.asOf,last:p.asOf,missingPriceQuarters:0};
+    a.quarters++;a.weightSum+=w;a.contribution+=w*r;a.excessContribution+=w*(r-p.spyReturn);a.growth*=1+r;a.last=p.asOf;if(!priced)a.missingPriceQuarters++;
+    per.set(t,a);
+  }
+  const rows=[...per.values()].map(a=>({ticker:a.ticker,quarters:a.quarters,avgWeight:a.weightSum/a.quarters,
+    returnWhileHeld:a.growth-1,contribution:a.contribution,excessContribution:a.excessContribution,first:a.first,last:a.last,missingPriceQuarters:a.missingPriceQuarters}))
+    .sort((x,y)=>y.excessContribution-x.excessContribution);
+  const totalExcess=rows.reduce((s,r)=>s+r.excessContribution,0);
+  const statsFor=ps=>{const all=H.portfolioStats(ps,{periodsPerYear:4}),d=H.portfolioStats(ps.filter(p=>p.startYear<splitYear),{periodsPerYear:4}),v=H.portfolioStats(ps.filter(p=>p.startYear>=splitYear),{periodsPerYear:4});
+    return {portfolioCAGR:all.portfolioCAGR,annualizedExcess:all.annualizedExcess,developmentExcess:d.annualizedExcess,validationExcess:v.annualizedExcess};};
+  const withoutTop={};
+  for(const k of [1,3,5,10]){
+    const drop=new Set(rows.slice(0,k).map(r=>r.ticker));
+    const ps=(periods||[]).map(p=>({...p,portfolioReturn:p.portfolioReturn-(p.held||[]).filter(h=>drop.has(h[0])).reduce((s,h)=>s+h[1]*(h[2]-p.spyReturn),0)}));
+    withoutTop[k]={removed:[...drop],...statsFor(ps)};
+  }
+  const r4=x=>Number.isFinite(x)?Math.round(x*10000)/10000:x;
+  const slim=r=>({...r,avgWeight:r4(r.avgWeight),returnWhileHeld:r4(r.returnWhileHeld),contribution:r4(r.contribution),excessContribution:r4(r.excessContribution)});
+  return {
+    note:'contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.',
+    distinctStocks:rows.length,totalExcessContribution:r4(totalExcess),
+    topShareOfExcess:Object.fromEntries([1,3,5,10].map(k=>[k,totalExcess>0?r4(rows.slice(0,k).reduce((s,r)=>s+r.excessContribution,0)/totalExcess):null])),
+    topContributors:rows.slice(0,15).map(slim),bottomContributors:rows.slice(-8).reverse().map(slim),withoutTop
+  };
+}
+function holdingsCsvRows(arm){
+  const out=[];
+  for(const p of arm.periods||[])for(const [t,w,r,priced] of (p.held||[]))
+    out.push([JSON.stringify(arm.name),p.asOf,t,w.toFixed(4),r.toFixed(4),p.spyReturn.toFixed(4),(w*r).toFixed(5),(w*(r-p.spyReturn)).toFixed(5),priced?'':'no_price'].join(','));
+  return out;
+}
+
 const KEEP=['portfolioCAGR','spyCAGR','annualizedExcess','annualVolatility','periodEndMaxDrawdown','beatSpyRate','periodCount','yearCount','finalWealth10k','spyFinalWealth10k'];
 function compact(s){
   if(!s)return null;
   const o={};for(const k of ['name','entry','sizing','maxPositions','topN','averageHoldings','averageCash','annualTurnover','buys','sells','trims','sellReasons','vsEqualWeightUniverse'])if(s[k]!==undefined)o[k]=s[k];
   for(const k of KEEP)if(s[k]!==undefined)o[k]=s[k];
   for(const k of ['development','validation'])if(s[k])o[k]=Object.fromEntries(KEEP.filter(x=>s[k][x]!==undefined).map(x=>[x,s[k][x]]));
+  if(s.attribution)o.attribution=s.attribution;
+  // Build 61: compact holdings per quarter: [ticker, start weight, quarterly return], 4 decimals.
+  if(Array.isArray(s.periods))o.holdingsByQuarter=s.periods.map(p=>({quarterStart:p.asOf,spyReturn:Math.round(p.spyReturn*1e4)/1e4,cash:Number.isFinite(p.cashWeight)?Math.round(p.cashWeight*1e4)/1e4:undefined,
+    holdings:(p.held||[]).map(([t,w,r])=>[t,Math.round(w*1e4)/1e4,Math.round(r*1e4)/1e4])}));
   return o;
 }
 
@@ -179,6 +224,8 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
     simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'E · Concentrated: conviction sizing, max 10',entry:'shortlist',sizing:'conviction',maxPositions:10,transactionCostBps},H),
     simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'F · Diversified: conviction sizing, max 25',entry:'shortlist',sizing:'conviction',maxPositions:25,transactionCostBps},H),
   ].map(split);
+  for(const a of arms)a.attribution=attribution(a.periods,H,{splitYear});
+  const csvRows=['arm,quarterStart,ticker,startWeight,quarterReturn,spyReturn,contribution,excessContribution,flag',...arms.flatMap(holdingsCsvRows)];
   for(const a of arms)a.vsEqualWeightUniverse=Number.isFinite(a.portfolioCAGR)&&Number.isFinite(universe.portfolioCAGR)?a.portfolioCAGR-universe.portfolioCAGR:null;
   return {
     description:'Build 36 owner strategy lab. Uses the live ranking, the app review statuses and the app sizing rules. Idle cash earns SPY. Analyst estimates are unavailable historically, so the analyst-based parts of the live model are NOT tested here. Development = before '+splitYear+', validation = '+splitYear+' onward. Read once; do not tune to it.',
@@ -190,8 +237,9 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
     entryFunnel:entryFunnel(snapshotOutput),
     rankBuckets:rankBucketOutcomes(snapshotOutput),
     benchmarks:{equalWeightUniverse:compact(universe)},
-    arms:arms.map(compact)
+    arms:arms.map(compact),
+    holdingsCsv:csvRows.join('\n')
   };
 }
 
-module.exports={entryFunnel,liveRankedRows,shortlistEligible,simulateOwnerStrategy,simulateMechanicalTopN,simulateUniverseEqualWeight,rankBucketOutcomes,buildOwnerStrategyLab};
+module.exports={attribution,holdingsCsvRows,entryFunnel,liveRankedRows,shortlistEligible,simulateOwnerStrategy,simulateMechanicalTopN,simulateUniverseEqualWeight,rankBucketOutcomes,buildOwnerStrategyLab};

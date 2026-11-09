@@ -36,7 +36,7 @@ const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {buildOwnerStrategyLab}=require('./owner-strategy-lab');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='simple-v12.56-owner-strategy-lab';
+const MODEL_VERSION='build61-backtest-attribution';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -2045,6 +2045,12 @@ async function main(){
       :{skipped:'Owner strategy lab needs BACKTEST_FREQUENCY=quarterly'};
   }catch(e){ownerStrategyLab={error:e.message};console.error('Owner strategy lab failed:',e);}
   {
+    // Build 61: holdings by quarter (one row per stock per quarter per arm) as a separate CSV.
+    if(ownerStrategyLab&&ownerStrategyLab.holdingsCsv){
+      fs.writeFileSync(path.join(__dirname,'data','backtest-holdings.csv'),ownerStrategyLab.holdingsCsv);
+      delete ownerStrategyLab.holdingsCsv;
+      console.log('Wrote data/backtest-holdings.csv');
+    }
     const op=path.join(__dirname,'data','backtest-owner-summary.json');
     fs.writeFileSync(op,JSON.stringify({generatedAt:new Date().toISOString(),modelVersion:MODEL_VERSION,frequency:FREQUENCY,start:dates[0],end:dates.at(-1),observations:flat.length,diagnostics,ownerStrategyLab},null,2));
     console.log('Wrote data/backtest-owner-summary.json');
