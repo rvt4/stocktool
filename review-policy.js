@@ -14,6 +14,9 @@
     qualityDropReview:10,    // quality fell this many points since last snapshot
     reviewDays:91,           // quarterly cadence
     shortlistSize:20,
+    // Build 62 thesis-broken rule (backtest: PLTK held 17 quarters while -80%, WSC -55%).
+    thesisRevenueStreak:3,   // trailing-12-month revenue down year over year at this many reviews in a row
+    thesisEpsRatio:0.80,     // ...and forward EPS at or below this share of its level when bought
   };
   // Position sizing (Build 36). Sizes are set when buying; winners are allowed to run.
   //   target at cost = 3% .. 10%, scaled by conviction (return over hurdle, quality, confidence, coverage)
@@ -34,6 +37,23 @@
   const priceOf=s=>num(s?.price??s?.currentPrice??s?.stockPrice);
   const returnOf=s=>num(s?.underwrittenCAGR??s?.expectedReturn??s?.expectedCAGR);
   const pctTxt=x=>(x*100).toFixed(1)+'%';
+  const revGrowthOf=s=>num(s?.revenueGrowthTTM);
+  const fwdEpsOf=s=>num(s?.forwardEPS??s?.valuationProjection?.[0]?.eps);
+  // Trailing-12-month revenue growth from quarterly points [{end,val}], else the last two annual years.
+  function ttmRevenueGrowth(quarters,years){
+    const q=(Array.isArray(quarters)?quarters:[]).filter(x=>x&&x.end&&num(x.val)>0).sort((a,b)=>String(a.end).localeCompare(String(b.end)));
+    if(q.length>=8){
+      const last8=q.slice(-8),span=(Date.parse(last8[7].end)-Date.parse(last8[0].end))/864e5;
+      if(span>580&&span<720){const a=last8.slice(4).reduce((t,x)=>t+num(x.val),0),b=last8.slice(0,4).reduce((t,x)=>t+num(x.val),0);if(b>0)return a/b-1;}
+    }
+    const y=(Array.isArray(years)?years:[]).filter(x=>num(x?.revenue)>0);
+    return y.length>=2?num(y.at(-1).revenue)/num(y.at(-2).revenue)-1:null;
+  }
+  // Carried from review to review: how many reviews in a row TTM revenue has shrunk, and forward EPS at purchase.
+  function thesisMemo(s,prev){
+    const rg=revGrowthOf(s),fwd=fwdEpsOf(s),prevStreak=num(prev?.streak)||0;
+    return {rg,streak:rg===null?prevStreak:(rg<0?prevStreak+1:0),entryEPS:num(prev?.entryEPS)??fwd,fwdEPS:fwd};
+  }
   const clamp01=x=>Math.max(0,Math.min(1,x));
 
   // 0..1 conviction. Quality is weighted as heavily as return: this is a long-horizon owner's book.
@@ -112,19 +132,27 @@
       if(prevU!==null&&prevU<BANDS.lowReturn) sell.push('Expected return below '+pctTxt(BANDS.lowReturn)+' for two reviews in a row ('+pctTxt(prevU)+' then '+pctTxt(u)+')');
       else review.push('Expected return '+pctTxt(u)+' is below '+pctTxt(BANDS.lowReturn)+'; sell candidate if still low next review');
     }
+    const memo=thesisMemo(s,prev);
+    if(ctx.thesisBreak!==false){
+      const epsDown=memo.entryEPS>0&&memo.fwdEPS!==null&&memo.fwdEPS<=BANDS.thesisEpsRatio*memo.entryEPS;
+      const epsTxt=memo.entryEPS>0&&memo.fwdEPS!==null?pctTxt(1-memo.fwdEPS/memo.entryEPS):'';
+      if(memo.streak>=BANDS.thesisRevenueStreak&&epsDown) sell.push('Business shrinking: revenue down year over year for '+memo.streak+' reviews in a row and forward EPS '+epsTxt+' below its level when bought');
+      else if(memo.streak>=BANDS.thesisRevenueStreak-1&&memo.rg!==null&&memo.rg<0) review.push('Revenue down year over year for '+memo.streak+' reviews in a row ('+pctTxt(memo.rg)+')');
+      else if(epsDown) review.push('Forward EPS is '+epsTxt+' below its level when bought');
+    }
     if(q!==null&&q>=BANDS.sellQuality&&q<BANDS.reviewQuality) review.push('Quality '+q+' is below '+BANDS.reviewQuality);
     const prevQ=num(prev?.q);
     if(q!==null&&prevQ!==null&&prevQ-q>=BANDS.qualityDropReview) review.push('Quality fell '+(prevQ-q)+' points since the last review');
     if(rating==='Unrated'||u===null) review.push('Model could not value it this run');
     const w=num(ctx.weight);
     if(w!==null&&w>SIZING.trimAbove) review.push('Position is '+pctTxt(w)+' of the portfolio; consider trimming toward '+pctTxt(SIZING.trimTo));
-    if(sell.length) return {status:'Sell candidate',reasons:[...sell,...review]};
-    if(review.length) return {status:'Review',reasons:review};
+    if(sell.length) return {status:'Sell candidate',reasons:[...sell,...review],memo};
+    if(review.length) return {status:'Review',reasons:review,memo};
     if(shortlistEntry(s)){
-      if(w!==null&&w>=targetWeight(s)) return {status:'Hold',reasons:['Still passes the buy rules, but already at or above its '+pctTxt(targetWeight(s))+' target size']};
-      return {status:'Add candidate',reasons:['Passes the buy rules (rank '+num(s.overallRank)+', '+pctTxt(u)+' expected return, quality '+q+')']};
+      if(w!==null&&w>=targetWeight(s)) return {status:'Hold',reasons:['Still passes the buy rules, but already at or above its '+pctTxt(targetWeight(s))+' target size'],memo};
+      return {status:'Add candidate',reasons:['Passes the buy rules (rank '+num(s.overallRank)+', '+pctTxt(u)+' expected return, quality '+q+')'],memo};
     }
-    return {status:'Hold',reasons:['Nothing has changed enough to act on']};
+    return {status:'Hold',reasons:['Nothing has changed enough to act on'],memo};
   }
 
   // shortlist = ordered array of stock records (research-priority order).
@@ -135,7 +163,7 @@
     for(const s of stocks){const p=priceOf(s);if(p!==null&&p>0)prices[String(s.ticker).toUpperCase()]=p;}
     return {
       version:1,takenAt,generatedAt,
-      holdings:holdings.map(h=>{const t=String(h.ticker).toUpperCase(),s=by.get(t),st=holdingStatus(s,prevH.get(t));return {ticker:t,shares:num(h.shares),price:priceOf(s),u:returnOf(s),q:num(s?.qualityScore),rating:s?.rating??null,status:st.status};}),
+      holdings:holdings.map(h=>{const t=String(h.ticker).toUpperCase(),s=by.get(t),st=holdingStatus(s,prevH.get(t));return {ticker:t,shares:num(h.shares),price:priceOf(s),u:returnOf(s),q:num(s?.qualityScore),rating:s?.rating??null,status:st.status,rg:st.memo?.rg??null,streak:st.memo?.streak??0,entryEPS:st.memo?.entryEPS??null};}),
       shortlist:shortlist.slice(0,BANDS.shortlistSize).map((s,i)=>({ticker:String(s.ticker).toUpperCase(),position:i+1,price:priceOf(s),u:returnOf(s),q:num(s.qualityScore),rating:s.rating??null,rank:num(s.overallRank)})),
       prices,
     };
@@ -158,6 +186,6 @@
     return new Date(Date.parse(snap.takenAt)+BANDS.reviewDays*864e5).toISOString().slice(0,10);
   }
 
-  const api={BANDS,SIZING,convictionScore,targetWeight,sizeTier,shortlistEntry,entryEligible,planContribution,holdingStatus,buildSnapshot,shortlistPerformance,nextReviewDate};
+  const api={ttmRevenueGrowth,thesisMemo,BANDS,SIZING,convictionScore,targetWeight,sizeTier,shortlistEntry,entryEligible,planContribution,holdingStatus,buildSnapshot,shortlistPerformance,nextReviewDate};
   if(typeof module!=='undefined'&&module.exports) module.exports=api; else root.ReviewPolicy=api;
 })(typeof window!=='undefined'?window:globalThis);

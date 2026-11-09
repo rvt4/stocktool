@@ -24,12 +24,13 @@ function shortlistEligible(r,{maxRank=20}={}){return RP.shortlistEntry(r,{rankFi
 
 // helpers: {adjustedReturnBetween, portfolioStats, dailyPortfolioRisk?}
 function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,helpers){
-  const {name,entry='shortlist',sizing='conviction',maxPositions=RP.SIZING.maxPositions,maxRank=20,transactionCostBps=10,trim=true}=opts||{};
+  const {name,entry='shortlist',sizing='conviction',maxPositions=RP.SIZING.maxPositions,maxRank=20,transactionCostBps=10,trim=true,thesisBreak=true}=opts||{};
   const {adjustedReturnBetween,portfolioStats}=helpers;
   const snaps=[...(snapshotOutput||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf)));
   let weights=new Map(),cash=1;               // fractions of portfolio; cash is held in SPY
   const prevRow=new Map();                    // ticker -> row at the previous review
-  const periods=[],sellReasons={};let buys=0,sells=0,trims=0;
+  const memo=new Map();                       // ticker -> thesis memo {streak, entryEPS} while held (Build 62)
+  const periods=[],sellReasons={},soldLog=[];let buys=0,sells=0,trims=0;
   const targetOf=r=>sizing==='equal'?1/maxPositions:RP.targetWeight(r);
   const canEnter=r=>entry==='buyRated'?RP.entryEligible(r)&&shortlistEligible(r,{maxRank:Infinity}):shortlistEligible(r,{maxRank});
   for(let i=0;i<snaps.length-1;i++){
@@ -43,10 +44,12 @@ function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,he
       let reason=null;
       if(!r) reason='left_universe_or_unmodeled';
       else{
-        const st=RP.holdingStatus(r,p?{u:finite(p.underwrittenCAGR??p.expectedCAGR),q:finite(p.qualityScore)}:null,{weight:w});
-        if(st.status==='Sell candidate') reason=(finite(r.qualityScore)??100)<RP.BANDS.sellQuality?'quality_below_sell_floor':'low_return_two_reviews';
+        const m=memo.get(t)||{};
+        const st=RP.holdingStatus(r,{...(p?{u:finite(p.underwrittenCAGR??p.expectedCAGR),q:finite(p.qualityScore)}:{}),streak:m.streak,entryEPS:m.entryEPS},{weight:w,thesisBreak});
+        if(st.memo)memo.set(t,{streak:st.memo.streak,entryEPS:st.memo.entryEPS});
+        if(st.status==='Sell candidate') reason=(finite(r.qualityScore)??100)<RP.BANDS.sellQuality?'quality_below_sell_floor':(st.reasons.some(x=>/^Business shrinking/.test(x))?'thesis_broken_business_shrinking':'low_return_two_reviews');
       }
-      if(reason){weights.delete(t);cash+=w;turnover+=w;sells++;sellReasons[reason]=(sellReasons[reason]||0)+1;continue;}
+      if(reason){weights.delete(t);memo.delete(t);cash+=w;turnover+=w;sells++;soldLog.push({ticker:t,asOf:snap.asOf,reason});sellReasons[reason]=(sellReasons[reason]||0)+1;continue;}
       if(trim&&w>RP.SIZING.trimAbove){const cut=w-RP.SIZING.trimTo;weights.set(t,RP.SIZING.trimTo);cash+=cut;turnover+=cut;trims++;}
     }
     // 2) buy: top up qualifying holdings first, then new names in rank order
@@ -57,7 +60,7 @@ function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,he
       const room=Math.max(0,RP.SIZING.sectorCapAtPurchase-sectorW(String(r.sector||'Unknown')));
       const amt=Math.min(cash,Math.max(0,target-cur),room);
       if(amt<RP.SIZING.minTrade)return false;
-      weights.set(r.ticker,cur+amt);cash-=amt;turnover+=amt;if(!cur)buys++;return true;
+      weights.set(r.ticker,cur+amt);cash-=amt;turnover+=amt;if(!cur){buys++;const rg=finite(r.revenueGrowthTTM);memo.set(r.ticker,{streak:rg!==null&&rg<0?1:0,entryEPS:finite(r.forwardEPS)});}return true;
     };
     for(const t of [...weights.keys()]){const r=rowMap.get(t);if(r&&canEnter(r))buy(r);}
     const heldFam=new Set([...weights.keys()].map(family));
@@ -86,7 +89,8 @@ function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,he
   const stats=portfolioStats(periods,{periodsPerYear:4});
   return {name,entry,sizing,maxPositions,maxRank,transactionCostBps,trim,...stats,
     averageHoldings:mean(periods.map(p=>p.holdings)),averageCash:mean(periods.map(p=>p.cashWeight)),
-    annualTurnover:(mean(periods.map(p=>p.turnover))||0)*4,buys,sells,trims,sellReasons};
+    annualTurnover:(mean(periods.map(p=>p.turnover))||0)*4,buys,sells,trims,sellReasons,thesisBreak,
+    thesisBreakSells:soldLog.filter(x=>x.reason==='thesis_broken_business_shrinking')};
 }
 
 // Mechanical control: equal-weight the top N live-ranked names every quarter.
@@ -180,7 +184,7 @@ function holdingsCsvRows(arm){
 const KEEP=['portfolioCAGR','spyCAGR','annualizedExcess','annualVolatility','periodEndMaxDrawdown','beatSpyRate','periodCount','yearCount','finalWealth10k','spyFinalWealth10k'];
 function compact(s){
   if(!s)return null;
-  const o={};for(const k of ['name','entry','sizing','maxPositions','topN','averageHoldings','averageCash','annualTurnover','buys','sells','trims','sellReasons','vsEqualWeightUniverse'])if(s[k]!==undefined)o[k]=s[k];
+  const o={};for(const k of ['name','entry','sizing','maxPositions','topN','averageHoldings','averageCash','annualTurnover','buys','sells','trims','sellReasons','thesisBreak','thesisBreakSells','vsEqualWeightUniverse'])if(s[k]!==undefined)o[k]=s[k];
   for(const k of KEEP)if(s[k]!==undefined)o[k]=s[k];
   for(const k of ['development','validation'])if(s[k])o[k]=Object.fromEntries(KEEP.filter(x=>s[k][x]!==undefined).map(x=>[x,s[k][x]]));
   if(s.attribution)o.attribution=s.attribution;
@@ -220,6 +224,7 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
     simulateMechanicalTopN(snapshotOutput,historyByTicker,spyHistory,{name:'A · Mechanical top 20, equal weight, rebalanced quarterly',topN:20,transactionCostBps},H),
     simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'B · Owner rules, shortlist entry, equal weight, max 15',entry:'shortlist',sizing:'equal',maxPositions:15,transactionCostBps},H),
     simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'C · Owner rules, shortlist entry, conviction sizing, max 15 (app default)',entry:'shortlist',sizing:'conviction',maxPositions:15,transactionCostBps},H),
+    simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'C0 · Same as C WITHOUT the Build 62 thesis-broken sell rule (previous rules)',entry:'shortlist',sizing:'conviction',maxPositions:15,transactionCostBps,thesisBreak:false},H),
     simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'D · Owner rules, Buy-rated entry only, conviction sizing, max 15',entry:'buyRated',sizing:'conviction',maxPositions:15,transactionCostBps},H),
     simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'E · Concentrated: conviction sizing, max 10',entry:'shortlist',sizing:'conviction',maxPositions:10,transactionCostBps},H),
     simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'F · Diversified: conviction sizing, max 25',entry:'shortlist',sizing:'conviction',maxPositions:25,transactionCostBps},H),
@@ -232,7 +237,8 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
     passFail:{
       question1:'Do live ranks 1-20 beat ranks 251+ on 1Y and 3Y excess return? (rankBuckets)',
       question2:'Does arm C beat both SPY and the equal-weight universe, in development AND validation?',
-      question3:'Does conviction sizing (C) beat equal weight (B)? Does concentration (E vs C vs F) help or just add volatility?'
+      question3:'Does conviction sizing (C) beat equal weight (B)? Does concentration (E vs C vs F) help or just add volatility?',
+      question4:'Build 62: does the thesis-broken sell rule (C) beat the previous rules (C0)? See thesisBreakSells for what it sold and when.'
     },
     entryFunnel:entryFunnel(snapshotOutput),
     rankBuckets:rankBucketOutcomes(snapshotOutput),
