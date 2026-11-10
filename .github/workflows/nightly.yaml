@@ -1,0 +1,52 @@
+name: Nightly Screener Run
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  fetch-analyst-estimates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install yfinance requests
+      - name: Refresh analyst cache
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python fetch_analyst_estimates.py
+  run-screener:
+    runs-on: ubuntu-latest
+    needs: fetch-analyst-estimates
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Verify model invariants
+        run: node model-smoke-test.js && node build29-test.js && node build58-test.js && node build59-test.js && node build60-test.js && node build61-test.js && node build62-test.js && node build62d-test.js && node build63-test.js && node build48-test.js && node build64-test.js && node build65-test.js
+      - name: Run simplified screener
+        env:
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: node run-screener.js
+      # Build 62c: refresh SEC history files used by the projections page (was only in the root copy,
+      # which GitHub never runs). Incremental: missing/old files first, up to HISTORY_LIMIT per night.
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Refresh SEC history
+        env:
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+          HISTORY_LIMIT: '250'
+        run: python fetch-history-test.py && python fetch_history.py
+      - name: Commit results
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add data/results.json data/validation-report.json data/screener-diagnostics.json data/history
+          git diff --staged --quiet || git commit -m "Nightly screener update $(date -u +%Y-%m-%d)"
+          git push
