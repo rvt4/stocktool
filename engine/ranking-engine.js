@@ -42,8 +42,16 @@ function qualityValue(row,key){
 // Ranking should reward return that is both high AND well supported. Extreme alpha is
 // compressed (a 26% CAGR is not 2x as believable as 16%), and thin analyst coverage,
 // small size, or a model far above analysts shrink the alpha used for ordering.
+// Build 64: the live rank orders on the STRESSED (underwritten) return, the same number the Buy rule uses.
+// Ranking on the normal case put VRT at #1 with an 8.7% stressed return and rewarded forecasts that need
+// everything to go right. Falls back to the normal case when no stressed figure exists.
+const RANK_HURDLE=0.11;
+function stressedAlpha(r){
+  const u=finite(r.underwrittenCAGR);
+  return u!=null?u-RANK_HURDLE:finite(r.expectedAlpha);
+}
 function reliabilityAdjustedAlpha(r){
-  const a=finite(r.expectedAlpha); if(a==null) return null;
+  const a=stressedAlpha(r); if(a==null) return null;
   const KNEE=0.06;
   let adj=a>KNEE?KNEE+0.30*(a-KNEE):a;
   const n=finite(r.analystEstimates?.numAnalysts);
@@ -116,10 +124,17 @@ function applyModelDRanking(rows,{rankField='overallRank',universeSizeField='glo
     const top=[],held=[];
     for(const r of sorted){ if(top.length<10&&!thin(r)) top.push(r); else held.push(r); }
     sorted=[...top,...held];
+    // Build 64: a stock held at Watch for a recent deal or spin-off (its history predates the change) cannot
+    // be ranked in the top 25 until a 10-K reflects the new company.
+    const pending=r=>r.rankEligible===true&&!!r.corporateAction;
+    const top25=[];
+    for(const r of sorted){ if(top25.length<25&&!pending(r)) top25.push(r); }
+    const inTop=new Set(top25);
+    sorted=[...top25,...sorted.filter(r=>!inTop.has(r))];
   }
   sorted.forEach((r,i)=>{r[rankField]=i+1;});
   if(universeSizeField) for(const r of rows||[]) r[universeSizeField]=(rows||[]).length;
   return sorted;
 }
 
-module.exports={ALPHA_GATE,reliabilityAdjustedAlpha,percentileRanks,buildModelDScores,compareRank,applyModelDRanking};
+module.exports={stressedAlpha,ALPHA_GATE,reliabilityAdjustedAlpha,percentileRanks,buildModelDScores,compareRank,applyModelDRanking};

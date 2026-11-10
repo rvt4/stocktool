@@ -38,6 +38,37 @@ function weightedMedian(items){
   let acc=0; for(const x of v){acc+=x.weight;if(acc>=total/2)return x.value;} return v.at(-1)?.value??null;
 }
 
+// Build 64: spending-cycle (boom) check. A business whose operating margin has jumped far above its own
+// pre-boom norm, to a record, while growth accelerated, may be riding a demand cycle (AI data-center build-out,
+// pandemic demand, a commodity spike) rather than a permanent step-up. The base forecast still follows the
+// evidence; the STRESSED case assumes half of the boom-era margin gain fades and the BEAR case three quarters.
+// Margin gains the model projects beyond today's level are already stressed separately.
+function boomCycleCheck(stock,forecast){
+  if(isFinancialLike(stock))return null;
+  const hist=(stock?.financials?.years||[]).filter(y=>finite(y?.revenue)>0&&finite(y?.operatingIncome)!=null);
+  if(hist.length<5)return null;
+  const op=hist.map(y=>y.operatingIncome/y.revenue);
+  const prior=op.slice(0,-2), recent=(op.at(-1)+op.at(-2))/2, latest=op.at(-1);
+  if(prior.length<3)return null;
+  const base=median(prior);
+  if(!(base>0))return null;
+  const g=[];for(let i=1;i<hist.length;i++)g.push(hist[i].revenue/hist[i-1].revenue-1);
+  const priorGrowth=median(g.slice(0,-2));
+  const recentGrowth=Math.max(g.at(-1)??-1,rate(stock?.analystEstimates?.revenueGrowthCurrentYear)??-1);
+  const projected=finite(forecast?.rows?.at(-1)?.operatingMargin);
+  const record=latest>=Math.max(...prior)-.005;
+  const elevated=recent>=base+.03&&recent>=base*1.35;
+  const accelerating=Number.isFinite(priorGrowth)&&recentGrowth>=Math.max(.12,priorGrowth+.06);
+  const held=Number.isFinite(projected)&&projected>=recent*.85;
+  const boom=record&&elevated&&accelerating&&held;
+  const out={boom,baseMargin:base,recentMargin:recent,projectedMargin:projected,priorGrowth,recentGrowth};
+  if(!boom)return out;
+  const gain=recent-base;
+  out.stressFactor=clamp(1-.5*gain/projected,.5,1);
+  out.bearFactor=clamp(1-.75*gain/projected,.3,1);
+  return out;
+}
+
 // Conservative underwriting is a separate *decision scenario*, not a rewrite of the
 // base forecast. Method agreement is not independent evidence when all methods consume
 // the same projected revenue, margins and share count.
@@ -117,8 +148,14 @@ function forecastUnderwriting(stock,forecast,quality){
   }
   // This is an explicit scenario stress, capped at 6% annualized. It is not a
   // statistically calibrated probability or a claim about actual future returns.
-  annualStress=clamp(annualStress,0,.06);
-  return {annualStress,terminalFactor:Math.pow(1-annualStress,HORIZON_YEARS),flags,
+  const cycle=boomCycleCheck(stock,forecast);
+  if(cycle?.boom){
+    const add=Math.min(.04,1-Math.pow(cycle.stressFactor,1/HORIZON_YEARS));
+    annualStress+=add;
+    flags.push('boom_cycle_margin_reversion');
+  }
+  annualStress=clamp(annualStress,0,cycle?.boom?.08:.06);
+  return {annualStress,cycle,terminalFactor:Math.pow(1-annualStress,HORIZON_YEARS),flags,
     historicalRevenueCAGR:historicalCAGR,projectedRevenueCAGR:projectedCAGR,
     historicalFCFMargin:observedMargin,projectedFCFMargin:futureMargin,
     historicalNetMargin:observedNetMargin,projectedNetMargin:futureNetMargin};
@@ -130,6 +167,9 @@ function forecastUnderwriting(stock,forecast,quality){
 // dilution: >=2%/yr net dilution => fully paid in shares (add back everything); net buybacks => SBC is
 // being paid in cash through the buyback, the expense is the only count (add back nothing).
 function sbcAddBackFraction(forecast){
+  // Build 63: forecast rows are on an owner basis (SBC fully expensed, share count no longer charged for
+  // grants), so nothing is added back.
+  if(forecast?.earningsBasis==='owner_sbc_expensed')return 0;
   const path=(forecast?.dilutionPath||[]).map(finite).filter(Number.isFinite);
   const d=path.length?path.reduce((a,b)=>a+b,0)/path.length:finite(forecast?.dilutionRate);
   return clamp((d??0)/.02,0,1)??0;
@@ -415,7 +455,10 @@ function normalizedOperatingBase(stock,forecast){
   const years=stock.financials?.years||[], last=years.at(-1)||{};
   const revenue=finite(last.revenue), shares=finite(last.sharesOutTTM)>0?finite(last.sharesOutTTM):finite(forecast?.startShares);
   const bridge=forecast.forecastBridge?.margins||{};
-  const fcfMargin=finite(bridge.fcfNormalized), ebitdaMargin=finite(bridge.ebitdaNormalized), netMargin=finite(bridge.netNormalized);
+  // Build 63: today's metrics on the same owner basis as the forecast (SBC expensed), so the market's
+  // current multiple and the year-10 metric it is applied to agree.
+  const owner=forecast?.earningsBasis==='owner_sbc_expensed';
+  const fcfMargin=finite(owner?bridge.ownerFcfNormalized??bridge.fcfNormalized:bridge.fcfNormalized), ebitdaMargin=finite(bridge.ebitdaNormalized), netMargin=finite(owner?bridge.ownerNetNormalized??bridge.netNormalized:bridge.netNormalized);
   const perShare=(margin)=>revenue>0&&shares>0&&Number.isFinite(margin)&&margin>0?revenue*margin/shares:null;
   return {revenue,shares,fcfPerShare:perShare(fcfMargin),eps:perShare(netMargin),ebitda:revenue>0&&Number.isFinite(ebitdaMargin)&&ebitdaMargin>0?revenue*ebitdaMargin:null,margins:{fcf:fcfMargin,ebitda:ebitdaMargin,net:netMargin}};
 }
@@ -685,7 +728,7 @@ function dcfValueAtYear5(forecast,discountRate,currentShares,cfg){
 // Economic scenarios revalue each supported method using explicit changes to
 // revenue, profitability, dilution and terminal pricing. They are NOT CAGR
 // offsets applied to an already-calculated target.
-function economicScenarioOutcomes(methods, forecast, price, dividendValue, uncertainty){
+function economicScenarioOutcomes(methods, forecast, price, dividendValue, uncertainty, cycle){
   const rows=forecast?.rows||[];
   const last=rows.at(-1)||{};
   const years=Math.max(1,rows.length);
@@ -694,7 +737,8 @@ function economicScenarioOutcomes(methods, forecast, price, dividendValue, uncer
     const revenueFactor=Math.pow(1+sign*(.025+.025*uncertainty),years);
     const margin=finite(last.operatingMargin)??finite(last.netMargin)??finite(last.fcfMargin);
     const marginShift=sign*(.025+.025*uncertainty);
-    const marginFactor=margin>0?clamp((margin+marginShift)/margin,.20,2):1;
+    let marginFactor=margin>0?clamp((margin+marginShift)/margin,.20,2):1;
+    if(name==='bear'&&cycle?.boom&&Number.isFinite(cycle.bearFactor))marginFactor=Math.min(marginFactor,cycle.bearFactor);
     const shareFactor=Math.pow(1-sign*.0075,years);
     const multipleFactor=1+sign*(.15+.10*uncertainty);
     const scenarioMethods=methods.map(m=>{
@@ -1281,7 +1325,7 @@ function valuate(stock,forecast,quality){
   const returnAttribution={revenueContribution,marginContribution,shareCountContribution,dividendContribution,multipleReratingContribution,reratingRelianceFlag,uncertaintyAdjustment,preUncertaintyCAGR,uncertaintyHaircutRate};
 
   const uncertainty=clamp((100-valuationConfidence)/100+(cyclicalBusiness?.08:0),.10,.55);
-  const economicScenarios=total!=null?economicScenarioOutcomes(methods,forecast,price,terminalDividendValue,uncertainty):null;
+  const economicScenarios=total!=null?economicScenarioOutcomes(methods,forecast,price,terminalDividendValue,uncertainty,underwriting?.cycle):null;
   // Scenarios are built from the uncapped methods, so scale them with any return cap and keep
   // bear <= base <= bull (validation.js rejects bear_above_base / bull_below_base).
   const bearRaw=economicScenarios?.bear?.outcome, bullRaw=economicScenarios?.bull?.outcome;
@@ -1292,4 +1336,4 @@ function valuate(stock,forecast,quality){
 
   return {requiredReturn:req,intrinsicDiscountRate:intrinsicRate,analystCheck,analystBlendFactor,returnCapApplied,methods,valuationArchetype:archetype.name,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget,tenYearPriceTarget:target,fiveYearTotalShareholderValue,fiveYearExpectedCAGR,tenYearExpectedCAGR:expected,horizonCAGRSpread,horizonDivergenceFlag,reratingRelianceFlag,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,hurdleReturnPrice,baseHurdleReturnPrice,requiredReturnBuyPrice,underwriting,underwrittenCAGR,underwrittenTotal,investorMarginOfSafety:INVESTOR_MARGIN_OF_SAFETY,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,multipleSensitivity:{down20CAGR:lowMultipleCAGR,up20CAGR:highMultipleCAGR,spread:multipleSensitivitySpread},returnAttribution,preUncertaintyCAGR,riskAdjustedTotal,riskAdjustedCAGR,uncertaintyHaircutRate,valuationConfidenceScore:valuationConfidence,cyclicalBusiness,cycleDispersion,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},methodDispersionRatio,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),economicScenarios,netDebt,terminalNetDebt,year5NetDebt,capitalAllocation:forecast.capitalAllocation||null,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(reratingRelianceFlag?'return_reliant_on_multiple_rerating':(horizonDivergenceFlag?'large_5y_10y_return_divergence':(consensus.hasConsensusOutlier?'isolated_method_outlier':(Number.isFinite(agreement)&&agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))))};
 }
-module.exports={valuate,forecastUnderwriting,reratingUnderwritingStress,economicScenarioOutcomes};
+module.exports={boomCycleCheck,valuate,forecastUnderwriting,reratingUnderwritingStress,economicScenarioOutcomes};
