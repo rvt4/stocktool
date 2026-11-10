@@ -77,7 +77,7 @@ assert.notStrictEqual(rateStock({price:{current:100},sector:'Technology'},{forec
   const {validateStock}=require('./engine/validation');
   const mk=price=>{const s=stock({ticker:'CAPPED',sector:'Industrials',price,growth:.025,margin:.18,roic:.15});for(const y of s.financials.years)y.dividendPerShare=.10;return s;};
   let sawCap=false;
-  for(const price of [33,36,40,45,50,60,70,100]){
+  for(const price of [20,25,33,36,40,45,50,60,70,100]){
     const {v}=run(mk(price));
     if(v.returnCapApplied){sawCap=true;assert.strictEqual(v.modelSupport,'limited');}
     if(Number.isFinite(v.bearCAGR)&&Number.isFinite(v.baseCAGR)) assert(v.bearCAGR<=v.baseCAGR+1e-9,'bear above base at price '+price);

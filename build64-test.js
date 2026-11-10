@@ -44,4 +44,14 @@ applyModelDRanking(rows,{rankField:'r',universeSizeField:null,reliability:true})
 assert(rows[39].r>30,'normal-case outlier still ranked high: '+rows[39].r);
 assert(rows[0].r>25,'stock held for a corporate action ranked in the top 25: '+rows[0].r);
 assert.strictEqual(rows[1].r,1,'best stressed return should rank first');
+// Build 64b: a losing bear case drags the rank (ALK-like: stressed 17.6%, bear -3.4%)
+{const {stressedAlpha}=require('./engine/ranking-engine');
+ assert(stressedAlpha({underwrittenCAGR:.176,bearCAGR:-.034})<stressedAlpha({underwrittenCAGR:.14,bearCAGR:.103}),'losing bear case still outranks a solid one');
+ assert(Math.abs(stressedAlpha({underwrittenCAGR:.12,bearCAGR:.15})-(.12-.11))<1e-12,'a bear above stressed must not raise the rank');}
+// Build 64b: projected FCF after SBC is compared with history after SBC, so a high-SBC forecast keeps its stress
+{const {forecastUnderwriting}=require('./engine/valuation-engine');
+ const years=[0,1,2,3,4].map(i=>({revenue:1e9*Math.pow(1.2,i),fcf:3e8*Math.pow(1.2,i),sbc:1.5e8*Math.pow(1.2,i),netIncome:5e7*Math.pow(1.2,i)}));
+ const st={financials:{years}};const rows=Array.from({length:10},(_,i)=>({revenue:1.2e9*Math.pow(1.15,i),fcfMargin:.30,netMargin:.06}));
+ const u=forecastUnderwriting(st,{rows,earningsBasis:'owner_sbc_expensed',forecastReliabilityScore:80},{});
+ assert(u.flags.includes('large_unproven_fcf_margin_expansion'),'owner FCF 30% vs 15% after-SBC history not stressed: '+JSON.stringify(u.flags));}
 console.log('Build 64 tests passed',JSON.stringify(Object.fromEntries(Object.entries(out).map(([k,v])=>[k,{boom:v.boom,uw:+v.uw?.toFixed(3)}]))));
