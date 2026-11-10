@@ -11,6 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const { buildStockRecord, fetchBacktestHistory } = require('./data-fetchers');
+const {growthSignals,scoreGrowthUniverse,growthExit}=require('./engine/growth-engine');
 const { buildForecast } = require('./engine/forecast-engine');
 const { computeQuality } = require('./engine/quality-engine');
 const { valuate } = require('./engine/valuation-engine');
@@ -254,9 +255,15 @@ async function run(){
       rec.economicCrosscheck.reasons.push('material_disagreement_with_independent_dcf');
       rec.economicCrosscheck.status='review';
     }
-    rec.momentum=liveMomentum(stock.priceHistory||[],spyHistory); stocks.push(rec);
+    rec.momentum=liveMomentum(stock.priceHistory||[],spyHistory);
+    // Build 65: Growth Inflection signals (same function the backtest uses point-in-time)
+    try{rec.growth=growthSignals(stock,stock.priceHistory||[],null);}catch(e){rec.growth={eligible:false,why:'error: '+e.message,reasonsUp:[],reasonsDown:[]};}
+    stocks.push(rec);
   }
   rank(stocks);
+  const growthCount=scoreGrowthUniverse(stocks,{field:'growth'});
+  for(const s of stocks)if(s.growth?.eligible)s.growth.exit=growthExit(s.growth);
+  console.log(`Growth Inflection: ${growthCount} growth companies scored.`);
   applyLivePortfolioPolicy(stocks);
   enforceMutuallyExclusiveShareClasses(stocks);
   applyStarterPortfolioWeights(stocks,15);
@@ -264,7 +271,7 @@ async function run(){
   for(const s of stocks){if(s.newPositionAction==='BUY'&&!s.qualifiesForBuyList)throw new Error(`Inconsistent investment decision: ${s.ticker}`);}
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'build64b',stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'build65',stocks}; writeJson('results.json',output);
   // Build 55: monthly forecast snapshots + accuracy report (never blocks the run).
   try{const rep=require('./track-forecasts').trackForecasts(output);console.log(`Forecast tracking: ${rep.snapshots} snapshot(s), ${rep.observations} forecast(s) checked against reported revenue.`);}catch(e){console.warn('Forecast tracking skipped:',e.message);}
   const historyFile=writeProspectiveSnapshot(__dirname,output);

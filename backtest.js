@@ -31,12 +31,15 @@ const {
 const {buildForecast}=require('./engine/forecast-engine');
 const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
+const {growthSignals}=require('./engine/growth-engine');
+// Build 65: numeric growth signals only (reasons are rebuilt in the app), to keep snapshot files small.
+function compactGrowth(g){if(!g)return null;const o={eligible:!!g.eligible};for(const k of ['revenue','revGrowth','revAccel','opMargin','opMarginChange','turnedProfitable','fcfAfterSbcMargin','fcfMarginChange','sbcIntensity','sbcChange','ruleOf40','momentum','growthBasis'])if(g[k]!==undefined&&g[k]!==null)o[k]=typeof g[k]==='number'?Math.round(g[k]*1e4)/1e4:g[k];return o;}
 const {rateStock}=require('./engine/rating-engine');
 const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {buildOwnerStrategyLab}=require('./owner-strategy-lab');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='build64b-stressed-bear-rank';
+const MODEL_VERSION='build65-growth-inflection';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -1981,7 +1984,7 @@ async function main(){
   console.log('Historical universe coverage:', JSON.stringify(historicalUniverse.coverage));
   const spyHistory=await fetchBacktestHistory('SPY',HISTORY_YEARS);
   if(!spyHistory.length) throw new Error('SPY historical price history was empty; cannot benchmark backtest.');
-  const snapshots=new Map(dates.map(d=>[d,[]])); const errors=[]; const historyByTicker=new Map();
+  const snapshots=new Map(dates.map(d=>[d,[]])); const errors=[]; const historyByTicker=new Map(); const growthOnlySnapshots=new Map(dates.map(d=>[d,[]]));
   const diagnostics={
     tickerDateAttempts:0,tickersFetched:0,tickerFetchFailures:0,identityCikFetches:0,identityTickerFallbackFetches:0,
     usableFinancialHistory:0,insufficientFinancialHistory:0,
@@ -2019,12 +2022,16 @@ async function main(){
           }
           continue;
         }
+        // Build 65: Growth Inflection signals, point-in-time (history is cut at asOf inside growthSignals).
+        let growth=null;
+        try{growth=compactGrowth(growthSignals(stock,history,asOf));}catch(e){growth=null;}
+        const growthOnly=()=>{if(growth&&growth.eligible){const r={ticker,sector:asOfSector,price:stock.price?.current??null,growthOnly:true,growth};attachRealized(r,history,spyHistory,asOf);growthOnlySnapshots.get(asOf).push(r);diagnostics.growthOnlyObservations=(diagnostics.growthOnlyObservations||0)+1;}};
         try{
           diagnostics.modelRuns++;
           const f=buildForecast(stock),q=computeQuality(stock,f),v=valuate(stock,f,q),d=rateStock(stock,f,q,v);
-          if(!Number.isFinite(v.expectedCAGR)){ diagnostics.missingExpectedCAGR++; if(skipExamples.length<20)skipExamples.push({ticker,asOf,reason:'missing_expected_cagr'}); continue; }
-          const row=compactModel(stock,f,q,v,d); attachRealized(row,history,spyHistory,asOf); snapshots.get(asOf).push(row); diagnostics.modeledObservations++;
-        }catch(e){diagnostics.modelFailures++;errors.push({ticker,asOf,error:e.message}); if(skipExamples.length<20)skipExamples.push({ticker,asOf,reason:'model_failure',error:e.message});}
+          if(!Number.isFinite(v.expectedCAGR)){ diagnostics.missingExpectedCAGR++; growthOnly(); if(skipExamples.length<20)skipExamples.push({ticker,asOf,reason:'missing_expected_cagr'}); continue; }
+          const row=compactModel(stock,f,q,v,d); row.growth=growth; attachRealized(row,history,spyHistory,asOf); snapshots.get(asOf).push(row); diagnostics.modeledObservations++;
+        }catch(e){diagnostics.modelFailures++;growthOnly();errors.push({ticker,asOf,error:e.message}); if(skipExamples.length<20)skipExamples.push({ticker,asOf,reason:'model_failure',error:e.message});}
       }
     }catch(e){diagnostics.tickerFetchFailures++;errors.push({ticker,error:e.message}); if(skipExamples.length<20)skipExamples.push({ticker,reason:'ticker_fetch_failure',error:e.message});}
     if((i+1)%25===0){
@@ -2036,7 +2043,7 @@ async function main(){
   console.log('Backtest diagnostics:', JSON.stringify(diagnostics));
   if(skipExamples.length) console.log('Representative skips:', JSON.stringify(skipExamples.slice(0,10)));
   const flat=[]; const snapshotOutput=[];
-  for(const asOf of dates){const rows=snapshots.get(asOf);rank(rows);flat.push(...rows.map(r=>({...r,asOf})));snapshotOutput.push({asOf,count:rows.length,rows});}
+  for(const asOf of dates){const rows=snapshots.get(asOf);rank(rows);flat.push(...rows.map(r=>({...r,asOf})));snapshotOutput.push({asOf,count:rows.length,rows,growthOnlyRows:growthOnlySnapshots.get(asOf)||[]});}
   // Build 36: the strategy the app actually recommends. Written to its own small file first,
   // so a later failure in the legacy labs cannot lose it.
   let ownerStrategyLab=null;

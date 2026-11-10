@@ -139,7 +139,7 @@ function classifyCompanyMetadata(facts, submissions, fallbackSector = 'Unknown')
 // fetched for annual data — no extra API call). Used to capture *current* growth
 // momentum rather than relying solely on a 3-year trailing average, which can badly
 // lag an inflecting business (e.g. a cyclical or AI-cycle name accelerating off a trough).
-function parseQuarterlyRevenue(facts, maxQuarters = 8) {
+function parseQuarterlyRevenue(facts, maxQuarters = 12) { // Build 65: 12 so growth acceleration has 2 YoY points
   const usGaap = facts.facts?.['us-gaap'] || {};
   const tags = ['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues'];
   const points = [];

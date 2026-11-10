@@ -112,6 +112,62 @@ function simulateMechanicalTopN(snapshotOutput,historyByTicker,spyHistory,{name,
   return {name,topN,...portfolioStats(periods,{periodsPerYear:4})};
 }
 
+// Build 65: Growth Inflection rows for a snapshot: valued rows plus growth-only rows (companies the value
+// model cannot value, e.g. unprofitable after stock pay). Scored fresh each quarter, point-in-time.
+const GE=require('./engine/growth-engine');
+function growthRows(snap){
+  const rows=[...(snap.rows||[]),...(snap.growthOnlyRows||[])].filter(r=>r&&r.growth).map(r=>({...r,growth:{...r.growth}}));
+  GE.scoreGrowthUniverse(rows,{field:'growth'});
+  return rows.filter(r=>r.growth.eligible).sort((a,b)=>a.growth.rank-b.growth.rank);
+}
+// Growth sleeve: buy the top N by growth score, equal weight; keep a holding while it stays in the top
+// keepRank AND passes the exit rule (growth >= 10%, 12-1 momentum >= 0, top half of growth names).
+function simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name,topN=10,keepRank=25,transactionCostBps=10}={},helpers){
+  const {adjustedReturnBetween,portfolioStats}=helpers;
+  const snaps=[...(snapshotOutput||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf)));
+  const periods=[];let held=[];const sells=[];
+  for(let i=0;i<snaps.length-1;i++){
+    const snap=snaps[i],next=snaps[i+1];
+    const rows=growthRows(snap), byT=new Map(rows.map(r=>[r.ticker,r]));
+    const keep=[];
+    for(const t of held){const r=byT.get(t);const ex=r?GE.growthExit(r.growth):{exit:true,reason:'no longer a growth company'};
+      if(r&&!ex.exit&&r.growth.rank<=keepRank)keep.push(t);else sells.push({asOf:snap.asOf,ticker:t,reason:r&&!ex.exit?'dropped out of top '+keepRank:ex.reason});}
+    const fam=new Set(keep.map(family));
+    for(const r of rows){if(keep.length>=topN)break;if(keep.includes(r.ticker)||fam.has(family(r.ticker)))continue;if(GE.growthExit(r.growth).exit)continue;keep.push(r.ticker);fam.add(family(r.ticker));}
+    const spy=adjustedReturnBetween(spyHistory,snap.asOf,next.asOf,{executeAfterStart:true});if(!spy)continue;
+    if(!keep.length){periods.push({asOf:snap.asOf,startYear:Number(String(snap.asOf).slice(0,4)),holdings:0,portfolioReturn:spy.return,spyReturn:spy.return,cashWeight:1,held:[]});held=keep;continue;}
+    const xs=keep.map(t=>adjustedReturnBetween(historyByTicker.get(t)||[],snap.asOf,next.asOf,{executeAfterStart:true}));
+    const rets=xs.map(x=>x?x.return:0);
+    const changed=keep.filter(t=>!held.includes(t)).length/keep.length;
+    periods.push({asOf:snap.asOf,startYear:Number(String(snap.asOf).slice(0,4)),holdings:keep.length,portfolioReturn:mean(rets)-changed*2*transactionCostBps/10000,spyReturn:spy.return,turnover:changed,
+      held:keep.map((t,j)=>[t,1/keep.length,rets[j],!!xs[j]])});
+    held=keep;
+  }
+  return {name,topN,keepRank,growthSells:sells.slice(-60),...portfolioStats(periods,{periodsPerYear:4})};
+}
+// A fixed-weight blend of two arms' quarterly returns (e.g. 70% value rules + 30% growth sleeve).
+function blendArms(name,a,b,wa,helpers){
+  const byQ=new Map((b.periods||[]).map(p=>[p.asOf,p]));
+  const periods=(a.periods||[]).filter(p=>byQ.has(p.asOf)).map(p=>{const q=byQ.get(p.asOf);
+    return {asOf:p.asOf,startYear:p.startYear,portfolioReturn:wa*p.portfolioReturn+(1-wa)*q.portfolioReturn,spyReturn:p.spyReturn,
+      held:[...(p.held||[]).map(([t,w,r,ok])=>[t,w*wa,r,ok]),...(q.held||[]).map(([t,w,r,ok])=>[t,w*(1-wa),r,ok])]};});
+  return {name,...helpers.portfolioStats(periods,{periodsPerYear:4}),periods};
+}
+// Signal check for the growth score: do higher growth ranks earn more afterwards?
+function growthBucketOutcomes(snapshotOutput){
+  const buckets=[['growth 1-10',1,10],['growth 11-30',11,30],['growth 31+',31,Infinity]];
+  const all=[],nonGrowth=[];
+  for(const snap of snapshotOutput||[]){const g=growthRows(snap);all.push(...g);const set=new Set(g.map(r=>r.ticker));nonGrowth.push(...(snap.rows||[]).filter(r=>!set.has(r.ticker)));}
+  const out={};
+  for(const n of [1,3]){
+    const k=`excess${n}YTotalReturnCAGR`;
+    const stat=(label,v)=>({bucket:label,n:v.length,meanExcess:mean(v.map(r=>r[k])),medianExcess:median(v.map(r=>r[k])),beatSpyRate:v.length?v.filter(r=>r[k]>0).length/v.length:null});
+    out[`${n}Y`]=[...buckets.map(([label,lo,hi])=>stat(label,all.filter(r=>r.growth.rank>=lo&&r.growth.rank<=hi&&finite(r[k])!==null))),
+      stat('not a growth company',nonGrowth.filter(r=>finite(r[k])!==null))];
+  }
+  return out;
+}
+
 // Equal-weight every modeled stock each quarter: "did picking beat owning the whole list?"
 function simulateUniverseEqualWeight(snapshotOutput,historyByTicker,spyHistory,helpers){
   const {adjustedReturnBetween,portfolioStats}=helpers;
@@ -184,7 +240,7 @@ function holdingsCsvRows(arm){
 const KEEP=['portfolioCAGR','spyCAGR','annualizedExcess','annualVolatility','periodEndMaxDrawdown','beatSpyRate','periodCount','yearCount','finalWealth10k','spyFinalWealth10k'];
 function compact(s){
   if(!s)return null;
-  const o={};for(const k of ['name','entry','sizing','maxPositions','topN','averageHoldings','averageCash','annualTurnover','buys','sells','trims','sellReasons','thesisBreak','thesisBreakSells','vsEqualWeightUniverse'])if(s[k]!==undefined)o[k]=s[k];
+  const o={};for(const k of ['name','entry','sizing','maxPositions','topN','keepRank','growthSells','averageHoldings','averageCash','annualTurnover','buys','sells','trims','sellReasons','thesisBreak','thesisBreakSells','vsEqualWeightUniverse'])if(s[k]!==undefined)o[k]=s[k];
   for(const k of KEEP)if(s[k]!==undefined)o[k]=s[k];
   for(const k of ['development','validation'])if(s[k])o[k]=Object.fromEntries(KEEP.filter(x=>s[k][x]!==undefined).map(x=>[x,s[k][x]]));
   if(s.attribution)o.attribution=s.attribution;
@@ -228,7 +284,12 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
     simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'D · Owner rules, Buy-rated entry only, conviction sizing, max 15',entry:'buyRated',sizing:'conviction',maxPositions:15,transactionCostBps},H),
     simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'E · Concentrated: conviction sizing, max 10',entry:'shortlist',sizing:'conviction',maxPositions:10,transactionCostBps},H),
     simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:'F · Diversified: conviction sizing, max 25',entry:'shortlist',sizing:'conviction',maxPositions:25,transactionCostBps},H),
-  ].map(split);
+  ];
+  // Build 65: Growth Inflection sleeve, and the 70/30 value + growth portfolio the app suggests.
+  const G=simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name:'G · Growth Inflection: top 10 by growth score, equal weight, exit rule',topN:10,keepRank:25,transactionCostBps},H);
+  const Cbase=arms.find(a=>a.name.startsWith('C ·'));
+  arms.push(G, blendArms('H · 70% arm C (value rules) + 30% arm G (growth sleeve)',Cbase,G,.7,H));
+  arms.forEach(split);
   for(const a of arms)a.attribution=attribution(a.periods,H,{splitYear});
   const csvRows=['arm,quarterStart,ticker,startWeight,quarterReturn,spyReturn,contribution,excessContribution,flag',...arms.flatMap(holdingsCsvRows)];
   for(const a of arms)a.vsEqualWeightUniverse=Number.isFinite(a.portfolioCAGR)&&Number.isFinite(universe.portfolioCAGR)?a.portfolioCAGR-universe.portfolioCAGR:null;
@@ -238,14 +299,16 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
       question1:'Do live ranks 1-20 beat ranks 251+ on 1Y and 3Y excess return? (rankBuckets)',
       question2:'Does arm C beat both SPY and the equal-weight universe, in development AND validation?',
       question3:'Does conviction sizing (C) beat equal weight (B)? Does concentration (E vs C vs F) help or just add volatility?',
-      question4:'Build 62b: does the experimental thesis-broken auto-sell (C+) beat the default review-only rules (C)? See thesisBreakSells.'
+      question4:'Build 62b: does the experimental thesis-broken auto-sell (C+) beat the default review-only rules (C)? See thesisBreakSells.',
+      question5:'Build 65: do growth ranks 1-10 beat 31+ and non-growth stocks (growthBuckets)? Does G beat SPY in development AND validation, and does H beat C?'
     },
     entryFunnel:entryFunnel(snapshotOutput),
     rankBuckets:rankBucketOutcomes(snapshotOutput),
+    growthBuckets:growthBucketOutcomes(snapshotOutput),
     benchmarks:{equalWeightUniverse:compact(universe)},
     arms:arms.map(compact),
     holdingsCsv:csvRows.join('\n')
   };
 }
 
-module.exports={attribution,holdingsCsvRows,entryFunnel,liveRankedRows,shortlistEligible,simulateOwnerStrategy,simulateMechanicalTopN,simulateUniverseEqualWeight,rankBucketOutcomes,buildOwnerStrategyLab};
+module.exports={growthRows,simulateGrowthSleeve,blendArms,growthBucketOutcomes,attribution,holdingsCsvRows,entryFunnel,liveRankedRows,shortlistEligible,simulateOwnerStrategy,simulateMechanicalTopN,simulateUniverseEqualWeight,rankBucketOutcomes,buildOwnerStrategyLab};
