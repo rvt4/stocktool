@@ -44,7 +44,7 @@ function weightedMedian(items){
 // evidence; the STRESSED case assumes half of the boom-era margin gain fades and the BEAR case three quarters.
 // Margin gains the model projects beyond today's level are already stressed separately.
 function boomCycleCheck(stock,forecast){
-  if(isFinancialLike(stock))return null;
+  if(isFinancialLike(stock)||/Utilities|Real Estate/.test(String(stock?.sector||'')))return null;
   const hist=(stock?.financials?.years||[]).filter(y=>finite(y?.revenue)>0&&finite(y?.operatingIncome)!=null);
   if(hist.length<5)return null;
   const op=hist.map(y=>y.operatingIncome/y.revenue);
@@ -85,9 +85,12 @@ function forecastUnderwriting(stock,forecast,quality){
     ?Math.pow(futureRevenue/currentRevenue,1/Math.max(1,rows.length))-1:null;
   // SEC annual rows normally expose absolute FCF, not fcfMargin. Derive the
   // observed margin from reported cash flow and revenue before using a fallback.
+  // Build 64b: compare like with like. Projected FCF is after stock-based pay (Build 63), so history must be
+  // too; comparing it to pre-SBC history made high-SBC forecasts look conservative and removed their stress.
+  const ownerBasis=forecast?.earningsBasis==='owner_sbc_expensed';
   const historicalMargins=hist.slice(-5).map(y=>{
-    const revenue=finite(y.revenue), fcf=finite(y.fcf);
-    if(revenue>0&&fcf!=null)return fcf/revenue;
+    const revenue=finite(y.revenue), fcf=finite(y.fcf), sbc=ownerBasis?Math.max(0,finite(y.sbc)??(finite(y.sbcIntensity)??0)*(revenue||0)):0;
+    if(revenue>0&&fcf!=null)return (fcf-sbc)/revenue;
     return finite(y.fcfMargin??y.margins?.fcf);
   }).filter(Number.isFinite);
   const observedMargin=historicalMargins.length>=2?median(historicalMargins):null;
@@ -254,8 +257,11 @@ function persistentExit(current,justified,lo,hi,opts={}){
   const j=clamp(justified,lo,hi);
   const c=finite(current);
   if(!(j>0)||!(c>0))return j;
-  const p=clamp(opts.persistence??EXIT_MULTIPLE_PERSISTENCE,0,.8);
-  const ratio=clamp(Math.min(c,EXIT_ANCHOR_MAX_MULTIPLE)/j,EXIT_PREMIUM_BAND[0],EXIT_PREMIUM_BAND[1]);
+  let p=clamp(opts.persistence??EXIT_MULTIPLE_PERSISTENCE,0,.8), cc=c;
+  // Build 64b: below the floor a multiple is increasingly likely to reflect distorted earnings, so it counts
+  // for proportionally less (persistence x current/floor) instead of being dropped at a cliff.
+  if(Number.isFinite(opts.floor)&&c<opts.floor){p*=c/opts.floor;cc=opts.floor;}
+  const ratio=clamp(Math.min(cc,EXIT_ANCHOR_MAX_MULTIPLE)/j,EXIT_PREMIUM_BAND[0],EXIT_PREMIUM_BAND[1]);
   return clamp(j*Math.pow(ratio,p),lo,hi);
 }
 
@@ -932,7 +938,9 @@ function valuate(stock,forecast,quality){
     // consensus two-year EPS growth in excess of 15%/yr. Consensus growth RATES (adjusted vs adjusted) are
     // used rather than consensus EPS LEVELS (adjusted vs the model's GAAP-based EPS), and nothing here
     // depends on the model's own forecast, so a stronger forecast still transmits fully to value.
-    const anchorAbove=(v,floor)=>Number.isFinite(v)&&v>=floor?v:null;
+    // Build 64b: very low multiples used to be discarded below a floor, a cliff where a cheaper stock got a
+    // higher exit (CMCSA 4.77x -> 8.9x exit, 4.50x -> 22.5x). See persistentExit's smooth floor.
+    const anchorAbove=(v)=>Number.isFinite(v)&&v>0?v:null; // floor handled smoothly in persistentExit
     const aEstAnchor=stock.analystEstimates||{};
     const consensusRecovery=(()=>{
       if((finite(aEstAnchor.numAnalysts)??0)<3)return 1;
@@ -954,7 +962,7 @@ function valuate(stock,forecast,quality){
     let fcfExitForDCF=null;
 
     if(allowEnterpriseScopeMethods&&Number(f.fcfPerShare)>0&&normFCF>0){
-      const exit=coherentExits.FCF, m=persistentExit(anchorPFCF,exit.multiple,8,44); fcfExitForDCF=m;
+      const exit=coherentExits.FCF, m=persistentExit(anchorPFCF,exit.multiple,8,44,{floor:4.5}); fcfExitForDCF=m;
       const rel=methodReliability(stock,forecast,'FCF',normFCF,f.fcfPerShare,quality);
       // V11.4: an exit-multiple method values the business at the exit date. Do not also
       // add every interim dollar of FCF here. The forecast share path already reflects
@@ -965,7 +973,7 @@ function valuate(stock,forecast,quality){
       { const w=archetypeMethodWeight(archetype,'FCF',rel.score); if(w>0)addMethod(methods,{name:'FCF exit',target:terminalFCFValue,weight:w,reliability:rel.score,price,family:'cashflow',cashFlowInclusive:false,audit:{exitMultiple:m,currentMultiple:currentPFCF,anchorMultiple:anchorPFCF,rawAnchorMultiple:rawAnchorPFCF,exitPersistence:EXIT_MULTIPLE_PERSISTENCE,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,terminalExitValue:terminalFCFValue,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
     }
     if(Number(epsX)>0&&normEPS>0){
-      const exit=coherentExits.EPS, m=persistentExit(anchorPE,exit.multiple,8,49);
+      const exit=coherentExits.EPS, m=persistentExit(anchorPE,exit.multiple,8,49,{floor:4.5});
       const rel=methodReliability(stock,forecast,'EPS',normEPS,epsX,quality);
       { const w=archetypeMethodWeight(archetype,'EPS',rel.score); if(w>0)addMethod(methods,{name:'EPS exit',target:epsX*m,weight:w,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,anchorMultiple:anchorPE,consensusRecoveryFactor:consensusRecovery,exitPersistence:EXIT_MULTIPLE_PERSISTENCE,metric:epsX,sbcAddBackFraction:sbcFrac,reportedYear10EPS:f.eps,normalizedCurrentMetric:normEPS,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
     }
@@ -975,7 +983,7 @@ function valuate(stock,forecast,quality){
       // Lean harder on the market's EV/EBITDA when net debt is a large share of enterprise value.
       const evNow=marketCap>0?marketCap+netDebt:null, levShare=evNow>0?clamp(netDebt/evNow,0,1):0;
       const levPersistence=clamp(EXIT_MULTIPLE_PERSISTENCE+Math.max(0,levShare-.30)*1.0,0,.8);
-      const m=persistentExit(anchorEVEBITDA,exit.multiple,6,32.5,{persistence:levPersistence}), equity=f.ebitda*m-terminalNetDebt;
+      const m=persistentExit(anchorEVEBITDA,exit.multiple,6,32.5,{persistence:levPersistence,floor:3}), equity=f.ebitda*m-terminalNetDebt;
       if(equity>0){
         const rel=methodReliability(stock,forecast,'EBITDA',normEBITDA,f.ebitda,quality);
         { const w=archetypeMethodWeight(archetype,'EBITDA',rel.score); if(w>0)addMethod(methods,{name:'EV/EBITDA exit',target:equity/f.shares,weight:w,reliability:rel.score,price,family:'enterprise',audit:{exitMultiple:m,currentMultiple:currentEVEBITDA,anchorMultiple:anchorEVEBITDA,exitPersistence:levPersistence,metric:f.ebitda,normalizedCurrentMetric:normEBITDA,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }

@@ -46,9 +46,13 @@ function qualityValue(row,key){
 // Ranking on the normal case put VRT at #1 with an 8.7% stressed return and rewarded forecasts that need
 // everything to go right. Falls back to the normal case when no stressed figure exists.
 const RANK_HURDLE=0.11;
+// Build 64b: a stock whose bear case loses money cannot rank on its stressed case alone (results_37 top 25 had
+// ALK -3.4%, PRIM 0.2%, FOUR 2.4%, EXPE 0.6% bear cases). 30% of the rank return comes from the bear case.
 function stressedAlpha(r){
-  const u=finite(r.underwrittenCAGR);
-  return u!=null?u-RANK_HURDLE:finite(r.expectedAlpha);
+  const u=finite(r.underwrittenCAGR), b=finite(r.bearCAGR);
+  if(u==null)return finite(r.expectedAlpha);
+  const blended=b!=null?Math.min(u,.7*u+.3*b):u;
+  return blended-RANK_HURDLE;
 }
 function reliabilityAdjustedAlpha(r){
   const a=stressedAlpha(r); if(a==null) return null;
