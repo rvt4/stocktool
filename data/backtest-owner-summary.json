@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-11-10T16:58:48.848Z",
-  "modelVersion": "build64b-stressed-bear-rank",
+  "generatedAt": "2026-11-10T20:42:35.562Z",
+  "modelVersion": "build65-growth-inflection",
   "frequency": "quarterly",
   "start": "2019-09-30",
   "end": "2025-12-31",
@@ -20,7 +20,8 @@
     "modelRuns": 21220,
     "modelFailures": 0,
     "missingExpectedCAGR": 1476,
-    "modeledObservations": 19744
+    "modeledObservations": 19744,
+    "growthOnlyObservations": 725
   },
   "ownerStrategyLab": {
     "description": "Build 36 owner strategy lab. Uses the live ranking, the app review statuses and the app sizing rules. Idle cash earns SPY. Analyst estimates are unavailable historically, so the analyst-based parts of the live model are NOT tested here. Development = before 2022, validation = 2022 onward. Read once; do not tune to it.",
@@ -28,7 +29,8 @@
       "question1": "Do live ranks 1-20 beat ranks 251+ on 1Y and 3Y excess return? (rankBuckets)",
       "question2": "Does arm C beat both SPY and the equal-weight universe, in development AND validation?",
       "question3": "Does conviction sizing (C) beat equal weight (B)? Does concentration (E vs C vs F) help or just add volatility?",
-      "question4": "Build 62b: does the experimental thesis-broken auto-sell (C+) beat the default review-only rules (C)? See thesisBreakSells."
+      "question4": "Build 62b: does the experimental thesis-broken auto-sell (C+) beat the default review-only rules (C)? See thesisBreakSells.",
+      "question5": "Build 65: do growth ranks 1-10 beat 31+ and non-growth stocks (growthBuckets)? Does G beat SPY in development AND validation, and does H beat C?"
     },
     "entryFunnel": {
       "summary": {
@@ -305,126 +307,188 @@
         {
           "bucket": "1-20",
           "n": 500,
-          "meanExcess": 0.062166432295940294,
-          "medianExcess": 0.005694774261080504,
+          "meanExcess": 0.062166461574660103,
+          "medianExcess": 0.005694878010700899,
           "beatSpyRate": 0.504,
-          "medianRealized": 0.13801235477309903
+          "medianRealized": 0.13801247065811584
         },
         {
           "bucket": "21-50",
           "n": 750,
-          "meanExcess": 0.07178493664966425,
-          "medianExcess": 0.03601698509674667,
+          "meanExcess": 0.07178494226968737,
+          "medianExcess": 0.03601691649192629,
           "beatSpyRate": 0.556,
-          "medianRealized": 0.2005649450179402
+          "medianRealized": 0.20056496936008805
         },
         {
           "bucket": "51-100",
           "n": 1250,
-          "meanExcess": 0.04743780231744645,
-          "medianExcess": -0.01905794053290899,
+          "meanExcess": 0.047437812606155726,
+          "medianExcess": -0.019058135330385417,
           "beatSpyRate": 0.4728,
           "medianRealized": 0.15147394878474063
         },
         {
           "bucket": "101-250",
           "n": 3750,
-          "meanExcess": -0.00025359087194828006,
-          "medianExcess": -0.05031709894046327,
+          "meanExcess": -0.00025357692469576265,
+          "medianExcess": -0.05031722341437983,
           "beatSpyRate": 0.4312,
-          "medianRealized": 0.10737585760246415
+          "medianRealized": 0.10737607305888253
         },
         {
           "bucket": "251+",
           "n": 12656,
-          "meanExcess": -0.055071727142051836,
-          "medianExcess": -0.08528583910078674,
+          "meanExcess": -0.05507171538131059,
+          "medianExcess": -0.08528549126281837,
           "beatSpyRate": 0.3772914032869785,
-          "medianRealized": 0.08477152056529935
+          "medianRealized": 0.08477144215113219
         }
       ],
       "3Y": [
         {
           "bucket": "1-20",
           "n": 340,
-          "meanExcess": 0.0003361140782437769,
-          "medianExcess": 0.003970558065397256,
+          "meanExcess": 0.00033612622254773806,
+          "medianExcess": 0.003970575548485011,
           "beatSpyRate": 0.5147058823529411,
-          "medianRealized": 0.13232155156676717
+          "medianRealized": 0.1323215266177762
         },
         {
           "bucket": "21-50",
           "n": 510,
-          "meanExcess": 0.03456655856478633,
-          "medianExcess": 0.018090818143306264,
+          "meanExcess": 0.03456656543557099,
+          "medianExcess": 0.018090808943898362,
           "beatSpyRate": 0.5313725490196078,
-          "medianRealized": 0.14789639839693103
+          "medianRealized": 0.14789633863288443
         },
         {
           "bucket": "51-100",
           "n": 850,
-          "meanExcess": -0.012029687123168022,
-          "medianExcess": -0.03133997246179532,
+          "meanExcess": -0.01202968177840421,
+          "medianExcess": -0.031339967781178424,
           "beatSpyRate": 0.4329411764705882,
-          "medianRealized": 0.11177389731226028
+          "medianRealized": 0.11177392965856214
         },
         {
           "bucket": "101-250",
           "n": 2550,
-          "meanExcess": -0.046363151540490456,
-          "medianExcess": -0.04341309112059888,
+          "meanExcess": -0.04636314281792237,
+          "medianExcess": -0.043413136626702875,
           "beatSpyRate": 0.3870588235294118,
-          "medianRealized": 0.09217425705178561
+          "medianRealized": 0.09217429621355377
         },
         {
           "bucket": "251+",
           "n": 8126,
-          "meanExcess": -0.07954640350700956,
-          "medianExcess": -0.07385046931322026,
+          "meanExcess": -0.07954639532995278,
+          "medianExcess": -0.07385050331934773,
           "beatSpyRate": 0.29497907949790797,
-          "medianRealized": 0.06630547004697118
+          "medianRealized": 0.06630555609726307
         }
       ],
       "5Y": [
         {
           "bucket": "1-20",
           "n": 180,
-          "meanExcess": 0.002666641343101778,
-          "medianExcess": 0.007194258146073995,
+          "meanExcess": 0.002666662922412618,
+          "medianExcess": 0.007194255023316054,
           "beatSpyRate": 0.5277777777777778,
           "medianRealized": 0.16483058958297492
         },
         {
           "bucket": "21-50",
           "n": 270,
-          "meanExcess": 0.026722668732513236,
-          "medianExcess": 0.02094110347760003,
+          "meanExcess": 0.026722688037094825,
+          "medianExcess": 0.020941128108336926,
           "beatSpyRate": 0.5666666666666667,
-          "medianRealized": 0.16775668327062776
+          "medianRealized": 0.1677566904558334
         },
         {
           "bucket": "51-100",
           "n": 450,
-          "meanExcess": -0.023222417654123757,
-          "medianExcess": -0.032131326961359785,
+          "meanExcess": -0.023222400399146425,
+          "medianExcess": -0.03213131546631831,
           "beatSpyRate": 0.38,
-          "medianRealized": 0.11752652513106598
+          "medianRealized": 0.11752650326640379
         },
         {
           "bucket": "101-250",
           "n": 1350,
-          "meanExcess": -0.042702368580806394,
-          "medianExcess": -0.04270574219232215,
+          "meanExcess": -0.04270235062108117,
+          "medianExcess": -0.042705667650660195,
           "beatSpyRate": 0.3688888888888889,
-          "medianRealized": 0.10368035607983417
+          "medianRealized": 0.10368031729210947
         },
         {
           "bucket": "251+",
           "n": 4014,
-          "meanExcess": -0.08590453973429547,
-          "medianExcess": -0.07851491771875496,
+          "meanExcess": -0.085904521343052,
+          "medianExcess": -0.07851484912003692,
           "beatSpyRate": 0.23492775286497258,
-          "medianRealized": 0.07291173598011902
+          "medianRealized": 0.0729117358027005
+        }
+      ]
+    },
+    "growthBuckets": {
+      "1Y": [
+        {
+          "bucket": "growth 1-10",
+          "n": 250,
+          "meanExcess": 0.06966829934556504,
+          "medianExcess": -0.057474492545743994,
+          "beatSpyRate": 0.432
+        },
+        {
+          "bucket": "growth 11-30",
+          "n": 500,
+          "meanExcess": 0.038532377107184636,
+          "medianExcess": -0.05964160108202876,
+          "beatSpyRate": 0.442
+        },
+        {
+          "bucket": "growth 31+",
+          "n": 4360,
+          "meanExcess": -0.008003508349933271,
+          "medianExcess": -0.064258196939105,
+          "beatSpyRate": 0.4190366972477064
+        },
+        {
+          "bucket": "not a growth company",
+          "n": 14496,
+          "meanExcess": -0.03510485976956379,
+          "medianExcess": -0.07080054677024472,
+          "beatSpyRate": 0.3981788079470199
+        }
+      ],
+      "3Y": [
+        {
+          "bucket": "growth 1-10",
+          "n": 170,
+          "meanExcess": -0.13099260942672317,
+          "medianExcess": -0.11766862487410934,
+          "beatSpyRate": 0.25882352941176473
+        },
+        {
+          "bucket": "growth 11-30",
+          "n": 340,
+          "meanExcess": -0.07727510495432523,
+          "medianExcess": -0.06752892695891344,
+          "beatSpyRate": 0.3558823529411765
+        },
+        {
+          "bucket": "growth 31+",
+          "n": 3391,
+          "meanExcess": -0.08476335139335492,
+          "medianExcess": -0.08749597964274702,
+          "beatSpyRate": 0.3087584783249779
+        },
+        {
+          "bucket": "not a growth company",
+          "n": 8964,
+          "meanExcess": -0.0545412294492084,
+          "medianExcess": -0.05490095414504215,
+          "beatSpyRate": 0.34817045961624277
         }
       ]
     },
@@ -432,39 +496,39 @@
       "equalWeightUniverse": {
         "name": "Benchmark · every modeled stock, equal weight",
         "averageHoldings": 756.24,
-        "portfolioCAGR": 0.12371360272391607,
-        "spyCAGR": 0.16192702182436025,
-        "annualizedExcess": -0.03821341910044418,
-        "annualVolatility": 0.2303962754148529,
-        "periodEndMaxDrawdown": -0.3137741578117639,
+        "portfolioCAGR": 0.12371359962520301,
+        "spyCAGR": 0.16192702182436003,
+        "annualizedExcess": -0.03821342219915702,
+        "annualVolatility": 0.23039627774755275,
+        "periodEndMaxDrawdown": -0.3137741644973675,
         "beatSpyRate": 0.4,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 20729.925346786913,
-        "spyFinalWealth10k": 25548.642170925465,
+        "finalWealth10k": 20729.924989511223,
+        "spyFinalWealth10k": 25548.642170925443,
         "development": {
-          "portfolioCAGR": 0.19578553454354952,
-          "spyCAGR": 0.20899557172548144,
-          "annualizedExcess": -0.013210037181931922,
-          "annualVolatility": 0.3263560484558802,
-          "periodEndMaxDrawdown": -0.3137741578117639,
+          "portfolioCAGR": 0.1957855325544049,
+          "spyCAGR": 0.20899564094378942,
+          "annualizedExcess": -0.013210108389384523,
+          "annualVolatility": 0.3263560525791962,
+          "periodEndMaxDrawdown": -0.3137741644973675,
           "beatSpyRate": 0.4,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 15636.272793144304,
-          "spyFinalWealth10k": 16071.698454357052
+          "finalWealth10k": 15636.27272811841,
+          "spyFinalWealth10k": 16071.700754729043
         },
         "validation": {
-          "portfolioCAGR": 0.07809541703725942,
-          "spyCAGR": 0.13157048958724027,
-          "annualizedExcess": -0.05347507254998085,
-          "annualVolatility": 0.14194677825496255,
-          "periodEndMaxDrawdown": -0.16589320109741723,
+          "portfolioCAGR": 0.07809541327797742,
+          "spyCAGR": 0.1315704463969023,
+          "annualizedExcess": -0.053475033118924875,
+          "annualVolatility": 0.14194677827012114,
+          "periodEndMaxDrawdown": -0.16589319653997936,
           "beatSpyRate": 0.4,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 13257.58741934709,
-          "spyFinalWealth10k": 15896.66595816399
+          "finalWealth10k": 13257.587245989253,
+          "spyFinalWealth10k": 15896.663682845046
         },
         "holdingsByQuarter": [
           {
@@ -484,7 +548,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0897,
+            "spyReturn": 0.0898,
             "holdings": []
           },
           {
@@ -600,40 +664,40 @@
         "name": "A · Mechanical top 20, equal weight, rebalanced quarterly",
         "topN": 20,
         "averageHoldings": 20,
-        "vsEqualWeightUniverse": 0.1180296205954019,
-        "portfolioCAGR": 0.24174322331931797,
-        "spyCAGR": 0.16192702182436025,
-        "annualizedExcess": 0.07981620149495772,
-        "annualVolatility": 0.24009928730554114,
-        "periodEndMaxDrawdown": -0.1984482504788283,
+        "vsEqualWeightUniverse": 0.11802966288134553,
+        "portfolioCAGR": 0.24174326250654854,
+        "spyCAGR": 0.16192702182436003,
+        "annualizedExcess": 0.07981624068218851,
+        "annualVolatility": 0.24009930051536862,
+        "periodEndMaxDrawdown": -0.1984482331325259,
         "beatSpyRate": 0.64,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 38698.91073141694,
-        "spyFinalWealth10k": 25548.642170925465,
+        "finalWealth10k": 38698.918364352,
+        "spyFinalWealth10k": 25548.642170925443,
         "development": {
-          "portfolioCAGR": 0.38758366657798504,
-          "spyCAGR": 0.20899557172548144,
-          "annualizedExcess": 0.1785880948525036,
-          "annualVolatility": 0.3303855688244414,
-          "periodEndMaxDrawdown": -0.1984482504788283,
+          "portfolioCAGR": 0.387583606418306,
+          "spyCAGR": 0.20899564094378942,
+          "annualizedExcess": 0.1785879654745166,
+          "annualVolatility": 0.33038560253878274,
+          "periodEndMaxDrawdown": -0.1984482331325259,
           "beatSpyRate": 0.6,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 22680.2557587359,
-          "spyFinalWealth10k": 16071.698454357052
+          "finalWealth10k": 22680.253300439337,
+          "spyFinalWealth10k": 16071.700754729043
         },
         "validation": {
-          "portfolioCAGR": 0.15313515265014588,
-          "spyCAGR": 0.13157048958724027,
-          "annualizedExcess": 0.02156466306290561,
-          "annualVolatility": 0.15161894026209563,
-          "periodEndMaxDrawdown": -0.15484364646960924,
+          "portfolioCAGR": 0.15313524663167355,
+          "spyCAGR": 0.1315704463969023,
+          "annualizedExcess": 0.021564800234771253,
+          "annualVolatility": 0.15161894956242153,
+          "periodEndMaxDrawdown": -0.15484363262146872,
           "beatSpyRate": 0.6666666666666666,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 17062.819371651498,
-          "spyFinalWealth10k": 15896.66595816399
+          "finalWealth10k": 17062.824586532446,
+          "spyFinalWealth10k": 15896.663682845046
         },
         "attribution": {
           "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
@@ -907,10 +971,10 @@
               "removed": [
                 "KLAC"
               ],
-              "portfolioCAGR": 0.22819662963839682,
-              "annualizedExcess": 0.06626960781403657,
-              "developmentExcess": 0.16658044176923803,
-              "validationExcess": 0.007253934116713712
+              "portfolioCAGR": 0.22819666922743842,
+              "annualizedExcess": 0.06626964740307839,
+              "developmentExcess": 0.16658031912579263,
+              "validationExcess": 0.007254067974223455
             },
             "3": {
               "removed": [
@@ -918,10 +982,10 @@
                 "TTD",
                 "REZI"
               ],
-              "portfolioCAGR": 0.20759167154617786,
-              "annualizedExcess": 0.04566464972181761,
-              "developmentExcess": 0.10961062968918078,
-              "validationExcess": 0.007253934116713712
+              "portfolioCAGR": 0.20759171782478836,
+              "annualizedExcess": 0.04566469600042833,
+              "developmentExcess": 0.10961052933277715,
+              "validationExcess": 0.007254067974223455
             },
             "5": {
               "removed": [
@@ -931,10 +995,10 @@
                 "DECK",
                 "CMG"
               ],
-              "portfolioCAGR": 0.19015401511003271,
-              "annualizedExcess": 0.028226993285672464,
-              "developmentExcess": 0.10818254972204477,
-              "validationExcess": -0.019218409654676805
+              "portfolioCAGR": 0.19015406689218017,
+              "annualizedExcess": 0.028227045067820145,
+              "developmentExcess": 0.10818246765721762,
+              "validationExcess": -0.01921827856997771
             },
             "10": {
               "removed": [
@@ -949,10 +1013,10 @@
                 "LNC",
                 "LRCX"
               ],
-              "portfolioCAGR": 0.16578921287071857,
-              "annualizedExcess": 0.003862191046358321,
-              "developmentExcess": 0.06804787576447602,
-              "validationExcess": -0.034512447609631236
+              "portfolioCAGR": 0.1657892532995242,
+              "annualizedExcess": 0.0038622314751641795,
+              "developmentExcess": 0.0680477805938624,
+              "validationExcess": -0.034512326147462025
             }
           }
         },
@@ -1277,7 +1341,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0897,
+            "spyReturn": 0.0898,
             "holdings": [
               [
                 "OSK",
@@ -1564,7 +1628,7 @@
               [
                 "BOKF",
                 0.05,
-                0.2989
+                0.299
               ],
               [
                 "TSCO",
@@ -3615,8 +3679,8 @@
         "sizing": "equal",
         "maxPositions": 15,
         "averageHoldings": 12.64,
-        "averageCash": 0.05511641861608952,
-        "annualTurnover": 0.6176521771830129,
+        "averageCash": 0.055116420709084187,
+        "annualTurnover": 0.6176521777640517,
         "buys": 34,
         "sells": 22,
         "trims": 0,
@@ -3634,40 +3698,40 @@
             "reason": "thesis_broken_business_shrinking"
           }
         ],
-        "vsEqualWeightUniverse": 0.12793292025861547,
-        "portfolioCAGR": 0.25164652298253154,
-        "spyCAGR": 0.16192702182436025,
-        "annualizedExcess": 0.08971950115817129,
-        "annualVolatility": 0.261451833413829,
-        "periodEndMaxDrawdown": -0.2607207818869496,
+        "vsEqualWeightUniverse": 0.12793294325312643,
+        "portfolioCAGR": 0.25164654287832944,
+        "spyCAGR": 0.16192702182436003,
+        "annualizedExcess": 0.08971952105396941,
+        "annualVolatility": 0.2614518468488711,
+        "periodEndMaxDrawdown": -0.2607207575599305,
         "beatSpyRate": 0.64,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 40668.72974860107,
-        "spyFinalWealth10k": 25548.642170925465,
+        "finalWealth10k": 40668.73378896334,
+        "spyFinalWealth10k": 25548.642170925443,
         "development": {
-          "portfolioCAGR": 0.3410911969503032,
-          "spyCAGR": 0.20899557172548144,
-          "annualizedExcess": 0.13209562522482177,
-          "annualVolatility": 0.33481509081994965,
-          "periodEndMaxDrawdown": -0.20708357091325047,
+          "portfolioCAGR": 0.3410911930076961,
+          "spyCAGR": 0.20899564094378942,
+          "annualizedExcess": 0.13209555206390666,
+          "annualVolatility": 0.33481512819072484,
+          "periodEndMaxDrawdown": -0.20708362259277102,
           "beatSpyRate": 0.7,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 20827.914175221325,
-          "spyFinalWealth10k": 16071.698454357052
+          "finalWealth10k": 20827.914022143963,
+          "spyFinalWealth10k": 16071.700754729043
         },
         "validation": {
-          "portfolioCAGR": 0.19535605993524285,
-          "spyCAGR": 0.13157048958724027,
-          "annualizedExcess": 0.06378557034800258,
-          "annualVolatility": 0.2067554502327305,
-          "periodEndMaxDrawdown": -0.1936722304355455,
+          "portfolioCAGR": 0.19535609394639097,
+          "spyCAGR": 0.1315704463969023,
+          "annualizedExcess": 0.06378564754948868,
+          "annualVolatility": 0.2067554420720727,
+          "periodEndMaxDrawdown": -0.1936721984698555,
           "beatSpyRate": 0.6,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 19526.069392481015,
-          "spyFinalWealth10k": 15896.66595816399
+          "finalWealth10k": 19526.07147586882,
+          "spyFinalWealth10k": 15896.663682845046
         },
         "attribution": {
           "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
@@ -3941,10 +4005,10 @@
               "removed": [
                 "KLAC"
               ],
-              "portfolioCAGR": 0.22724644679068295,
-              "annualizedExcess": 0.0653194249663227,
-              "developmentExcess": 0.11828550570919005,
-              "validationExcess": 0.033210758776277105
+              "portfolioCAGR": 0.2272464679072843,
+              "annualizedExcess": 0.06531944608292428,
+              "developmentExcess": 0.1182854355740317,
+              "validationExcess": 0.03321083590600593
             },
             "3": {
               "removed": [
@@ -3952,10 +4016,10 @@
                 "TTD",
                 "META"
               ],
-              "portfolioCAGR": 0.194029407906541,
-              "annualizedExcess": 0.032102386082180745,
-              "developmentExcess": 0.07143523627181847,
-              "validationExcess": 0.008121848721113212
+              "portfolioCAGR": 0.19402942357598452,
+              "annualizedExcess": 0.03210240175162449,
+              "developmentExcess": 0.07143517625043949,
+              "validationExcess": 0.008121911381367086
             },
             "5": {
               "removed": [
@@ -3965,10 +4029,10 @@
                 "FTNT",
                 "AAPL"
               ],
-              "portfolioCAGR": 0.17361731568080296,
-              "annualizedExcess": 0.011690293856442713,
-              "developmentExcess": 0.01828366292587691,
-              "validationExcess": 0.007582156913976679
+              "portfolioCAGR": 0.1736173306331632,
+              "annualizedExcess": 0.011690308808803174,
+              "developmentExcess": 0.018283608580558663,
+              "validationExcess": 0.0075822150897499885
             },
             "10": {
               "removed": [
@@ -3983,10 +4047,10 @@
                 "WAL",
                 "GOOG"
               ],
-              "portfolioCAGR": 0.14153967587516902,
-              "annualizedExcess": -0.020387345949191227,
-              "developmentExcess": -0.011144549172307672,
-              "validationExcess": -0.026093232200246952
+              "portfolioCAGR": 0.14153969161880142,
+              "annualizedExcess": -0.020387330205558607,
+              "developmentExcess": -0.011144583104874206,
+              "validationExcess": -0.026093185309209677
             }
           }
         },
@@ -4164,7 +4228,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0897,
+            "spyReturn": 0.0898,
             "cash": 0.0355,
             "holdings": [
               [
@@ -4349,7 +4413,7 @@
               [
                 "BOKF",
                 0.0755,
-                0.2989
+                0.299
               ],
               [
                 "TTD",
@@ -5754,8 +5818,8 @@
         "sizing": "conviction",
         "maxPositions": 15,
         "averageHoldings": 12.68,
-        "averageCash": 0.06941854621573718,
-        "annualTurnover": 0.6074027698186076,
+        "averageCash": 0.06941855576570656,
+        "annualTurnover": 0.6074027611339453,
         "buys": 34,
         "sells": 22,
         "trims": 0,
@@ -5773,40 +5837,40 @@
             "reason": "thesis_broken_business_shrinking"
           }
         ],
-        "vsEqualWeightUniverse": 0.12232441081794221,
-        "portfolioCAGR": 0.24603801354185828,
-        "spyCAGR": 0.16192702182436025,
-        "annualizedExcess": 0.08411099171749803,
-        "annualVolatility": 0.2605931155779709,
-        "periodEndMaxDrawdown": -0.2662076759779456,
+        "vsEqualWeightUniverse": 0.12232442391505316,
+        "portfolioCAGR": 0.24603802354025617,
+        "spyCAGR": 0.16192702182436003,
+        "annualizedExcess": 0.08411100171589614,
+        "annualVolatility": 0.2605931313469637,
+        "periodEndMaxDrawdown": -0.26620764268166575,
         "beatSpyRate": 0.68,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 39543.087305045985,
-        "spyFinalWealth10k": 25548.642170925465,
+        "finalWealth10k": 39543.08928816932,
+        "spyFinalWealth10k": 25548.642170925443,
         "development": {
-          "portfolioCAGR": 0.327532331437554,
-          "spyCAGR": 0.20899557172548144,
-          "annualizedExcess": 0.11853675971207256,
-          "annualVolatility": 0.33259364684667264,
-          "periodEndMaxDrawdown": -0.20809656440839985,
+          "portfolioCAGR": 0.3275323283003002,
+          "spyCAGR": 0.20899564094378942,
+          "annualizedExcess": 0.1185366873565108,
+          "annualVolatility": 0.3325936852226549,
+          "periodEndMaxDrawdown": -0.20809663348783192,
           "beatSpyRate": 0.7,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 20305.45695452459,
-          "spyFinalWealth10k": 16071.698454357052
+          "finalWealth10k": 20305.456834558827,
+          "spyFinalWealth10k": 16071.700754729043
         },
         "validation": {
-          "portfolioCAGR": 0.19450713537206776,
-          "spyCAGR": 0.13157048958724027,
-          "annualizedExcess": 0.0629366457848275,
-          "annualVolatility": 0.20800058956273315,
-          "periodEndMaxDrawdown": -0.19501148541874247,
+          "portfolioCAGR": 0.19450715322883583,
+          "spyCAGR": 0.1315704463969023,
+          "annualizedExcess": 0.06293670683193353,
+          "annualVolatility": 0.20800058440410663,
+          "periodEndMaxDrawdown": -0.19501145578804424,
           "beatSpyRate": 0.6666666666666666,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 19474.118407482936,
-          "spyFinalWealth10k": 15896.66595816399
+          "finalWealth10k": 19474.119499182634,
+          "spyFinalWealth10k": 15896.663682845046
         },
         "attribution": {
           "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
@@ -6080,10 +6144,10 @@
               "removed": [
                 "KLAC"
               ],
-              "portfolioCAGR": 0.22393623108145766,
-              "annualizedExcess": 0.06200920925709741,
-              "developmentExcess": 0.10635289925202596,
-              "validationExcess": 0.03498150922208554
+              "portfolioCAGR": 0.22393624207969043,
+              "annualizedExcess": 0.0620092202553304,
+              "developmentExcess": 0.10635282982076832,
+              "validationExcess": 0.03498157000929836
             },
             "3": {
               "removed": [
@@ -6091,10 +6155,10 @@
                 "TTD",
                 "META"
               ],
-              "portfolioCAGR": 0.18848461945926998,
-              "annualizedExcess": 0.026557597634909724,
-              "developmentExcess": 0.061368053342097495,
-              "validationExcess": 0.005281456806798923
+              "portfolioCAGR": 0.18848462428571922,
+              "annualizedExcess": 0.026557602461359187,
+              "developmentExcess": 0.06136799562878337,
+              "validationExcess": 0.005281500827850616
             },
             "5": {
               "removed": [
@@ -6104,10 +6168,10 @@
                 "FTNT",
                 "AAPL"
               ],
-              "portfolioCAGR": 0.17019773378061753,
-              "annualizedExcess": 0.008270711956257282,
-              "developmentExcess": 0.013875716566793539,
-              "validationExcess": 0.004778130647443257
+              "portfolioCAGR": 0.1701977375492718,
+              "annualizedExcess": 0.008270715724911781,
+              "developmentExcess": 0.013875661905174086,
+              "validationExcess": 0.004778170919352842
             },
             "10": {
               "removed": [
@@ -6122,10 +6186,10 @@
                 "FITB",
                 "UTHR"
               ],
-              "portfolioCAGR": 0.14055596244012247,
-              "annualizedExcess": -0.02137105938423778,
-              "developmentExcess": -0.013419819716332437,
-              "validationExcess": -0.02628042435385458
+              "portfolioCAGR": 0.14055597170850032,
+              "annualizedExcess": -0.021371050115859713,
+              "developmentExcess": -0.013419855078431908,
+              "validationExcess": -0.026280387060186428
             }
           }
         },
@@ -6303,7 +6367,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0897,
+            "spyReturn": 0.0898,
             "cash": 0.0691,
             "holdings": [
               [
@@ -6488,7 +6552,7 @@
               [
                 "BOKF",
                 0.0654,
-                0.2989
+                0.299
               ],
               [
                 "TTD",
@@ -7898,8 +7962,8 @@
         "sizing": "conviction",
         "maxPositions": 15,
         "averageHoldings": 12.68,
-        "averageCash": 0.06941854621573718,
-        "annualTurnover": 0.6074027698186076,
+        "averageCash": 0.06941855576570656,
+        "annualTurnover": 0.6074027611339453,
         "buys": 34,
         "sells": 22,
         "trims": 0,
@@ -7917,40 +7981,40 @@
             "reason": "thesis_broken_business_shrinking"
           }
         ],
-        "vsEqualWeightUniverse": 0.12232441081794221,
-        "portfolioCAGR": 0.24603801354185828,
-        "spyCAGR": 0.16192702182436025,
-        "annualizedExcess": 0.08411099171749803,
-        "annualVolatility": 0.2605931155779709,
-        "periodEndMaxDrawdown": -0.2662076759779456,
+        "vsEqualWeightUniverse": 0.12232442391505316,
+        "portfolioCAGR": 0.24603802354025617,
+        "spyCAGR": 0.16192702182436003,
+        "annualizedExcess": 0.08411100171589614,
+        "annualVolatility": 0.2605931313469637,
+        "periodEndMaxDrawdown": -0.26620764268166575,
         "beatSpyRate": 0.68,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 39543.087305045985,
-        "spyFinalWealth10k": 25548.642170925465,
+        "finalWealth10k": 39543.08928816932,
+        "spyFinalWealth10k": 25548.642170925443,
         "development": {
-          "portfolioCAGR": 0.327532331437554,
-          "spyCAGR": 0.20899557172548144,
-          "annualizedExcess": 0.11853675971207256,
-          "annualVolatility": 0.33259364684667264,
-          "periodEndMaxDrawdown": -0.20809656440839985,
+          "portfolioCAGR": 0.3275323283003002,
+          "spyCAGR": 0.20899564094378942,
+          "annualizedExcess": 0.1185366873565108,
+          "annualVolatility": 0.3325936852226549,
+          "periodEndMaxDrawdown": -0.20809663348783192,
           "beatSpyRate": 0.7,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 20305.45695452459,
-          "spyFinalWealth10k": 16071.698454357052
+          "finalWealth10k": 20305.456834558827,
+          "spyFinalWealth10k": 16071.700754729043
         },
         "validation": {
-          "portfolioCAGR": 0.19450713537206776,
-          "spyCAGR": 0.13157048958724027,
-          "annualizedExcess": 0.0629366457848275,
-          "annualVolatility": 0.20800058956273315,
-          "periodEndMaxDrawdown": -0.19501148541874247,
+          "portfolioCAGR": 0.19450715322883583,
+          "spyCAGR": 0.1315704463969023,
+          "annualizedExcess": 0.06293670683193353,
+          "annualVolatility": 0.20800058440410663,
+          "periodEndMaxDrawdown": -0.19501145578804424,
           "beatSpyRate": 0.6666666666666666,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 19474.118407482936,
-          "spyFinalWealth10k": 15896.66595816399
+          "finalWealth10k": 19474.119499182634,
+          "spyFinalWealth10k": 15896.663682845046
         },
         "attribution": {
           "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
@@ -8224,10 +8288,10 @@
               "removed": [
                 "KLAC"
               ],
-              "portfolioCAGR": 0.22393623108145766,
-              "annualizedExcess": 0.06200920925709741,
-              "developmentExcess": 0.10635289925202596,
-              "validationExcess": 0.03498150922208554
+              "portfolioCAGR": 0.22393624207969043,
+              "annualizedExcess": 0.0620092202553304,
+              "developmentExcess": 0.10635282982076832,
+              "validationExcess": 0.03498157000929836
             },
             "3": {
               "removed": [
@@ -8235,10 +8299,10 @@
                 "TTD",
                 "META"
               ],
-              "portfolioCAGR": 0.18848461945926998,
-              "annualizedExcess": 0.026557597634909724,
-              "developmentExcess": 0.061368053342097495,
-              "validationExcess": 0.005281456806798923
+              "portfolioCAGR": 0.18848462428571922,
+              "annualizedExcess": 0.026557602461359187,
+              "developmentExcess": 0.06136799562878337,
+              "validationExcess": 0.005281500827850616
             },
             "5": {
               "removed": [
@@ -8248,10 +8312,10 @@
                 "FTNT",
                 "AAPL"
               ],
-              "portfolioCAGR": 0.17019773378061753,
-              "annualizedExcess": 0.008270711956257282,
-              "developmentExcess": 0.013875716566793539,
-              "validationExcess": 0.004778130647443257
+              "portfolioCAGR": 0.1701977375492718,
+              "annualizedExcess": 0.008270715724911781,
+              "developmentExcess": 0.013875661905174086,
+              "validationExcess": 0.004778170919352842
             },
             "10": {
               "removed": [
@@ -8266,10 +8330,10 @@
                 "FITB",
                 "UTHR"
               ],
-              "portfolioCAGR": 0.14055596244012247,
-              "annualizedExcess": -0.02137105938423778,
-              "developmentExcess": -0.013419819716332437,
-              "validationExcess": -0.02628042435385458
+              "portfolioCAGR": 0.14055597170850032,
+              "annualizedExcess": -0.021371050115859713,
+              "developmentExcess": -0.013419855078431908,
+              "validationExcess": -0.026280387060186428
             }
           }
         },
@@ -8447,7 +8511,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0897,
+            "spyReturn": 0.0898,
             "cash": 0.0691,
             "holdings": [
               [
@@ -8632,7 +8696,7 @@
               [
                 "BOKF",
                 0.0654,
-                0.2989
+                0.299
               ],
               [
                 "TTD",
@@ -10042,8 +10106,8 @@
         "sizing": "conviction",
         "maxPositions": 15,
         "averageHoldings": 2.68,
-        "averageCash": 0.8069135519240777,
-        "annualTurnover": 0.0690206379828775,
+        "averageCash": 0.8069135376897265,
+        "annualTurnover": 0.06902063803999639,
         "buys": 5,
         "sells": 2,
         "trims": 0,
@@ -10052,40 +10116,40 @@
         },
         "thesisBreak": "review",
         "thesisBreakSells": [],
-        "vsEqualWeightUniverse": 0.030757174803741627,
-        "portfolioCAGR": 0.1544707775276577,
-        "spyCAGR": 0.16192702182436025,
-        "annualizedExcess": -0.007456244296702552,
-        "annualVolatility": 0.1951286313813568,
-        "periodEndMaxDrawdown": -0.22979315316646653,
+        "vsEqualWeightUniverse": 0.0307571856335771,
+        "portfolioCAGR": 0.1544707852587801,
+        "spyCAGR": 0.16192702182436003,
+        "annualizedExcess": -0.007456236565579921,
+        "annualVolatility": 0.19512877081026517,
+        "periodEndMaxDrawdown": -0.22979342834615935,
         "beatSpyRate": 0.44,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 24541.064796296014,
-        "spyFinalWealth10k": 25548.642170925465,
+        "finalWealth10k": 24541.065823444027,
+        "spyFinalWealth10k": 25548.642170925443,
         "development": {
-          "portfolioCAGR": 0.2267776446140919,
-          "spyCAGR": 0.20899557172548144,
-          "annualizedExcess": 0.017782072888610445,
-          "annualVolatility": 0.26508104436619073,
-          "periodEndMaxDrawdown": -0.22979315316646653,
+          "portfolioCAGR": 0.22677770807253506,
+          "spyCAGR": 0.20899564094378942,
+          "annualizedExcess": 0.017782067128745638,
+          "annualVolatility": 0.26508129728052937,
+          "periodEndMaxDrawdown": -0.22979342834615935,
           "beatSpyRate": 0.6,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 16669.19523624294,
-          "spyFinalWealth10k": 16071.698454357052
+          "finalWealth10k": 16669.19739189279,
+          "spyFinalWealth10k": 16071.700754729043
         },
         "validation": {
-          "portfolioCAGR": 0.10864968609188996,
-          "spyCAGR": 0.13157048958724027,
-          "annualizedExcess": -0.022920803495350306,
-          "annualVolatility": 0.13535088086979344,
-          "periodEndMaxDrawdown": -0.15998346635181915,
+          "portfolioCAGR": 0.10864966023371325,
+          "spyCAGR": 0.1315704463969023,
+          "annualizedExcess": -0.022920786163189044,
+          "annualVolatility": 0.13535089302003614,
+          "periodEndMaxDrawdown": -0.15998353363022177,
           "beatSpyRate": 0.3333333333333333,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 14722.405280212739,
-          "spyFinalWealth10k": 15896.66595816399
+          "finalWealth10k": 14722.403992516034,
+          "spyFinalWealth10k": 15896.663682845046
         },
         "attribution": {
           "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
@@ -10216,10 +10280,10 @@
               "removed": [
                 "TSCO"
               ],
-              "portfolioCAGR": 0.1499247988408381,
-              "annualizedExcess": -0.01200222298352216,
-              "developmentExcess": -0.0000260631341832962,
-              "validationExcess": -0.019397949321909636
+              "portfolioCAGR": 0.14992480407923114,
+              "annualizedExcess": -0.012002217745128885,
+              "developmentExcess": -0.000026063132982923065,
+              "validationExcess": -0.019397940139144865
             },
             "3": {
               "removed": [
@@ -10227,10 +10291,10 @@
                 "CVS",
                 "NOW"
               ],
-              "portfolioCAGR": 0.1531558841523668,
-              "annualizedExcess": -0.008771137671993445,
-              "developmentExcess": -0.0000260631341832962,
-              "validationExcess": -0.014184725762720785
+              "portfolioCAGR": 0.15315588736945496,
+              "annualizedExcess": -0.008771134454905072,
+              "developmentExcess": -0.000026063132982923065,
+              "validationExcess": -0.01418472002747695
             },
             "5": {
               "removed": [
@@ -10240,10 +10304,10 @@
                 "WAL",
                 "EPAM"
               ],
-              "portfolioCAGR": 0.1618459537538821,
-              "annualizedExcess": -0.0000810680704781408,
-              "developmentExcess": -0.0000260631341832962,
-              "validationExcess": -0.00011531932608432882
+              "portfolioCAGR": 0.16184595374485067,
+              "annualizedExcess": -0.00008106807950936101,
+              "developmentExcess": -0.000026063132982923065,
+              "validationExcess": -0.00011531933802122474
             },
             "10": {
               "removed": [
@@ -10253,10 +10317,10 @@
                 "WAL",
                 "EPAM"
               ],
-              "portfolioCAGR": 0.1618459537538821,
-              "annualizedExcess": -0.0000810680704781408,
-              "developmentExcess": -0.0000260631341832962,
-              "validationExcess": -0.00011531932608432882
+              "portfolioCAGR": 0.16184595374485067,
+              "annualizedExcess": -0.00008106807950936101,
+              "developmentExcess": -0.000026063132982923065,
+              "validationExcess": -0.00011531933802122474
             }
           }
         },
@@ -10299,7 +10363,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0897,
+            "spyReturn": 0.0898,
             "cash": 0.9186,
             "holdings": [
               [
@@ -10779,8 +10843,8 @@
         "sizing": "conviction",
         "maxPositions": 10,
         "averageHoldings": 9.92,
-        "averageCash": 0.21593597739592854,
-        "annualTurnover": 0.479321670538525,
+        "averageCash": 0.2159359740075768,
+        "annualTurnover": 0.47932166602910686,
         "buys": 26,
         "sells": 16,
         "trims": 1,
@@ -10798,40 +10862,40 @@
             "reason": "thesis_broken_business_shrinking"
           }
         ],
-        "vsEqualWeightUniverse": 0.07853611020679296,
-        "portfolioCAGR": 0.20224971293070904,
-        "spyCAGR": 0.16192702182436025,
-        "annualizedExcess": 0.040322691106348785,
-        "annualVolatility": 0.250926939793604,
-        "periodEndMaxDrawdown": -0.2733438897521213,
+        "vsEqualWeightUniverse": 0.07853610972920055,
+        "portfolioCAGR": 0.20224970935440356,
+        "spyCAGR": 0.16192702182436003,
+        "annualizedExcess": 0.04032268753004353,
+        "annualVolatility": 0.25092695556749306,
+        "periodEndMaxDrawdown": -0.27334386877310013,
         "beatSpyRate": 0.56,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 31620.35655563984,
-        "spyFinalWealth10k": 25548.642170925465,
+        "finalWealth10k": 31620.35596776251,
+        "spyFinalWealth10k": 25548.642170925443,
         "development": {
-          "portfolioCAGR": 0.26567126430029386,
-          "spyCAGR": 0.20899557172548144,
-          "annualizedExcess": 0.05667569257481242,
-          "annualVolatility": 0.29015358119433154,
-          "periodEndMaxDrawdown": -0.20293347766460135,
+          "portfolioCAGR": 0.26567129044120863,
+          "spyCAGR": 0.20899564094378942,
+          "annualizedExcess": 0.05667564949741921,
+          "annualVolatility": 0.2901536287422458,
+          "periodEndMaxDrawdown": -0.20293356098223636,
           "beatSpyRate": 0.6,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 18021.971562478826,
-          "spyFinalWealth10k": 16071.698454357052
+          "finalWealth10k": 18021.972493034107,
+          "spyFinalWealth10k": 16071.700754729043
         },
         "validation": {
-          "portfolioCAGR": 0.16174422795185572,
-          "spyCAGR": 0.13157048958724027,
-          "annualizedExcess": 0.030173738364615454,
-          "annualVolatility": 0.22956121866789125,
-          "periodEndMaxDrawdown": -0.20481624481890404,
+          "portfolioCAGR": 0.16174420619588004,
+          "spyCAGR": 0.1315704463969023,
+          "annualizedExcess": 0.03017375979897774,
+          "annualVolatility": 0.22956120700798818,
+          "periodEndMaxDrawdown": -0.20481626365966343,
           "beatSpyRate": 0.5333333333333333,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 17545.44803603642,
-          "spyFinalWealth10k": 15896.66595816399
+          "finalWealth10k": 17545.446803885916,
+          "spyFinalWealth10k": 15896.663682845046
         },
         "attribution": {
           "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
@@ -11105,10 +11169,10 @@
               "removed": [
                 "KLAC"
               ],
-              "portfolioCAGR": 0.179070389371093,
-              "annualizedExcess": 0.017143367546732735,
-              "developmentExcess": 0.04458655944755563,
-              "validationExcess": 0.00030249078242539085
+              "portfolioCAGR": 0.17907038537408848,
+              "annualizedExcess": 0.017143363549728452,
+              "developmentExcess": 0.04458651992074025,
+              "validationExcess": 0.0003025097052364867
             },
             "3": {
               "removed": [
@@ -11116,10 +11180,10 @@
                 "META",
                 "FTNT"
               ],
-              "portfolioCAGR": 0.14769252644499353,
-              "annualizedExcess": -0.014234495379366718,
-              "developmentExcess": 0.021243592807443035,
-              "validationExcess": -0.03580851945900343
+              "portfolioCAGR": 0.14769252416538214,
+              "annualizedExcess": -0.014234497658977885,
+              "developmentExcess": 0.021243562954141648,
+              "validationExcess": -0.03580850327078822
             },
             "5": {
               "removed": [
@@ -11129,10 +11193,10 @@
                 "AAPL",
                 "GOOG"
               ],
-              "portfolioCAGR": 0.135205364574154,
-              "annualizedExcess": -0.026721657250206254,
-              "developmentExcess": -0.011318195210227255,
-              "validationExcess": -0.036192120196506083
+              "portfolioCAGR": 0.13520536358225765,
+              "annualizedExcess": -0.026721658242102375,
+              "developmentExcess": -0.011318223204554112,
+              "validationExcess": -0.03619210373656645
             },
             "10": {
               "removed": [
@@ -11147,10 +11211,10 @@
                 "CMG",
                 "COKE"
               ],
-              "portfolioCAGR": 0.12052381458657457,
-              "annualizedExcess": -0.04140320723778568,
-              "developmentExcess": -0.014169728018979866,
-              "validationExcess": -0.05799625511278994
+              "portfolioCAGR": 0.12052381533716816,
+              "annualizedExcess": -0.04140320648719187,
+              "developmentExcess": -0.01416974001562643,
+              "validationExcess": -0.05799624500039369
             }
           }
         },
@@ -11318,7 +11382,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0897,
+            "spyReturn": 0.0898,
             "cash": 0.2766,
             "holdings": [
               [
@@ -11478,7 +11542,7 @@
               [
                 "BOKF",
                 0.0741,
-                0.2989
+                0.299
               ],
               [
                 "LRCX",
@@ -12578,8 +12642,8 @@
         "sizing": "conviction",
         "maxPositions": 25,
         "averageHoldings": 12.68,
-        "averageCash": 0.06941854621573718,
-        "annualTurnover": 0.6074027698186076,
+        "averageCash": 0.06941855576570656,
+        "annualTurnover": 0.6074027611339453,
         "buys": 34,
         "sells": 22,
         "trims": 0,
@@ -12597,40 +12661,40 @@
             "reason": "thesis_broken_business_shrinking"
           }
         ],
-        "vsEqualWeightUniverse": 0.12232441081794221,
-        "portfolioCAGR": 0.24603801354185828,
-        "spyCAGR": 0.16192702182436025,
-        "annualizedExcess": 0.08411099171749803,
-        "annualVolatility": 0.2605931155779709,
-        "periodEndMaxDrawdown": -0.2662076759779456,
+        "vsEqualWeightUniverse": 0.12232442391505316,
+        "portfolioCAGR": 0.24603802354025617,
+        "spyCAGR": 0.16192702182436003,
+        "annualizedExcess": 0.08411100171589614,
+        "annualVolatility": 0.2605931313469637,
+        "periodEndMaxDrawdown": -0.26620764268166575,
         "beatSpyRate": 0.68,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 39543.087305045985,
-        "spyFinalWealth10k": 25548.642170925465,
+        "finalWealth10k": 39543.08928816932,
+        "spyFinalWealth10k": 25548.642170925443,
         "development": {
-          "portfolioCAGR": 0.327532331437554,
-          "spyCAGR": 0.20899557172548144,
-          "annualizedExcess": 0.11853675971207256,
-          "annualVolatility": 0.33259364684667264,
-          "periodEndMaxDrawdown": -0.20809656440839985,
+          "portfolioCAGR": 0.3275323283003002,
+          "spyCAGR": 0.20899564094378942,
+          "annualizedExcess": 0.1185366873565108,
+          "annualVolatility": 0.3325936852226549,
+          "periodEndMaxDrawdown": -0.20809663348783192,
           "beatSpyRate": 0.7,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 20305.45695452459,
-          "spyFinalWealth10k": 16071.698454357052
+          "finalWealth10k": 20305.456834558827,
+          "spyFinalWealth10k": 16071.700754729043
         },
         "validation": {
-          "portfolioCAGR": 0.19450713537206776,
-          "spyCAGR": 0.13157048958724027,
-          "annualizedExcess": 0.0629366457848275,
-          "annualVolatility": 0.20800058956273315,
-          "periodEndMaxDrawdown": -0.19501148541874247,
+          "portfolioCAGR": 0.19450715322883583,
+          "spyCAGR": 0.1315704463969023,
+          "annualizedExcess": 0.06293670683193353,
+          "annualVolatility": 0.20800058440410663,
+          "periodEndMaxDrawdown": -0.19501145578804424,
           "beatSpyRate": 0.6666666666666666,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 19474.118407482936,
-          "spyFinalWealth10k": 15896.66595816399
+          "finalWealth10k": 19474.119499182634,
+          "spyFinalWealth10k": 15896.663682845046
         },
         "attribution": {
           "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
@@ -12904,10 +12968,10 @@
               "removed": [
                 "KLAC"
               ],
-              "portfolioCAGR": 0.22393623108145766,
-              "annualizedExcess": 0.06200920925709741,
-              "developmentExcess": 0.10635289925202596,
-              "validationExcess": 0.03498150922208554
+              "portfolioCAGR": 0.22393624207969043,
+              "annualizedExcess": 0.0620092202553304,
+              "developmentExcess": 0.10635282982076832,
+              "validationExcess": 0.03498157000929836
             },
             "3": {
               "removed": [
@@ -12915,10 +12979,10 @@
                 "TTD",
                 "META"
               ],
-              "portfolioCAGR": 0.18848461945926998,
-              "annualizedExcess": 0.026557597634909724,
-              "developmentExcess": 0.061368053342097495,
-              "validationExcess": 0.005281456806798923
+              "portfolioCAGR": 0.18848462428571922,
+              "annualizedExcess": 0.026557602461359187,
+              "developmentExcess": 0.06136799562878337,
+              "validationExcess": 0.005281500827850616
             },
             "5": {
               "removed": [
@@ -12928,10 +12992,10 @@
                 "FTNT",
                 "AAPL"
               ],
-              "portfolioCAGR": 0.17019773378061753,
-              "annualizedExcess": 0.008270711956257282,
-              "developmentExcess": 0.013875716566793539,
-              "validationExcess": 0.004778130647443257
+              "portfolioCAGR": 0.1701977375492718,
+              "annualizedExcess": 0.008270715724911781,
+              "developmentExcess": 0.013875661905174086,
+              "validationExcess": 0.004778170919352842
             },
             "10": {
               "removed": [
@@ -12946,10 +13010,10 @@
                 "FITB",
                 "UTHR"
               ],
-              "portfolioCAGR": 0.14055596244012247,
-              "annualizedExcess": -0.02137105938423778,
-              "developmentExcess": -0.013419819716332437,
-              "validationExcess": -0.02628042435385458
+              "portfolioCAGR": 0.14055597170850032,
+              "annualizedExcess": -0.021371050115859713,
+              "developmentExcess": -0.013419855078431908,
+              "validationExcess": -0.026280387060186428
             }
           }
         },
@@ -13127,7 +13191,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0897,
+            "spyReturn": 0.0898,
             "cash": 0.0691,
             "holdings": [
               [
@@ -13312,7 +13376,7 @@
               [
                 "BOKF",
                 0.0654,
-                0.2989
+                0.299
               ],
               [
                 "TTD",
@@ -14711,6 +14775,5419 @@
                 "DV",
                 0.055,
                 -0.0381
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "G · Growth Inflection: top 10 by growth score, equal weight, exit rule",
+        "topN": 10,
+        "keepRank": 25,
+        "growthSells": [
+          {
+            "asOf": "2022-06-30",
+            "ticker": "BX",
+            "reason": "no longer a growth company"
+          },
+          {
+            "asOf": "2022-06-30",
+            "ticker": "PFE",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2022-06-30",
+            "ticker": "CBOE",
+            "reason": "stock lost its 12-month momentum"
+          },
+          {
+            "asOf": "2022-06-30",
+            "ticker": "NUE",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2022-06-30",
+            "ticker": "EOG",
+            "reason": "no longer a growth company"
+          },
+          {
+            "asOf": "2022-06-30",
+            "ticker": "TRGP",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2022-06-30",
+            "ticker": "COP",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2022-09-30",
+            "ticker": "SSRM",
+            "reason": "no longer a growth company"
+          },
+          {
+            "asOf": "2022-09-30",
+            "ticker": "WLK",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2022-09-30",
+            "ticker": "AMD",
+            "reason": "stock lost its 12-month momentum"
+          },
+          {
+            "asOf": "2022-09-30",
+            "ticker": "TSLA",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2022-09-30",
+            "ticker": "P",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2022-12-31",
+            "ticker": "FANG",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2022-12-31",
+            "ticker": "CF",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2022-12-31",
+            "ticker": "H",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2022-12-31",
+            "ticker": "OXY",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2023-03-31",
+            "ticker": "MOS",
+            "reason": "stock lost its 12-month momentum"
+          },
+          {
+            "asOf": "2023-03-31",
+            "ticker": "AR",
+            "reason": "stock lost its 12-month momentum"
+          },
+          {
+            "asOf": "2023-03-31",
+            "ticker": "OVV",
+            "reason": "stock lost its 12-month momentum"
+          },
+          {
+            "asOf": "2023-03-31",
+            "ticker": "RRC",
+            "reason": "stock lost its 12-month momentum"
+          },
+          {
+            "asOf": "2023-06-30",
+            "ticker": "LNG",
+            "reason": "no longer a growth company"
+          },
+          {
+            "asOf": "2023-06-30",
+            "ticker": "EOG",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2023-06-30",
+            "ticker": "COP",
+            "reason": "no longer a growth company"
+          },
+          {
+            "asOf": "2023-06-30",
+            "ticker": "VLO",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2023-06-30",
+            "ticker": "ALB",
+            "reason": "stock lost its 12-month momentum"
+          },
+          {
+            "asOf": "2023-06-30",
+            "ticker": "DINO",
+            "reason": "no longer a growth company"
+          },
+          {
+            "asOf": "2023-06-30",
+            "ticker": "WSC",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2023-09-30",
+            "ticker": "EXE",
+            "reason": "no longer a growth company"
+          },
+          {
+            "asOf": "2023-09-30",
+            "ticker": "VICI",
+            "reason": "fell to the bottom half of growth names"
+          },
+          {
+            "asOf": "2023-09-30",
+            "ticker": "ALNY",
+            "reason": "stock lost its 12-month momentum"
+          },
+          {
+            "asOf": "2023-09-30",
+            "ticker": "RRC",
+            "reason": "no longer a growth company"
+          },
+          {
+            "asOf": "2023-09-30",
+            "ticker": "MGM",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2023-12-31",
+            "ticker": "INSP",
+            "reason": "stock lost its 12-month momentum"
+          },
+          {
+            "asOf": "2023-12-31",
+            "ticker": "LVS",
+            "reason": "stock lost its 12-month momentum"
+          },
+          {
+            "asOf": "2023-12-31",
+            "ticker": "KKR",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2023-12-31",
+            "ticker": "ALGM",
+            "reason": "stock lost its 12-month momentum"
+          },
+          {
+            "asOf": "2023-12-31",
+            "ticker": "APA",
+            "reason": "stock lost its 12-month momentum"
+          },
+          {
+            "asOf": "2023-12-31",
+            "ticker": "BKR",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2024-03-31",
+            "ticker": "BKNG",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2024-06-30",
+            "ticker": "RBA",
+            "reason": "fell to the bottom half of growth names"
+          },
+          {
+            "asOf": "2024-06-30",
+            "ticker": "TREX",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2024-06-30",
+            "ticker": "LLY",
+            "reason": "fell to the bottom half of growth names"
+          },
+          {
+            "asOf": "2024-06-30",
+            "ticker": "TDG",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2024-06-30",
+            "ticker": "ZS",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2024-09-30",
+            "ticker": "BX",
+            "reason": "no longer a growth company"
+          },
+          {
+            "asOf": "2024-09-30",
+            "ticker": "CELH",
+            "reason": "stock lost its 12-month momentum"
+          },
+          {
+            "asOf": "2024-09-30",
+            "ticker": "KKR",
+            "reason": "fell to the bottom half of growth names"
+          },
+          {
+            "asOf": "2024-09-30",
+            "ticker": "UTHR",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2024-12-31",
+            "ticker": "AVGO",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2024-12-31",
+            "ticker": "WING",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2025-03-31",
+            "ticker": "FIX",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2025-03-31",
+            "ticker": "SMCI",
+            "reason": "stock lost its 12-month momentum"
+          },
+          {
+            "asOf": "2025-06-30",
+            "ticker": "OWL",
+            "reason": "no longer a growth company"
+          },
+          {
+            "asOf": "2025-06-30",
+            "ticker": "NTRA",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2025-06-30",
+            "ticker": "VST",
+            "reason": "dropped out of top 25"
+          },
+          {
+            "asOf": "2025-06-30",
+            "ticker": "APO",
+            "reason": "no longer a growth company"
+          },
+          {
+            "asOf": "2025-06-30",
+            "ticker": "NEM",
+            "reason": "fell to the bottom half of growth names"
+          },
+          {
+            "asOf": "2025-09-30",
+            "ticker": "PEGA",
+            "reason": "no longer a growth company"
+          },
+          {
+            "asOf": "2025-09-30",
+            "ticker": "EXEL",
+            "reason": "no longer a growth company"
+          },
+          {
+            "asOf": "2025-09-30",
+            "ticker": "FRHC",
+            "reason": "dropped out of top 25"
+          }
+        ],
+        "averageHoldings": 10,
+        "vsEqualWeightUniverse": 0.14469048175828636,
+        "portfolioCAGR": 0.26840408138348937,
+        "spyCAGR": 0.16192702182436003,
+        "annualizedExcess": 0.10647705955912934,
+        "annualVolatility": 0.33776361634553914,
+        "periodEndMaxDrawdown": -0.24495469584170482,
+        "beatSpyRate": 0.52,
+        "periodCount": 25,
+        "yearCount": 6.25,
+        "finalWealth10k": 44193.68262620826,
+        "spyFinalWealth10k": 25548.642170925443,
+        "development": {
+          "portfolioCAGR": 0.38506302206773535,
+          "spyCAGR": 0.20899564094378942,
+          "annualizedExcess": 0.17606738112394593,
+          "annualVolatility": 0.38939259554138245,
+          "periodEndMaxDrawdown": -0.24495469584170482,
+          "beatSpyRate": 0.6,
+          "periodCount": 10,
+          "yearCount": 2.5,
+          "finalWealth10k": 22577.3952994884,
+          "spyFinalWealth10k": 16071.700754729043
+        },
+        "validation": {
+          "portfolioCAGR": 0.19614279366255905,
+          "spyCAGR": 0.1315704463969023,
+          "annualizedExcess": 0.06457234726565675,
+          "annualVolatility": 0.3077357192564617,
+          "periodEndMaxDrawdown": -0.23071660995213328,
+          "beatSpyRate": 0.4666666666666667,
+          "periodCount": 15,
+          "yearCount": 3.75,
+          "finalWealth10k": 19574.305202163727,
+          "spyFinalWealth10k": 15896.663682845046
+        },
+        "attribution": {
+          "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
+          "distinctStocks": 100,
+          "totalExcessContribution": 0.7884,
+          "topShareOfExcess": {
+            "1": 0.3665,
+            "3": 0.7761,
+            "5": 1.1167,
+            "10": 1.5523
+          },
+          "topContributors": [
+            {
+              "ticker": "APP",
+              "quarters": 6,
+              "avgWeight": 0.1,
+              "returnWhileHeld": 6.2898,
+              "contribution": 0.3144,
+              "excessContribution": 0.2889,
+              "first": "2024-06-30",
+              "last": "2025-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "PLTR",
+              "quarters": 5,
+              "avgWeight": 0.1,
+              "returnWhileHeld": 3.6039,
+              "contribution": 0.2055,
+              "excessContribution": 0.1846,
+              "first": "2024-09-30",
+              "last": "2025-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "NVDA",
+              "quarters": 8,
+              "avgWeight": 0.1,
+              "returnWhileHeld": 2.9228,
+              "contribution": 0.1794,
+              "excessContribution": 0.1383,
+              "first": "2023-12-31",
+              "last": "2025-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "TSLA",
+              "quarters": 6,
+              "avgWeight": 0.1,
+              "returnWhileHeld": 2.5095,
+              "contribution": 0.169,
+              "excessContribution": 0.1351,
+              "first": "2020-06-30",
+              "last": "2022-06-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "ZG",
+              "quarters": 3,
+              "avgWeight": 0.1,
+              "returnWhileHeld": 1.3902,
+              "contribution": 0.1454,
+              "excessContribution": 0.1335,
+              "first": "2019-12-31",
+              "last": "2020-06-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "Z",
+              "quarters": 3,
+              "avgWeight": 0.1,
+              "returnWhileHeld": 1.3785,
+              "contribution": 0.1394,
+              "excessContribution": 0.1276,
+              "first": "2019-12-31",
+              "last": "2020-06-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "CVNA",
+              "quarters": 3,
+              "avgWeight": 0.1,
+              "returnWhileHeld": 0.8827,
+              "contribution": 0.0772,
+              "excessContribution": 0.0558,
+              "first": "2025-03-31",
+              "last": "2025-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "KKR",
+              "quarters": 3,
+              "avgWeight": 0.1,
+              "returnWhileHeld": 0.8005,
+              "contribution": 0.0663,
+              "excessContribution": 0.0541,
+              "first": "2023-06-30",
+              "last": "2024-06-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "BLDR",
+              "quarters": 4,
+              "avgWeight": 0.1,
+              "returnWhileHeld": 0.3155,
+              "contribution": 0.0453,
+              "excessContribution": 0.054,
+              "first": "2021-06-30",
+              "last": "2022-03-31",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "MRNA",
+              "quarters": 4,
+              "avgWeight": 0.1,
+              "returnWhileHeld": 0.3323,
+              "contribution": 0.0665,
+              "excessContribution": 0.052,
+              "first": "2021-03-31",
+              "last": "2021-12-31",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "AVGO",
+              "quarters": 3,
+              "avgWeight": 0.1,
+              "returnWhileHeld": 0.7338,
+              "contribution": 0.0632,
+              "excessContribution": 0.0507,
+              "first": "2024-03-31",
+              "last": "2024-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "FANG",
+              "quarters": 5,
+              "avgWeight": 0.1,
+              "returnWhileHeld": 0.4243,
+              "contribution": 0.0398,
+              "excessContribution": 0.0488,
+              "first": "2021-09-30",
+              "last": "2022-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "NOW",
+              "quarters": 3,
+              "avgWeight": 0.1,
+              "returnWhileHeld": 0.6663,
+              "contribution": 0.0628,
+              "excessContribution": 0.0486,
+              "first": "2019-09-30",
+              "last": "2020-03-31",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "VST",
+              "quarters": 3,
+              "avgWeight": 0.1,
+              "returnWhileHeld": 0.5174,
+              "contribution": 0.0558,
+              "excessContribution": 0.0459,
+              "first": "2024-09-30",
+              "last": "2025-03-31",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "LNG",
+              "quarters": 7,
+              "avgWeight": 0.1,
+              "returnWhileHeld": 0.3009,
+              "contribution": 0.0391,
+              "excessContribution": 0.0394,
+              "first": "2021-12-31",
+              "last": "2025-09-30",
+              "missingPriceQuarters": 0
+            }
+          ],
+          "bottomContributors": [
+            {
+              "ticker": "CELH",
+              "quarters": 5,
+              "avgWeight": 0.1,
+              "returnWhileHeld": -0.5533,
+              "contribution": -0.0513,
+              "excessContribution": -0.0851,
+              "first": "2023-09-30",
+              "last": "2025-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "DUOL",
+              "quarters": 2,
+              "avgWeight": 0.1,
+              "returnWhileHeld": -0.5621,
+              "contribution": -0.0665,
+              "excessContribution": -0.0776,
+              "first": "2025-06-30",
+              "last": "2025-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "INSP",
+              "quarters": 2,
+              "avgWeight": 0.1,
+              "returnWhileHeld": -0.4121,
+              "contribution": -0.0426,
+              "excessContribution": -0.0503,
+              "first": "2023-06-30",
+              "last": "2023-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "NVAX",
+              "quarters": 2,
+              "avgWeight": 0.1,
+              "returnWhileHeld": -0.3377,
+              "contribution": -0.0371,
+              "excessContribution": -0.0487,
+              "first": "2021-06-30",
+              "last": "2021-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "ALGM",
+              "quarters": 2,
+              "avgWeight": 0.1,
+              "returnWhileHeld": -0.3479,
+              "contribution": -0.037,
+              "excessContribution": -0.0447,
+              "first": "2023-06-30",
+              "last": "2023-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "VRTX",
+              "quarters": 2,
+              "avgWeight": 0.1,
+              "returnWhileHeld": -0.1986,
+              "contribution": -0.0206,
+              "excessContribution": -0.0394,
+              "first": "2020-06-30",
+              "last": "2020-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "AR",
+              "quarters": 2,
+              "avgWeight": 0.1,
+              "returnWhileHeld": -0.2383,
+              "contribution": -0.0253,
+              "excessContribution": -0.0379,
+              "first": "2022-09-30",
+              "last": "2022-12-31",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "TDOC",
+              "quarters": 2,
+              "avgWeight": 0.1,
+              "returnWhileHeld": -0.1717,
+              "contribution": -0.018,
+              "excessContribution": -0.0368,
+              "first": "2020-09-30",
+              "last": "2020-12-31",
+              "missingPriceQuarters": 0
+            }
+          ],
+          "withoutTop": {
+            "1": {
+              "removed": [
+                "APP"
+              ],
+              "portfolioCAGR": 0.22281005985564883,
+              "annualizedExcess": 0.060883038031288805,
+              "developmentExcess": 0.17606738112394593,
+              "validationExcess": -0.006226406774322069
+            },
+            "3": {
+              "removed": [
+                "APP",
+                "PLTR",
+                "NVDA"
+              ],
+              "portfolioCAGR": 0.1696892103870269,
+              "annualizedExcess": 0.007762188562666861,
+              "developmentExcess": 0.17606738112394593,
+              "validationExcess": -0.08651872917408387
+            },
+            "5": {
+              "removed": [
+                "APP",
+                "PLTR",
+                "NVDA",
+                "TSLA",
+                "ZG"
+              ],
+              "portfolioCAGR": 0.1314983406391237,
+              "annualizedExcess": -0.03042868118523634,
+              "developmentExcess": 0.0706798445174166,
+              "validationExcess": -0.08919708987483976
+            },
+            "10": {
+              "removed": [
+                "APP",
+                "PLTR",
+                "NVDA",
+                "TSLA",
+                "ZG",
+                "Z",
+                "CVNA",
+                "KKR",
+                "BLDR",
+                "MRNA"
+              ],
+              "portfolioCAGR": 0.07821589100643878,
+              "annualizedExcess": -0.08371113081792125,
+              "developmentExcess": -0.02508259890551967,
+              "validationExcess": -0.11852325400086428
+            }
+          }
+        },
+        "holdingsByQuarter": [
+          {
+            "quarterStart": "2019-09-30",
+            "spyReturn": 0.1133,
+            "holdings": [
+              [
+                "IONS",
+                0.1,
+                0.0656
+              ],
+              [
+                "KDP",
+                0.1,
+                0.0744
+              ],
+              [
+                "ZS",
+                0.1,
+                0.0066
+              ],
+              [
+                "INVH",
+                0.1,
+                -0.0013
+              ],
+              [
+                "FSLR",
+                0.1,
+                0.0171
+              ],
+              [
+                "WPC",
+                0.1,
+                -0.1113
+              ],
+              [
+                "CBOE",
+                0.1,
+                0.0371
+              ],
+              [
+                "TWLO",
+                0.1,
+                -0.06
+              ],
+              [
+                "NOW",
+                0.1,
+                0.1644
+              ],
+              [
+                "MKTX",
+                0.1,
+                0.1716
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2019-12-31",
+            "spyReturn": -0.2379,
+            "holdings": [
+              [
+                "INVH",
+                0.1,
+                -0.3086
+              ],
+              [
+                "CBOE",
+                0.1,
+                -0.26
+              ],
+              [
+                "NOW",
+                0.1,
+                -0.0624
+              ],
+              [
+                "MKTX",
+                0.1,
+                -0.1201
+              ],
+              [
+                "LHX",
+                0.1,
+                -0.1246
+              ],
+              [
+                "QCOM",
+                0.1,
+                -0.2511
+              ],
+              [
+                "ZG",
+                0.1,
+                -0.3324
+              ],
+              [
+                "Z",
+                0.1,
+                -0.3046
+              ],
+              [
+                "EQH",
+                0.1,
+                -0.4594
+              ],
+              [
+                "NBIX",
+                0.1,
+                -0.2143
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2020-03-31",
+            "spyReturn": 0.2671,
+            "holdings": [
+              [
+                "INVH",
+                0.1,
+                0.4087
+              ],
+              [
+                "CBOE",
+                0.1,
+                0.0977
+              ],
+              [
+                "NOW",
+                0.1,
+                0.5263
+              ],
+              [
+                "MKTX",
+                0.1,
+                0.5168
+              ],
+              [
+                "LHX",
+                0.1,
+                -0.0336
+              ],
+              [
+                "ZG",
+                0.1,
+                0.9507
+              ],
+              [
+                "Z",
+                0.1,
+                0.8737
+              ],
+              [
+                "EQH",
+                0.1,
+                0.424
+              ],
+              [
+                "NBIX",
+                0.1,
+                0.4789
+              ],
+              [
+                "DXCM",
+                0.1,
+                0.5706
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2020-06-30",
+            "spyReturn": 0.0898,
+            "holdings": [
+              [
+                "CBOE",
+                0.1,
+                -0.0773
+              ],
+              [
+                "MKTX",
+                0.1,
+                -0.0444
+              ],
+              [
+                "ZG",
+                0.1,
+                0.8355
+              ],
+              [
+                "Z",
+                0.1,
+                0.8253
+              ],
+              [
+                "NBIX",
+                0.1,
+                -0.2255
+              ],
+              [
+                "DXCM",
+                0.1,
+                0.0341
+              ],
+              [
+                "VRTX",
+                0.1,
+                -0.0446
+              ],
+              [
+                "ZM",
+                0.1,
+                0.8639
+              ],
+              [
+                "TSLA",
+                0.1,
+                1.0014
+              ],
+              [
+                "BMY",
+                0.1,
+                0.0219
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2020-09-30",
+            "spyReturn": 0.0989,
+            "holdings": [
+              [
+                "MKTX",
+                0.1,
+                0.1665
+              ],
+              [
+                "NBIX",
+                0.1,
+                -0.0163
+              ],
+              [
+                "DXCM",
+                0.1,
+                -0.1356
+              ],
+              [
+                "VRTX",
+                0.1,
+                -0.1612
+              ],
+              [
+                "ZM",
+                0.1,
+                -0.2547
+              ],
+              [
+                "BMY",
+                0.1,
+                0.0343
+              ],
+              [
+                "ETSY",
+                0.1,
+                0.3067
+              ],
+              [
+                "XYZ",
+                0.1,
+                0.3126
+              ],
+              [
+                "IR",
+                0.1,
+                0.2457
+              ],
+              [
+                "TDOC",
+                0.1,
+                -0.0909
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2020-12-31",
+            "spyReturn": 0.0898,
+            "holdings": [
+              [
+                "ZM",
+                0.1,
+                -0.0938
+              ],
+              [
+                "ETSY",
+                0.1,
+                0.2099
+              ],
+              [
+                "XYZ",
+                0.1,
+                0.0378
+              ],
+              [
+                "IR",
+                0.1,
+                0.1196
+              ],
+              [
+                "TDOC",
+                0.1,
+                -0.0889
+              ],
+              [
+                "PTON",
+                0.1,
+                -0.232
+              ],
+              [
+                "TSLA",
+                0.1,
+                -0.0932
+              ],
+              [
+                "CRWD",
+                0.1,
+                -0.0671
+              ],
+              [
+                "TMUS",
+                0.1,
+                -0.0361
+              ],
+              [
+                "ABBV",
+                0.1,
+                0.0415
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2021-03-31",
+            "spyReturn": 0.078,
+            "holdings": [
+              [
+                "ZM",
+                0.1,
+                0.1847
+              ],
+              [
+                "ETSY",
+                0.1,
+                -0.0417
+              ],
+              [
+                "XYZ",
+                0.1,
+                0.0538
+              ],
+              [
+                "PTON",
+                0.1,
+                0.0898
+              ],
+              [
+                "TSLA",
+                0.1,
+                0.0244
+              ],
+              [
+                "CRWD",
+                0.1,
+                0.3429
+              ],
+              [
+                "MRNA",
+                0.1,
+                0.7737
+              ],
+              [
+                "W",
+                0.1,
+                -0.0902
+              ],
+              [
+                "FSLR",
+                0.1,
+                0.0467
+              ],
+              [
+                "CHGG",
+                0.1,
+                -0.0561
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2021-06-30",
+            "spyReturn": 0.0121,
+            "holdings": [
+              [
+                "ETSY",
+                0.1,
+                0.0244
+              ],
+              [
+                "XYZ",
+                0.1,
+                -0.0106
+              ],
+              [
+                "TSLA",
+                0.1,
+                0.1435
+              ],
+              [
+                "MRNA",
+                0.1,
+                0.4508
+              ],
+              [
+                "NVAX",
+                0.1,
+                -0.1583
+              ],
+              [
+                "DKS",
+                0.1,
+                0.2547
+              ],
+              [
+                "LPX",
+                0.1,
+                0.0373
+              ],
+              [
+                "ENPH",
+                0.1,
+                -0.1515
+              ],
+              [
+                "RVTY",
+                0.1,
+                0.1234
+              ],
+              [
+                "BLDR",
+                0.1,
+                0.2125
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2021-09-30",
+            "spyReturn": 0.104,
+            "holdings": [
+              [
+                "TSLA",
+                0.1,
+                0.5477
+              ],
+              [
+                "MRNA",
+                0.1,
+                -0.3109
+              ],
+              [
+                "NVAX",
+                0.1,
+                -0.2131
+              ],
+              [
+                "LPX",
+                0.1,
+                0.25
+              ],
+              [
+                "ENPH",
+                0.1,
+                0.1872
+              ],
+              [
+                "BLDR",
+                0.1,
+                0.5765
+              ],
+              [
+                "CG",
+                0.1,
+                0.1362
+              ],
+              [
+                "NRG",
+                0.1,
+                0.065
+              ],
+              [
+                "FANG",
+                0.1,
+                0.1362
+              ],
+              [
+                "TNL",
+                0.1,
+                0.0028
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2021-12-31",
+            "spyReturn": -0.0489,
+            "holdings": [
+              [
+                "MRNA",
+                0.1,
+                -0.2487
+              ],
+              [
+                "ENPH",
+                0.1,
+                0.1162
+              ],
+              [
+                "BLDR",
+                0.1,
+                -0.231
+              ],
+              [
+                "CG",
+                0.1,
+                -0.0835
+              ],
+              [
+                "FANG",
+                0.1,
+                0.2433
+              ],
+              [
+                "BX",
+                0.1,
+                0.0229
+              ],
+              [
+                "PFE",
+                0.1,
+                -0.0828
+              ],
+              [
+                "CBOE",
+                0.1,
+                -0.0866
+              ],
+              [
+                "LNG",
+                0.1,
+                0.3904
+              ],
+              [
+                "NUE",
+                0.1,
+                0.3248
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2022-03-31",
+            "spyReturn": -0.1546,
+            "holdings": [
+              [
+                "BLDR",
+                0.1,
+                -0.105
+              ],
+              [
+                "FANG",
+                0.1,
+                -0.1034
+              ],
+              [
+                "BX",
+                0.1,
+                -0.2666
+              ],
+              [
+                "PFE",
+                0.1,
+                0.0226
+              ],
+              [
+                "CBOE",
+                0.1,
+                -0.0142
+              ],
+              [
+                "LNG",
+                0.1,
+                -0.0693
+              ],
+              [
+                "NUE",
+                0.1,
+                -0.2889
+              ],
+              [
+                "EOG",
+                0.1,
+                -0.0539
+              ],
+              [
+                "TRGP",
+                0.1,
+                -0.2076
+              ],
+              [
+                "COP",
+                0.1,
+                -0.0843
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2022-06-30",
+            "spyReturn": -0.0344,
+            "holdings": [
+              [
+                "FANG",
+                0.1,
+                0.0936
+              ],
+              [
+                "LNG",
+                0.1,
+                0.271
+              ],
+              [
+                "CF",
+                0.1,
+                0.1807
+              ],
+              [
+                "SSRM",
+                0.1,
+                -0.1328
+              ],
+              [
+                "MOS",
+                0.1,
+                0.0565
+              ],
+              [
+                "WLK",
+                0.1,
+                -0.0835
+              ],
+              [
+                "AMD",
+                0.1,
+                -0.1026
+              ],
+              [
+                "TSLA",
+                0.1,
+                0.0666
+              ],
+              [
+                "H",
+                0.1,
+                0.0963
+              ],
+              [
+                "P",
+                0.1,
+                0.1191
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2022-09-30",
+            "spyReturn": 0.0435,
+            "holdings": [
+              [
+                "FANG",
+                0.1,
+                0.0283
+              ],
+              [
+                "LNG",
+                0.1,
+                -0.1582
+              ],
+              [
+                "CF",
+                0.1,
+                -0.1798
+              ],
+              [
+                "MOS",
+                0.1,
+                -0.1352
+              ],
+              [
+                "H",
+                0.1,
+                0.0775
+              ],
+              [
+                "AR",
+                0.1,
+                -0.0859
+              ],
+              [
+                "EXE",
+                0.1,
+                -0.1017
+              ],
+              [
+                "OVV",
+                0.1,
+                -0.0599
+              ],
+              [
+                "RRC",
+                0.1,
+                -0.1124
+              ],
+              [
+                "OXY",
+                0.1,
+                -0.045
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2022-12-31",
+            "spyReturn": 0.0832,
+            "holdings": [
+              [
+                "LNG",
+                0.1,
+                0.1284
+              ],
+              [
+                "MOS",
+                0.1,
+                0.1021
+              ],
+              [
+                "AR",
+                0.1,
+                -0.1668
+              ],
+              [
+                "EXE",
+                0.1,
+                -0.0936
+              ],
+              [
+                "OVV",
+                0.1,
+                -0.1351
+              ],
+              [
+                "RRC",
+                0.1,
+                0.1529
+              ],
+              [
+                "EOG",
+                0.1,
+                -0.0091
+              ],
+              [
+                "COP",
+                0.1,
+                -0.0313
+              ],
+              [
+                "VLO",
+                0.1,
+                0.1625
+              ],
+              [
+                "ALB",
+                0.1,
+                0.0202
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2023-03-31",
+            "spyReturn": 0.0839,
+            "holdings": [
+              [
+                "LNG",
+                0.1,
+                -0.0254
+              ],
+              [
+                "EXE",
+                0.1,
+                0.1063
+              ],
+              [
+                "EOG",
+                0.1,
+                -0.0489
+              ],
+              [
+                "COP",
+                0.1,
+                -0.0279
+              ],
+              [
+                "VLO",
+                0.1,
+                -0.1445
+              ],
+              [
+                "ALB",
+                0.1,
+                0.0514
+              ],
+              [
+                "DINO",
+                0.1,
+                -0.0713
+              ],
+              [
+                "VICI",
+                0.1,
+                -0.0082
+              ],
+              [
+                "WSC",
+                0.1,
+                0.0257
+              ],
+              [
+                "ALNY",
+                0.1,
+                -0.0549
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2023-06-30",
+            "spyReturn": -0.0337,
+            "holdings": [
+              [
+                "EXE",
+                0.1,
+                0.0052
+              ],
+              [
+                "VICI",
+                0.1,
+                -0.0877
+              ],
+              [
+                "ALNY",
+                0.1,
+                -0.0566
+              ],
+              [
+                "BKNG",
+                0.1,
+                0.1371
+              ],
+              [
+                "INSP",
+                0.1,
+                -0.3905
+              ],
+              [
+                "RRC",
+                0.1,
+                0.0404
+              ],
+              [
+                "LVS",
+                0.1,
+                -0.2173
+              ],
+              [
+                "KKR",
+                0.1,
+                0.0824
+              ],
+              [
+                "ALGM",
+                0.1,
+                -0.2949
+              ],
+              [
+                "MGM",
+                0.1,
+                -0.16
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2023-09-30",
+            "spyReturn": 0.1106,
+            "holdings": [
+              [
+                "BKNG",
+                0.1,
+                0.125
+              ],
+              [
+                "INSP",
+                0.1,
+                -0.0355
+              ],
+              [
+                "LVS",
+                0.1,
+                0.1278
+              ],
+              [
+                "KKR",
+                0.1,
+                0.3365
+              ],
+              [
+                "ALGM",
+                0.1,
+                -0.0751
+              ],
+              [
+                "APA",
+                0.1,
+                -0.0812
+              ],
+              [
+                "BX",
+                0.1,
+                0.2075
+              ],
+              [
+                "CELH",
+                0.1,
+                0.0178
+              ],
+              [
+                "BKR",
+                0.1,
+                -0.0127
+              ],
+              [
+                "RBA",
+                0.1,
+                0.0689
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2023-12-31",
+            "spyReturn": 0.1082,
+            "holdings": [
+              [
+                "BKNG",
+                0.1,
+                0.028
+              ],
+              [
+                "BX",
+                0.1,
+                0.0293
+              ],
+              [
+                "CELH",
+                0.1,
+                0.3981
+              ],
+              [
+                "RBA",
+                0.1,
+                0.1578
+              ],
+              [
+                "TREX",
+                0.1,
+                0.2139
+              ],
+              [
+                "LLY",
+                0.1,
+                0.2865
+              ],
+              [
+                "TDG",
+                0.1,
+                0.2235
+              ],
+              [
+                "NVDA",
+                0.1,
+                0.8761
+              ],
+              [
+                "ZS",
+                0.1,
+                -0.0953
+              ],
+              [
+                "CBOE",
+                0.1,
+                0.0235
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2024-03-31",
+            "spyReturn": 0.0478,
+            "holdings": [
+              [
+                "BX",
+                0.1,
+                -0.0608
+              ],
+              [
+                "CELH",
+                0.1,
+                -0.2992
+              ],
+              [
+                "RBA",
+                0.1,
+                -0.0087
+              ],
+              [
+                "TREX",
+                0.1,
+                -0.2584
+              ],
+              [
+                "LLY",
+                0.1,
+                0.2043
+              ],
+              [
+                "TDG",
+                0.1,
+                0.0319
+              ],
+              [
+                "NVDA",
+                0.1,
+                0.3757
+              ],
+              [
+                "ZS",
+                0.1,
+                0.0338
+              ],
+              [
+                "CBOE",
+                0.1,
+                -0.0517
+              ],
+              [
+                "AVGO",
+                0.1,
+                0.219
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2024-06-30",
+            "spyReturn": 0.0459,
+            "holdings": [
+              [
+                "BX",
+                0.1,
+                0.2495
+              ],
+              [
+                "CELH",
+                0.1,
+                -0.4606
+              ],
+              [
+                "NVDA",
+                0.1,
+                -0.0586
+              ],
+              [
+                "CBOE",
+                0.1,
+                0.2249
+              ],
+              [
+                "AVGO",
+                0.1,
+                0.024
+              ],
+              [
+                "APP",
+                0.1,
+                0.5403
+              ],
+              [
+                "OWL",
+                0.1,
+                0.1067
+              ],
+              [
+                "NTRA",
+                0.1,
+                0.1798
+              ],
+              [
+                "KKR",
+                0.1,
+                0.2446
+              ],
+              [
+                "UTHR",
+                0.1,
+                0.1217
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2024-09-30",
+            "spyReturn": 0.0316,
+            "holdings": [
+              [
+                "NVDA",
+                0.1,
+                0.1822
+              ],
+              [
+                "CBOE",
+                0.1,
+                -0.0616
+              ],
+              [
+                "AVGO",
+                0.1,
+                0.3889
+              ],
+              [
+                "APP",
+                0.1,
+                1.616
+              ],
+              [
+                "OWL",
+                0.1,
+                0.2188
+              ],
+              [
+                "NTRA",
+                0.1,
+                0.2627
+              ],
+              [
+                "VST",
+                0.1,
+                0.2232
+              ],
+              [
+                "PLTR",
+                0.1,
+                1.0623
+              ],
+              [
+                "FIX",
+                0.1,
+                0.1008
+              ],
+              [
+                "WING",
+                0.1,
+                -0.3055
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2024-12-31",
+            "spyReturn": -0.0376,
+            "holdings": [
+              [
+                "NVDA",
+                0.1,
+                -0.2035
+              ],
+              [
+                "CBOE",
+                0.1,
+                0.1491
+              ],
+              [
+                "APP",
+                0.1,
+                -0.1729
+              ],
+              [
+                "OWL",
+                0.1,
+                -0.1279
+              ],
+              [
+                "NTRA",
+                0.1,
+                -0.1242
+              ],
+              [
+                "VST",
+                0.1,
+                -0.1818
+              ],
+              [
+                "PLTR",
+                0.1,
+                0.1262
+              ],
+              [
+                "FIX",
+                0.1,
+                -0.2289
+              ],
+              [
+                "APO",
+                0.1,
+                -0.1634
+              ],
+              [
+                "SMCI",
+                0.1,
+                0.1664
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2025-03-31",
+            "spyReturn": 0.1043,
+            "holdings": [
+              [
+                "NVDA",
+                0.1,
+                0.3918
+              ],
+              [
+                "CBOE",
+                0.1,
+                0.0338
+              ],
+              [
+                "APP",
+                0.1,
+                0.191
+              ],
+              [
+                "OWL",
+                0.1,
+                -0.048
+              ],
+              [
+                "NTRA",
+                0.1,
+                0.1427
+              ],
+              [
+                "VST",
+                0.1,
+                0.5162
+              ],
+              [
+                "PLTR",
+                0.1,
+                0.5432
+              ],
+              [
+                "APO",
+                0.1,
+                0.0272
+              ],
+              [
+                "CVNA",
+                0.1,
+                0.5911
+              ],
+              [
+                "NEM",
+                0.1,
+                0.224
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2025-06-30",
+            "spyReturn": 0.0852,
+            "holdings": [
+              [
+                "NVDA",
+                0.1,
+                0.2215
+              ],
+              [
+                "CBOE",
+                0.1,
+                0.0413
+              ],
+              [
+                "APP",
+                0.1,
+                1.0912
+              ],
+              [
+                "PLTR",
+                0.1,
+                0.4153
+              ],
+              [
+                "CVNA",
+                0.1,
+                0.169
+              ],
+              [
+                "PEGA",
+                0.1,
+                0.0872
+              ],
+              [
+                "EXEL",
+                0.1,
+                -0.0555
+              ],
+              [
+                "FRHC",
+                0.1,
+                0.1717
+              ],
+              [
+                "DUOL",
+                0.1,
+                -0.2465
+              ],
+              [
+                "HOOD",
+                0.1,
+                0.507
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2025-09-30",
+            "spyReturn": 0.025,
+            "holdings": [
+              [
+                "NVDA",
+                0.1,
+                0.0087
+              ],
+              [
+                "CBOE",
+                0.1,
+                0.0271
+              ],
+              [
+                "APP",
+                0.1,
+                -0.1218
+              ],
+              [
+                "PLTR",
+                0.1,
+                -0.0924
+              ],
+              [
+                "CVNA",
+                0.1,
+                0.0122
+              ],
+              [
+                "DUOL",
+                0.1,
+                -0.4189
+              ],
+              [
+                "HOOD",
+                0.1,
+                -0.172
+              ],
+              [
+                "CELH",
+                0.1,
+                -0.1696
+              ],
+              [
+                "UI",
+                0.1,
+                -0.1591
+              ],
+              [
+                "LNG",
+                0.1,
+                -0.1455
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "H · 70% arm C (value rules) + 30% arm G (growth sleeve)",
+        "averageHoldings": null,
+        "vsEqualWeightUniverse": 0.13610526448109628,
+        "portfolioCAGR": 0.2598188641062993,
+        "spyCAGR": 0.16192702182436003,
+        "annualizedExcess": 0.09789184228193926,
+        "annualVolatility": 0.2597256121735156,
+        "periodEndMaxDrawdown": -0.21915405219399375,
+        "beatSpyRate": 0.64,
+        "periodCount": 25,
+        "yearCount": 6.25,
+        "finalWealth10k": 42357.046431529416,
+        "spyFinalWealth10k": 25548.642170925443,
+        "development": {
+          "portfolioCAGR": 0.35061652992702963,
+          "spyCAGR": 0.20899564094378942,
+          "annualizedExcess": 0.1416208889832402,
+          "annualVolatility": 0.3330223050302511,
+          "periodEndMaxDrawdown": -0.21915405219399375,
+          "beatSpyRate": 0.7,
+          "periodCount": 10,
+          "yearCount": 2.5,
+          "finalWealth10k": 21199.72130456485,
+          "spyFinalWealth10k": 16071.700754729043
+        },
+        "validation": {
+          "portfolioCAGR": 0.20270413643085394,
+          "spyCAGR": 0.1315704463969023,
+          "annualizedExcess": 0.07113369003395165,
+          "annualVolatility": 0.20478200804849686,
+          "periodEndMaxDrawdown": -0.17562534007556452,
+          "beatSpyRate": 0.6,
+          "periodCount": 15,
+          "yearCount": 3.75,
+          "finalWealth10k": 19980.001540118767,
+          "spyFinalWealth10k": 15896.663682845046
+        },
+        "attribution": {
+          "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
+          "distinctStocks": 126,
+          "totalExcessContribution": 0.6113,
+          "topShareOfExcess": {
+            "1": 0.1429,
+            "3": 0.4259,
+            "5": 0.6435,
+            "10": 0.9769
+          },
+          "topContributors": [
+            {
+              "ticker": "KLAC",
+              "quarters": 25,
+              "avgWeight": 0.0578,
+              "returnWhileHeld": 7.6926,
+              "contribution": 0.1486,
+              "excessContribution": 0.0873,
+              "first": "2019-09-30",
+              "last": "2025-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "APP",
+              "quarters": 6,
+              "avgWeight": 0.03,
+              "returnWhileHeld": 6.2898,
+              "contribution": 0.0943,
+              "excessContribution": 0.0867,
+              "first": "2024-06-30",
+              "last": "2025-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "TTD",
+              "quarters": 7,
+              "avgWeight": 0.0839,
+              "returnWhileHeld": 4.2298,
+              "contribution": 0.141,
+              "excessContribution": 0.0863,
+              "first": "2020-03-31",
+              "last": "2021-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "META",
+              "quarters": 24,
+              "avgWeight": 0.0711,
+              "returnWhileHeld": 3.1054,
+              "contribution": 0.1592,
+              "excessContribution": 0.0776,
+              "first": "2019-09-30",
+              "last": "2025-06-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "PLTR",
+              "quarters": 5,
+              "avgWeight": 0.03,
+              "returnWhileHeld": 3.6039,
+              "contribution": 0.0616,
+              "excessContribution": 0.0554,
+              "first": "2024-09-30",
+              "last": "2025-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "FTNT",
+              "quarters": 22,
+              "avgWeight": 0.0554,
+              "returnWhileHeld": 3.6695,
+              "contribution": 0.0849,
+              "excessContribution": 0.0435,
+              "first": "2019-12-31",
+              "last": "2025-03-31",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "NVDA",
+              "quarters": 8,
+              "avgWeight": 0.03,
+              "returnWhileHeld": 2.9228,
+              "contribution": 0.0538,
+              "excessContribution": 0.0415,
+              "first": "2023-12-31",
+              "last": "2025-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "TSLA",
+              "quarters": 6,
+              "avgWeight": 0.03,
+              "returnWhileHeld": 2.5095,
+              "contribution": 0.0507,
+              "excessContribution": 0.0405,
+              "first": "2020-06-30",
+              "last": "2022-06-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "ZG",
+              "quarters": 3,
+              "avgWeight": 0.03,
+              "returnWhileHeld": 1.3902,
+              "contribution": 0.0436,
+              "excessContribution": 0.04,
+              "first": "2019-12-31",
+              "last": "2020-06-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "Z",
+              "quarters": 3,
+              "avgWeight": 0.03,
+              "returnWhileHeld": 1.3785,
+              "contribution": 0.0418,
+              "excessContribution": 0.0383,
+              "first": "2019-12-31",
+              "last": "2020-06-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "AAPL",
+              "quarters": 6,
+              "avgWeight": 0.0618,
+              "returnWhileHeld": 1.2195,
+              "contribution": 0.0583,
+              "excessContribution": 0.0318,
+              "first": "2019-09-30",
+              "last": "2020-12-31",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "TPL",
+              "quarters": 8,
+              "avgWeight": 0.0635,
+              "returnWhileHeld": 1.4397,
+              "contribution": 0.0511,
+              "excessContribution": 0.026,
+              "first": "2023-06-30",
+              "last": "2025-03-31",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "UTHR",
+              "quarters": 3,
+              "avgWeight": 0.0412,
+              "returnWhileHeld": 0.9152,
+              "contribution": 0.0305,
+              "excessContribution": 0.0245,
+              "first": "2024-06-30",
+              "last": "2025-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "GOOG",
+              "quarters": 19,
+              "avgWeight": 0.0529,
+              "returnWhileHeld": 2.0653,
+              "contribution": 0.0624,
+              "excessContribution": 0.0226,
+              "first": "2019-09-30",
+              "last": "2024-03-31",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "WAL",
+              "quarters": 11,
+              "avgWeight": 0.0533,
+              "returnWhileHeld": 1.6255,
+              "contribution": 0.0533,
+              "excessContribution": 0.0225,
+              "first": "2023-03-31",
+              "last": "2025-09-30",
+              "missingPriceQuarters": 0
+            }
+          ],
+          "bottomContributors": [
+            {
+              "ticker": "PLTK",
+              "quarters": 14,
+              "avgWeight": 0.0317,
+              "returnWhileHeld": -0.7015,
+              "contribution": -0.0407,
+              "excessContribution": -0.0487,
+              "first": "2021-03-31",
+              "last": "2024-06-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "CELH",
+              "quarters": 5,
+              "avgWeight": 0.03,
+              "returnWhileHeld": -0.5533,
+              "contribution": -0.0154,
+              "excessContribution": -0.0255,
+              "first": "2023-09-30",
+              "last": "2025-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "WSC",
+              "quarters": 7,
+              "avgWeight": 0.0273,
+              "returnWhileHeld": -0.4585,
+              "contribution": -0.0148,
+              "excessContribution": -0.024,
+              "first": "2023-03-31",
+              "last": "2025-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "CROX",
+              "quarters": 6,
+              "avgWeight": 0.0341,
+              "returnWhileHeld": -0.4115,
+              "contribution": -0.0142,
+              "excessContribution": -0.0234,
+              "first": "2024-06-30",
+              "last": "2025-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "DUOL",
+              "quarters": 2,
+              "avgWeight": 0.03,
+              "returnWhileHeld": -0.5621,
+              "contribution": -0.02,
+              "excessContribution": -0.0233,
+              "first": "2025-06-30",
+              "last": "2025-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "CPB",
+              "quarters": 8,
+              "avgWeight": 0.041,
+              "returnWhileHeld": -0.0583,
+              "contribution": 0.0007,
+              "excessContribution": -0.0225,
+              "first": "2019-09-30",
+              "last": "2021-06-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "INSP",
+              "quarters": 2,
+              "avgWeight": 0.03,
+              "returnWhileHeld": -0.4121,
+              "contribution": -0.0128,
+              "excessContribution": -0.0151,
+              "first": "2023-06-30",
+              "last": "2023-09-30",
+              "missingPriceQuarters": 0
+            },
+            {
+              "ticker": "NVAX",
+              "quarters": 2,
+              "avgWeight": 0.03,
+              "returnWhileHeld": -0.3377,
+              "contribution": -0.0111,
+              "excessContribution": -0.0146,
+              "first": "2021-06-30",
+              "last": "2021-09-30",
+              "missingPriceQuarters": 0
+            }
+          ],
+          "withoutTop": {
+            "1": {
+              "removed": [
+                "KLAC"
+              ],
+              "portfolioCAGR": 0.24385241996760887,
+              "annualizedExcess": 0.08192539814324884,
+              "developmentExcess": 0.13239340325058802,
+              "validationExcess": 0.051230297844035544
+            },
+            "3": {
+              "removed": [
+                "KLAC",
+                "APP",
+                "TTD"
+              ],
+              "portfolioCAGR": 0.21594872699275358,
+              "annualizedExcess": 0.05402170516839355,
+              "developmentExcess": 0.09764702118934276,
+              "validationExcess": 0.02744052760559801
+            },
+            "5": {
+              "removed": [
+                "KLAC",
+                "APP",
+                "TTD",
+                "META",
+                "PLTR"
+              ],
+              "portfolioCAGR": 0.1941251781622404,
+              "annualizedExcess": 0.03219815633788037,
+              "developmentExcess": 0.10123365154582853,
+              "validationExcess": -0.009074220434145852
+            },
+            "10": {
+              "removed": [
+                "KLAC",
+                "APP",
+                "TTD",
+                "META",
+                "PLTR",
+                "FTNT",
+                "NVDA",
+                "TSLA",
+                "ZG",
+                "Z"
+              ],
+              "portfolioCAGR": 0.16097065509550967,
+              "annualizedExcess": -0.0009563667288503552,
+              "developmentExcess": 0.032298221590649545,
+              "validationExcess": -0.021239786611261247
+            }
+          }
+        },
+        "holdingsByQuarter": [
+          {
+            "quarterStart": "2019-09-30",
+            "spyReturn": 0.1133,
+            "holdings": [
+              [
+                "GOOG",
+                0.049,
+                0.1347
+              ],
+              [
+                "BKNG",
+                0.0455,
+                0.0488
+              ],
+              [
+                "AMZN",
+                0.042,
+                0.0935
+              ],
+              [
+                "CPB",
+                0.0455,
+                0.0435
+              ],
+              [
+                "KLAC",
+                0.0385,
+                0.159
+              ],
+              [
+                "AAPL",
+                0.049,
+                0.3413
+              ],
+              [
+                "FAST",
+                0.042,
+                0.2014
+              ],
+              [
+                "META",
+                0.042,
+                0.1932
+              ],
+              [
+                "IONS",
+                0.03,
+                0.0656
+              ],
+              [
+                "KDP",
+                0.03,
+                0.0744
+              ],
+              [
+                "ZS",
+                0.03,
+                0.0066
+              ],
+              [
+                "INVH",
+                0.03,
+                -0.0013
+              ],
+              [
+                "FSLR",
+                0.03,
+                0.0171
+              ],
+              [
+                "WPC",
+                0.03,
+                -0.1113
+              ],
+              [
+                "CBOE",
+                0.03,
+                0.0371
+              ],
+              [
+                "TWLO",
+                0.03,
+                -0.06
+              ],
+              [
+                "NOW",
+                0.03,
+                0.1644
+              ],
+              [
+                "MKTX",
+                0.03,
+                0.1716
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2019-12-31",
+            "spyReturn": -0.2379,
+            "holdings": [
+              [
+                "GOOG",
+                0.0491,
+                -0.1914
+              ],
+              [
+                "BKNG",
+                0.0421,
+                -0.387
+              ],
+              [
+                "AMZN",
+                0.0405,
+                0.0051
+              ],
+              [
+                "CPB",
+                0.0455,
+                -0.0449
+              ],
+              [
+                "KLAC",
+                0.0394,
+                -0.2756
+              ],
+              [
+                "AAPL",
+                0.058,
+                -0.196
+              ],
+              [
+                "FAST",
+                0.0445,
+                -0.172
+              ],
+              [
+                "META",
+                0.0442,
+                -0.2392
+              ],
+              [
+                "LRCX",
+                0.0455,
+                -0.2458
+              ],
+              [
+                "FTNT",
+                0.042,
+                -0.084
+              ],
+              [
+                "VST",
+                0.042,
+                -0.3229
+              ],
+              [
+                "INVH",
+                0.03,
+                -0.3086
+              ],
+              [
+                "CBOE",
+                0.03,
+                -0.26
+              ],
+              [
+                "NOW",
+                0.03,
+                -0.0624
+              ],
+              [
+                "MKTX",
+                0.03,
+                -0.1201
+              ],
+              [
+                "LHX",
+                0.03,
+                -0.1246
+              ],
+              [
+                "QCOM",
+                0.03,
+                -0.2511
+              ],
+              [
+                "ZG",
+                0.03,
+                -0.3324
+              ],
+              [
+                "Z",
+                0.03,
+                -0.3046
+              ],
+              [
+                "EQH",
+                0.03,
+                -0.4594
+              ],
+              [
+                "NBIX",
+                0.03,
+                -0.2143
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2020-03-31",
+            "spyReturn": 0.2671,
+            "holdings": [
+              [
+                "GOOG",
+                0.0501,
+                0.3007
+              ],
+              [
+                "BKNG",
+                0.049,
+                0.3045
+              ],
+              [
+                "AMZN",
+                0.0514,
+                0.509
+              ],
+              [
+                "CPB",
+                0.0549,
+                0.0805
+              ],
+              [
+                "KLAC",
+                0.036,
+                0.4747
+              ],
+              [
+                "AAPL",
+                0.0589,
+                0.5155
+              ],
+              [
+                "FAST",
+                0.0465,
+                0.4149
+              ],
+              [
+                "META",
+                0.0525,
+                0.4884
+              ],
+              [
+                "FTNT",
+                0.0486,
+                0.3857
+              ],
+              [
+                "BOKF",
+                0.049,
+                0.3063
+              ],
+              [
+                "TTD",
+                0.0455,
+                1.4907
+              ],
+              [
+                "INVH",
+                0.03,
+                0.4087
+              ],
+              [
+                "CBOE",
+                0.03,
+                0.0977
+              ],
+              [
+                "NOW",
+                0.03,
+                0.5263
+              ],
+              [
+                "MKTX",
+                0.03,
+                0.5168
+              ],
+              [
+                "LHX",
+                0.03,
+                -0.0336
+              ],
+              [
+                "ZG",
+                0.03,
+                0.9507
+              ],
+              [
+                "Z",
+                0.03,
+                0.8737
+              ],
+              [
+                "EQH",
+                0.03,
+                0.424
+              ],
+              [
+                "NBIX",
+                0.03,
+                0.4789
+              ],
+              [
+                "DXCM",
+                0.03,
+                0.5706
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2020-06-30",
+            "spyReturn": 0.0898,
+            "holdings": [
+              [
+                "GOOG",
+                0.0457,
+                0.0362
+              ],
+              [
+                "BKNG",
+                0.049,
+                0.0508
+              ],
+              [
+                "AMZN",
+                0.0545,
+                0.119
+              ],
+              [
+                "CPB",
+                0.0455,
+                -0.0091
+              ],
+              [
+                "KLAC",
+                0.0373,
+                0.0346
+              ],
+              [
+                "AAPL",
+                0.0627,
+                0.2853
+              ],
+              [
+                "FAST",
+                0.0462,
+                0.0464
+              ],
+              [
+                "META",
+                0.0549,
+                0.1224
+              ],
+              [
+                "FTNT",
+                0.0473,
+                -0.1363
+              ],
+              [
+                "BOKF",
+                0.045,
+                -0.0218
+              ],
+              [
+                "TTD",
+                0.0796,
+                0.2937
+              ],
+              [
+                "LRCX",
+                0.0455,
+                0.0723
+              ],
+              [
+                "FITB",
+                0.0385,
+                0.1557
+              ],
+              [
+                "CBOE",
+                0.03,
+                -0.0773
+              ],
+              [
+                "MKTX",
+                0.03,
+                -0.0444
+              ],
+              [
+                "ZG",
+                0.03,
+                0.8355
+              ],
+              [
+                "Z",
+                0.03,
+                0.8253
+              ],
+              [
+                "NBIX",
+                0.03,
+                -0.2255
+              ],
+              [
+                "DXCM",
+                0.03,
+                0.0341
+              ],
+              [
+                "VRTX",
+                0.03,
+                -0.0446
+              ],
+              [
+                "ZM",
+                0.03,
+                0.8639
+              ],
+              [
+                "TSLA",
+                0.03,
+                1.0014
+              ],
+              [
+                "BMY",
+                0.03,
+                0.0219
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2020-09-30",
+            "spyReturn": 0.0989,
+            "holdings": [
+              [
+                "GOOG",
+                0.049,
+                0.1598
+              ],
+              [
+                "AMZN",
+                0.0556,
+                -0.0108
+              ],
+              [
+                "CPB",
+                0.0411,
+                0.0075
+              ],
+              [
+                "KLAC",
+                0.042,
+                0.3134
+              ],
+              [
+                "AAPL",
+                0.0734,
+                0.11
+              ],
+              [
+                "FAST",
+                0.0441,
+                0.0792
+              ],
+              [
+                "META",
+                0.0562,
+                0.0087
+              ],
+              [
+                "FTNT",
+                0.0372,
+                0.2105
+              ],
+              [
+                "BOKF",
+                0.0401,
+                0.3547
+              ],
+              [
+                "TTD",
+                0.0939,
+                0.3931
+              ],
+              [
+                "LRCX",
+                0.0445,
+                0.4132
+              ],
+              [
+                "FITB",
+                0.0406,
+                0.3078
+              ],
+              [
+                "MKTX",
+                0.03,
+                0.1665
+              ],
+              [
+                "NBIX",
+                0.03,
+                -0.0163
+              ],
+              [
+                "DXCM",
+                0.03,
+                -0.1356
+              ],
+              [
+                "VRTX",
+                0.03,
+                -0.1612
+              ],
+              [
+                "ZM",
+                0.03,
+                -0.2547
+              ],
+              [
+                "BMY",
+                0.03,
+                0.0343
+              ],
+              [
+                "ETSY",
+                0.03,
+                0.3067
+              ],
+              [
+                "XYZ",
+                0.03,
+                0.3126
+              ],
+              [
+                "IR",
+                0.03,
+                0.2457
+              ],
+              [
+                "TDOC",
+                0.03,
+                -0.0909
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2020-12-31",
+            "spyReturn": 0.0898,
+            "holdings": [
+              [
+                "GOOG",
+                0.0479,
+                0.237
+              ],
+              [
+                "AMZN",
+                0.0463,
+                -0.008
+              ],
+              [
+                "CPB",
+                0.0349,
+                0.0377
+              ],
+              [
+                "KLAC",
+                0.0465,
+                0.3377
+              ],
+              [
+                "AAPL",
+                0.0687,
+                -0.0481
+              ],
+              [
+                "FAST",
+                0.0401,
+                0.0791
+              ],
+              [
+                "META",
+                0.0477,
+                0.1105
+              ],
+              [
+                "FTNT",
+                0.038,
+                0.2805
+              ],
+              [
+                "BOKF",
+                0.0458,
+                0.299
+              ],
+              [
+                "TTD",
+                0.1102,
+                -0.1482
+              ],
+              [
+                "LRCX",
+                0.053,
+                0.3406
+              ],
+              [
+                "FITB",
+                0.0447,
+                0.405
+              ],
+              [
+                "ZM",
+                0.03,
+                -0.0938
+              ],
+              [
+                "ETSY",
+                0.03,
+                0.2099
+              ],
+              [
+                "XYZ",
+                0.03,
+                0.0378
+              ],
+              [
+                "IR",
+                0.03,
+                0.1196
+              ],
+              [
+                "TDOC",
+                0.03,
+                -0.0889
+              ],
+              [
+                "PTON",
+                0.03,
+                -0.232
+              ],
+              [
+                "TSLA",
+                0.03,
+                -0.0932
+              ],
+              [
+                "CRWD",
+                0.03,
+                -0.0671
+              ],
+              [
+                "TMUS",
+                0.03,
+                -0.0361
+              ],
+              [
+                "ABBV",
+                0.03,
+                0.0415
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2021-03-31",
+            "spyReturn": 0.078,
+            "holdings": [
+              [
+                "GOOG",
+                0.0529,
+                0.1823
+              ],
+              [
+                "AMZN",
+                0.041,
+                0.086
+              ],
+              [
+                "CPB",
+                0.0323,
+                -0.0782
+              ],
+              [
+                "KLAC",
+                0.0555,
+                -0.0996
+              ],
+              [
+                "FAST",
+                0.0387,
+                0.0241
+              ],
+              [
+                "META",
+                0.0473,
+                0.1866
+              ],
+              [
+                "FTNT",
+                0.0434,
+                0.3002
+              ],
+              [
+                "BOKF",
+                0.0531,
+                -0.0201
+              ],
+              [
+                "TTD",
+                0.0838,
+                0.1639
+              ],
+              [
+                "LRCX",
+                0.0634,
+                -0.0078
+              ],
+              [
+                "FITB",
+                0.0561,
+                0.0272
+              ],
+              [
+                "PLTK",
+                0.0385,
+                -0.1412
+              ],
+              [
+                "TSCO",
+                0.042,
+                0.0673
+              ],
+              [
+                "NOW",
+                0.0455,
+                0.0753
+              ],
+              [
+                "ZM",
+                0.03,
+                0.1847
+              ],
+              [
+                "ETSY",
+                0.03,
+                -0.0417
+              ],
+              [
+                "XYZ",
+                0.03,
+                0.0538
+              ],
+              [
+                "PTON",
+                0.03,
+                0.0898
+              ],
+              [
+                "TSLA",
+                0.03,
+                0.0244
+              ],
+              [
+                "CRWD",
+                0.03,
+                0.3429
+              ],
+              [
+                "MRNA",
+                0.03,
+                0.7737
+              ],
+              [
+                "W",
+                0.03,
+                -0.0902
+              ],
+              [
+                "FSLR",
+                0.03,
+                0.0467
+              ],
+              [
+                "CHGG",
+                0.03,
+                -0.0561
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2021-06-30",
+            "spyReturn": 0.0121,
+            "holdings": [
+              [
+                "GOOG",
+                0.0589,
+                0.0799
+              ],
+              [
+                "AMZN",
+                0.042,
+                -0.0436
+              ],
+              [
+                "CPB",
+                0.0281,
+                -0.0842
+              ],
+              [
+                "KLAC",
+                0.0471,
+                0.0781
+              ],
+              [
+                "FAST",
+                0.0373,
+                -0.0022
+              ],
+              [
+                "META",
+                0.0529,
+                -0.0321
+              ],
+              [
+                "FTNT",
+                0.0532,
+                0.2297
+              ],
+              [
+                "TTD",
+                0.0919,
+                -0.0816
+              ],
+              [
+                "LRCX",
+                0.0593,
+                -0.0978
+              ],
+              [
+                "PLTK",
+                0.042,
+                0.2025
+              ],
+              [
+                "TSCO",
+                0.0422,
+                0.0748
+              ],
+              [
+                "NOW",
+                0.0461,
+                0.1607
+              ],
+              [
+                "DECK",
+                0.049,
+                -0.0626
+              ],
+              [
+                "ETSY",
+                0.03,
+                0.0244
+              ],
+              [
+                "XYZ",
+                0.03,
+                -0.0106
+              ],
+              [
+                "TSLA",
+                0.03,
+                0.1435
+              ],
+              [
+                "MRNA",
+                0.03,
+                0.4508
+              ],
+              [
+                "NVAX",
+                0.03,
+                -0.1583
+              ],
+              [
+                "DKS",
+                0.03,
+                0.2547
+              ],
+              [
+                "LPX",
+                0.03,
+                0.0373
+              ],
+              [
+                "ENPH",
+                0.03,
+                -0.1515
+              ],
+              [
+                "RVTY",
+                0.03,
+                0.1234
+              ],
+              [
+                "BLDR",
+                0.03,
+                0.2125
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2021-09-30",
+            "spyReturn": 0.104,
+            "holdings": [
+              [
+                "GOOG",
+                0.062,
+                0.0631
+              ],
+              [
+                "AMZN",
+                0.0392,
+                0.038
+              ],
+              [
+                "KLAC",
+                0.0495,
+                0.302
+              ],
+              [
+                "FAST",
+                0.0363,
+                0.2053
+              ],
+              [
+                "META",
+                0.0499,
+                -0.013
+              ],
+              [
+                "FTNT",
+                0.0638,
+                0.1179
+              ],
+              [
+                "TTD",
+                0.0823,
+                0.2796
+              ],
+              [
+                "LRCX",
+                0.0521,
+                0.2761
+              ],
+              [
+                "PLTK",
+                0.0492,
+                -0.3476
+              ],
+              [
+                "TSCO",
+                0.0443,
+                0.1733
+              ],
+              [
+                "NOW",
+                0.0522,
+                -0.0042
+              ],
+              [
+                "DECK",
+                0.049,
+                0.0068
+              ],
+              [
+                "REGN",
+                0.042,
+                0.0987
+              ],
+              [
+                "TSLA",
+                0.03,
+                0.5477
+              ],
+              [
+                "MRNA",
+                0.03,
+                -0.3109
+              ],
+              [
+                "NVAX",
+                0.03,
+                -0.2131
+              ],
+              [
+                "LPX",
+                0.03,
+                0.25
+              ],
+              [
+                "ENPH",
+                0.03,
+                0.1872
+              ],
+              [
+                "BLDR",
+                0.03,
+                0.5765
+              ],
+              [
+                "CG",
+                0.03,
+                0.1362
+              ],
+              [
+                "NRG",
+                0.03,
+                0.065
+              ],
+              [
+                "FANG",
+                0.03,
+                0.1362
+              ],
+              [
+                "TNL",
+                0.03,
+                0.0028
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2021-12-31",
+            "spyReturn": -0.0489,
+            "holdings": [
+              [
+                "GOOG",
+                0.06,
+                -0.0302
+              ],
+              [
+                "AMZN",
+                0.037,
+                -0.0402
+              ],
+              [
+                "KLAC",
+                0.0586,
+                -0.1697
+              ],
+              [
+                "FAST",
+                0.0398,
+                -0.032
+              ],
+              [
+                "META",
+                0.0448,
+                -0.3358
+              ],
+              [
+                "FTNT",
+                0.0648,
+                0.0177
+              ],
+              [
+                "LRCX",
+                0.0605,
+                -0.2734
+              ],
+              [
+                "PLTK",
+                0.042,
+                0.089
+              ],
+              [
+                "TSCO",
+                0.0472,
+                -0.0341
+              ],
+              [
+                "NOW",
+                0.0472,
+                -0.1293
+              ],
+              [
+                "DECK",
+                0.049,
+                -0.2481
+              ],
+              [
+                "REGN",
+                0.042,
+                0.108
+              ],
+              [
+                "MRNA",
+                0.03,
+                -0.2487
+              ],
+              [
+                "ENPH",
+                0.03,
+                0.1162
+              ],
+              [
+                "BLDR",
+                0.03,
+                -0.231
+              ],
+              [
+                "CG",
+                0.03,
+                -0.0835
+              ],
+              [
+                "FANG",
+                0.03,
+                0.2433
+              ],
+              [
+                "BX",
+                0.03,
+                0.0229
+              ],
+              [
+                "PFE",
+                0.03,
+                -0.0828
+              ],
+              [
+                "CBOE",
+                0.03,
+                -0.0866
+              ],
+              [
+                "LNG",
+                0.03,
+                0.3904
+              ],
+              [
+                "NUE",
+                0.03,
+                0.3248
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2022-03-31",
+            "spyReturn": -0.1546,
+            "holdings": [
+              [
+                "GOOG",
+                0.0638,
+                -0.2247
+              ],
+              [
+                "AMZN",
+                0.0455,
+                -0.3302
+              ],
+              [
+                "KLAC",
+                0.0534,
+                -0.1749
+              ],
+              [
+                "FAST",
+                0.0422,
+                -0.1619
+              ],
+              [
+                "META",
+                0.056,
+                -0.2883
+              ],
+              [
+                "FTNT",
+                0.0723,
+                -0.1539
+              ],
+              [
+                "LRCX",
+                0.0482,
+                -0.2461
+              ],
+              [
+                "PLTK",
+                0.0502,
+                -0.3096
+              ],
+              [
+                "TSCO",
+                0.05,
+                -0.1296
+              ],
+              [
+                "NOW",
+                0.0451,
+                -0.1172
+              ],
+              [
+                "DECK",
+                0.049,
+                -0.1157
+              ],
+              [
+                "REGN",
+                0.051,
+                -0.1431
+              ],
+              [
+                "CMG",
+                0.0455,
+                -0.1802
+              ],
+              [
+                "EXPD",
+                0.0278,
+                -0.0185
+              ],
+              [
+                "BLDR",
+                0.03,
+                -0.105
+              ],
+              [
+                "FANG",
+                0.03,
+                -0.1034
+              ],
+              [
+                "BX",
+                0.03,
+                -0.2666
+              ],
+              [
+                "PFE",
+                0.03,
+                0.0226
+              ],
+              [
+                "CBOE",
+                0.03,
+                -0.0142
+              ],
+              [
+                "LNG",
+                0.03,
+                -0.0693
+              ],
+              [
+                "NUE",
+                0.03,
+                -0.2889
+              ],
+              [
+                "EOG",
+                0.03,
+                -0.0539
+              ],
+              [
+                "TRGP",
+                0.03,
+                -0.2076
+              ],
+              [
+                "COP",
+                0.03,
+                -0.0843
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2022-06-30",
+            "spyReturn": -0.0344,
+            "holdings": [
+              [
+                "GOOG",
+                0.0611,
+                -0.0897
+              ],
+              [
+                "AMZN",
+                0.0377,
+                0.0577
+              ],
+              [
+                "KLAC",
+                0.0544,
+                0.0722
+              ],
+              [
+                "FAST",
+                0.0437,
+                -0.0411
+              ],
+              [
+                "META",
+                0.0493,
+                -0.1338
+              ],
+              [
+                "FTNT",
+                0.0756,
+                -0.1117
+              ],
+              [
+                "LRCX",
+                0.0449,
+                -0.0092
+              ],
+              [
+                "PLTK",
+                0.0428,
+                -0.2684
+              ],
+              [
+                "TSCO",
+                0.0538,
+                -0.0067
+              ],
+              [
+                "NOW",
+                0.0492,
+                -0.1913
+              ],
+              [
+                "DECK",
+                0.0536,
+                0.3201
+              ],
+              [
+                "REGN",
+                0.054,
+                0.2347
+              ],
+              [
+                "CMG",
+                0.0461,
+                0.1514
+              ],
+              [
+                "EXPD",
+                0.0337,
+                -0.0684
+              ],
+              [
+                "FANG",
+                0.03,
+                0.0936
+              ],
+              [
+                "LNG",
+                0.03,
+                0.271
+              ],
+              [
+                "CF",
+                0.03,
+                0.1807
+              ],
+              [
+                "SSRM",
+                0.03,
+                -0.1328
+              ],
+              [
+                "MOS",
+                0.03,
+                0.0565
+              ],
+              [
+                "WLK",
+                0.03,
+                -0.0835
+              ],
+              [
+                "AMD",
+                0.03,
+                -0.1026
+              ],
+              [
+                "TSLA",
+                0.03,
+                0.0666
+              ],
+              [
+                "H",
+                0.03,
+                0.0963
+              ],
+              [
+                "P",
+                0.03,
+                0.1191
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2022-09-30",
+            "spyReturn": 0.0435,
+            "holdings": [
+              [
+                "GOOG",
+                0.0559,
+                -0.0967
+              ],
+              [
+                "AMZN",
+                0.04,
+                -0.2594
+              ],
+              [
+                "KLAC",
+                0.0586,
+                0.1937
+              ],
+              [
+                "FAST",
+                0.0421,
+                0.0068
+              ],
+              [
+                "META",
+                0.056,
+                -0.1001
+              ],
+              [
+                "FTNT",
+                0.0675,
+                -0.0479
+              ],
+              [
+                "PLTK",
+                0.0315,
+                -0.1327
+              ],
+              [
+                "TSCO",
+                0.0537,
+                0.1546
+              ],
+              [
+                "NOW",
+                0.0525,
+                -0.0159
+              ],
+              [
+                "DECK",
+                0.071,
+                0.2051
+              ],
+              [
+                "REGN",
+                0.067,
+                -0.0199
+              ],
+              [
+                "CMG",
+                0.0533,
+                -0.0888
+              ],
+              [
+                "EXPD",
+                0.0315,
+                0.1616
+              ],
+              [
+                "TREX",
+                0.0191,
+                -0.0557
+              ],
+              [
+                "FANG",
+                0.03,
+                0.0283
+              ],
+              [
+                "LNG",
+                0.03,
+                -0.1582
+              ],
+              [
+                "CF",
+                0.03,
+                -0.1798
+              ],
+              [
+                "MOS",
+                0.03,
+                -0.1352
+              ],
+              [
+                "H",
+                0.03,
+                0.0775
+              ],
+              [
+                "AR",
+                0.03,
+                -0.0859
+              ],
+              [
+                "EXE",
+                0.03,
+                -0.1017
+              ],
+              [
+                "OVV",
+                0.03,
+                -0.0599
+              ],
+              [
+                "RRC",
+                0.03,
+                -0.1124
+              ],
+              [
+                "OXY",
+                0.03,
+                -0.045
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2022-12-31",
+            "spyReturn": 0.0832,
+            "holdings": [
+              [
+                "GOOG",
+                0.0503,
+                0.1696
+              ],
+              [
+                "AMZN",
+                0.0295,
+                0.1933
+              ],
+              [
+                "KLAC",
+                0.0697,
+                0.063
+              ],
+              [
+                "FAST",
+                0.0423,
+                0.1436
+              ],
+              [
+                "META",
+                0.0502,
+                0.7081
+              ],
+              [
+                "FTNT",
+                0.064,
+                0.3667
+              ],
+              [
+                "PLTK",
+                0.0272,
+                0.2908
+              ],
+              [
+                "TSCO",
+                0.0618,
+                0.0876
+              ],
+              [
+                "NOW",
+                0.0515,
+                0.2049
+              ],
+              [
+                "DECK",
+                0.0853,
+                0.1652
+              ],
+              [
+                "REGN",
+                0.0654,
+                0.1467
+              ],
+              [
+                "CMG",
+                0.0484,
+                0.2528
+              ],
+              [
+                "EXPD",
+                0.0365,
+                0.0318
+              ],
+              [
+                "TREX",
+                0.018,
+                0.1297
+              ],
+              [
+                "LNG",
+                0.03,
+                0.1284
+              ],
+              [
+                "MOS",
+                0.03,
+                0.1021
+              ],
+              [
+                "AR",
+                0.03,
+                -0.1668
+              ],
+              [
+                "EXE",
+                0.03,
+                -0.0936
+              ],
+              [
+                "OVV",
+                0.03,
+                -0.1351
+              ],
+              [
+                "RRC",
+                0.03,
+                0.1529
+              ],
+              [
+                "EOG",
+                0.03,
+                -0.0091
+              ],
+              [
+                "COP",
+                0.03,
+                -0.0313
+              ],
+              [
+                "VLO",
+                0.03,
+                0.1625
+              ],
+              [
+                "ALB",
+                0.03,
+                0.0202
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2023-03-31",
+            "spyReturn": 0.0839,
+            "holdings": [
+              [
+                "GOOG",
+                0.0486,
+                0.1492
+              ],
+              [
+                "KLAC",
+                0.0612,
+                0.2192
+              ],
+              [
+                "FAST",
+                0.0399,
+                0.0922
+              ],
+              [
+                "META",
+                0.0709,
+                0.3424
+              ],
+              [
+                "FTNT",
+                0.0723,
+                0.1259
+              ],
+              [
+                "PLTK",
+                0.029,
+                0.0664
+              ],
+              [
+                "TSCO",
+                0.0555,
+                -0.0809
+              ],
+              [
+                "NOW",
+                0.0512,
+                0.2118
+              ],
+              [
+                "DECK",
+                0.0821,
+                0.1718
+              ],
+              [
+                "REGN",
+                0.062,
+                -0.1308
+              ],
+              [
+                "CMG",
+                0.0501,
+                0.2362
+              ],
+              [
+                "EXPD",
+                0.0311,
+                0.1302
+              ],
+              [
+                "TREX",
+                0.0168,
+                0.3156
+              ],
+              [
+                "WAL",
+                0.0291,
+                0.0907
+              ],
+              [
+                "LNG",
+                0.03,
+                -0.0254
+              ],
+              [
+                "EXE",
+                0.03,
+                0.1063
+              ],
+              [
+                "EOG",
+                0.03,
+                -0.0489
+              ],
+              [
+                "COP",
+                0.03,
+                -0.0279
+              ],
+              [
+                "VLO",
+                0.03,
+                -0.1445
+              ],
+              [
+                "ALB",
+                0.03,
+                0.0514
+              ],
+              [
+                "DINO",
+                0.03,
+                -0.0713
+              ],
+              [
+                "VICI",
+                0.03,
+                -0.0082
+              ],
+              [
+                "WSC",
+                0.03,
+                0.0257
+              ],
+              [
+                "ALNY",
+                0.03,
+                -0.0549
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2023-06-30",
+            "spyReturn": -0.0337,
+            "holdings": [
+              [
+                "GOOG",
+                0.0491,
+                0.1212
+              ],
+              [
+                "KLAC",
+                0.0657,
+                -0.0473
+              ],
+              [
+                "FAST",
+                0.0384,
+                -0.0551
+              ],
+              [
+                "META",
+                0.0837,
+                0.0727
+              ],
+              [
+                "FTNT",
+                0.0716,
+                -0.2147
+              ],
+              [
+                "PLTK",
+                0.0272,
+                -0.1852
+              ],
+              [
+                "TSCO",
+                0.049,
+                -0.0748
+              ],
+              [
+                "NOW",
+                0.0546,
+                -0.0136
+              ],
+              [
+                "DECK",
+                0.0846,
+                -0.0262
+              ],
+              [
+                "CMG",
+                0.0545,
+                -0.1207
+              ],
+              [
+                "EXPD",
+                0.0309,
+                -0.0572
+              ],
+              [
+                "WAL",
+                0.042,
+                0.1962
+              ],
+              [
+                "TPL",
+                0.0486,
+                0.2983
+              ],
+              [
+                "EXE",
+                0.03,
+                0.0052
+              ],
+              [
+                "VICI",
+                0.03,
+                -0.0877
+              ],
+              [
+                "ALNY",
+                0.03,
+                -0.0566
+              ],
+              [
+                "BKNG",
+                0.03,
+                0.1371
+              ],
+              [
+                "INSP",
+                0.03,
+                -0.3905
+              ],
+              [
+                "RRC",
+                0.03,
+                0.0404
+              ],
+              [
+                "LVS",
+                0.03,
+                -0.2173
+              ],
+              [
+                "KKR",
+                0.03,
+                0.0824
+              ],
+              [
+                "ALGM",
+                0.03,
+                -0.2949
+              ],
+              [
+                "MGM",
+                0.03,
+                -0.16
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2023-09-30",
+            "spyReturn": 0.1106,
+            "holdings": [
+              [
+                "GOOG",
+                0.0556,
+                0.0325
+              ],
+              [
+                "KLAC",
+                0.0631,
+                0.2199
+              ],
+              [
+                "FAST",
+                0.0366,
+                0.1728
+              ],
+              [
+                "META",
+                0.0905,
+                0.1286
+              ],
+              [
+                "FTNT",
+                0.0567,
+                -0.0145
+              ],
+              [
+                "PLTK",
+                0.0224,
+                -0.1302
+              ],
+              [
+                "TSCO",
+                0.0457,
+                0.0698
+              ],
+              [
+                "NOW",
+                0.0543,
+                0.2383
+              ],
+              [
+                "DECK",
+                0.0831,
+                0.3023
+              ],
+              [
+                "CMG",
+                0.0483,
+                0.2022
+              ],
+              [
+                "EXPD",
+                0.0294,
+                0.1141
+              ],
+              [
+                "WAL",
+                0.0507,
+                0.4635
+              ],
+              [
+                "TPL",
+                0.0637,
+                -0.0807
+              ],
+              [
+                "BKNG",
+                0.03,
+                0.125
+              ],
+              [
+                "INSP",
+                0.03,
+                -0.0355
+              ],
+              [
+                "LVS",
+                0.03,
+                0.1278
+              ],
+              [
+                "KKR",
+                0.03,
+                0.3365
+              ],
+              [
+                "ALGM",
+                0.03,
+                -0.0751
+              ],
+              [
+                "APA",
+                0.03,
+                -0.0812
+              ],
+              [
+                "BX",
+                0.03,
+                0.2075
+              ],
+              [
+                "CELH",
+                0.03,
+                0.0178
+              ],
+              [
+                "BKR",
+                0.03,
+                -0.0127
+              ],
+              [
+                "RBA",
+                0.03,
+                0.0689
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2023-12-31",
+            "spyReturn": 0.1082,
+            "holdings": [
+              [
+                "GOOG",
+                0.05,
+                0.1214
+              ],
+              [
+                "KLAC",
+                0.0671,
+                0.2714
+              ],
+              [
+                "FAST",
+                0.0374,
+                0.212
+              ],
+              [
+                "META",
+                0.0891,
+                0.4204
+              ],
+              [
+                "FTNT",
+                0.0487,
+                0.1738
+              ],
+              [
+                "PLTK",
+                0.017,
+                -0.1363
+              ],
+              [
+                "TSCO",
+                0.0427,
+                0.1979
+              ],
+              [
+                "NOW",
+                0.0587,
+                0.1176
+              ],
+              [
+                "DECK",
+                0.0944,
+                0.3806
+              ],
+              [
+                "CMG",
+                0.0507,
+                0.2817
+              ],
+              [
+                "EXPD",
+                0.0286,
+                -0.063
+              ],
+              [
+                "WAL",
+                0.0647,
+                -0.0283
+              ],
+              [
+                "TPL",
+                0.051,
+                0.0701
+              ],
+              [
+                "BKNG",
+                0.03,
+                0.028
+              ],
+              [
+                "BX",
+                0.03,
+                0.0293
+              ],
+              [
+                "CELH",
+                0.03,
+                0.3981
+              ],
+              [
+                "RBA",
+                0.03,
+                0.1578
+              ],
+              [
+                "TREX",
+                0.03,
+                0.2139
+              ],
+              [
+                "LLY",
+                0.03,
+                0.2865
+              ],
+              [
+                "TDG",
+                0.03,
+                0.2235
+              ],
+              [
+                "NVDA",
+                0.03,
+                0.8761
+              ],
+              [
+                "ZS",
+                0.03,
+                -0.0953
+              ],
+              [
+                "CBOE",
+                0.03,
+                0.0235
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2024-03-31",
+            "spyReturn": 0.0478,
+            "holdings": [
+              [
+                "GOOG",
+                0.0467,
+                0.1802
+              ],
+              [
+                "KLAC",
+                0.071,
+                0.1668
+              ],
+              [
+                "FAST",
+                0.0377,
+                -0.1846
+              ],
+              [
+                "META",
+                0.1053,
+                0.0281
+              ],
+              [
+                "FTNT",
+                0.0476,
+                -0.1175
+              ],
+              [
+                "PLTK",
+                0.0122,
+                0.0422
+              ],
+              [
+                "TSCO",
+                0.0425,
+                0.0408
+              ],
+              [
+                "NOW",
+                0.0546,
+                0.0268
+              ],
+              [
+                "DECK",
+                0.1084,
+                0.017
+              ],
+              [
+                "CMG",
+                0.054,
+                0.0742
+              ],
+              [
+                "EXPD",
+                0.0223,
+                0.0213
+              ],
+              [
+                "WAL",
+                0.0523,
+                0.0081
+              ],
+              [
+                "TPL",
+                0.0455,
+                0.2892
+              ],
+              [
+                "BX",
+                0.03,
+                -0.0608
+              ],
+              [
+                "CELH",
+                0.03,
+                -0.2992
+              ],
+              [
+                "RBA",
+                0.03,
+                -0.0087
+              ],
+              [
+                "TREX",
+                0.03,
+                -0.2584
+              ],
+              [
+                "LLY",
+                0.03,
+                0.2043
+              ],
+              [
+                "TDG",
+                0.03,
+                0.0319
+              ],
+              [
+                "NVDA",
+                0.03,
+                0.3757
+              ],
+              [
+                "ZS",
+                0.03,
+                0.0338
+              ],
+              [
+                "CBOE",
+                0.03,
+                -0.0517
+              ],
+              [
+                "AVGO",
+                0.03,
+                0.219
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2024-06-30",
+            "spyReturn": 0.0459,
+            "holdings": [
+              [
+                "KLAC",
+                0.079,
+                -0.0878
+              ],
+              [
+                "FAST",
+                0.0293,
+                0.1515
+              ],
+              [
+                "META",
+                0.1032,
+                0.1433
+              ],
+              [
+                "FTNT",
+                0.04,
+                0.278
+              ],
+              [
+                "PLTK",
+                0.0121,
+                0.0576
+              ],
+              [
+                "TSCO",
+                0.0422,
+                0.1069
+              ],
+              [
+                "NOW",
+                0.0534,
+                0.0991
+              ],
+              [
+                "DECK",
+                0.1051,
+                -0.0133
+              ],
+              [
+                "CMG",
+                0.0553,
+                -0.0751
+              ],
+              [
+                "WAL",
+                0.0502,
+                0.3443
+              ],
+              [
+                "TPL",
+                0.0559,
+                0.2631
+              ],
+              [
+                "LRCX",
+                0.0376,
+                -0.2459
+              ],
+              [
+                "CROX",
+                0.0074,
+                -0.0414
+              ],
+              [
+                "WSC",
+                0.0293,
+                -0.0016
+              ],
+              [
+                "BX",
+                0.03,
+                0.2495
+              ],
+              [
+                "CELH",
+                0.03,
+                -0.4606
+              ],
+              [
+                "NVDA",
+                0.03,
+                -0.0586
+              ],
+              [
+                "CBOE",
+                0.03,
+                0.2249
+              ],
+              [
+                "AVGO",
+                0.03,
+                0.024
+              ],
+              [
+                "APP",
+                0.03,
+                0.5403
+              ],
+              [
+                "OWL",
+                0.03,
+                0.1067
+              ],
+              [
+                "NTRA",
+                0.03,
+                0.1798
+              ],
+              [
+                "KKR",
+                0.03,
+                0.2446
+              ],
+              [
+                "UTHR",
+                0.03,
+                0.1217
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2024-09-30",
+            "spyReturn": 0.0316,
+            "holdings": [
+              [
+                "KLAC",
+                0.0672,
+                -0.153
+              ],
+              [
+                "FAST",
+                0.0315,
+                0.0055
+              ],
+              [
+                "META",
+                0.11,
+                0.0403
+              ],
+              [
+                "FTNT",
+                0.0477,
+                0.2387
+              ],
+              [
+                "TSCO",
+                0.0435,
+                -0.1091
+              ],
+              [
+                "NOW",
+                0.0547,
+                0.2158
+              ],
+              [
+                "DECK",
+                0.0967,
+                0.3144
+              ],
+              [
+                "CMG",
+                0.0477,
+                0.0476
+              ],
+              [
+                "WAL",
+                0.063,
+                -0.006
+              ],
+              [
+                "TPL",
+                0.0658,
+                0.2919
+              ],
+              [
+                "LRCX",
+                0.0264,
+                -0.0887
+              ],
+              [
+                "CROX",
+                0.0185,
+                -0.2231
+              ],
+              [
+                "WSC",
+                0.0273,
+                -0.105
+              ],
+              [
+                "NVDA",
+                0.03,
+                0.1822
+              ],
+              [
+                "CBOE",
+                0.03,
+                -0.0616
+              ],
+              [
+                "AVGO",
+                0.03,
+                0.3889
+              ],
+              [
+                "APP",
+                0.03,
+                1.616
+              ],
+              [
+                "OWL",
+                0.03,
+                0.2188
+              ],
+              [
+                "NTRA",
+                0.03,
+                0.2627
+              ],
+              [
+                "VST",
+                0.03,
+                0.2232
+              ],
+              [
+                "PLTR",
+                0.03,
+                1.0623
+              ],
+              [
+                "FIX",
+                0.03,
+                0.1008
+              ],
+              [
+                "WING",
+                0.03,
+                -0.3055
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2024-12-31",
+            "spyReturn": -0.0376,
+            "holdings": [
+              [
+                "KLAC",
+                0.0528,
+                0.0744
+              ],
+              [
+                "FAST",
+                0.0293,
+                0.0977
+              ],
+              [
+                "META",
+                0.1061,
+                -0.0212
+              ],
+              [
+                "FTNT",
+                0.0548,
+                0.0203
+              ],
+              [
+                "TSCO",
+                0.042,
+                0.0568
+              ],
+              [
+                "NOW",
+                0.0617,
+                -0.2303
+              ],
+              [
+                "DECK",
+                0.1179,
+                -0.4458
+              ],
+              [
+                "WAL",
+                0.058,
+                -0.0827
+              ],
+              [
+                "TPL",
+                0.0788,
+                0.1477
+              ],
+              [
+                "LRCX",
+                0.0223,
+                0.0084
+              ],
+              [
+                "CROX",
+                0.0455,
+                -0.0081
+              ],
+              [
+                "WSC",
+                0.0308,
+                -0.1736
+              ],
+              [
+                "NVDA",
+                0.03,
+                -0.2035
+              ],
+              [
+                "CBOE",
+                0.03,
+                0.1491
+              ],
+              [
+                "APP",
+                0.03,
+                -0.1729
+              ],
+              [
+                "OWL",
+                0.03,
+                -0.1279
+              ],
+              [
+                "NTRA",
+                0.03,
+                -0.1242
+              ],
+              [
+                "VST",
+                0.03,
+                -0.1818
+              ],
+              [
+                "PLTR",
+                0.03,
+                0.1262
+              ],
+              [
+                "FIX",
+                0.03,
+                -0.2289
+              ],
+              [
+                "APO",
+                0.03,
+                -0.1634
+              ],
+              [
+                "SMCI",
+                0.03,
+                0.1664
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2025-03-31",
+            "spyReturn": 0.1043,
+            "holdings": [
+              [
+                "KLAC",
+                0.0617,
+                0.3202
+              ],
+              [
+                "FAST",
+                0.0351,
+                0.1104
+              ],
+              [
+                "META",
+                0.1131,
+                0.2283
+              ],
+              [
+                "FTNT",
+                0.0609,
+                0.0596
+              ],
+              [
+                "TSCO",
+                0.0483,
+                -0.0145
+              ],
+              [
+                "NOW",
+                0.0517,
+                0.2468
+              ],
+              [
+                "DECK",
+                0.0711,
+                -0.0701
+              ],
+              [
+                "WAL",
+                0.058,
+                0.0754
+              ],
+              [
+                "TPL",
+                0.0985,
+                -0.2089
+              ],
+              [
+                "CROX",
+                0.0492,
+                -0.0184
+              ],
+              [
+                "WSC",
+                0.0277,
+                0.0354
+              ],
+              [
+                "ORLY",
+                0.0245,
+                -0.0519
+              ],
+              [
+                "NVDA",
+                0.03,
+                0.3918
+              ],
+              [
+                "CBOE",
+                0.03,
+                0.0338
+              ],
+              [
+                "APP",
+                0.03,
+                0.191
+              ],
+              [
+                "OWL",
+                0.03,
+                -0.048
+              ],
+              [
+                "NTRA",
+                0.03,
+                0.1427
+              ],
+              [
+                "VST",
+                0.03,
+                0.5162
+              ],
+              [
+                "PLTR",
+                0.03,
+                0.5432
+              ],
+              [
+                "APO",
+                0.03,
+                0.0272
+              ],
+              [
+                "CVNA",
+                0.03,
+                0.5911
+              ],
+              [
+                "NEM",
+                0.03,
+                0.224
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2025-06-30",
+            "spyReturn": 0.0852,
+            "holdings": [
+              [
+                "KLAC",
+                0.0768,
+                0.2586
+              ],
+              [
+                "FAST",
+                0.0367,
+                0.1187
+              ],
+              [
+                "META",
+                0.131,
+                -0.0019
+              ],
+              [
+                "NOW",
+                0.0608,
+                -0.0983
+              ],
+              [
+                "DECK",
+                0.0623,
+                -0.04
+              ],
+              [
+                "WAL",
+                0.0588,
+                0.0662
+              ],
+              [
+                "CROX",
+                0.0455,
+                -0.2066
+              ],
+              [
+                "WSC",
+                0.027,
+                -0.2529
+              ],
+              [
+                "ORLY",
+                0.049,
+                0.1677
+              ],
+              [
+                "OC",
+                0.0455,
+                -0.01
+              ],
+              [
+                "COKE",
+                0.042,
+                0.0313
+              ],
+              [
+                "UTHR",
+                0.0385,
+                0.5062
+              ],
+              [
+                "GM",
+                0.0261,
+                0.182
+              ],
+              [
+                "NVDA",
+                0.03,
+                0.2215
+              ],
+              [
+                "CBOE",
+                0.03,
+                0.0413
+              ],
+              [
+                "APP",
+                0.03,
+                1.0912
+              ],
+              [
+                "PLTR",
+                0.03,
+                0.4153
+              ],
+              [
+                "CVNA",
+                0.03,
+                0.169
+              ],
+              [
+                "PEGA",
+                0.03,
+                0.0872
+              ],
+              [
+                "EXEL",
+                0.03,
+                -0.0555
+              ],
+              [
+                "FRHC",
+                0.03,
+                0.1717
+              ],
+              [
+                "DUOL",
+                0.03,
+                -0.2465
+              ],
+              [
+                "HOOD",
+                0.03,
+                0.507
+              ]
+            ]
+          },
+          {
+            "quarterStart": "2025-09-30",
+            "spyReturn": 0.025,
+            "holdings": [
+              [
+                "KLAC",
+                0.0919,
+                0.1309
+              ],
+              [
+                "NOW",
+                0.0521,
+                -0.192
+              ],
+              [
+                "DECK",
+                0.0569,
+                0.0554
+              ],
+              [
+                "WAL",
+                0.0596,
+                -0.0011
+              ],
+              [
+                "CROX",
+                0.0385,
+                0.0229
+              ],
+              [
+                "WSC",
+                0.0192,
+                -0.0758
+              ],
+              [
+                "ORLY",
+                0.0544,
+                -0.1452
+              ],
+              [
+                "OC",
+                0.0428,
+                -0.1877
+              ],
+              [
+                "COKE",
+                0.0412,
+                0.2619
+              ],
+              [
+                "UTHR",
+                0.0551,
+                0.1336
+              ],
+              [
+                "GM",
+                0.0455,
+                0.3228
+              ],
+              [
+                "DV",
+                0.0385,
+                -0.0381
+              ],
+              [
+                "NVDA",
+                0.03,
+                0.0087
+              ],
+              [
+                "CBOE",
+                0.03,
+                0.0271
+              ],
+              [
+                "APP",
+                0.03,
+                -0.1218
+              ],
+              [
+                "PLTR",
+                0.03,
+                -0.0924
+              ],
+              [
+                "CVNA",
+                0.03,
+                0.0122
+              ],
+              [
+                "DUOL",
+                0.03,
+                -0.4189
+              ],
+              [
+                "HOOD",
+                0.03,
+                -0.172
+              ],
+              [
+                "CELH",
+                0.03,
+                -0.1696
+              ],
+              [
+                "UI",
+                0.03,
+                -0.1591
+              ],
+              [
+                "LNG",
+                0.03,
+                -0.1455
               ]
             ]
           }
