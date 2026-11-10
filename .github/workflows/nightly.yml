@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
       - name: Verify model invariants
-        run: node model-smoke-test.js && node build29-test.js && node build58-test.js && node build59-test.js && node build60-test.js && node build61-test.js && node build62-test.js && node build62d-test.js
+        run: node model-smoke-test.js && node build29-test.js && node build58-test.js && node build59-test.js && node build60-test.js && node build61-test.js && node build62-test.js && node build62d-test.js && node build63-test.js && node build48-test.js && node build64-test.js
       - name: Run simplified screener
         env:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
