@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-11-10T20:42:35.562Z",
-  "modelVersion": "build65-growth-inflection",
+  "generatedAt": "2026-11-10T23:31:18.991Z",
+  "modelVersion": "build66-forecast-scorecard",
   "frequency": "quarterly",
   "start": "2019-09-30",
   "end": "2025-12-31",
@@ -307,126 +307,126 @@
         {
           "bucket": "1-20",
           "n": 500,
-          "meanExcess": 0.062166461574660103,
-          "medianExcess": 0.005694878010700899,
+          "meanExcess": 0.06216646536100346,
+          "medianExcess": 0.005694961274376686,
           "beatSpyRate": 0.504,
-          "medianRealized": 0.13801247065811584
+          "medianRealized": 0.13801246361874553
         },
         {
           "bucket": "21-50",
           "n": 750,
-          "meanExcess": 0.07178494226968737,
-          "medianExcess": 0.03601691649192629,
+          "meanExcess": 0.07178494368272594,
+          "medianExcess": 0.03601675676211147,
           "beatSpyRate": 0.556,
-          "medianRealized": 0.20056496936008805
+          "medianRealized": 0.2005648144044061
         },
         {
           "bucket": "51-100",
           "n": 1250,
-          "meanExcess": 0.047437812606155726,
-          "medianExcess": -0.019058135330385417,
+          "meanExcess": 0.04743781305968733,
+          "medianExcess": -0.019058145600316267,
           "beatSpyRate": 0.4728,
-          "medianRealized": 0.15147394878474063
+          "medianRealized": 0.15147384365714112
         },
         {
           "bucket": "101-250",
           "n": 3750,
-          "meanExcess": -0.00025357692469576265,
-          "medianExcess": -0.05031722341437983,
+          "meanExcess": -0.00025357548251464453,
+          "medianExcess": -0.05031734997982368,
           "beatSpyRate": 0.4312,
-          "medianRealized": 0.10737607305888253
+          "medianRealized": 0.10737590335520408
         },
         {
           "bucket": "251+",
           "n": 12656,
-          "meanExcess": -0.05507171538131059,
-          "medianExcess": -0.08528549126281837,
+          "meanExcess": -0.05507172220417322,
+          "medianExcess": -0.08528571481143027,
           "beatSpyRate": 0.3772914032869785,
-          "medianRealized": 0.08477144215113219
+          "medianRealized": 0.08477144711547746
         }
       ],
       "3Y": [
         {
           "bucket": "1-20",
           "n": 340,
-          "meanExcess": 0.00033612622254773806,
-          "medianExcess": 0.003970575548485011,
+          "meanExcess": 0.0003361248202949471,
+          "medianExcess": 0.0039706498671662205,
           "beatSpyRate": 0.5147058823529411,
-          "medianRealized": 0.1323215266177762
+          "medianRealized": 0.13232160878435573
         },
         {
           "bucket": "21-50",
           "n": 510,
-          "meanExcess": 0.03456656543557099,
-          "medianExcess": 0.018090808943898362,
+          "meanExcess": 0.03456656178859794,
+          "medianExcess": 0.018090795477715638,
           "beatSpyRate": 0.5313725490196078,
-          "medianRealized": 0.14789633863288443
+          "medianRealized": 0.147896371934779
         },
         {
           "bucket": "51-100",
           "n": 850,
-          "meanExcess": -0.01202968177840421,
-          "medianExcess": -0.031339967781178424,
+          "meanExcess": -0.01202968486912446,
+          "medianExcess": -0.031339830127992685,
           "beatSpyRate": 0.4329411764705882,
-          "medianRealized": 0.11177392965856214
+          "medianRealized": 0.11177394808909857
         },
         {
           "bucket": "101-250",
           "n": 2550,
-          "meanExcess": -0.04636314281792237,
-          "medianExcess": -0.043413136626702875,
+          "meanExcess": -0.04636314542940253,
+          "medianExcess": -0.0434130617888524,
           "beatSpyRate": 0.3870588235294118,
-          "medianRealized": 0.09217429621355377
+          "medianRealized": 0.09217426137534301
         },
         {
           "bucket": "251+",
           "n": 8126,
-          "meanExcess": -0.07954639532995278,
-          "medianExcess": -0.07385050331934773,
+          "meanExcess": -0.07954640115801122,
+          "medianExcess": -0.07385043989034279,
           "beatSpyRate": 0.29497907949790797,
-          "medianRealized": 0.06630555609726307
+          "medianRealized": 0.06630560570902588
         }
       ],
       "5Y": [
         {
           "bucket": "1-20",
           "n": 180,
-          "meanExcess": 0.002666662922412618,
-          "medianExcess": 0.007194255023316054,
+          "meanExcess": 0.002666659635029024,
+          "medianExcess": 0.007194254155420854,
           "beatSpyRate": 0.5277777777777778,
           "medianRealized": 0.16483058958297492
         },
         {
           "bucket": "21-50",
           "n": 270,
-          "meanExcess": 0.026722688037094825,
-          "medianExcess": 0.020941128108336926,
+          "meanExcess": 0.026722683067308312,
+          "medianExcess": 0.020941115657358456,
           "beatSpyRate": 0.5666666666666667,
-          "medianRealized": 0.1677566904558334
+          "medianRealized": 0.16775669503817958
         },
         {
           "bucket": "51-100",
           "n": 450,
-          "meanExcess": -0.023222400399146425,
-          "medianExcess": -0.03213131546631831,
+          "meanExcess": -0.02322240608171988,
+          "medianExcess": -0.03213132225878523,
           "beatSpyRate": 0.38,
-          "medianRealized": 0.11752650326640379
+          "medianRealized": 0.11752650563322464
         },
         {
           "bucket": "101-250",
           "n": 1350,
-          "meanExcess": -0.04270235062108117,
-          "medianExcess": -0.042705667650660195,
+          "meanExcess": -0.042702355357331453,
+          "medianExcess": -0.04270563053680809,
           "beatSpyRate": 0.3688888888888889,
-          "medianRealized": 0.10368031729210947
+          "medianRealized": 0.10368031525016408
         },
         {
           "bucket": "251+",
           "n": 4014,
-          "meanExcess": -0.085904521343052,
-          "medianExcess": -0.07851484912003692,
+          "meanExcess": -0.0859045281063679,
+          "medianExcess": -0.07851487321188133,
           "beatSpyRate": 0.23492775286497258,
-          "medianRealized": 0.0729117358027005
+          "medianRealized": 0.07291170947048853
         }
       ]
     },
@@ -435,29 +435,29 @@
         {
           "bucket": "growth 1-10",
           "n": 250,
-          "meanExcess": 0.06966829934556504,
-          "medianExcess": -0.057474492545743994,
+          "meanExcess": 0.06966829959613353,
+          "medianExcess": -0.057474330831171816,
           "beatSpyRate": 0.432
         },
         {
           "bucket": "growth 11-30",
           "n": 500,
-          "meanExcess": 0.038532377107184636,
-          "medianExcess": -0.05964160108202876,
+          "meanExcess": 0.03853236721841286,
+          "medianExcess": -0.05964152944409551,
           "beatSpyRate": 0.442
         },
         {
           "bucket": "growth 31+",
           "n": 4360,
-          "meanExcess": -0.008003508349933271,
-          "medianExcess": -0.064258196939105,
+          "meanExcess": -0.008003511712970191,
+          "medianExcess": -0.06425826830071252,
           "beatSpyRate": 0.4190366972477064
         },
         {
           "bucket": "not a growth company",
           "n": 14496,
-          "meanExcess": -0.03510485976956379,
-          "medianExcess": -0.07080054677024472,
+          "meanExcess": -0.035104863900687844,
+          "medianExcess": -0.0708006777877076,
           "beatSpyRate": 0.3981788079470199
         }
       ],
@@ -465,29 +465,29 @@
         {
           "bucket": "growth 1-10",
           "n": 170,
-          "meanExcess": -0.13099260942672317,
-          "medianExcess": -0.11766862487410934,
+          "meanExcess": -0.13099261549775512,
+          "medianExcess": -0.11766865870068877,
           "beatSpyRate": 0.25882352941176473
         },
         {
           "bucket": "growth 11-30",
           "n": 340,
-          "meanExcess": -0.07727510495432523,
-          "medianExcess": -0.06752892695891344,
+          "meanExcess": -0.07727511114666953,
+          "medianExcess": -0.06752884687092842,
           "beatSpyRate": 0.3558823529411765
         },
         {
           "bucket": "growth 31+",
           "n": 3391,
-          "meanExcess": -0.08476335139335492,
-          "medianExcess": -0.08749597964274702,
+          "meanExcess": -0.08476336219517924,
+          "medianExcess": -0.08749598565495931,
           "beatSpyRate": 0.3087584783249779
         },
         {
           "bucket": "not a growth company",
           "n": 8964,
-          "meanExcess": -0.0545412294492084,
-          "medianExcess": -0.05490095414504215,
+          "meanExcess": -0.05454123201826087,
+          "medianExcess": -0.05490097785979642,
           "beatSpyRate": 0.34817045961624277
         }
       ]
@@ -496,39 +496,39 @@
       "equalWeightUniverse": {
         "name": "Benchmark · every modeled stock, equal weight",
         "averageHoldings": 756.24,
-        "portfolioCAGR": 0.12371359962520301,
-        "spyCAGR": 0.16192702182436003,
-        "annualizedExcess": -0.03821342219915702,
-        "annualVolatility": 0.23039627774755275,
-        "periodEndMaxDrawdown": -0.3137741644973675,
+        "portfolioCAGR": 0.12371360195352654,
+        "spyCAGR": 0.161927064590196,
+        "annualizedExcess": -0.03821346263666947,
+        "annualVolatility": 0.23039627717791536,
+        "periodEndMaxDrawdown": -0.31377416217764953,
         "beatSpyRate": 0.4,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 20729.924989511223,
-        "spyFinalWealth10k": 25548.642170925443,
+        "finalWealth10k": 20729.925257962495,
+        "spyFinalWealth10k": 25548.648048064904,
         "development": {
-          "portfolioCAGR": 0.1957855325544049,
-          "spyCAGR": 0.20899564094378942,
-          "annualizedExcess": -0.013210108389384523,
-          "annualVolatility": 0.3263560525791962,
-          "periodEndMaxDrawdown": -0.3137741644973675,
+          "portfolioCAGR": 0.19578553309727953,
+          "spyCAGR": 0.2089957175802395,
+          "annualizedExcess": -0.013210184482959964,
+          "annualVolatility": 0.3263560488517141,
+          "periodEndMaxDrawdown": -0.31377416217764953,
           "beatSpyRate": 0.4,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 15636.27272811841,
-          "spyFinalWealth10k": 16071.700754729043
+          "finalWealth10k": 15636.272745865188,
+          "spyFinalWealth10k": 16071.703301632664
         },
         "validation": {
-          "portfolioCAGR": 0.07809541327797742,
-          "spyCAGR": 0.1315704463969023,
-          "annualizedExcess": -0.053475033118924875,
-          "annualVolatility": 0.14194677827012114,
-          "periodEndMaxDrawdown": -0.16589319653997936,
+          "portfolioCAGR": 0.07809541667468634,
+          "spyCAGR": 0.1315704679920704,
+          "annualizedExcess": -0.05347505131738406,
+          "annualVolatility": 0.1419467826959777,
+          "periodEndMaxDrawdown": -0.16589319746582654,
           "beatSpyRate": 0.4,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 13257.587245989253,
-          "spyFinalWealth10k": 15896.663682845046
+          "finalWealth10k": 13257.587402627176,
+          "spyFinalWealth10k": 15896.66482050444
         },
         "holdingsByQuarter": [
           {
@@ -548,7 +548,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0898,
+            "spyReturn": 0.0897,
             "holdings": []
           },
           {
@@ -664,40 +664,40 @@
         "name": "A · Mechanical top 20, equal weight, rebalanced quarterly",
         "topN": 20,
         "averageHoldings": 20,
-        "vsEqualWeightUniverse": 0.11802966288134553,
-        "portfolioCAGR": 0.24174326250654854,
-        "spyCAGR": 0.16192702182436003,
-        "annualizedExcess": 0.07981624068218851,
-        "annualVolatility": 0.24009930051536862,
-        "periodEndMaxDrawdown": -0.1984482331325259,
+        "vsEqualWeightUniverse": 0.11802961301618708,
+        "portfolioCAGR": 0.24174321496971363,
+        "spyCAGR": 0.161927064590196,
+        "annualizedExcess": 0.07981615037951761,
+        "annualVolatility": 0.24009930358235615,
+        "periodEndMaxDrawdown": -0.19844829804664843,
         "beatSpyRate": 0.64,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 38698.918364352,
-        "spyFinalWealth10k": 25548.642170925443,
+        "finalWealth10k": 38698.90910507128,
+        "spyFinalWealth10k": 25548.648048064904,
         "development": {
-          "portfolioCAGR": 0.387583606418306,
-          "spyCAGR": 0.20899564094378942,
-          "annualizedExcess": 0.1785879654745166,
-          "annualVolatility": 0.33038560253878274,
-          "periodEndMaxDrawdown": -0.1984482331325259,
+          "portfolioCAGR": 0.3875836020529069,
+          "spyCAGR": 0.2089957175802395,
+          "annualizedExcess": 0.17858788447266738,
+          "annualVolatility": 0.33038560217532675,
+          "periodEndMaxDrawdown": -0.19844829804664843,
           "beatSpyRate": 0.6,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 22680.253300439337,
-          "spyFinalWealth10k": 16071.700754729043
+          "finalWealth10k": 22680.25312205665,
+          "spyFinalWealth10k": 16071.703301632664
         },
         "validation": {
-          "portfolioCAGR": 0.15313524663167355,
-          "spyCAGR": 0.1315704463969023,
-          "annualizedExcess": 0.021564800234771253,
-          "annualVolatility": 0.15161894956242153,
-          "periodEndMaxDrawdown": -0.15484363262146872,
+          "portfolioCAGR": 0.15313517547569555,
+          "spyCAGR": 0.1315704679920704,
+          "annualizedExcess": 0.021564707483625156,
+          "annualVolatility": 0.15161894771936385,
+          "periodEndMaxDrawdown": -0.15484365304033898,
           "beatSpyRate": 0.6666666666666666,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 17062.824586532446,
-          "spyFinalWealth10k": 15896.663682845046
+          "finalWealth10k": 17062.82063820374,
+          "spyFinalWealth10k": 15896.66482050444
         },
         "attribution": {
           "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
@@ -971,10 +971,10 @@
               "removed": [
                 "KLAC"
               ],
-              "portfolioCAGR": 0.22819666922743842,
-              "annualizedExcess": 0.06626964740307839,
-              "developmentExcess": 0.16658031912579263,
-              "validationExcess": 0.007254067974223455
+              "portfolioCAGR": 0.22819662433842636,
+              "annualizedExcess": 0.06626955974823034,
+              "developmentExcess": 0.1665802398215921,
+              "validationExcess": 0.007253978480500134
             },
             "3": {
               "removed": [
@@ -982,10 +982,10 @@
                 "TTD",
                 "REZI"
               ],
-              "portfolioCAGR": 0.20759171782478836,
-              "annualizedExcess": 0.04566469600042833,
-              "developmentExcess": 0.10961052933277715,
-              "validationExcess": 0.007254067974223455
+              "portfolioCAGR": 0.20759166992082445,
+              "annualizedExcess": 0.04566460533062844,
+              "developmentExcess": 0.10961043985297714,
+              "validationExcess": 0.007253978480500134
             },
             "5": {
               "removed": [
@@ -995,10 +995,10 @@
                 "DECK",
                 "CMG"
               ],
-              "portfolioCAGR": 0.19015406689218017,
-              "annualizedExcess": 0.028227045067820145,
-              "developmentExcess": 0.10818246765721762,
-              "validationExcess": -0.01921827856997771
+              "portfolioCAGR": 0.19015401873585303,
+              "annualizedExcess": 0.028226954145657013,
+              "developmentExcess": 0.10818237258719643,
+              "validationExcess": -0.019218364800899446
             },
             "10": {
               "removed": [
@@ -1013,10 +1013,10 @@
                 "LNC",
                 "LRCX"
               ],
-              "portfolioCAGR": 0.1657892532995242,
-              "annualizedExcess": 0.0038622314751641795,
-              "developmentExcess": 0.0680477805938624,
-              "validationExcess": -0.034512326147462025
+              "portfolioCAGR": 0.16578921232334065,
+              "annualizedExcess": 0.0038621477331446386,
+              "developmentExcess": 0.06804768131088856,
+              "validationExcess": -0.03451239904006953
             }
           }
         },
@@ -1341,7 +1341,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0898,
+            "spyReturn": 0.0897,
             "holdings": [
               [
                 "OSK",
@@ -1628,7 +1628,7 @@
               [
                 "BOKF",
                 0.05,
-                0.299
+                0.2989
               ],
               [
                 "TSCO",
@@ -3679,8 +3679,8 @@
         "sizing": "equal",
         "maxPositions": 15,
         "averageHoldings": 12.64,
-        "averageCash": 0.055116420709084187,
-        "annualTurnover": 0.6176521777640517,
+        "averageCash": 0.05511642726414426,
+        "annualTurnover": 0.6176521875912212,
         "buys": 34,
         "sells": 22,
         "trims": 0,
@@ -3698,40 +3698,40 @@
             "reason": "thesis_broken_business_shrinking"
           }
         ],
-        "vsEqualWeightUniverse": 0.12793294325312643,
-        "portfolioCAGR": 0.25164654287832944,
-        "spyCAGR": 0.16192702182436003,
-        "annualizedExcess": 0.08971952105396941,
-        "annualVolatility": 0.2614518468488711,
-        "periodEndMaxDrawdown": -0.2607207575599305,
+        "vsEqualWeightUniverse": 0.12793292830690928,
+        "portfolioCAGR": 0.2516465302604358,
+        "spyCAGR": 0.161927064590196,
+        "annualizedExcess": 0.0897194656702398,
+        "annualVolatility": 0.261451874847568,
+        "periodEndMaxDrawdown": -0.26072081629577715,
         "beatSpyRate": 0.64,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 40668.73378896334,
-        "spyFinalWealth10k": 25548.642170925443,
+        "finalWealth10k": 40668.73122656989,
+        "spyFinalWealth10k": 25548.648048064904,
         "development": {
-          "portfolioCAGR": 0.3410911930076961,
-          "spyCAGR": 0.20899564094378942,
-          "annualizedExcess": 0.13209555206390666,
-          "annualVolatility": 0.33481512819072484,
-          "periodEndMaxDrawdown": -0.20708362259277102,
+          "portfolioCAGR": 0.34109123893382276,
+          "spyCAGR": 0.2089957175802395,
+          "annualizedExcess": 0.13209552135358327,
+          "annualVolatility": 0.33481516841797504,
+          "periodEndMaxDrawdown": -0.2070836629360322,
           "beatSpyRate": 0.7,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 20827.914022143963,
-          "spyFinalWealth10k": 16071.700754729043
+          "finalWealth10k": 20827.915805291606,
+          "spyFinalWealth10k": 16071.703301632664
         },
         "validation": {
-          "portfolioCAGR": 0.19535609394639097,
-          "spyCAGR": 0.1315704463969023,
-          "annualizedExcess": 0.06378564754948868,
-          "annualVolatility": 0.2067554420720727,
-          "periodEndMaxDrawdown": -0.1936721984698555,
+          "portfolioCAGR": 0.19535604657209427,
+          "spyCAGR": 0.1315704679920704,
+          "annualizedExcess": 0.06378557858002387,
+          "annualVolatility": 0.2067554540108757,
+          "periodEndMaxDrawdown": -0.19367225752117168,
           "beatSpyRate": 0.6,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 19526.07147586882,
-          "spyFinalWealth10k": 15896.663682845046
+          "finalWealth10k": 19526.06857390766,
+          "spyFinalWealth10k": 15896.66482050444
         },
         "attribution": {
           "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
@@ -4005,10 +4005,10 @@
               "removed": [
                 "KLAC"
               ],
-              "portfolioCAGR": 0.2272464679072843,
-              "annualizedExcess": 0.06531944608292428,
-              "developmentExcess": 0.1182854355740317,
-              "validationExcess": 0.03321083590600593
+              "portfolioCAGR": 0.22724645886117267,
+              "annualizedExcess": 0.06531939427097666,
+              "developmentExcess": 0.11828540914561181,
+              "validationExcess": 0.033210770627356334
             },
             "3": {
               "removed": [
@@ -4016,10 +4016,10 @@
                 "TTD",
                 "META"
               ],
-              "portfolioCAGR": 0.19402942357598452,
-              "annualizedExcess": 0.03210240175162449,
-              "developmentExcess": 0.07143517625043949,
-              "validationExcess": 0.008121911381367086
+              "portfolioCAGR": 0.19402942539483736,
+              "annualizedExcess": 0.03210236080464135,
+              "developmentExcess": 0.07143515458553429,
+              "validationExcess": 0.008121860060101849
             },
             "5": {
               "removed": [
@@ -4029,10 +4029,10 @@
                 "FTNT",
                 "AAPL"
               ],
-              "portfolioCAGR": 0.1736173306331632,
-              "annualizedExcess": 0.011690308808803174,
-              "developmentExcess": 0.018283608580558663,
-              "validationExcess": 0.0075822150897499885
+              "portfolioCAGR": 0.17361734356075376,
+              "annualizedExcess": 0.011690278970557744,
+              "developmentExcess": 0.01828361078371632,
+              "validationExcess": 0.007582165622235237
             },
             "10": {
               "removed": [
@@ -4047,10 +4047,10 @@
                 "WAL",
                 "GOOG"
               ],
-              "portfolioCAGR": 0.14153969161880142,
-              "annualizedExcess": -0.020387330205558607,
-              "developmentExcess": -0.011144583104874206,
-              "validationExcess": -0.026093185309209677
+              "portfolioCAGR": 0.14153970715286368,
+              "annualizedExcess": -0.020387357437332332,
+              "developmentExcess": -0.011144593295363103,
+              "validationExcess": -0.02609322271343273
             }
           }
         },
@@ -4228,7 +4228,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0898,
+            "spyReturn": 0.0897,
             "cash": 0.0355,
             "holdings": [
               [
@@ -4413,7 +4413,7 @@
               [
                 "BOKF",
                 0.0755,
-                0.299
+                0.2989
               ],
               [
                 "TTD",
@@ -5818,8 +5818,8 @@
         "sizing": "conviction",
         "maxPositions": 15,
         "averageHoldings": 12.68,
-        "averageCash": 0.06941855576570656,
-        "annualTurnover": 0.6074027611339453,
+        "averageCash": 0.06941856340354988,
+        "annualTurnover": 0.6074027662116037,
         "buys": 34,
         "sells": 22,
         "trims": 0,
@@ -5837,40 +5837,40 @@
             "reason": "thesis_broken_business_shrinking"
           }
         ],
-        "vsEqualWeightUniverse": 0.12232442391505316,
-        "portfolioCAGR": 0.24603802354025617,
-        "spyCAGR": 0.16192702182436003,
-        "annualizedExcess": 0.08411100171589614,
-        "annualVolatility": 0.2605931313469637,
-        "periodEndMaxDrawdown": -0.26620764268166575,
+        "vsEqualWeightUniverse": 0.12232441239602942,
+        "portfolioCAGR": 0.24603801434955597,
+        "spyCAGR": 0.161927064590196,
+        "annualizedExcess": 0.08411094975935995,
+        "annualVolatility": 0.2605931595974834,
+        "periodEndMaxDrawdown": -0.2662077040731796,
         "beatSpyRate": 0.68,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 39543.08928816932,
-        "spyFinalWealth10k": 25548.642170925443,
+        "finalWealth10k": 39543.087465248085,
+        "spyFinalWealth10k": 25548.648048064904,
         "development": {
-          "portfolioCAGR": 0.3275323283003002,
-          "spyCAGR": 0.20899564094378942,
-          "annualizedExcess": 0.1185366873565108,
-          "annualVolatility": 0.3325936852226549,
-          "periodEndMaxDrawdown": -0.20809663348783192,
+          "portfolioCAGR": 0.32753237632544585,
+          "spyCAGR": 0.2089957175802395,
+          "annualizedExcess": 0.11853665874520636,
+          "annualVolatility": 0.33259372402160364,
+          "periodEndMaxDrawdown": -0.20809666835882745,
           "beatSpyRate": 0.7,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 20305.456834558827,
-          "spyFinalWealth10k": 16071.700754729043
+          "finalWealth10k": 20305.45867099725,
+          "spyFinalWealth10k": 16071.703301632664
         },
         "validation": {
-          "portfolioCAGR": 0.19450715322883583,
-          "spyCAGR": 0.1315704463969023,
-          "annualizedExcess": 0.06293670683193353,
-          "annualVolatility": 0.20800058440410663,
-          "periodEndMaxDrawdown": -0.19501145578804424,
+          "portfolioCAGR": 0.19450710973595564,
+          "spyCAGR": 0.1315704679920704,
+          "annualizedExcess": 0.06293664174388525,
+          "annualVolatility": 0.20800059903820214,
+          "periodEndMaxDrawdown": -0.1950115155848654,
           "beatSpyRate": 0.6666666666666666,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 19474.119499182634,
-          "spyFinalWealth10k": 15896.663682845046
+          "finalWealth10k": 19474.1168401817,
+          "spyFinalWealth10k": 15896.66482050444
         },
         "attribution": {
           "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
@@ -6144,10 +6144,10 @@
               "removed": [
                 "KLAC"
               ],
-              "portfolioCAGR": 0.22393624207969043,
-              "annualizedExcess": 0.0620092202553304,
-              "developmentExcess": 0.10635282982076832,
-              "validationExcess": 0.03498157000929836
+              "portfolioCAGR": 0.2239362362279862,
+              "annualizedExcess": 0.062009171637790184,
+              "developmentExcess": 0.10635280449067963,
+              "validationExcess": 0.03498150878360606
             },
             "3": {
               "removed": [
@@ -6155,10 +6155,10 @@
                 "TTD",
                 "META"
               ],
-              "portfolioCAGR": 0.18848462428571922,
-              "annualizedExcess": 0.026557602461359187,
-              "developmentExcess": 0.06136799562878337,
-              "validationExcess": 0.005281500827850616
+              "portfolioCAGR": 0.1884846300391576,
+              "annualizedExcess": 0.026557565448961595,
+              "developmentExcess": 0.06136797300774299,
+              "validationExcess": 0.005281456179465183
             },
             "5": {
               "removed": [
@@ -6168,10 +6168,10 @@
                 "FTNT",
                 "AAPL"
               ],
-              "portfolioCAGR": 0.1701977375492718,
-              "annualizedExcess": 0.008270715724911781,
-              "developmentExcess": 0.013875661905174086,
-              "validationExcess": 0.004778170919352842
+              "portfolioCAGR": 0.17019775440669505,
+              "annualizedExcess": 0.008270689816499033,
+              "developmentExcess": 0.01387566403779128,
+              "validationExcess": 0.004778127809953681
             },
             "10": {
               "removed": [
@@ -6186,10 +6186,10 @@
                 "FITB",
                 "UTHR"
               ],
-              "portfolioCAGR": 0.14055597170850032,
-              "annualizedExcess": -0.021371050115859713,
-              "developmentExcess": -0.013419855078431908,
-              "validationExcess": -0.026280387060186428
+              "portfolioCAGR": 0.14055599052929235,
+              "annualizedExcess": -0.02137107406090366,
+              "developmentExcess": -0.013419862832113827,
+              "validationExcess": -0.02628042071125014
             }
           }
         },
@@ -6367,7 +6367,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0898,
+            "spyReturn": 0.0897,
             "cash": 0.0691,
             "holdings": [
               [
@@ -6552,7 +6552,7 @@
               [
                 "BOKF",
                 0.0654,
-                0.299
+                0.2989
               ],
               [
                 "TTD",
@@ -7962,8 +7962,8 @@
         "sizing": "conviction",
         "maxPositions": 15,
         "averageHoldings": 12.68,
-        "averageCash": 0.06941855576570656,
-        "annualTurnover": 0.6074027611339453,
+        "averageCash": 0.06941856340354988,
+        "annualTurnover": 0.6074027662116037,
         "buys": 34,
         "sells": 22,
         "trims": 0,
@@ -7981,40 +7981,40 @@
             "reason": "thesis_broken_business_shrinking"
           }
         ],
-        "vsEqualWeightUniverse": 0.12232442391505316,
-        "portfolioCAGR": 0.24603802354025617,
-        "spyCAGR": 0.16192702182436003,
-        "annualizedExcess": 0.08411100171589614,
-        "annualVolatility": 0.2605931313469637,
-        "periodEndMaxDrawdown": -0.26620764268166575,
+        "vsEqualWeightUniverse": 0.12232441239602942,
+        "portfolioCAGR": 0.24603801434955597,
+        "spyCAGR": 0.161927064590196,
+        "annualizedExcess": 0.08411094975935995,
+        "annualVolatility": 0.2605931595974834,
+        "periodEndMaxDrawdown": -0.2662077040731796,
         "beatSpyRate": 0.68,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 39543.08928816932,
-        "spyFinalWealth10k": 25548.642170925443,
+        "finalWealth10k": 39543.087465248085,
+        "spyFinalWealth10k": 25548.648048064904,
         "development": {
-          "portfolioCAGR": 0.3275323283003002,
-          "spyCAGR": 0.20899564094378942,
-          "annualizedExcess": 0.1185366873565108,
-          "annualVolatility": 0.3325936852226549,
-          "periodEndMaxDrawdown": -0.20809663348783192,
+          "portfolioCAGR": 0.32753237632544585,
+          "spyCAGR": 0.2089957175802395,
+          "annualizedExcess": 0.11853665874520636,
+          "annualVolatility": 0.33259372402160364,
+          "periodEndMaxDrawdown": -0.20809666835882745,
           "beatSpyRate": 0.7,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 20305.456834558827,
-          "spyFinalWealth10k": 16071.700754729043
+          "finalWealth10k": 20305.45867099725,
+          "spyFinalWealth10k": 16071.703301632664
         },
         "validation": {
-          "portfolioCAGR": 0.19450715322883583,
-          "spyCAGR": 0.1315704463969023,
-          "annualizedExcess": 0.06293670683193353,
-          "annualVolatility": 0.20800058440410663,
-          "periodEndMaxDrawdown": -0.19501145578804424,
+          "portfolioCAGR": 0.19450710973595564,
+          "spyCAGR": 0.1315704679920704,
+          "annualizedExcess": 0.06293664174388525,
+          "annualVolatility": 0.20800059903820214,
+          "periodEndMaxDrawdown": -0.1950115155848654,
           "beatSpyRate": 0.6666666666666666,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 19474.119499182634,
-          "spyFinalWealth10k": 15896.663682845046
+          "finalWealth10k": 19474.1168401817,
+          "spyFinalWealth10k": 15896.66482050444
         },
         "attribution": {
           "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
@@ -8288,10 +8288,10 @@
               "removed": [
                 "KLAC"
               ],
-              "portfolioCAGR": 0.22393624207969043,
-              "annualizedExcess": 0.0620092202553304,
-              "developmentExcess": 0.10635282982076832,
-              "validationExcess": 0.03498157000929836
+              "portfolioCAGR": 0.2239362362279862,
+              "annualizedExcess": 0.062009171637790184,
+              "developmentExcess": 0.10635280449067963,
+              "validationExcess": 0.03498150878360606
             },
             "3": {
               "removed": [
@@ -8299,10 +8299,10 @@
                 "TTD",
                 "META"
               ],
-              "portfolioCAGR": 0.18848462428571922,
-              "annualizedExcess": 0.026557602461359187,
-              "developmentExcess": 0.06136799562878337,
-              "validationExcess": 0.005281500827850616
+              "portfolioCAGR": 0.1884846300391576,
+              "annualizedExcess": 0.026557565448961595,
+              "developmentExcess": 0.06136797300774299,
+              "validationExcess": 0.005281456179465183
             },
             "5": {
               "removed": [
@@ -8312,10 +8312,10 @@
                 "FTNT",
                 "AAPL"
               ],
-              "portfolioCAGR": 0.1701977375492718,
-              "annualizedExcess": 0.008270715724911781,
-              "developmentExcess": 0.013875661905174086,
-              "validationExcess": 0.004778170919352842
+              "portfolioCAGR": 0.17019775440669505,
+              "annualizedExcess": 0.008270689816499033,
+              "developmentExcess": 0.01387566403779128,
+              "validationExcess": 0.004778127809953681
             },
             "10": {
               "removed": [
@@ -8330,10 +8330,10 @@
                 "FITB",
                 "UTHR"
               ],
-              "portfolioCAGR": 0.14055597170850032,
-              "annualizedExcess": -0.021371050115859713,
-              "developmentExcess": -0.013419855078431908,
-              "validationExcess": -0.026280387060186428
+              "portfolioCAGR": 0.14055599052929235,
+              "annualizedExcess": -0.02137107406090366,
+              "developmentExcess": -0.013419862832113827,
+              "validationExcess": -0.02628042071125014
             }
           }
         },
@@ -8511,7 +8511,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0898,
+            "spyReturn": 0.0897,
             "cash": 0.0691,
             "holdings": [
               [
@@ -8696,7 +8696,7 @@
               [
                 "BOKF",
                 0.0654,
-                0.299
+                0.2989
               ],
               [
                 "TTD",
@@ -10106,8 +10106,8 @@
         "sizing": "conviction",
         "maxPositions": 15,
         "averageHoldings": 2.68,
-        "averageCash": 0.8069135376897265,
-        "annualTurnover": 0.06902063803999639,
+        "averageCash": 0.8069135902155896,
+        "annualTurnover": 0.06902062944763251,
         "buys": 5,
         "sells": 2,
         "trims": 0,
@@ -10116,40 +10116,40 @@
         },
         "thesisBreak": "review",
         "thesisBreakSells": [],
-        "vsEqualWeightUniverse": 0.0307571856335771,
-        "portfolioCAGR": 0.1544707852587801,
-        "spyCAGR": 0.16192702182436003,
-        "annualizedExcess": -0.007456236565579921,
-        "annualVolatility": 0.19512877081026517,
-        "periodEndMaxDrawdown": -0.22979342834615935,
+        "vsEqualWeightUniverse": 0.03075720985630115,
+        "portfolioCAGR": 0.1544708118098277,
+        "spyCAGR": 0.161927064590196,
+        "annualizedExcess": -0.007456252780368322,
+        "annualVolatility": 0.1951287822961665,
+        "periodEndMaxDrawdown": -0.22979338026866836,
         "beatSpyRate": 0.44,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 24541.065823444027,
-        "spyFinalWealth10k": 25548.642170925443,
+        "finalWealth10k": 24541.06935098589,
+        "spyFinalWealth10k": 25548.648048064904,
         "development": {
-          "portfolioCAGR": 0.22677770807253506,
-          "spyCAGR": 0.20899564094378942,
-          "annualizedExcess": 0.017782067128745638,
-          "annualVolatility": 0.26508129728052937,
-          "periodEndMaxDrawdown": -0.22979342834615935,
+          "portfolioCAGR": 0.22677776079967948,
+          "spyCAGR": 0.2089957175802395,
+          "annualizedExcess": 0.01778204321943999,
+          "annualVolatility": 0.26508131330937873,
+          "periodEndMaxDrawdown": -0.22979338026866836,
           "beatSpyRate": 0.6,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 16669.19739189279,
-          "spyFinalWealth10k": 16071.700754729043
+          "finalWealth10k": 16669.199183006214,
+          "spyFinalWealth10k": 16071.703301632664
         },
         "validation": {
-          "portfolioCAGR": 0.10864966023371325,
-          "spyCAGR": 0.1315704463969023,
-          "annualizedExcess": -0.022920786163189044,
-          "annualVolatility": 0.13535089302003614,
-          "periodEndMaxDrawdown": -0.15998353363022177,
+          "portfolioCAGR": 0.10864967096244871,
+          "spyCAGR": 0.1315704679920704,
+          "annualizedExcess": -0.022920797029621687,
+          "annualVolatility": 0.13535089737099293,
+          "periodEndMaxDrawdown": -0.15998357060339397,
           "beatSpyRate": 0.3333333333333333,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 14722.403992516034,
-          "spyFinalWealth10k": 15896.663682845046
+          "finalWealth10k": 14722.404526790246,
+          "spyFinalWealth10k": 15896.66482050444
         },
         "attribution": {
           "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
@@ -10280,10 +10280,10 @@
               "removed": [
                 "TSCO"
               ],
-              "portfolioCAGR": 0.14992480407923114,
-              "annualizedExcess": -0.012002217745128885,
-              "developmentExcess": -0.000026063132982923065,
-              "validationExcess": -0.019397940139144865
+              "portfolioCAGR": 0.14992484242035609,
+              "annualizedExcess": -0.012002222169839927,
+              "developmentExcess": -0.000026063128639508548,
+              "validationExcess": -0.019397946933344068
             },
             "3": {
               "removed": [
@@ -10291,10 +10291,10 @@
                 "CVS",
                 "NOW"
               ],
-              "portfolioCAGR": 0.15315588736945496,
-              "annualizedExcess": -0.008771134454905072,
-              "developmentExcess": -0.000026063132982923065,
-              "validationExcess": -0.01418472002747695
+              "portfolioCAGR": 0.15315592635018715,
+              "annualizedExcess": -0.008771138240008858,
+              "developmentExcess": -0.000026063128639508548,
+              "validationExcess": -0.014184725893335637
             },
             "5": {
               "removed": [
@@ -10304,10 +10304,10 @@
                 "WAL",
                 "EPAM"
               ],
-              "portfolioCAGR": 0.16184595374485067,
-              "annualizedExcess": -0.00008106807950936101,
-              "developmentExcess": -0.000026063132982923065,
-              "validationExcess": -0.00011531933802122474
+              "portfolioCAGR": 0.16184599652650555,
+              "annualizedExcess": -0.00008106806369045927,
+              "developmentExcess": -0.000026063128639508548,
+              "validationExcess": -0.00011531931344466173
             },
             "10": {
               "removed": [
@@ -10317,10 +10317,10 @@
                 "WAL",
                 "EPAM"
               ],
-              "portfolioCAGR": 0.16184595374485067,
-              "annualizedExcess": -0.00008106807950936101,
-              "developmentExcess": -0.000026063132982923065,
-              "validationExcess": -0.00011531933802122474
+              "portfolioCAGR": 0.16184599652650555,
+              "annualizedExcess": -0.00008106806369045927,
+              "developmentExcess": -0.000026063128639508548,
+              "validationExcess": -0.00011531931344466173
             }
           }
         },
@@ -10363,7 +10363,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0898,
+            "spyReturn": 0.0897,
             "cash": 0.9186,
             "holdings": [
               [
@@ -10843,8 +10843,8 @@
         "sizing": "conviction",
         "maxPositions": 10,
         "averageHoldings": 9.92,
-        "averageCash": 0.2159359740075768,
-        "annualTurnover": 0.47932166602910686,
+        "averageCash": 0.2159359981446441,
+        "annualTurnover": 0.47932165444289365,
         "buys": 26,
         "sells": 16,
         "trims": 1,
@@ -10862,40 +10862,40 @@
             "reason": "thesis_broken_business_shrinking"
           }
         ],
-        "vsEqualWeightUniverse": 0.07853610972920055,
-        "portfolioCAGR": 0.20224970935440356,
-        "spyCAGR": 0.16192702182436003,
-        "annualizedExcess": 0.04032268753004353,
-        "annualVolatility": 0.25092695556749306,
-        "periodEndMaxDrawdown": -0.27334386877310013,
+        "vsEqualWeightUniverse": 0.0785361100441242,
+        "portfolioCAGR": 0.20224971199765074,
+        "spyCAGR": 0.161927064590196,
+        "annualizedExcess": 0.040322647407454726,
+        "annualVolatility": 0.25092698921014206,
+        "periodEndMaxDrawdown": -0.2733439183042964,
         "beatSpyRate": 0.56,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 31620.35596776251,
-        "spyFinalWealth10k": 25548.642170925443,
+        "finalWealth10k": 31620.356402262594,
+        "spyFinalWealth10k": 25548.648048064904,
         "development": {
-          "portfolioCAGR": 0.26567129044120863,
-          "spyCAGR": 0.20899564094378942,
-          "annualizedExcess": 0.05667564949741921,
-          "annualVolatility": 0.2901536287422458,
-          "periodEndMaxDrawdown": -0.20293356098223636,
+          "portfolioCAGR": 0.2656713189082529,
+          "spyCAGR": 0.2089957175802395,
+          "annualizedExcess": 0.056675601328013414,
+          "annualVolatility": 0.2901536789598084,
+          "periodEndMaxDrawdown": -0.20293358884895962,
           "beatSpyRate": 0.6,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 18021.972493034107,
-          "spyFinalWealth10k": 16071.700754729043
+          "finalWealth10k": 18021.973506394173,
+          "spyFinalWealth10k": 16071.703301632664
         },
         "validation": {
-          "portfolioCAGR": 0.16174420619588004,
-          "spyCAGR": 0.1315704463969023,
-          "annualizedExcess": 0.03017375979897774,
-          "annualVolatility": 0.22956120700798818,
-          "periodEndMaxDrawdown": -0.20481626365966343,
+          "portfolioCAGR": 0.16174419303316623,
+          "spyCAGR": 0.1315704679920704,
+          "annualizedExcess": 0.030173725041095834,
+          "annualVolatility": 0.22956122707501508,
+          "periodEndMaxDrawdown": -0.20481629857020178,
           "beatSpyRate": 0.5333333333333333,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 17545.446803885916,
-          "spyFinalWealth10k": 15896.663682845046
+          "finalWealth10k": 17545.44605841515,
+          "spyFinalWealth10k": 15896.66482050444
         },
         "attribution": {
           "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
@@ -11169,10 +11169,10 @@
               "removed": [
                 "KLAC"
               ],
-              "portfolioCAGR": 0.17907038537408848,
-              "annualizedExcess": 0.017143363549728452,
-              "developmentExcess": 0.04458651992074025,
-              "validationExcess": 0.0003025097052364867
+              "portfolioCAGR": 0.17907039307899852,
+              "annualizedExcess": 0.01714332848880251,
+              "developmentExcess": 0.044586474652779984,
+              "validationExcess": 0.0003024815555809912
             },
             "3": {
               "removed": [
@@ -11180,10 +11180,10 @@
                 "META",
                 "FTNT"
               ],
-              "portfolioCAGR": 0.14769252416538214,
-              "annualizedExcess": -0.014234497658977885,
-              "developmentExcess": 0.021243562954141648,
-              "validationExcess": -0.03580850327078822
+              "portfolioCAGR": 0.14769253575836294,
+              "annualizedExcess": -0.014234528831833071,
+              "developmentExcess": 0.02124351248995593,
+              "validationExcess": -0.03580852195950257
             },
             "5": {
               "removed": [
@@ -11193,10 +11193,10 @@
                 "AAPL",
                 "GOOG"
               ],
-              "portfolioCAGR": 0.13520536358225765,
-              "annualizedExcess": -0.026721658242102375,
-              "developmentExcess": -0.011318223204554112,
-              "validationExcess": -0.03619210373656645
+              "portfolioCAGR": 0.13520539191904102,
+              "annualizedExcess": -0.026721672671154995,
+              "developmentExcess": -0.01131823159917067,
+              "validationExcess": -0.036192121369344576
             },
             "10": {
               "removed": [
@@ -11211,10 +11211,10 @@
                 "CMG",
                 "COKE"
               ],
-              "portfolioCAGR": 0.12052381533716816,
-              "annualizedExcess": -0.04140320648719187,
-              "developmentExcess": -0.01416974001562643,
-              "validationExcess": -0.05799624500039369
+              "portfolioCAGR": 0.1205238488316489,
+              "annualizedExcess": -0.04140321575854711,
+              "developmentExcess": -0.014169748121780401,
+              "validationExcess": -0.05799625416097309
             }
           }
         },
@@ -11382,7 +11382,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0898,
+            "spyReturn": 0.0897,
             "cash": 0.2766,
             "holdings": [
               [
@@ -11542,7 +11542,7 @@
               [
                 "BOKF",
                 0.0741,
-                0.299
+                0.2989
               ],
               [
                 "LRCX",
@@ -12642,8 +12642,8 @@
         "sizing": "conviction",
         "maxPositions": 25,
         "averageHoldings": 12.68,
-        "averageCash": 0.06941855576570656,
-        "annualTurnover": 0.6074027611339453,
+        "averageCash": 0.06941856340354988,
+        "annualTurnover": 0.6074027662116037,
         "buys": 34,
         "sells": 22,
         "trims": 0,
@@ -12661,40 +12661,40 @@
             "reason": "thesis_broken_business_shrinking"
           }
         ],
-        "vsEqualWeightUniverse": 0.12232442391505316,
-        "portfolioCAGR": 0.24603802354025617,
-        "spyCAGR": 0.16192702182436003,
-        "annualizedExcess": 0.08411100171589614,
-        "annualVolatility": 0.2605931313469637,
-        "periodEndMaxDrawdown": -0.26620764268166575,
+        "vsEqualWeightUniverse": 0.12232441239602942,
+        "portfolioCAGR": 0.24603801434955597,
+        "spyCAGR": 0.161927064590196,
+        "annualizedExcess": 0.08411094975935995,
+        "annualVolatility": 0.2605931595974834,
+        "periodEndMaxDrawdown": -0.2662077040731796,
         "beatSpyRate": 0.68,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 39543.08928816932,
-        "spyFinalWealth10k": 25548.642170925443,
+        "finalWealth10k": 39543.087465248085,
+        "spyFinalWealth10k": 25548.648048064904,
         "development": {
-          "portfolioCAGR": 0.3275323283003002,
-          "spyCAGR": 0.20899564094378942,
-          "annualizedExcess": 0.1185366873565108,
-          "annualVolatility": 0.3325936852226549,
-          "periodEndMaxDrawdown": -0.20809663348783192,
+          "portfolioCAGR": 0.32753237632544585,
+          "spyCAGR": 0.2089957175802395,
+          "annualizedExcess": 0.11853665874520636,
+          "annualVolatility": 0.33259372402160364,
+          "periodEndMaxDrawdown": -0.20809666835882745,
           "beatSpyRate": 0.7,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 20305.456834558827,
-          "spyFinalWealth10k": 16071.700754729043
+          "finalWealth10k": 20305.45867099725,
+          "spyFinalWealth10k": 16071.703301632664
         },
         "validation": {
-          "portfolioCAGR": 0.19450715322883583,
-          "spyCAGR": 0.1315704463969023,
-          "annualizedExcess": 0.06293670683193353,
-          "annualVolatility": 0.20800058440410663,
-          "periodEndMaxDrawdown": -0.19501145578804424,
+          "portfolioCAGR": 0.19450710973595564,
+          "spyCAGR": 0.1315704679920704,
+          "annualizedExcess": 0.06293664174388525,
+          "annualVolatility": 0.20800059903820214,
+          "periodEndMaxDrawdown": -0.1950115155848654,
           "beatSpyRate": 0.6666666666666666,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 19474.119499182634,
-          "spyFinalWealth10k": 15896.663682845046
+          "finalWealth10k": 19474.1168401817,
+          "spyFinalWealth10k": 15896.66482050444
         },
         "attribution": {
           "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
@@ -12968,10 +12968,10 @@
               "removed": [
                 "KLAC"
               ],
-              "portfolioCAGR": 0.22393624207969043,
-              "annualizedExcess": 0.0620092202553304,
-              "developmentExcess": 0.10635282982076832,
-              "validationExcess": 0.03498157000929836
+              "portfolioCAGR": 0.2239362362279862,
+              "annualizedExcess": 0.062009171637790184,
+              "developmentExcess": 0.10635280449067963,
+              "validationExcess": 0.03498150878360606
             },
             "3": {
               "removed": [
@@ -12979,10 +12979,10 @@
                 "TTD",
                 "META"
               ],
-              "portfolioCAGR": 0.18848462428571922,
-              "annualizedExcess": 0.026557602461359187,
-              "developmentExcess": 0.06136799562878337,
-              "validationExcess": 0.005281500827850616
+              "portfolioCAGR": 0.1884846300391576,
+              "annualizedExcess": 0.026557565448961595,
+              "developmentExcess": 0.06136797300774299,
+              "validationExcess": 0.005281456179465183
             },
             "5": {
               "removed": [
@@ -12992,10 +12992,10 @@
                 "FTNT",
                 "AAPL"
               ],
-              "portfolioCAGR": 0.1701977375492718,
-              "annualizedExcess": 0.008270715724911781,
-              "developmentExcess": 0.013875661905174086,
-              "validationExcess": 0.004778170919352842
+              "portfolioCAGR": 0.17019775440669505,
+              "annualizedExcess": 0.008270689816499033,
+              "developmentExcess": 0.01387566403779128,
+              "validationExcess": 0.004778127809953681
             },
             "10": {
               "removed": [
@@ -13010,10 +13010,10 @@
                 "FITB",
                 "UTHR"
               ],
-              "portfolioCAGR": 0.14055597170850032,
-              "annualizedExcess": -0.021371050115859713,
-              "developmentExcess": -0.013419855078431908,
-              "validationExcess": -0.026280387060186428
+              "portfolioCAGR": 0.14055599052929235,
+              "annualizedExcess": -0.02137107406090366,
+              "developmentExcess": -0.013419862832113827,
+              "validationExcess": -0.02628042071125014
             }
           }
         },
@@ -13191,7 +13191,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0898,
+            "spyReturn": 0.0897,
             "cash": 0.0691,
             "holdings": [
               [
@@ -13376,7 +13376,7 @@
               [
                 "BOKF",
                 0.0654,
-                0.299
+                0.2989
               ],
               [
                 "TTD",
@@ -15087,40 +15087,40 @@
           }
         ],
         "averageHoldings": 10,
-        "vsEqualWeightUniverse": 0.14469048175828636,
-        "portfolioCAGR": 0.26840408138348937,
-        "spyCAGR": 0.16192702182436003,
-        "annualizedExcess": 0.10647705955912934,
-        "annualVolatility": 0.33776361634553914,
-        "periodEndMaxDrawdown": -0.24495469584170482,
+        "vsEqualWeightUniverse": 0.14469045869869723,
+        "portfolioCAGR": 0.2684040606522238,
+        "spyCAGR": 0.161927064590196,
+        "annualizedExcess": 0.10647699606202776,
+        "annualVolatility": 0.3377635864860128,
+        "periodEndMaxDrawdown": -0.244954632201285,
         "beatSpyRate": 0.52,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 44193.68262620826,
-        "spyFinalWealth10k": 25548.642170925443,
+        "finalWealth10k": 44193.67811172157,
+        "spyFinalWealth10k": 25548.648048064904,
         "development": {
-          "portfolioCAGR": 0.38506302206773535,
-          "spyCAGR": 0.20899564094378942,
-          "annualizedExcess": 0.17606738112394593,
-          "annualVolatility": 0.38939259554138245,
-          "periodEndMaxDrawdown": -0.24495469584170482,
+          "portfolioCAGR": 0.3850630370769663,
+          "spyCAGR": 0.2089957175802395,
+          "annualizedExcess": 0.17606731949672683,
+          "annualVolatility": 0.3893925343875882,
+          "periodEndMaxDrawdown": -0.244954632201285,
           "beatSpyRate": 0.6,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 22577.3952994884,
-          "spyFinalWealth10k": 16071.700754729043
+          "finalWealth10k": 22577.395911138086,
+          "spyFinalWealth10k": 16071.703301632664
         },
         "validation": {
-          "portfolioCAGR": 0.19614279366255905,
-          "spyCAGR": 0.1315704463969023,
-          "annualizedExcess": 0.06457234726565675,
-          "annualVolatility": 0.3077357192564617,
-          "periodEndMaxDrawdown": -0.23071660995213328,
+          "portfolioCAGR": 0.19614275243756052,
+          "spyCAGR": 0.1315704679920704,
+          "annualizedExcess": 0.06457228444549012,
+          "annualVolatility": 0.30773571099034897,
+          "periodEndMaxDrawdown": -0.23071665344698467,
           "beatSpyRate": 0.4666666666666667,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 19574.305202163727,
-          "spyFinalWealth10k": 15896.663682845046
+          "finalWealth10k": 19574.302672311096,
+          "spyFinalWealth10k": 15896.66482050444
         },
         "attribution": {
           "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
@@ -15394,10 +15394,10 @@
               "removed": [
                 "APP"
               ],
-              "portfolioCAGR": 0.22281005985564883,
-              "annualizedExcess": 0.060883038031288805,
-              "developmentExcess": 0.17606738112394593,
-              "validationExcess": -0.006226406774322069
+              "portfolioCAGR": 0.22281004225312162,
+              "annualizedExcess": 0.06088297766292561,
+              "developmentExcess": 0.17606731949672683,
+              "validationExcess": -0.006226463498497425
             },
             "3": {
               "removed": [
@@ -15405,10 +15405,10 @@
                 "PLTR",
                 "NVDA"
               ],
-              "portfolioCAGR": 0.1696892103870269,
-              "annualizedExcess": 0.007762188562666861,
-              "developmentExcess": 0.17606738112394593,
-              "validationExcess": -0.08651872917408387
+              "portfolioCAGR": 0.16968918904915742,
+              "annualizedExcess": 0.007762124458961406,
+              "developmentExcess": 0.17606731949672683,
+              "validationExcess": -0.08651879009270091
             },
             "5": {
               "removed": [
@@ -15418,10 +15418,10 @@
                 "TSLA",
                 "ZG"
               ],
-              "portfolioCAGR": 0.1314983406391237,
-              "annualizedExcess": -0.03042868118523634,
-              "developmentExcess": 0.0706798445174166,
-              "validationExcess": -0.08919708987483976
+              "portfolioCAGR": 0.13149831131059675,
+              "annualizedExcess": -0.030428753279599263,
+              "developmentExcess": 0.0706797654938145,
+              "validationExcess": -0.08919715520435445
             },
             "10": {
               "removed": [
@@ -15436,10 +15436,10 @@
                 "BLDR",
                 "MRNA"
               ],
-              "portfolioCAGR": 0.07821589100643878,
-              "annualizedExcess": -0.08371113081792125,
-              "developmentExcess": -0.02508259890551967,
-              "validationExcess": -0.11852325400086428
+              "portfolioCAGR": 0.0782158638790229,
+              "annualizedExcess": -0.0837112007111731,
+              "developmentExcess": -0.025082701420796383,
+              "validationExcess": -0.11852330331308969
             }
           }
         },
@@ -15614,7 +15614,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0898,
+            "spyReturn": 0.0897,
             "holdings": [
               [
                 "CBOE",
@@ -16849,40 +16849,40 @@
       {
         "name": "H · 70% arm C (value rules) + 30% arm G (growth sleeve)",
         "averageHoldings": null,
-        "vsEqualWeightUniverse": 0.13610526448109628,
-        "portfolioCAGR": 0.2598188641062993,
-        "spyCAGR": 0.16192702182436003,
-        "annualizedExcess": 0.09789184228193926,
-        "annualVolatility": 0.2597256121735156,
-        "periodEndMaxDrawdown": -0.21915405219399375,
+        "vsEqualWeightUniverse": 0.13610525101765591,
+        "portfolioCAGR": 0.25981885297118246,
+        "spyCAGR": 0.161927064590196,
+        "annualizedExcess": 0.09789178838098644,
+        "annualVolatility": 0.2597256135614271,
+        "periodEndMaxDrawdown": -0.2191540575115647,
         "beatSpyRate": 0.64,
         "periodCount": 25,
         "yearCount": 6.25,
-        "finalWealth10k": 42357.046431529416,
-        "spyFinalWealth10k": 25548.642170925443,
+        "finalWealth10k": 42357.04409165606,
+        "spyFinalWealth10k": 25548.648048064904,
         "development": {
-          "portfolioCAGR": 0.35061652992702963,
-          "spyCAGR": 0.20899564094378942,
-          "annualizedExcess": 0.1416208889832402,
-          "annualVolatility": 0.3330223050302511,
-          "periodEndMaxDrawdown": -0.21915405219399375,
+          "portfolioCAGR": 0.3506165737960263,
+          "spyCAGR": 0.2089957175802395,
+          "annualizedExcess": 0.1416208562157868,
+          "annualVolatility": 0.33302229380827303,
+          "periodEndMaxDrawdown": -0.2191540575115647,
           "beatSpyRate": 0.7,
           "periodCount": 10,
           "yearCount": 2.5,
-          "finalWealth10k": 21199.72130456485,
-          "spyFinalWealth10k": 16071.700754729043
+          "finalWealth10k": 21199.723026020387,
+          "spyFinalWealth10k": 16071.703301632664
         },
         "validation": {
-          "portfolioCAGR": 0.20270413643085394,
-          "spyCAGR": 0.1315704463969023,
-          "annualizedExcess": 0.07113369003395165,
-          "annualVolatility": 0.20478200804849686,
-          "periodEndMaxDrawdown": -0.17562534007556452,
+          "portfolioCAGR": 0.20270409267055944,
+          "spyCAGR": 0.1315704679920704,
+          "annualizedExcess": 0.07113362467848905,
+          "annualVolatility": 0.20478201734325152,
+          "periodEndMaxDrawdown": -0.17562538078963086,
           "beatSpyRate": 0.6,
           "periodCount": 15,
           "yearCount": 3.75,
-          "finalWealth10k": 19980.001540118767,
-          "spyFinalWealth10k": 15896.663682845046
+          "finalWealth10k": 19979.998813978524,
+          "spyFinalWealth10k": 15896.66482050444
         },
         "attribution": {
           "note": "contribution = sum over quarters of (start weight x quarterly return); excessContribution = same versus SPY. withoutTop[k]: the arm with its k biggest excess contributors earning SPY instead.",
@@ -17156,10 +17156,10 @@
               "removed": [
                 "KLAC"
               ],
-              "portfolioCAGR": 0.24385241996760887,
-              "annualizedExcess": 0.08192539814324884,
-              "developmentExcess": 0.13239340325058802,
-              "validationExcess": 0.051230297844035544
+              "portfolioCAGR": 0.24385241091626475,
+              "annualizedExcess": 0.08192534632606874,
+              "developmentExcess": 0.1323933729759328,
+              "validationExcess": 0.05123023465001442
             },
             "3": {
               "removed": [
@@ -17167,10 +17167,10 @@
                 "APP",
                 "TTD"
               ],
-              "portfolioCAGR": 0.21594872699275358,
-              "annualizedExcess": 0.05402170516839355,
-              "developmentExcess": 0.09764702118934276,
-              "validationExcess": 0.02744052760559801
+              "portfolioCAGR": 0.21594871973722296,
+              "annualizedExcess": 0.05402165514702695,
+              "developmentExcess": 0.09764699189093085,
+              "validationExcess": 0.027440466491106097
             },
             "5": {
               "removed": [
@@ -17180,10 +17180,10 @@
                 "META",
                 "PLTR"
               ],
-              "portfolioCAGR": 0.1941251781622404,
-              "annualizedExcess": 0.03219815633788037,
-              "developmentExcess": 0.10123365154582853,
-              "validationExcess": -0.009074220434145852
+              "portfolioCAGR": 0.19412517815188846,
+              "annualizedExcess": 0.03219811356169244,
+              "developmentExcess": 0.10123362420491233,
+              "validationExcess": -0.009074270200425616
             },
             "10": {
               "removed": [
@@ -17198,10 +17198,10 @@
                 "ZG",
                 "Z"
               ],
-              "portfolioCAGR": 0.16097065509550967,
-              "annualizedExcess": -0.0009563667288503552,
-              "developmentExcess": 0.032298221590649545,
-              "validationExcess": -0.021239786611261247
+              "portfolioCAGR": 0.16097064888744383,
+              "annualizedExcess": -0.000956415702752178,
+              "developmentExcess": 0.03229817693387549,
+              "validationExcess": -0.02123983717232414
             }
           }
         },
@@ -17526,7 +17526,7 @@
           },
           {
             "quarterStart": "2020-06-30",
-            "spyReturn": 0.0898,
+            "spyReturn": 0.0897,
             "holdings": [
               [
                 "GOOG",
@@ -17808,7 +17808,7 @@
               [
                 "BOKF",
                 0.0458,
-                0.299
+                0.2989
               ],
               [
                 "TTD",
