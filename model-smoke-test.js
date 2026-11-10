@@ -665,7 +665,12 @@ const heavySbc=stock({ticker:'HEAVYSBC',price:100,growth:.20,margin:.20,roic:.20
 for(const y of heavySbc.financials.years){ y.sbc=y.revenue*.20; y.sbcIntensity=.20; }
 const heavySbcF=buildForecast(heavySbc);
 assert(heavySbcF.forecastBridge.margins.earningsNormalizationAddbackStart<.13,'extreme SBC received an excessive normalized-earnings add-back');
-assert(heavySbcF.matureDilutionRate>.005,'extreme SBC faded to an implausibly trivial mature dilution rate');
+// Build 63: SBC is now charged once, as an expense. The share path drops only the grant slice of dilution,
+// and every projected FCF row carries the full SBC cost.
+assert(heavySbcF.earningsBasis==='owner_sbc_expensed'&&heavySbcF.grossDilutionRate>.005,'gross dilution no longer reported');
+assert(heavySbcF.dilutionRate<=heavySbcF.grossDilutionRate,'owner dilution above gross dilution');
+assert(heavySbcF.rows.every(r=>!Number.isFinite(r.sbcMargin)||Math.abs(r.preSbcFcfMargin-r.sbcMargin-r.fcfMargin)<1e-9),'SBC not fully charged to owner FCF');
+assert(heavySbcF.rows.every(r=>r.netMargin<=r.normalizedNetMargin+1e-9),'owner earnings above normalized (SBC-added-back) earnings');
 console.log('V12.1 reconciliation tests passed: malformed operating tags fail closed and extreme SBC remains economically charged.');
 
 // V12.3 coherent terminal economics and transition uncertainty ----------------

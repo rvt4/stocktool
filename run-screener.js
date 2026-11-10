@@ -73,6 +73,26 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
   if(valuation.bearCAGR<0)risks.push(`Bear-case CAGR is ${(valuation.bearCAGR*100).toFixed(1)}%`);
   if((quality.diagnostics?.dilutionRate||0)>0.03)risks.push('Share dilution is elevated');
   if((quality.diagnostics?.netDebtToEbitda||0)>3)risks.push('Leverage is elevated');
+  // Build 62f: business risks visible in the data (the list above only covered model mechanics, so 1 in 3
+  // stocks showed "No specific risks", NOW included).
+  {
+    const ae=stock.analystEstimates||{}, rb=forecast.forecastBridge?.revenue||{}, mb=forecast.forecastBridge?.margins||{};
+    const P=x=>(x*100).toFixed(0)+'%';
+    const sbc=stock.financials?.years?.at(-1)?.sbcIntensity;
+    if(sbc>0.08)risks.push(`Stock-based pay is ${P(sbc)} of revenue, so GAAP earnings sit well below the "adjusted" figures companies promote`);
+    const g1=rb.analystCurrent, g2=rb.analystNext;
+    if(Number.isFinite(g1)&&Number.isFinite(g2)&&g1>0.05&&g2<g1-0.03)risks.push(`Analysts expect growth to slow from ${P(g1)} to ${P(g2)} next year`);
+    const lo=Number(ae.analystTargetLow), hi=Number(ae.analystTargetHigh);
+    if(lo>0&&hi>0&&hi/lo>=2.5&&(ae.numAnalysts||0)>=5)risks.push(`Analysts disagree widely: price targets range from $${lo.toFixed(0)} to $${hi.toFixed(0)}`);
+    const epsExit=(valuation.methods||[]).find(m=>/EPS/.test(m.name))?.audit?.exitMultiple;
+    if(epsExit>30)risks.push(`Value assumes the market still pays ${epsExit.toFixed(0)}x earnings in year 10; the multiple shrinks if growth fades faster`);
+    const cyc=valuation.underwriting?.cycle;
+    if(cyc?.boom)risks.push(`Possible boom-cycle margins: operating margin ${(cyc.recentMargin*100).toFixed(0)}% vs ${(cyc.baseMargin*100).toFixed(0)}% before the boom; the stressed case assumes half of that gain fades`);
+    if((forecast.forecastFlags||[]).includes('margin_ceiling_consensus_contradicts'))risks.push('Analysts expect margins to fall from today\'s level');
+    if(Number.isFinite(valuation.bearCAGR)&&valuation.bearCAGR>=0&&valuation.bearCAGR<0.05)risks.push(`Bear case returns only ${(valuation.bearCAGR*100).toFixed(1)}%/yr`);
+    const ttm=require('./review-policy').ttmRevenueGrowth(stock.quarterly,stock.financials?.years);
+    if(Number.isFinite(ttm)&&ttm<0)risks.push(`Revenue is shrinking (${(ttm*100).toFixed(1)}% over the last 12 months)`);
+  }
 
   const cagrBreakdown=valuation.returnAttribution||{
     revenueContribution:forecast.revenueGrowthAnchor,
@@ -244,7 +264,7 @@ async function run(){
   for(const s of stocks){if(s.newPositionAction==='BUY'&&!s.qualifiesForBuyList)throw new Error(`Inconsistent investment decision: ${s.ticker}`);}
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'build62e',stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'build64',stocks}; writeJson('results.json',output);
   // Build 55: monthly forecast snapshots + accuracy report (never blocks the run).
   try{const rep=require('./track-forecasts').trackForecasts(output);console.log(`Forecast tracking: ${rep.snapshots} snapshot(s), ${rep.observations} forecast(s) checked against reported revenue.`);}catch(e){console.warn('Forecast tracking skipped:',e.message);}
   const historyFile=writeProspectiveSnapshot(__dirname,output);

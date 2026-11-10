@@ -91,8 +91,11 @@ assert.notStrictEqual(rateStock({price:{current:100},sector:'Technology'},{forec
   const mk=(dilution)=>{const t=stock({ticker:'SBC'+dilution,price:100,growth:.18,margin:.25,roic:.25,dilution});for(const y of t.financials.years){y.sbcIntensity=.15;y.sbc=y.revenue*.15;}return t;};
   const dil=run(mk(.03)), buy=run(mk(-.02));
   const e1=dil.v.methods.find(m=>m.name==='EPS exit')?.audit, e2=buy.v.methods.find(m=>m.name==='EPS exit')?.audit;
-  assert(e1&&e1.sbcAddBackFraction>0&&e1.metric>e1.reportedYear10EPS,'dilutive SBC payer got no EPS add-back');
+  // Build 63: SBC is expensed in full for every company; the dilutive payer is no longer also charged
+  // through grant dilution, and nobody gets an EPS add-back.
+  assert(e1&&e1.sbcAddBackFraction===0&&Math.abs(e1.metric-e1.reportedYear10EPS)<1e-9,'EPS add-back still applied');
   assert(e2&&e2.sbcAddBackFraction===0&&Math.abs(e2.metric-e2.reportedYear10EPS)<1e-9,'buyback-offset SBC payer must not get an add-back');
+  assert(dil.f.dilutionRate<dil.f.grossDilutionRate,'grant dilution still charged on top of the SBC expense');
 }
 // 11) analyst cross-check: pulls toward consensus, stays bounded, keeps the pre-blend value, needs >=5 analysts
 {
