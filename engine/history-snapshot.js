@@ -13,7 +13,13 @@ function compact(s){return {
   independentEvidenceFamilies:finite(s.independentMethodCount),modelSupport:s.modelSupport||null,
   portfolioAction:s.portfolioAction||null,newPositionAction:s.newPositionAction||null,existingHolderAction:s.existingHolderAction||null,
   suggestedInitialWeight:finite(s.suggestedInitialWeight),rideWinner:s.rideWinner===true,
-  momentumRel6:finite(s.momentum?.rel6),momentumRel12:finite(s.momentum?.rel12)
+  momentumRel6:finite(s.momentum?.rel6),momentumRel12:finite(s.momentum?.rel12),
+  // Build 65: saved nightly so estimate REVISIONS (the earliest growth signal) become testable over time,
+  // and the Growth Inflection list builds a real-time track record.
+  est:s.analystEstimates?{eps0:finite(s.analystEstimates.epsCurrentYear),eps1:finite(s.analystEstimates.epsNextYear),
+    rev0:finite(s.analystEstimates.revenueCurrentYear),rev1:finite(s.analystEstimates.revenueNextYear),
+    tgt:finite(s.analystEstimates.analystTargetMean),n:finite(s.analystEstimates.numAnalysts)}:null,
+  growthScore:finite(s.growth?.score),growthRank:finite(s.growth?.rank)
 };}
 function writeProspectiveSnapshot(root,output){
   if(!output?.generatedAt||!Array.isArray(output.stocks))return null;
