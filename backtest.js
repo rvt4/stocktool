@@ -29,6 +29,7 @@ const {
   normalizeHistoryForCorporateAction, normalizeSecTicker
 }=require('./data-fetchers');
 const {buildForecast}=require('./engine/forecast-engine');
+const {captureForecast,scoreForecasts,buildScorecard}=require('./forecast-scorecard');
 const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {growthSignals}=require('./engine/growth-engine');
@@ -39,7 +40,7 @@ const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {buildOwnerStrategyLab}=require('./owner-strategy-lab');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='build65-growth-inflection';
+const MODEL_VERSION='build66-forecast-scorecard';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -1993,6 +1994,7 @@ async function main(){
     modelRuns:0,modelFailures:0,missingExpectedCAGR:0,modeledObservations:0
   };
   const skipExamples=[];
+  const forecastScored=[]; // Build 66: projections vs. what companies later reported
   for(let i=0;i<universe.length;i++){
     const {ticker,sector,secCik}=universe[i];
     try{
@@ -2003,6 +2005,7 @@ async function main(){
       const [facts,submissions,history]=await Promise.all([factsPromise,submissionsPromise,fetchBacktestHistory(sec,HISTORY_YEARS)]);
       historyByTicker.set(ticker,history);
       diagnostics.tickersFetched++;
+      const capturedForecasts=[];
       if(!history.length && skipExamples.length<20) skipExamples.push({ticker,reason:'empty_stooq_history'});
       for(const asOf of dates){
         const membership=historicalUniverse.byDate.get(asOf);
@@ -2029,10 +2032,13 @@ async function main(){
         try{
           diagnostics.modelRuns++;
           const f=buildForecast(stock),q=computeQuality(stock,f),v=valuate(stock,f,q),d=rateStock(stock,f,q,v);
-          if(!Number.isFinite(v.expectedCAGR)){ diagnostics.missingExpectedCAGR++; growthOnly(); if(skipExamples.length<20)skipExamples.push({ticker,asOf,reason:'missing_expected_cagr'}); continue; }
+          if(!Number.isFinite(v.expectedCAGR)){ try{capturedForecasts.push(captureForecast(stock,f,asOf));}catch(e){} diagnostics.missingExpectedCAGR++; growthOnly(); if(skipExamples.length<20)skipExamples.push({ticker,asOf,reason:'missing_expected_cagr'}); continue; }
+          try{capturedForecasts.push(captureForecast(stock,f,asOf));}catch(e){}
           const row=compactModel(stock,f,q,v,d); row.growth=growth; attachRealized(row,history,spyHistory,asOf); snapshots.get(asOf).push(row); diagnostics.modeledObservations++;
         }catch(e){diagnostics.modelFailures++;growthOnly();errors.push({ticker,asOf,error:e.message}); if(skipExamples.length<20)skipExamples.push({ticker,asOf,reason:'model_failure',error:e.message});}
       }
+      // Build 66: score this ticker's forecasts against everything it has reported since (latest filings).
+      if(capturedForecasts.length){try{forecastScored.push(...scoreForecasts(capturedForecasts.filter(Boolean),parseAnnualFinancials(facts,40)));}catch(e){}}
     }catch(e){diagnostics.tickerFetchFailures++;errors.push({ticker,error:e.message}); if(skipExamples.length<20)skipExamples.push({ticker,reason:'ticker_fetch_failure',error:e.message});}
     if((i+1)%25===0){
       console.log(`Fetched ${i+1}/${universe.length}; modeled ${diagnostics.modeledObservations} point-in-time observations.`);
@@ -2042,6 +2048,15 @@ async function main(){
   }
   console.log('Backtest diagnostics:', JSON.stringify(diagnostics));
   if(skipExamples.length) console.log('Representative skips:', JSON.stringify(skipExamples.slice(0,10)));
+  {
+    // Build 66: forecast scorecard, written before anything else that could fail.
+    try{
+      const card=buildScorecard(forecastScored,{modelVersion:MODEL_VERSION});
+      fs.writeFileSync(path.join(__dirname,'data','forecast-scorecard.json'),JSON.stringify(card,null,1));
+      console.log(`Wrote data/forecast-scorecard.json (${card.observations} forecast-vs-actual observations, ${card.uniqueTickers} tickers).`);
+      for(const l of card.headline)console.log('  scorecard '+l);
+    }catch(e){console.error('Forecast scorecard failed:',e);}
+  }
   const flat=[]; const snapshotOutput=[];
   for(const asOf of dates){const rows=snapshots.get(asOf);rank(rows);flat.push(...rows.map(r=>({...r,asOf})));snapshotOutput.push({asOf,count:rows.length,rows,growthOnlyRows:growthOnlySnapshots.get(asOf)||[]});}
   // Build 36: the strategy the app actually recommends. Written to its own small file first,
