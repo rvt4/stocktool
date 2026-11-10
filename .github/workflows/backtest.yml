@@ -1,6 +1,6 @@
 name: Owner Strategy Backtest
 # Run manually: Actions tab -> "Owner Strategy Backtest" -> Run workflow.
-# Takes roughly 1-3 hours. Result: data/backtest-owner-summary.json (committed) + downloadable artifact.
+# Takes roughly 1-3 hours. Results: data/backtest-owner-summary.json and data/forecast-scorecard.json (committed) + downloadable artifact.
 on:
   workflow_dispatch:
     inputs:
@@ -32,6 +32,7 @@ jobs:
           node model-smoke-test.js
           node review-policy-test.js
           node owner-strategy-lab-test.js
+          node build66-test.js
       - name: Run backtest
         env:
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
@@ -50,13 +51,14 @@ jobs:
           path: |
             data/backtest-owner-summary.json
             data/backtest-summary.json
+            data/forecast-scorecard.json
           if-no-files-found: warn
       - name: Commit summary
         if: success()
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add data/backtest-owner-summary.json
+          git add data/backtest-owner-summary.json data/forecast-scorecard.json
           git diff --staged --quiet && exit 0
           git commit -m "Owner strategy backtest $(date -u +%Y-%m-%d)"
           git pull --rebase
