@@ -22,7 +22,8 @@ const GROWTH={
   minDurableGrowth:0.10,   // 3-year revenue CAGR (annual reports)
   maxRevenueDrop:-0.15,    // a yearly revenue fall worse than this in the last 4 years = cyclical
   requireDurable:false,    // live switch: only companies with lasting growth
-  excludeCyclical:false,   // live switch: no cyclicals
+  excludeCyclical:true,    // live switch: no cyclicals. ON since Build 69b: arm G1 beat G in both periods
+                           // (27.4% vs 22.8%/yr; 2018-21 +29.0 vs +23.9, 2022-25 +1.1 vs -3.1 pts; drawdown -32% vs -31%)
   weights:{revGrowth:.15,revAccel:.20,opMarginChange:.15,ruleOf40:.15,fcfMarginChange:.10,sbcChange:.05,momentum:.20},
   durableWeights:{revGrowth:.15,durableGrowth:.15,revAccel:.10,opMarginChange:.10,ruleOf40:.15,fcfMarginChange:.10,sbcChange:.05,momentum:.20},
   // exit rule (backtest arm + live review): growth below this, score below this percentile, or momentum below 0
