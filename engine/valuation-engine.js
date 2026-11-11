@@ -644,25 +644,58 @@ function valuationConsensus(methods,price){
   const outsiders=valid.filter(x=>x.index!==best.a.index&&x.index!==best.b.index);
   const nearestOutlierGap=outsiders.length?Math.min(...outsiders.map(x=>Math.abs(x.x-center))):null;
   const separated=best.gap<=Math.log(1.22)&&Number.isFinite(nearestOutlierGap)&&nearestOutlierGap>=Math.max(Math.log(1.35),best.gap*2.25);
-  if(!separated)return {clusterIndexes:valid.map(x=>x.index),outlierIndexes:[],pairSpread:best.gap,outlierGap:nearestOutlierGap,hasConsensusOutlier:false};
-  return {clusterIndexes:[best.a.index,best.b.index],outlierIndexes:outsiders.map(x=>x.index),pairSpread:best.gap,outlierGap:nearestOutlierGap,hasConsensusOutlier:true};
+  // Build 71: diagnostics only. The blend no longer uses this yes/no outlier call (see robustOutcomeBlend).
+  const outsiderSpread=outsiders.length>=2?Math.max(...outsiders.map(x=>x.x))-Math.min(...outsiders.map(x=>x.x)):null;
+  const methodsSplit=Number.isFinite(nearestOutlierGap)&&nearestOutlierGap>=Math.log(1.35)&&best.gap<=Math.log(1.22)&&outsiderSpread!=null&&outsiderSpread<=Math.log(1.22);
+  const campRatio=methodsSplit?Math.exp(Math.abs(outsiders.reduce((s,x)=>s+x.x,0)/outsiders.length-center)):null;
+  if(!separated)return {clusterIndexes:valid.map(x=>x.index),outlierIndexes:[],pairSpread:best.gap,outlierGap:nearestOutlierGap,hasConsensusOutlier:false,methodsSplit,campRatio};
+  return {clusterIndexes:[best.a.index,best.b.index],outlierIndexes:outsiders.map(x=>x.index),pairSpread:best.gap,outlierGap:nearestOutlierGap,hasConsensusOutlier:true,methodsSplit,campRatio};
+}
+
+// Build 71: a CONTINUOUS weighted median. The plain weighted median jumps from one value to another when the
+// cumulative weight crosses 50%, so when methods split two-vs-two (GM: ~$200 from FCF/EPS vs ~$410 from
+// EV/EBITDA/DCF) a tiny input change flipped which camp got full weight: GM's fair value went $98 -> $133 and
+// AMZN's $211 -> $158 while every method moved under 10%. Here each method sits at the middle of its weight
+// slice and the 50% point is interpolated between neighbours, so the centre moves smoothly with both the
+// values and the weights.
+function smoothWeightedMedian(items){
+  const v=items.filter(x=>Number.isFinite(x.value)&&x.weight>0).sort((a,b)=>a.value-b.value);
+  const W=v.reduce((s,x)=>s+x.weight,0);if(!W)return null;
+  let acc=0;const pts=v.map(x=>{const p=(acc+x.weight/2)/W;acc+=x.weight;return {p,value:x.value};});
+  if(.5<=pts[0].p)return pts[0].value; if(.5>=pts.at(-1).p)return pts.at(-1).value;
+  for(let i=1;i<pts.length;i++)if(pts[i].p>=.5){const a=pts[i-1],b=pts[i];return a.value+(b.value-a.value)*(.5-a.p)/(b.p-a.p);}
+  return pts.at(-1).value;
+}
+// Continuous version of the old step weights (1 / .78 / .48 / .20 at 15% / 30% / 60% from the centre).
+function consensusWeightForGap(gap){
+  const P=[[0,1],[Math.log(1.15),1],[Math.log(1.30),.78],[Math.log(1.60),.48],[Math.log(2.20),.20]];
+  if(gap>=P.at(-1)[0])return .20;
+  for(let i=1;i<P.length;i++)if(gap<=P[i][0]){const [x0,y0]=P[i-1],[x1,y1]=P[i];return y0+(y1-y0)*(gap-x0)/(x1-x0);}
+  return .20;
 }
 
 function robustOutcomeBlend(methods,price,consensus=null){
   const valid=methods.map((m,index)=>({...m,index})).filter(m=>Number.isFinite(m.outcome)&&m.outcome>0&&m.weight>0);
   if(!valid.length)return {outcome:null,weights:{}};
   if(valid.length===1)return {outcome:valid[0].outcome,weights:{[valid[0].name]:1}};
-  const info=consensus||valuationConsensus(methods,price), outliers=new Set(info.outlierIndexes||[]);
+  const info=consensus||valuationConsensus(methods,price);
   // Base weights should express method usefulness, not permit a 40% DCF prior to become
   // 70-80% of the answer after disagreement. Square-root the prior and let reliability +
   // agreement do most of the work.
   const items=valid.map(m=>({value:Math.log(m.outcome),weight:Math.sqrt(Math.max(.001,m.baseWeight||m.weight))*Math.pow(clamp(m.reliability??1,.05,1),1.25),index:m.index,name:m.name,outcome:m.outcome,family:m.family||m.name}));
-  const center=weightedMedian(items.map(x=>({value:x.value,weight:x.weight*(outliers.has(x.index)?.10:1)})));
-  const adjusted=items.map(x=>{
+  // Build 71: graded agreement instead of a yes/no outlier call. Each method's support is the weight of the OTHER
+  // methods near it (Gaussian kernel, bandwidth 25% in value). A method nobody agrees with keeps ~12% of its
+  // weight (the old outlier cap); a method inside a tight group keeps all of it; everything in between slides.
+  // The old rule picked the tightest pair as "the consensus", so two pairs (GM: $201/$206 vs $398/$422) flipped
+  // the answer whenever the other pair became a little tighter.
+  const H=Math.log(1.25);
+  const support=items.map(x=>items.reduce((s,y)=>y===x?s:s+y.weight*Math.exp(-Math.pow((x.value-y.value)/H,2)),0));
+  const maxSupport=Math.max(...support);
+  const agree=items.map((x,i)=>maxSupport>0?.12+.88*support[i]/maxSupport:1);
+  const center=smoothWeightedMedian(items.map((x,i)=>({value:x.value,weight:x.weight*agree[i]})));
+  const adjusted=items.map((x,i)=>{
     const gap=Math.abs(x.value-center);
-    let consensusWeight=gap<=Math.log(1.15)?1:gap<=Math.log(1.30)?.78:gap<=Math.log(1.60)?.48:.20;
-    if(info.hasConsensusOutlier&&outliers.has(x.index))consensusWeight=Math.min(consensusWeight,.12);
-    return {...x,adjustedWeight:x.weight*consensusWeight};
+    return {...x,adjustedWeight:x.weight*agree[i]*consensusWeightForGap(gap)};
   });
   const methodCap=valid.length>=3?.45:.62;
   const familyCap=valid.length>=3?.58:.72;
@@ -1310,6 +1343,11 @@ function valuate(stock,forecast,quality){
   else if(returnCapApplied){modelSupport='limited';modelSupportReason='Implied return exceeded what modeled operating growth, margins, dilution and dividends support; return capped at the support ceiling';valuationConfidence=Math.min(valuationConfidence,45);}
   else if(returnDecompositionFailure){modelSupport='unsupported';modelSupportReason='Canonical return exceeds what modeled operating growth, margin change, dilution, dividends, and a bounded re-rating allowance can support';valuationConfidence=Math.min(valuationConfidence,35);}
   else if(methods.length===0){modelSupport='unsupported';modelSupportReason='No defensible valuation method produced a value from the available economics';valuationConfidence=Math.min(valuationConfidence,35);}
+  // Build 71: methods split into two camps (e.g. cash-flow/earnings vs EV/EBITDA/DCF ~2x apart). The blend is
+  // now stable, but a value halfway between two disagreeing answers cannot carry a Buy.
+  if(consensus?.methodsSplit&&modelSupport==='standard'){modelSupport='limited';modelSupportReason=`Valuation methods split into two camps about ${Number(consensus.campRatio||2).toFixed(1)}x apart; the fair value is a blend of both and cannot support a Buy`;valuationConfidence=Math.min(valuationConfidence,50);}
+  // Build 71: balance-sheet businesses the model cannot value (crypto treasuries, mortgage REITs) are never rated.
+  if(stock?.valuationExclusion?.reason){modelSupport='unsupported';modelSupportReason=stock.valuationExclusion.reason;valuationConfidence=Math.min(valuationConfidence,20);}
   // Investor-style return attribution. Contributions are annualized approximations,
   // intended to reveal what must go right rather than falsely imply exact additivity.
   const endShares=finite(f.shares);
@@ -1342,6 +1380,6 @@ function valuate(stock,forecast,quality){
   const extremeReturn=hasValuation&&(expected<-.30||expected>.22);
   const lowReliability=methods.length>0&&Math.max(...methods.map(m=>m.reliability??0))<.40;
 
-  return {requiredReturn:req,intrinsicDiscountRate:intrinsicRate,analystCheck,analystBlendFactor,returnCapApplied,methods,valuationArchetype:archetype.name,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget,tenYearPriceTarget:target,fiveYearTotalShareholderValue,fiveYearExpectedCAGR,tenYearExpectedCAGR:expected,horizonCAGRSpread,horizonDivergenceFlag,reratingRelianceFlag,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,hurdleReturnPrice,baseHurdleReturnPrice,requiredReturnBuyPrice,underwriting,underwrittenCAGR,underwrittenTotal,investorMarginOfSafety:INVESTOR_MARGIN_OF_SAFETY,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,multipleSensitivity:{down20CAGR:lowMultipleCAGR,up20CAGR:highMultipleCAGR,spread:multipleSensitivitySpread},returnAttribution,preUncertaintyCAGR,riskAdjustedTotal,riskAdjustedCAGR,uncertaintyHaircutRate,valuationConfidenceScore:valuationConfidence,cyclicalBusiness,cycleDispersion,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},methodDispersionRatio,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),economicScenarios,netDebt,terminalNetDebt,year5NetDebt,capitalAllocation:forecast.capitalAllocation||null,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(reratingRelianceFlag?'return_reliant_on_multiple_rerating':(horizonDivergenceFlag?'large_5y_10y_return_divergence':(consensus.hasConsensusOutlier?'isolated_method_outlier':(Number.isFinite(agreement)&&agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))))};
+  return {requiredReturn:req,intrinsicDiscountRate:intrinsicRate,analystCheck,analystBlendFactor,returnCapApplied,methods,valuationArchetype:archetype.name,canonicalMethodWeights:canonical.weights,fiveYearPriceTarget,tenYearPriceTarget:target,fiveYearTotalShareholderValue,fiveYearExpectedCAGR,tenYearExpectedCAGR:expected,horizonCAGRSpread,horizonDivergenceFlag,reratingRelianceFlag,horizonYears:HORIZON_YEARS,cumulativeDividends:dividends,presentValueDividends:pvDividends,terminalDividendValue,totalShareholderValue:total,expectedCAGR:expected,fairValueEstimate:fair,hurdleReturnPrice,baseHurdleReturnPrice,requiredReturnBuyPrice,underwriting,underwrittenCAGR,underwrittenTotal,investorMarginOfSafety:INVESTOR_MARGIN_OF_SAFETY,fairValueDiscountRate:fairDiscountRate,marginOfSafety:mos,premiumToFairValue:premium,valuationGap,methodAgreementScore:agreement,multipleSensitivity:{down20CAGR:lowMultipleCAGR,up20CAGR:highMultipleCAGR,spread:multipleSensitivitySpread},returnAttribution,preUncertaintyCAGR,riskAdjustedTotal,riskAdjustedCAGR,uncertaintyHaircutRate,valuationConfidenceScore:valuationConfidence,cyclicalBusiness,cycleDispersion,independentMethodCount,modelSupport,modelSupportReason,forecastReliabilityScore:forecast.forecastReliabilityScore??null,valuationConsensus:{hasConsensusOutlier:consensus.hasConsensusOutlier,methodsSplit:!!consensus.methodsSplit,campRatio:consensus.campRatio??null,clusterMethods:consensus.clusterIndexes.map(i=>methods[i]?.name).filter(Boolean),outlierMethods:consensus.outlierIndexes.map(i=>methods[i]?.name).filter(Boolean),clusterSpread:consensus.pairSpread,outlierGap:consensus.outlierGap},methodDispersionRatio,bearCAGR:cagr(price,bear),baseCAGR:expected,bullCAGR:cagr(price,bull),economicScenarios,netDebt,terminalNetDebt,year5NetDebt,capitalAllocation:forecast.capitalAllocation||null,plausibilityFailure:!hasValuation,returnDecompositionFailure,returnSupportCeiling,operatingSupport,modeledRevenueCAGR,extremeReturnFlag:extremeReturn,valuationReviewFlag:extremeReturn?'extreme_blended_return_after_normalization':(reratingRelianceFlag?'return_reliant_on_multiple_rerating':(horizonDivergenceFlag?'large_5y_10y_return_divergence':(consensus.hasConsensusOutlier?'isolated_method_outlier':(Number.isFinite(agreement)&&agreement<35?'material_method_disagreement':(lowReliability?'low_method_reliability':null)))))};
 }
-module.exports={boomCycleCheck,valuate,forecastUnderwriting,reratingUnderwritingStress,economicScenarioOutcomes};
+module.exports={smoothWeightedMedian,consensusWeightForGap,robustOutcomeBlend,boomCycleCheck,valuate,forecastUnderwriting,reratingUnderwritingStress,economicScenarioOutcomes};

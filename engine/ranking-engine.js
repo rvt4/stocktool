@@ -108,11 +108,27 @@ function cycleProfile(years){
   if(m.length<4)return null;
   const sorted=[...m].sort((a,b)=>a-b),med=sorted.length%2?sorted[(sorted.length-1)/2]:(sorted[sorted.length/2-1]+sorted[sorted.length/2])/2;
   const now=m.at(-1),worstDrop=Math.min(...drops),low=Math.min(...m.slice(0,-1));
-  const profitCollapse=med>0&&low<.5*med;
+  // Build 71: a cycle repeats. One collapsed year is usually a write-down (HRB, SSNC, CMCSA were tagged); require
+  // at least two years below half the median margin, or a revenue fall of 15%+.
+  const profitCollapse=med>0&&m.slice(0,-1).filter(x=>x<.5*med).length>=2;
   const cyclical=worstDrop<CYCLE_PENALTY.maxRevenueDrop||profitCollapse;
   const atPeak=cyclical&&med>0&&now>med+Math.max(CYCLE_PENALTY.peakMarginGap,CYCLE_PENALTY.peakMarginRelative*med);
   const r4=x=>Math.round(x*1e4)/1e4;
   return {cyclical,atPeak,worstRevenueDrop:r4(worstDrop),marginNow:r4(now),marginMedian:r4(med),marginLow:r4(low)};
+}
+// Build 71: estimate revisions (label only; there is no history of past estimates to backtest a rank rule).
+// Change in consensus EPS over 90 days for this and next fiscal year. A cut of 10%+ is flagged; 25%+ is severe.
+const REVISION={warn:-.10,severe:-.25};
+function estimateRevision(a){
+  if(!a)return null;
+  const ch=(now,ago)=>{now=finite(now);ago=finite(ago);if(now==null||ago==null||!(Math.abs(ago)>.01))return null;
+    if(ago>0)return now/ago-1; return now>=ago?null:-1;}; // negative base: only a further drop counts, as a full cut
+  const cy=ch(a.epsCurrentYear,a.epsCurrentYear90dAgo),ny=ch(a.epsNextYear,a.epsNextYear90dAgo);
+  const v=[cy,ny].filter(x=>x!=null);if(!v.length)return null;
+  const worst=Math.min(...v),r4=x=>x==null?null:Math.round(x*1e4)/1e4;
+  const level=worst<=REVISION.severe+1e-9?'severe':worst<=REVISION.warn+1e-9?'cut':null;
+  return {currentYear:r4(cy),nextYear:r4(ny),worst:r4(worst),level,
+    label:level?`Analysts cut ${cy!=null&&cy===worst?'this year':'next year'}'s EPS estimate ${Math.round(-100*worst)}% in the last 90 days`:null};
 }
 function cyclePenalty(r){
   const c=r.cycle;if(!c||!c.cyclical)return {points:0,label:null};
@@ -120,7 +136,10 @@ function cyclePenalty(r){
 }
 
 function buildModelDScores(rows,{alphaGate=ALPHA_GATE,reliability=false,cycle=CYCLE_PENALTY.live}={}){
-  const eligible=(rows||[]).filter(r=>(finite(r.expectedAlpha)??-Infinity)>=alphaGate);
+  // Build 71 (live rule): a stock the model could not value (Unrated / unsupported: crypto treasuries, mortgage
+  // REITs, failed share counts...) is never ranked. Before, Unrated names could still hold a rank (ARE #138).
+  const valuable=r=>!reliability||(r.modelSupport!=='unsupported'&&!r.valuationExclusion);
+  const eligible=(rows||[]).filter(r=>(finite(r.expectedAlpha)??-Infinity)>=alphaGate&&valuable(r));
   if(!eligible.length) return eligible;
 
   const alpha=percentileRanks(eligible.map(r=>reliability?reliabilityAdjustedAlpha(r):r.expectedAlpha));
@@ -200,4 +219,4 @@ function applyModelDRanking(rows,{rankField='overallRank',universeSizeField='glo
   return sorted;
 }
 
-module.exports={CYCLE_PENALTY,cycleProfile,cyclePenalty,VALUE_TRAP,revenueCagr3,businessGrowth,valueTrapPenalty,stressedAlpha,ALPHA_GATE,reliabilityAdjustedAlpha,percentileRanks,buildModelDScores,compareRank,applyModelDRanking};
+module.exports={REVISION,estimateRevision,CYCLE_PENALTY,cycleProfile,cyclePenalty,VALUE_TRAP,revenueCagr3,businessGrowth,valueTrapPenalty,stressedAlpha,ALPHA_GATE,reliabilityAdjustedAlpha,percentileRanks,buildModelDScores,compareRank,applyModelDRanking};
