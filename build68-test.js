@@ -21,11 +21,11 @@ assert(steady.reasonsUp.some(x=>/Lasting growth/.test(x)));
 const cycCo=co([1e9,2e9,1.5e9,2.5e9,3.5e9]), spikeCo=co([2e9,2.02e9,2.0e9,1.98e9,2.6e9]); // -25% year; flat then +31%
 {
   const cyc=GE.growthSignals(cycCo,px,null),spike=GE.growthSignals(spikeCo,px,null);
-  assert(cyc.eligible&&cyc.cyclical&&cyc.reasonsDown.some(x=>/^Cyclical/.test(x)),'cyclical label');
+  assert(!cyc.eligible&&cyc.cyclical&&cyc.reasonsDown.some(x=>/^Cyclical/.test(x)),'cyclical: excluded live (69b) and labelled');
   assert(spike.eligible&&!spike.lastingGrowth&&spike.reasonsDown.some(x=>/Recent spike/.test(x)),'spike label');
   GE.GROWTH.requireDurable=true;GE.GROWTH.excludeCyclical=true;
   const c2=GE.growthSignals(cycCo,px,null),s2=GE.growthSignals(spikeCo,px,null);
-  GE.GROWTH.requireDurable=false;GE.GROWTH.excludeCyclical=false;
+  GE.GROWTH.requireDurable=false;GE.GROWTH.excludeCyclical=true;
   assert(!c2.eligible&&/cyclical/.test(c2.why),'cyclical: '+c2.why);
   assert(!s2.eligible&&/spike/.test(s2.why),'spike: '+s2.why);
 }
@@ -43,7 +43,7 @@ assert.strictEqual(bad.opMargin,null);assert.strictEqual(bad.opMarginChange,null
 
 // 6) Both weight sets sum to 1; the live default is the Build 65 set.
 for(const w of [GE.GROWTH.weights,GE.GROWTH.durableWeights])assert(Math.abs(Object.values(w).reduce((a,b)=>a+b,0)-1)<1e-9);
-assert(GE.GROWTH.durableWeights.durableGrowth>0&&GE.GROWTH.weights.durableGrowth===undefined&&GE.GROWTH.requireDurable===false&&GE.GROWTH.excludeCyclical===false);
+assert(GE.GROWTH.durableWeights.durableGrowth>0&&GE.GROWTH.weights.durableGrowth===undefined&&GE.GROWTH.requireDurable===false&&GE.GROWTH.excludeCyclical===true); // Build 69b: cyclicals off the live list
 
 // 7) revenueCagr3 and business growth.
 assert(Math.abs(R.revenueCagr3([{revenue:100},{revenue:110},{revenue:121},{revenue:133.1}])-.10)<1e-9);
