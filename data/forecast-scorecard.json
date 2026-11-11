@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-11-11T07:15:28.878Z",
- "modelVersion": "build68-growth-durability",
+ "generatedAt": "2026-11-11T15:35:59.346Z",
+ "modelVersion": "build69",
  "readMe": [
   "Revenue error = ln(actual/forecast); bias > 0 means the model forecast too LOW. Margin errors are in margin points (0.02 = 2 pts).",
   "skill = 1 - model median abs error / baseline median abs error. Positive = the model beats that naive forecast; negative = the naive forecast was more accurate.",
@@ -8,8 +8,8 @@
   "Historical runs have no analyst estimates, so consensus-based rules are not tested here (see forecast-accuracy.json for live tracking).",
   "Group tables (by growth, sector, category, reliability, flag, snapshot year) use the year 3 horizon."
  ],
- "observations": 70698,
- "uniqueTickers": 1005,
+ "observations": 70699,
+ "uniqueTickers": 1006,
  "headline": [
   "year 1: revenue off by a median 6.1% (bias -0.9%, 30% better than the naive fade); net margin off by 3.8 pts (bias 0.4 pts, 9% better than \"3-yr median margin persists\")",
   "year 2: revenue off by a median 12.9% (bias -2.0%, 15% better than the naive fade); net margin off by 4.7 pts (bias 1.0 pts, 6% better than \"3-yr median margin persists\")",
@@ -19,9 +19,9 @@
  ],
  "byHorizon": {
   "year 1": {
-   "n": 20794,
+   "n": 20795,
    "revenue": {
-    "n": 20794,
+    "n": 20795,
     "bias": -0.009,
     "medianAbsError": 0.0588,
     "meanAbsError": 0.1155,
@@ -30,23 +30,23 @@
     "vs": {
      "fade": {
       "baselineMedianAbsError": 0.0838,
-      "skill": 0.2987,
+      "skill": 0.2986,
       "modelCloserRate": 0.6852
      },
      "trend": {
-      "baselineMedianAbsError": 0.0919,
-      "skill": 0.36,
+      "baselineMedianAbsError": 0.0918,
+      "skill": 0.3594,
       "modelCloserRate": 0.7209
      },
      "flat": {
       "baselineMedianAbsError": 0.092,
       "skill": 0.3611,
-      "modelCloserRate": 0.6427
+      "modelCloserRate": 0.6428
      }
     }
    },
    "netMargin": {
-    "n": 17145,
+    "n": 17146,
     "bias": 0.004,
     "medianAbsError": 0.0377,
     "meanAbsError": 0.0875,
@@ -55,30 +55,30 @@
      "median3": {
       "baselineMedianAbsError": 0.0417,
       "skill": 0.0948,
-      "modelCloserRate": 0.5797
+      "modelCloserRate": 0.5796
      },
      "last": {
       "baselineMedianAbsError": 0.039,
       "skill": 0.0366,
-      "modelCloserRate": 0.5549
+      "modelCloserRate": 0.5548
      }
     }
    },
    "fcfMargin": {
-    "n": 16966,
+    "n": 16967,
     "bias": 0.0025,
     "medianAbsError": 0.0348,
-    "meanAbsError": 0.0708,
+    "meanAbsError": 0.0709,
     "within2pts": 0.3265,
     "vs": {
      "median3": {
       "baselineMedianAbsError": 0.0362,
       "skill": 0.0405,
-      "modelCloserRate": 0.5587
+      "modelCloserRate": 0.5586
      },
      "last": {
       "baselineMedianAbsError": 0.0347,
-      "skill": -0.003,
+      "skill": -0.0032,
       "modelCloserRate": 0.5522
      }
     }
