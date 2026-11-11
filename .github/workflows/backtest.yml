@@ -33,6 +33,7 @@ jobs:
           node review-policy-test.js
           node owner-strategy-lab-test.js
           node build66-test.js
+          node build67-test.js
       - name: Run backtest
         env:
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
