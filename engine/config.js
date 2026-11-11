@@ -88,4 +88,16 @@ function avg(values) {
   return a.length ? a.reduce((s, v) => s + v, 0) / a.length : null;
 }
 
-module.exports = { SECTOR, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, EXIT_MULTIPLE_PERSISTENCE, EXIT_PREMIUM_BAND, EXIT_ANCHOR_MAX_MULTIPLE, DCF_EXIT_TV_WEIGHT, INVESTOR_MARGIN_OF_SAFETY, MANUAL_CORPORATE_ACTIONS, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, MARKET_RETURN, isStructuralFinancial, isFinancialLike, sectorConfig, clamp, rate, median, avg };
+// Build 67: calibration from the forecast scorecard (backtest, 70,699 forecasts vs reported results).
+// Revenue growth beyond year 1 regressed toward the market far more than the model assumed: 3-year
+// forecasts of 10-20%/yr delivered ~8%, 20-30% delivered ~13%, and shrinking companies grew ~4.6%.
+// Fitted: actual 3-yr CAGR ~= 6.5% + 0.48 x (forecast - 6.5%). Each projected year's growth is pulled
+// toward ANCHOR, keeping KEEP[k] of its distance (year 1 untouched; year 2 keeps more when analysts
+// forecast it). Set every KEEP value to 1 to switch the calibration off.
+const GROWTH_CALIBRATION = { anchor: 0.065, keep: [1, 0.75, 0.55, 0.45, 0.40], keepYear2WithConsensus: 0.90 };
+// Projected FCF margins (before stock pay) were less accurate than "the 3-year median FCF margin persists"
+// in years 2-5. The starting, year-5 and mature (year-10) FCF targets are blended with that median by these
+// weight; the yearly rows interpolate between them. One weight for all three keeps the path's shape (a rising
+// path still rises), it just sits closer to the company's record. All 0 = off.
+const FCF_MEDIAN_BLEND = { start: 0.40, year5: 0.40, mature: 0.40 };
+module.exports = { GROWTH_CALIBRATION, FCF_MEDIAN_BLEND, SECTOR, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, EXIT_MULTIPLE_PERSISTENCE, EXIT_PREMIUM_BAND, EXIT_ANCHOR_MAX_MULTIPLE, DCF_EXIT_TV_WEIGHT, INVESTOR_MARGIN_OF_SAFETY, MANUAL_CORPORATE_ACTIONS, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, MARKET_RETURN, isStructuralFinancial, isFinancialLike, sectorConfig, clamp, rate, median, avg };
