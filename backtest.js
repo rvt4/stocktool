@@ -40,7 +40,7 @@ const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {buildOwnerStrategyLab}=require('./owner-strategy-lab');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='build69b';
+const MODEL_VERSION='build70-ttm';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -489,6 +489,8 @@ function historicalStockFromData(ticker,sector,rawFacts,priceHistory,asOf,diagno
   if(!(currentPrice>0)){ if(diagnostics) diagnostics.missingHistoricalPrice++; return null; }
   if(diagnostics) diagnostics.historicalPriceFound++;
   normalizeHistoryForCorporateAction(years,latestDilutedSharesFromFacts(facts));
+  // Build 70: latest 10-Q profits/cash flow (point-in-time: facts were filtered by filing date). Switchable for the A/B.
+  if(process.env.BACKTEST_TTM!=='0'){try{require('./data-fetchers').applyTtmOverlay(years,require('./data-fetchers').parseTrailingTwelveMonths(facts));}catch(e){}}
   const last=years.at(-1)||{};
 
   // Historical runs cannot use today's market-cap reconciliation. Prefer reported

@@ -162,6 +162,99 @@ function parseQuarterlyRevenue(facts, maxQuarters = 12) { // Build 65: 12 so gro
   return Object.values(byEnd).sort((a, b) => new Date(a.end) - new Date(b.end)).slice(-maxQuarters);
 }
 
+// Build 70: trailing twelve months (TTM) from the 10-Qs, for profits and cash flow, not just revenue.
+// Annual 10-K numbers can be up to 11 months stale: PRIM halved its 2026 outlook after cost overruns and the
+// model still valued it on 2025 margins. 10-Qs report income items per quarter AND year-to-date, cash-flow
+// items year-to-date only, so the robust identity is:
+//   TTM = last fiscal year + current year-to-date - prior year's same year-to-date period
+// using one tag for all three pieces. Point-in-time safe: the backtest filters facts by filing date first.
+const TTM_TAGS = {
+  revenue: ['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'RevenueFromContractWithCustomerIncludingAssessedTax'],
+  netIncome: ['NetIncomeLoss', 'ProfitLoss'],
+  operatingIncome: ['OperatingIncomeLoss'],
+  cfo: ['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'],
+  capex: ['PaymentsToAcquirePropertyPlantAndEquipment', 'PaymentsToAcquireProductiveAssets'],
+  sbc: ['ShareBasedCompensation', 'AllocatedShareBasedCompensationExpense'],
+};
+function ttmForTag(arr) {
+  const DAY = 86400000, dur = x => (new Date(x.end) - new Date(x.start)) / DAY;
+  const rows = (arr || []).filter(x => x && x.start && x.end && Number.isFinite(Number(x.val)));
+  const q = rows.filter(x => x.form === '10-Q' && dur(x) >= 80 && dur(x) <= 285);
+  if (!q.length) return null;
+  const latestEnd = q.map(x => x.end).sort().at(-1);
+  // year-to-date = the longest 10-Q period ending at the latest quarter end
+  const ytd = q.filter(x => x.end === latestEnd).sort((a, b) => dur(b) - dur(a) || String(b.filed || '').localeCompare(String(a.filed || '')))[0];
+  const ytdDays = dur(ytd), target = new Date(latestEnd) - 365 * DAY;
+  const prior = rows.filter(x => Math.abs(new Date(x.end) - target) <= 20 * DAY && Math.abs(dur(x) - ytdDays) <= 20)
+    .sort((a, b) => String(b.filed || '').localeCompare(String(a.filed || '')))[0];
+  const fy = rows.filter(x => /^10-K/.test(x.form || '') && dur(x) >= 350 && dur(x) <= 380 && x.end > (prior?.end || '') && x.end < latestEnd)
+    .sort((a, b) => String(b.end).localeCompare(String(a.end)) || String(b.filed || '').localeCompare(String(a.filed || '')))[0];
+  if (!prior || !fy) return null;
+  return { val: Number(fy.val) + Number(ytd.val) - Number(prior.val), end: latestEnd, fyEnd: fy.end, ytdDays: Math.round(ytdDays) };
+}
+function parseTrailingTwelveMonths(facts) {
+  const usGaap = facts?.facts?.['us-gaap'] || {};
+  const out = {};
+  for (const [field, tags] of Object.entries(TTM_TAGS)) {
+    for (const tag of tags) {
+      const units = usGaap[tag]?.units;
+      const r = units ? ttmForTag(units.USD || Object.values(units)[0]) : null;
+      if (r) { out[field] = r.val; out[field + 'End'] = r.end; out.fyEnd = out.fyEnd || r.fyEnd; break; }
+    }
+  }
+  if (!(out.revenue > 0) || !out.revenueEnd) return null;
+  // every piece must describe the same twelve months as revenue
+  for (const f of Object.keys(TTM_TAGS)) if (f !== 'revenue' && out[f + 'End'] && out[f + 'End'] !== out.revenueEnd) { delete out[f]; }
+  out.end = out.revenueEnd;
+  return out;
+}
+// Blend the latest fiscal year's profit and cash-flow MARGINS toward the TTM margins, weighted by how much of
+// the new fiscal year has been reported (1 quarter 25%, 2 quarters 50%, 3 quarters 75%). Revenue and the year
+// label stay as filed (revenue momentum already comes from quarterly growth), so forecast years still line up.
+// Skipped when TTM revenue is far from the fiscal-year figure (acquisition, divestiture, tagging mismatch).
+function applyTtmOverlay(years, ttm) {
+  const last = years?.[years.length - 1];
+  if (!last || !ttm || !(ttm.revenue > 0) || !(last.revenue > 0) || last.revenueIsProxy) return null;
+  // The TTM must be built on the same fiscal year the history ends with (years are keyed by period-end year).
+  if (!ttm.fyEnd || new Date(ttm.fyEnd).getUTCFullYear() !== Number(last.year)) return { skipped: 'fiscal_year_mismatch', ttmFyEnd: ttm.fyEnd || null, lastYear: last.year };
+  const months = (new Date(ttm.end) - new Date(ttm.fyEnd)) / (86400000 * 30.44);
+  if (!(months >= 2.5)) return null;
+  const ratio = ttm.revenue / last.revenue;
+  if (!(ratio > 0.6 && ratio < 1.8)) return { skipped: 'ttm_revenue_mismatch', ratio };
+  const w = Math.min(0.75, Math.round(months / 3) / 4);
+  if (!(w > 0)) return null;
+  const changed = {};
+  const blend = f => {
+    const a = Number(last[f]), b = Number(ttm[f]);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return;
+    const v = last.revenue * ((1 - w) * a / last.revenue + w * b / ttm.revenue);
+    changed[f] = { annual: a, ttmMarginBasis: v }; last[f] = v;
+  };
+  const oldNI = Number(last.netIncome);
+  ['netIncome', 'operatingIncome', 'cfo', 'capex', 'sbc'].forEach(blend);
+  if (!Object.keys(changed).length) return null;
+  // derived fields, same formulas as parseAnnualFinancials
+  if (last.cfo != null && last.capex != null) last.fcf = last.cfo - Math.abs(last.capex);
+  if (last.fcf != null) last.fcfSBCAdjusted = last.fcf - (last.sbc || 0);
+  if (last.operatingIncome != null) {
+    last.opMargin = last.operatingIncome / last.revenue;
+    if (Number.isFinite(Number(last.da)) && Number(last.da) >= 0) last.ebitda = last.operatingIncome + Number(last.da);
+    last.nopat = last.operatingIncome * 0.79;
+    last.roic = Number.isFinite(last.investedCapital) && last.investedCapital > 0 ? last.nopat / last.investedCapital : last.roic;
+  }
+  if (last.sbc != null) last.sbcIntensity = last.sbc / last.revenue;
+  if (changed.netIncome) {
+    const newNI = Number(last.netIncome), f = Number.isFinite(oldNI) && oldNI !== 0 && Math.sign(oldNI) === Math.sign(newNI) ? newNI / oldNI : null;
+    for (const k of ['netIncomeAttributableToParent', 'netIncomeAttributableToCommon']) if (Number.isFinite(Number(last[k])) && f != null) last[k] = Number(last[k]) * f;
+    const sh = Number(last.sharesOutTTM);
+    if (Number.isFinite(Number(last.dilutedEPS))) last.dilutedEPS = f != null ? Number(last.dilutedEPS) * f : (sh > 0 ? newNI / sh : last.dilutedEPS);
+  }
+  const info = { weight: w, ttmEnd: ttm.end, fyEnd: ttm.fyEnd, fields: Object.keys(changed),
+    ttmNetMargin: Number.isFinite(ttm.netIncome) ? ttm.netIncome / ttm.revenue : null, annualNetMargin: changed.netIncome ? changed.netIncome.annual / last.revenue : null };
+  last.ttmOverlay = info;
+  return info;
+}
+
 // Most recent quarter's YoY revenue growth — a much more current momentum signal
 // than a 3yr trailing CAGR. Looks for a quarter ending ~12 months before the latest one.
 function recentQuarterYoYGrowth(quarters) {
@@ -1052,6 +1145,8 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   const splitEventRepair = applySplitEvents(years, latestShareFact, priceHistory?.splits, corporateActionNormalization.applied, consensusPriorEPS);
   if (splitEventRepair.rejectedByConsensus) console.log(`[split ${secTicker}] x${splitEventRepair.factor.toFixed(3)} rejected: EPS ${splitEventRepair.epsBefore.toFixed(2)} -> ${splitEventRepair.epsAfter.toFixed(2)} moves away from consensus prior-year EPS ${splitEventRepair.consensusEPS.toFixed(2)}`);
   if (splitEventRepair.applied) console.log(`[split ${secTicker}] share basis rebased x${splitEventRepair.factor.toFixed(3)} (${splitEventRepair.steps.map(x=>x.case+': '+x.splits.map(y=>y.date+' '+y.ratio).join(',')).join('; ')})`);
+  // Build 70: fold the latest 10-Q profits and cash flow into the last fiscal year (see applyTtmOverlay).
+  let ttmOverlay = null; try { ttmOverlay = applyTtmOverlay(years, parseTrailingTwelveMonths(facts)); } catch (e) { ttmOverlay = { error: e.message }; }
   const last = years[years.length - 1] || {};
   const currentPrice = quote?.c || (priceHistory.length ? priceHistory[priceHistory.length - 1].close : null);
 
@@ -1210,6 +1305,7 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
     price: { current: currentPrice },
     priceHistory,
     quarterly: quarters,
+    ttmOverlay,
     corporateActionNormalization,
     splitEventRepair,
     filingCorporateAction,
@@ -1222,7 +1318,7 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
 }
 
 const api = {
-  fetchSecFacts, fetchSecFactsByCik, fetchSecSubmissions, fetchSecSubmissionsByCik, classifyCompanyMetadata, parseAnnualFinancials, parseQuarterlyRevenue, recentQuarterYoYGrowth, blendedForwardGrowth,
+  fetchSecFacts, fetchSecFactsByCik, fetchSecSubmissions, fetchSecSubmissionsByCik, classifyCompanyMetadata, parseAnnualFinancials, parseQuarterlyRevenue, parseTrailingTwelveMonths, applyTtmOverlay, recentQuarterYoYGrowth, blendedForwardGrowth,
   fetchStooqPrice, fetchStooqHistory, fetchYahooHistory, fetchBacktestHistory,
   fetchFinnhubProfile, fetchFinnhubQuote, fetchFinnhubRevenueEstimate,
   buildStockRecord, latestDilutedSharesFromFacts, normalizeHistoryForCorporateAction, shareDenominatorLooksSuspicious, reconcileSharesWithLiveMarketCap, getTickerCikMap, normalizeSecTicker, normalizeFinnhubTicker, fetchWithTimeout,
