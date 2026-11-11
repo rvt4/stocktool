@@ -11,16 +11,20 @@ const {isFinancialLike}=require('./config');
 const finite=v=>{if(v===null||v===undefined||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null;};
 const DAY=86400000;
 
-// Build 68: the list was dominated by cyclical spikes (memory at peak pricing, oil, silver), acquisition jumps and
-// data glitches, because it rewarded "growth speeding up this quarter". Now a company also needs growth that has
-// lasted (3-year revenue CAGR >= 10%) and no big revenue drop in the last four years (cyclical businesses swing
-// down as hard as they swing up). Multi-year growth gets its own weight; acceleration counts for less.
+// Build 68b: Build 68 required lasting growth (3-yr CAGR >= 10%) and excluded cyclicals. In the backtest that
+// turned the growth sleeve from +6.5 to -2.5 pts/yr vs SPY in 2022-25 (max drawdown -24% -> -52%): in late 2021 it
+// swapped energy for software at peak prices (NET, SNOW, DDOG, DOCU, PTON). So the live list keeps the Build 65
+// rules (both switches off) plus the data-glitch fixes, and the owner backtest runs the alternatives side by side
+// (arms G1-G3). Switch on only what wins there. The durability/cyclical facts are still shown as labels.
 const GROWTH={
   minRevenue:300e6,        // last fiscal year
   minGrowth:0.15,          // current revenue growth to qualify as a growth company
   minDurableGrowth:0.10,   // 3-year revenue CAGR (annual reports)
-  maxRevenueDrop:-0.15,    // any yearly revenue fall worse than this in the last 4 years = cyclical, not eligible
-  weights:{revGrowth:.15,durableGrowth:.15,revAccel:.10,opMarginChange:.10,ruleOf40:.15,fcfMarginChange:.10,sbcChange:.05,momentum:.20},
+  maxRevenueDrop:-0.15,    // a yearly revenue fall worse than this in the last 4 years = cyclical
+  requireDurable:false,    // live switch: only companies with lasting growth
+  excludeCyclical:false,   // live switch: no cyclicals
+  weights:{revGrowth:.15,revAccel:.20,opMarginChange:.15,ruleOf40:.15,fcfMarginChange:.10,sbcChange:.05,momentum:.20},
+  durableWeights:{revGrowth:.15,durableGrowth:.15,revAccel:.10,opMarginChange:.10,ruleOf40:.15,fcfMarginChange:.10,sbcChange:.05,momentum:.20},
   // exit rule (backtest arm + live review): growth below this, score below this percentile, or momentum below 0
   exitGrowth:0.10, exitScore:50, exitMomentum:0,
 };
@@ -102,12 +106,17 @@ function growthSignals(stock,priceHistory,asOf){
   const financial=isFinancialLike(stock);
   const cyclical=Number.isFinite(out.worstRevenueDrop)&&out.worstRevenueDrop<GROWTH.maxRevenueDrop;
   const durable=out.durableGrowth>=GROWTH.minDurableGrowth;
-  out.eligible=!financial&&last.rev>=GROWTH.minRevenue&&out.revGrowth>=GROWTH.minGrowth&&durable&&!cyclical&&Number.isFinite(out.momentum);
+  out.cyclical=cyclical; out.lastingGrowth=durable;
+  const gateDurable=!GROWTH.requireDurable||durable, gateCyclical=!GROWTH.excludeCyclical||!cyclical;
+  out.eligible=!financial&&last.rev>=GROWTH.minRevenue&&out.revGrowth>=GROWTH.minGrowth&&gateDurable&&gateCyclical&&Number.isFinite(out.momentum);
   if(!out.eligible)out.why=financial?'financial company':last.rev<GROWTH.minRevenue?'revenue under $300M':!(out.revGrowth>=GROWTH.minGrowth)?'growth under 15%'
-    :!durable?`only ${(out.durableGrowth*100).toFixed(0)}%/yr over 3 years (a spike, not lasting growth)`
-    :cyclical?`cyclical: revenue fell ${(-out.worstRevenueDrop*100).toFixed(0)}% in one of the last 4 years`:'no 12-month price history';
+    :!gateDurable?`only ${(out.durableGrowth*100).toFixed(0)}%/yr over 3 years (a spike, not lasting growth)`
+    :!gateCyclical?`cyclical: revenue fell ${(-out.worstRevenueDrop*100).toFixed(0)}% in one of the last 4 years`:'no 12-month price history';
   const P=x=>(x*100).toFixed(0)+'%', S=x=>(x>=0?'+':'')+(x*100).toFixed(0)+' pts';
   if(out.durableGrowth>=.20)out.reasonsUp.push(`Lasting growth: ${P(out.durableGrowth)} a year over 3 years`);
+  // Labels only (not filters, see GROWTH): warn when the growth looks like a cycle or a one-off jump.
+  if(cyclical)out.reasonsDown.push(`Cyclical: revenue fell ${(-out.worstRevenueDrop*100).toFixed(0)}% in one of the last 4 years`);
+  else if(!durable&&Number.isFinite(out.durableGrowth))out.reasonsDown.push(`Recent spike: only ${P(out.durableGrowth)} a year over 3 years`);
   if(out.revAccel>=.03)out.reasonsUp.push(`Growth speeding up: ${P(out.revGrowth)} now, ${S(out.revAccel)} vs two quarters earlier`);
   else if(out.revAccel<=-.05)out.reasonsDown.push(`Growth slowing: ${P(out.revGrowth)} now, ${S(out.revAccel)} vs two quarters earlier`);
   if(out.turnedProfitable)out.reasonsUp.push('Turned profitable on an operating basis');
@@ -124,9 +133,9 @@ function growthSignals(stock,priceHistory,asOf){
 
 // Percentile-score every eligible row. rows: objects carrying signals in rows[i][field].
 // Writes growthScore (0-100), growthRank (1 = best), growthUniverse onto each eligible row.
-function scoreGrowthUniverse(rows,{field='growth'}={}){
+function scoreGrowthUniverse(rows,{field='growth',weights=GROWTH.requireDurable?GROWTH.durableWeights:GROWTH.weights}={}){
   const elig=(rows||[]).filter(r=>r&&r[field]&&r[field].eligible);
-  const keys=Object.keys(GROWTH.weights);
+  const keys=Object.keys(weights);
   const pct={};
   for(const k of keys){
     const vals=elig.map(r=>r[field][k]).filter(Number.isFinite).sort((x,y)=>x-y);
@@ -134,7 +143,7 @@ function scoreGrowthUniverse(rows,{field='growth'}={}){
   }
   for(const r of elig){
     let s=0;const parts={};
-    for(const k of keys){const p=pct[k](r[field][k]);parts[k]=Math.round(p*100);s+=GROWTH.weights[k]*p;}
+    for(const k of keys){const p=pct[k](r[field][k]);parts[k]=Math.round(p*100);s+=weights[k]*p;}
     r[field].score=Math.round(s*1000)/10; r[field].percentiles=parts;
   }
   elig.sort((a,b)=>b[field].score-a[field].score);

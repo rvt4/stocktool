@@ -92,7 +92,34 @@ function valueTrapPenalty(r){
   return {growth:g,points:hit?hit.points:0,label:hit?hit.label:null};
 }
 
-function buildModelDScores(rows,{alphaGate=ALPHA_GATE,reliability=false}={}){
+// Build 69: cyclical-at-peak check. A cyclical business (revenue fell >15% in a year, or profits collapsed to under
+// half their typical margin, in the last 8 years) whose current net margin is well above its own median looks
+// cheap on peak earnings (PPC, ALK, OMF...). Not live until the owner backtest's arm C2 beats arm C:
+// set CYCLE_PENALTY.live = true then. The app shows the label either way.
+const CYCLE_PENALTY={live:false,peakPoints:12,cyclicalPoints:4,maxRevenueDrop:-.15,peakMarginGap:.03,peakMarginRelative:.25};
+function cycleProfile(years){
+  const ys=(years||[]).filter(y=>finite(y?.revenue)>0&&!y.revenueIsProxy).slice(-8);
+  if(ys.length<4)return null;
+  // Fiscal 2020 (the pandemic shock) is skipped: it is not a business cycle and would tag BKNG, restaurants, hotels.
+  const covid=y=>Number(y.year)===2020;
+  const drops=ys.map((y,i)=>i&&!covid(y)?y.revenue/ys[i-1].revenue-1:null).filter(Number.isFinite);
+  if(!drops.length)return null;
+  const m=ys.filter(y=>!covid(y)).map(y=>finite(y.netIncome)!=null?y.netIncome/y.revenue:null).filter(x=>x!=null&&x>-1&&x<1);
+  if(m.length<4)return null;
+  const sorted=[...m].sort((a,b)=>a-b),med=sorted.length%2?sorted[(sorted.length-1)/2]:(sorted[sorted.length/2-1]+sorted[sorted.length/2])/2;
+  const now=m.at(-1),worstDrop=Math.min(...drops),low=Math.min(...m.slice(0,-1));
+  const profitCollapse=med>0&&low<.5*med;
+  const cyclical=worstDrop<CYCLE_PENALTY.maxRevenueDrop||profitCollapse;
+  const atPeak=cyclical&&med>0&&now>med+Math.max(CYCLE_PENALTY.peakMarginGap,CYCLE_PENALTY.peakMarginRelative*med);
+  const r4=x=>Math.round(x*1e4)/1e4;
+  return {cyclical,atPeak,worstRevenueDrop:r4(worstDrop),marginNow:r4(now),marginMedian:r4(med),marginLow:r4(low)};
+}
+function cyclePenalty(r){
+  const c=r.cycle;if(!c||!c.cyclical)return {points:0,label:null};
+  return c.atPeak?{points:CYCLE_PENALTY.peakPoints,label:'cyclical, profits near a peak'}:{points:CYCLE_PENALTY.cyclicalPoints,label:'cyclical business'};
+}
+
+function buildModelDScores(rows,{alphaGate=ALPHA_GATE,reliability=false,cycle=CYCLE_PENALTY.live}={}){
   const eligible=(rows||[]).filter(r=>(finite(r.expectedAlpha)??-Infinity)>=alphaGate);
   if(!eligible.length) return eligible;
 
@@ -112,6 +139,8 @@ function buildModelDScores(rows,{alphaGate=ALPHA_GATE,reliability=false}={}){
       const p=valueTrapPenalty(r);
       r.rankBusinessGrowth=p.growth;r.rankGrowthPenalty=p.points||0;r.rankGrowthPenaltyReason=p.label;
       if(Number.isFinite(score)&&p.points)score-=p.points/100;
+      const c=cyclePenalty(r);r.rankCycleLabel=c.label;r.rankCyclePenalty=cycle?c.points:0;
+      if(cycle&&Number.isFinite(score)&&c.points)score-=c.points/100;
     }
     r.rankEligible=true;
     r.rankAlphaPercentile=alpha[i];
@@ -143,14 +172,14 @@ function compareRank(a,b){
   return String(a.ticker||'').localeCompare(String(b.ticker||''));
 }
 
-function applyModelDRanking(rows,{rankField='overallRank',universeSizeField='globalUniverseSize',alphaGate=ALPHA_GATE,reliability=false}={}){
+function applyModelDRanking(rows,{rankField='overallRank',universeSizeField='globalUniverseSize',alphaGate=ALPHA_GATE,reliability=false,cycle=CYCLE_PENALTY.live}={}){
   for(const r of rows||[]){
     r.rankEligible=false;
     r.rankScore=null;
     r.rankAlphaPercentile=null;
     r.rankQualityBasketPercentile=null;
   }
-  buildModelDScores(rows||[],{alphaGate,reliability});
+  buildModelDScores(rows||[],{alphaGate,reliability,cycle});
   let sorted=[...(rows||[])].sort(compareRank);
   if(reliability){
     // Top-10 needs outside corroboration: eligible names with <3 analysts start at #11.
@@ -171,4 +200,4 @@ function applyModelDRanking(rows,{rankField='overallRank',universeSizeField='glo
   return sorted;
 }
 
-module.exports={VALUE_TRAP,revenueCagr3,businessGrowth,valueTrapPenalty,stressedAlpha,ALPHA_GATE,reliabilityAdjustedAlpha,percentileRanks,buildModelDScores,compareRank,applyModelDRanking};
+module.exports={CYCLE_PENALTY,cycleProfile,cyclePenalty,VALUE_TRAP,revenueCagr3,businessGrowth,valueTrapPenalty,stressedAlpha,ALPHA_GATE,reliabilityAdjustedAlpha,percentileRanks,buildModelDScores,compareRank,applyModelDRanking};
