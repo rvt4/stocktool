@@ -108,7 +108,7 @@ function flattenRecord(stock, forecast, quality, valuation, decision){
     ticker:stock.ticker, name:stock.name||stock.ticker, sector:stock.sector, industry:stock.industry||null, sic:stock.sic||null, isBiopharma:!!stock.isBiopharma, marketCap:stock.valuation?.marketCap??null, category:forecast.category, rating:decision.rating,
     currentPrice:stock.price?.current??null,
     // Build 62: inputs for the thesis-broken sell rule (review-policy.js)
-    revenueGrowthTTM:require('./review-policy').ttmRevenueGrowth(stock.quarterly,stock.financials?.years), forwardEPS:forecast.rows?.[0]?.eps??null,
+    revenueGrowthTTM:require('./review-policy').ttmRevenueGrowth(stock.quarterly,stock.financials?.years), revenueCAGR3:require('./engine/ranking-engine').revenueCagr3(stock.financials?.years), forwardEPS:forecast.rows?.[0]?.eps??null,
     expectedReturn:valuation.expectedCAGR, expectedCAGR:valuation.expectedCAGR, expectedAlpha:decision.expectedAlpha,
     bearCAGR:valuation.bearCAGR, baseCAGR:valuation.baseCAGR, bullCAGR:valuation.bullCAGR,
     confidenceScore:valuation.valuationConfidenceScore??quality.confidenceScore, valuationConfidenceScore:valuation.valuationConfidenceScore??quality.confidenceScore, businessDataConfidenceScore:quality.confidenceScore, marginOfSafety:valuation.marginOfSafety, premiumToFairValue:valuation.premiumToFairValue, requiredMOS:decision.requiredMOS,
@@ -271,7 +271,7 @@ async function run(){
   for(const s of stocks){if(s.newPositionAction==='BUY'&&!s.qualifiesForBuyList)throw new Error(`Inconsistent investment decision: ${s.ticker}`);}
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'build67-calibrated',stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'build68-growth-durability',stocks}; writeJson('results.json',output);
   // Build 55: monthly forecast snapshots + accuracy report (never blocks the run).
   try{const rep=require('./track-forecasts').trackForecasts(output);console.log(`Forecast tracking: ${rep.snapshots} snapshot(s), ${rep.observations} forecast(s) checked against reported revenue.`);}catch(e){console.warn('Forecast tracking skipped:',e.message);}
   const historyFile=writeProspectiveSnapshot(__dirname,output);

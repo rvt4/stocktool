@@ -65,4 +65,21 @@ const M=CFG.GROWTH_CALIBRATION.anchor;
   f.rows.slice(0,5).forEach((r,i)=>assert(Math.abs(r.revenueGrowth-raw[i])<1e-12,'switch-off failed'));
   CFG.GROWTH_CALIBRATION.keep.splice(0,5,...saved);
 }
+// 6) Build 67b: an empty analyst record (yfinance row with numAnalysts 0, nulls, revenue 0) must give exactly the
+//    same forecast and valuation as no analyst record at all (ROKU was read as "0% growth" and rated Sell).
+{
+  const empty={revenueGrowthFwd:null,revenueGrowthCurrentYear:null,revenueGrowthNextYear:null,revenueCurrentYear:0,revenueNextYear:0,
+    epsGrowthFwd:null,epsGrowthCurrentYear:null,epsGrowthNextYear:null,epsCurrentYear:null,epsNextYear:null,epsGrowthLongTerm:null,
+    analystTargetMean:null,numAnalysts:0,source:'yfinance'};
+  const none=run(co({t:'R',g:.15})),withEmpty=run({...co({t:'R',g:.15}),analystEstimates:empty});
+  assert.deepStrictEqual(withEmpty.f.rows.map(r=>r.revenueGrowth),none.f.rows.map(r=>r.revenueGrowth),'empty analyst record changed growth');
+  assert.strictEqual(withEmpty.f.forecastBridge.revenue.analystCurrent,null);
+  assert(Math.abs(withEmpty.v.expectedCAGR-none.v.expectedCAGR)<1e-9,`empty analyst record changed expected return ${withEmpty.v.expectedCAGR} vs ${none.v.expectedCAGR}`);
+  // A placeholder 0% with no revenue estimate is ignored even when analysts are counted (pre-revenue names).
+  const ph=run({...co({t:'P',g:.15}),analystEstimates:{numAnalysts:5,revenueGrowthCurrentYear:0,revenueGrowthNextYear:0,revenueCurrentYear:null}});
+  assert.deepStrictEqual(ph.f.rows.slice(0,2).map(r=>r.revenueGrowth),none.f.rows.slice(0,2).map(r=>r.revenueGrowth));
+  // A real 0% (with a revenue estimate) is still used.
+  const real=run({...co({t:'Z',g:.15}),analystEstimates:{numAnalysts:12,revenueGrowthCurrentYear:0,revenueGrowthNextYear:0,revenueCurrentYear:5e9,revenueNextYear:5e9}});
+  assert(real.f.rows[0].revenueGrowth<none.f.rows[0].revenueGrowth,'real 0% consensus should still pull growth down');
+}
 console.log('build67-test OK');

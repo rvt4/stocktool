@@ -75,7 +75,9 @@ console.log('Build 48 tests passed',JSON.stringify({turnY10:[+a0[9].toFixed(3),+
 // 9) Analysts below the model lower EPS margins but never the cash (FCF) path
 {
   const hist=[.20,.20,.21,.20,.21,.20];
-  const f0=buildForecast(stock({ticker:'C0',netPath:hist})),f1=buildForecast(stock({ticker:'C1',netPath:hist,analyst:{n:25,net1:.12,net2:.12}}));
+  // Build 67b: the baseline needs the same revenue consensus (n=25) and only lacks EPS; numAnalysts 0 now means no consensus at all.
+  const s0=stock({ticker:'C0',netPath:hist});s0.analystEstimates.numAnalysts=25;
+  const f0=buildForecast(s0),f1=buildForecast(stock({ticker:'C1',netPath:hist,analyst:{n:25,net1:.12,net2:.12}}));
   const fcf=f=>f.rows.map(r=>r.fcfMargin);fcf(f1).forEach((x,i)=>assert(x>=fcf(f0)[i]-1e-9,'FCF cut by analyst pull-down at year '+(i+1)));
   console.log('guards ok');
 }
