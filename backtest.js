@@ -40,7 +40,7 @@ const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {buildOwnerStrategyLab}=require('./owner-strategy-lab');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='build71';
+const MODEL_VERSION='build72';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -559,7 +559,7 @@ function compactModel(stock,f,q,v,d){return {
   methodCount:(v.methods||[]).length,independentEvidenceFamilies:v.independentMethodCount,
   intrinsicDiscountRate:v.intrinsicDiscountRate,hurdleReturnPrice:v.hurdleReturnPrice,requiredReturnBuyPrice:v.requiredReturnBuyPrice,
   methodDispersionRatio:v.methodDispersionRatio,valuationReviewFlag:v.valuationReviewFlag,
-  valuationConsensus:v.valuationConsensus?{hasConsensusOutlier:!!v.valuationConsensus.hasConsensusOutlier,clusterSpread:v.valuationConsensus.clusterSpread??null,outlierGap:v.valuationConsensus.outlierGap??null}:null,
+  methodsSplit:!!v.valuationConsensus?.methodsSplit,valuationConsensus:v.valuationConsensus?{hasConsensusOutlier:!!v.valuationConsensus.hasConsensusOutlier,clusterSpread:v.valuationConsensus.clusterSpread??null,outlierGap:v.valuationConsensus.outlierGap??null}:null,
   valuationMethodEvidence:(v.methods||[]).map(m=>({name:m.name||null,family:m.family||null,reliability:m.reliability??null,weight:m.weight??null,fairValueToday:m.audit?.fairValueToday??null,hurdleValueToday:m.audit?.hurdleValueToday??null,outcome:m.outcome??null})),
   modelSupport:v.modelSupport,
   revenueGrowthTTM:require('./review-policy').ttmRevenueGrowth(stock.quarterly,stock.financials?.years),revenueCAGR3:require('./engine/ranking-engine').revenueCagr3(stock.financials?.years),cycle:require('./engine/ranking-engine').cycleProfile(stock.financials?.years),forwardEPS:f.rows?.[0]?.eps??null

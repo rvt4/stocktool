@@ -81,12 +81,38 @@
   // A stock you would buy today (not merely keep): above hurdle, quality 75+, rated Buy or better
   // and at/below the hurdle + MOS buy price.
   // The entry rule the Build 36 backtest validated (arm C). One definition, used by the app and the backtest.
-  function shortlistEntry(s,{rankField='overallRank',maxRank=20}={}){
+  // Build 72: the live entry settings. Defaults = arm C. The owner backtest runs the variants (C35, C50, CW, CQ,
+  // C35W); change these only to a variant that beat C in BOTH periods (see README-build72).
+  const ENTRY={maxRank:20,minQuality:75,blockSplit:false,blockCycleAtPeak:false};
+  // Build 72: the GARP list (owner's style). Quality 75+, revenue growing 10%+ a year (average of trailing-12-month
+  // growth and the 3-year CAGR), any model rank (the rank leans to cheapness and hid MSFT, GOOG, FIX at #175-220).
+  // App list: underwritten return 7%+ (watch zone); buy zone and backtest arm CG: 9%+.
+  const GARP={maxRank:Infinity,minReturn:0.09,listMinReturn:0.07,minQuality:75,minGrowth:0.10};
+  function businessGrowthOf(s){
+    const v=[num(s&&s.revenueGrowthTTM),num(s&&s.revenueCAGR3)].filter(x=>x!==null&&x>-.6&&x<3);
+    return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;
+  }
+  // Why a shortlist name would be skipped under the warning blocks (also shown as review notes in the app).
+  function entryWarnings(s){
+    const w=[];
+    if(s&&(s.methodsSplit===true||/two camps/.test(String(s.modelSupportReason||''))))w.push('split');
+    if(s&&s.cycle&&s.cycle.atPeak)w.push('cycle_peak');
+    return w;
+  }
+  function shortlistEntry(s,{rankField='overallRank',maxRank=ENTRY.maxRank,minQuality=ENTRY.minQuality,blockSplit=ENTRY.blockSplit,blockCycleAtPeak=ENTRY.blockCycleAtPeak,minReturn=SIZING.hurdle,minGrowth=null}={}){
     if(!s||s.rating==='Unrated') return false;
     const u=returnOf(s), q=num(s.qualityScore), rk=num(s[rankField]);
-    return rk!==null&&rk<=maxRank&&u!==null&&u>=SIZING.hurdle&&q!==null&&q>=BANDS.reviewQuality;
+    if(!((maxRank===Infinity||(rk!==null&&rk<=maxRank))&&u!==null&&u>=minReturn&&q!==null&&q>=minQuality)) return false;
+    if(minGrowth!==null){const g=businessGrowthOf(s);if(g===null||g<minGrowth) return false;}
+    const w=entryWarnings(s);
+    if(blockSplit&&w.includes('split')) return false;
+    if(blockCycleAtPeak&&w.includes('cycle_peak')) return false;
+    return true;
   }
   // Stricter legacy rule (Buy rating + below buy price). Kept for comparison; historically it almost never fired.
+  function garpEntry(s,{rankField='overallRank',minReturn=GARP.minReturn}={}){
+    return shortlistEntry(s,{rankField,maxRank:GARP.maxRank,minQuality:GARP.minQuality,minGrowth:GARP.minGrowth,minReturn});
+  }
   function entryEligible(s){
     if(!s) return false;
     const u=returnOf(s), q=num(s.qualityScore), price=priceOf(s), buy=num(s.requiredReturnBuyPrice);
@@ -190,6 +216,6 @@
     return new Date(Date.parse(snap.takenAt)+BANDS.reviewDays*864e5).toISOString().slice(0,10);
   }
 
-  const api={ttmRevenueGrowth,thesisMemo,BANDS,SIZING,convictionScore,targetWeight,sizeTier,shortlistEntry,entryEligible,planContribution,holdingStatus,buildSnapshot,shortlistPerformance,nextReviewDate};
+  const api={ENTRY,GARP,garpEntry,businessGrowthOf,entryWarnings,ttmRevenueGrowth,thesisMemo,BANDS,SIZING,convictionScore,targetWeight,sizeTier,shortlistEntry,entryEligible,planContribution,holdingStatus,buildSnapshot,shortlistPerformance,nextReviewDate};
   if(typeof module!=='undefined'&&module.exports) module.exports=api; else root.ReviewPolicy=api;
 })(typeof window!=='undefined'?window:globalThis);

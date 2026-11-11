@@ -20,11 +20,11 @@ function liveRankedRows(rows,rankOpts={}){
   return c;
 }
 
-function shortlistEligible(r,{maxRank=20}={}){return RP.shortlistEntry(r,{rankField:'liveRank',maxRank});}
+function shortlistEligible(r,opts={}){return RP.shortlistEntry(r,{rankField:'liveRank',...opts});}
 
 // helpers: {adjustedReturnBetween, portfolioStats, dailyPortfolioRisk?}
 function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,helpers){
-  const {name,entry='shortlist',sizing='conviction',maxPositions=RP.SIZING.maxPositions,maxRank=20,transactionCostBps=10,trim=true,thesisBreak='review',rankOpts={}}=opts||{};
+  const {name,entry='shortlist',sizing='conviction',maxPositions=RP.SIZING.maxPositions,maxRank=RP.ENTRY.maxRank,transactionCostBps=10,trim=true,thesisBreak='review',rankOpts={},entryOpts={},garp=false}=opts||{};
   const {adjustedReturnBetween,portfolioStats}=helpers;
   const snaps=[...(snapshotOutput||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf)));
   let weights=new Map(),cash=1;               // fractions of portfolio; cash is held in SPY
@@ -32,7 +32,7 @@ function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,he
   const memo=new Map();                       // ticker -> thesis memo {streak, entryEPS} while held (Build 62)
   const periods=[],sellReasons={},soldLog=[];let buys=0,sells=0,trims=0;
   const targetOf=r=>sizing==='equal'?1/maxPositions:RP.targetWeight(r);
-  const canEnter=r=>entry==='buyRated'?RP.entryEligible(r)&&shortlistEligible(r,{maxRank:Infinity}):shortlistEligible(r,{maxRank});
+  const canEnter=r=>entry==='buyRated'?RP.entryEligible(r)&&shortlistEligible(r,{maxRank:Infinity}):shortlistEligible(r,{maxRank,...entryOpts});
   for(let i=0;i<snaps.length-1;i++){
     const snap=snaps[i],next=snaps[i+1];
     const rows=liveRankedRows(snap.rows,rankOpts);
@@ -64,7 +64,9 @@ function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,he
     };
     for(const t of [...weights.keys()]){const r=rowMap.get(t);if(r&&canEnter(r))buy(r);}
     const heldFam=new Set([...weights.keys()].map(family));
-    const cands=rows.filter(r=>canEnter(r)&&!heldFam.has(family(r.ticker))).sort((a,b)=>a.liveRank-b.liveRank);
+    // GARP arm buys the highest underwritten return first; the others buy in model-rank order.
+    const ret=r=>finite(r.underwrittenCAGR)??finite(r.expectedCAGR)??-1;
+    const cands=rows.filter(r=>canEnter(r)&&!heldFam.has(family(r.ticker))).sort(garp?(a,b)=>ret(b)-ret(a):(a,b)=>a.liveRank-b.liveRank);
     for(const r of cands){
       if(weights.size>=maxPositions||cash<RP.SIZING.minTrade)break;
       if(heldFam.has(family(r.ticker)))continue;
@@ -303,9 +305,15 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
   const G=simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name:'G · Growth Inflection: top 10 by growth score, equal weight, exit rule',topN:10,keepRank:25,transactionCostBps},H);
   const Cbase=arms.find(a=>a.name.startsWith('C ·'));
   arms.push(G, blendArms('H · 70% arm C (value rules) + 30% arm G (growth sleeve)',Cbase,G,.7,H));
-  // Build 69: arm C with and without the cyclical-at-peak rank penalty (whichever the live switch is NOT set to).
-  {const {CYCLE_PENALTY}=require('./engine/ranking-engine');const on=!CYCLE_PENALTY.live;
-   arms.push(simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:`C2 · Same as C ${on?'WITH':'WITHOUT'} the cyclical-at-peak penalty (Build 69)`,entry:'shortlist',sizing:'conviction',maxPositions:15,transactionCostBps,rankOpts:{cycle:on}},H));}
+  // Build 72: entry-rule variants of arm C (same sizing, holds and sells). Decision rule fixed in advance in
+  // README-build72: adopt a variant only if it beats C in BOTH periods and overall.
+  {const V=(name,o)=>simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name,entry:'shortlist',sizing:'conviction',maxPositions:15,transactionCostBps,...o},H);
+   arms.push(V('C35 · C with the top-35 rank cutoff',{maxRank:35}),
+     V('C50 · C with the top-50 rank cutoff',{maxRank:50}),
+     V('CW · C skipping split valuations and cyclicals at a peak',{entryOpts:{blockSplit:true,blockCycleAtPeak:true}}),
+     V('CQ · C with quality 80+',{entryOpts:{minQuality:80}}),
+     V('C35W · top-35 cutoff + warning blocks',{maxRank:35,entryOpts:{blockSplit:true,blockCycleAtPeak:true}}),
+     V('CG · GARP: quality 75+, revenue growth 10%+, return 9%+, any rank; best return first',{maxRank:Infinity,garp:true,entryOpts:{minReturn:RP.GARP.minReturn,minQuality:RP.GARP.minQuality,minGrowth:RP.GARP.minGrowth}}));}
   // Build 68b: growth-list alternatives, same sleeve rules. Compare with G before switching anything on live.
   arms.push(simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name:'G1 · Growth sleeve without cyclicals',topN:10,keepRank:25,transactionCostBps,variant:'cyclical'},H),
     simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name:'G2 · Growth sleeve, lasting growth only (Build 68 rule)',topN:10,keepRank:25,transactionCostBps,variant:'durable'},H),
