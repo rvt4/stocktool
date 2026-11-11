@@ -81,7 +81,7 @@ function scoreForecasts(observations,actualYears){
       const le=(act,fc)=>act>0&&fc>0?Math.log(act/fc):null;
       // Margin points; extreme ratios (tiny revenue, tagging accidents) are capped so medians stay honest.
       const pe=(act,fc)=>act!=null&&fc!=null?clamp(act,-1,1)-clamp(fc,-1,1):null;
-      out.push({t:o.ticker,asOf:o.asOf,k,sector:o.sector,category:o.category,reliability:o.reliability,flags:o.flags,
+      out.push({t:o.ticker,asOf:o.asOf,k,rank:null,sector:o.sector,category:o.category,reliability:o.reliability,flags:o.flags,
         fg:Math.pow(rev/o.baseRevenue,1/k)-1,bg:base.fade>0?Math.pow(base.fade/o.baseRevenue,1/k)-1:null,ag:Math.pow(ar/o.baseRevenue,1/k)-1,
         rev:{model:le(ar,rev),trend:le(ar,base.trend),fade:le(ar,base.fade),flat:le(ar,base.flat)},
         net:{model:pe(an,net),last:pe(an,o.lastNet),median3:pe(an,o.medNet)},
@@ -114,6 +114,16 @@ function block(rows){return {n:rows.length,revenue:metricStats(rows,'rev',REV_BA
 function groupBy(rows,keyFn,min=MIN_GROUP){
   const g={};for(const r of rows){const ks=[].concat(keyFn(r)).filter(x=>x!=null);for(const k of ks)(g[k]??=[]).push(r);}
   return Object.fromEntries(Object.entries(g).filter(([,v])=>v.length>=min).sort((a,b)=>b[1].length-a[1].length).map(([k,v])=>[k,block(v)]));
+}
+function rankBucket(r){if(!Number.isFinite(r))return null;return r<=20?'1-20':r<=50?'21-50':r<=100?'51-100':r<=250?'101-250':'251+';}
+// Build 71: for each live-rank bucket, how optimistic was the model vs what happened (median forecast vs actual CAGR)?
+function byRankTable(rows){
+  const order=['1-20','21-50','51-100','101-250','251+'],g={};
+  for(const r of rows){const b=rankBucket(r.rank);if(b)(g[b]??=[]).push(r);}
+  return order.filter(b=>g[b]&&g[b].length>=10).map(b=>{const v=g[b],x=block(v);
+    return {rank:b,n:v.length,medianForecastCAGR:r4(median(v.map(r=>r.fg))),medianActualCAGR:r4(median(v.map(r=>r.ag))),
+      revenueBias:x.revenue?.bias??null,revenueSkillVsFade:x.revenue?.vs?.fade?.skill??null,netMarginBias:x.netMargin?.bias??null,
+      netMarginMedianAbsError:x.netMargin?.medianAbsError??null,fcfMarginBias:x.fcfMargin?.bias??null};});
 }
 function growthBucket(g){if(!Number.isFinite(g))return null;return g<0?'<0%':g<.05?'0-5%':g<.10?'5-10%':g<.20?'10-20%':g<.30?'20-30%':'30%+';}
 function reliabilityBucket(x){if(!Number.isFinite(x))return null;const v=x>1?x:x*100;return v<40?'<40':v<55?'40-55':v<70?'55-70':v<85?'70-85':'85+';}
@@ -178,6 +188,7 @@ function buildScorecard(scored,{modelVersion=null}={}){
     bySector:groupBy(focus,r=>r.sector||'Unknown'),
     bySnapshotYear:groupBy(focus,r=>String(r.asOf).slice(0,4)),
     byFlag:{horizon:focusLabel,rows:flagTable(focus)},
+    byRank:{horizon:focusLabel,note:'Live rank at the snapshot (owner rule). Negative bias = model too optimistic.',rows:byRankTable(focus)},
     worstRevenueMisses:focus.filter(r=>Number.isFinite(r.rev.model)).sort((a,b)=>Math.abs(b.rev.model)-Math.abs(a.rev.model)).slice(0,30)
       .map(r=>({ticker:r.t,asOf:r.asOf,forecastCAGR:r4(r.fg),actualCAGR:r4(r.ag),fadeBaselineError:r4(r.rev.fade),modelError:r4(r.rev.model),flags:r.flags}))
   };

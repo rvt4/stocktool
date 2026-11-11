@@ -255,6 +255,35 @@ function applyTtmOverlay(years, ttm) {
   return info;
 }
 
+// Build 71: businesses the revenue/margin model cannot value, detected from the balance sheet (no manual lists).
+//  - crypto treasury: digital assets are 40%+ of total assets (BMNR, MSTR). Value = holdings, not earnings.
+//  - mortgage / financial REIT: a REIT (SIC 6798) whose property and equipment are under 15% of assets
+//    (AGNC, NLY, STWD): a leveraged bond/loan book; equity REITs own buildings, towers, data centers, timber.
+function latestInstant(usGaap, tags, asOf = null) {
+  let best = null;
+  for (const tag of tags) {
+    const arr = usGaap[tag]?.units?.USD || [];
+    for (const x of arr) if (!x.start && x.end && Number.isFinite(Number(x.val)) && (!asOf || (String(x.filed || x.end) <= asOf && String(x.end) <= asOf)) && (!best || x.end > best.end)) best = { end: x.end, val: Number(x.val), tag };
+  }
+  return best;
+}
+function detectValuationExclusion(facts, sic, asOf = null) {
+  const g = facts?.facts?.['us-gaap'] || {};
+  const assets = latestInstant(g, ['Assets'], asOf);
+  if (!(assets?.val > 0)) return null;
+  const crypto = latestInstant(g, ['CryptoAssetFairValue', 'CryptoAssetFairValueNoncurrent', 'CryptoAssetFairValueCurrent', 'CryptoAssetCost', 'DigitalAssets', 'DigitalAssetsNoncurrent'], asOf);
+  if (crypto && crypto.val / assets.val >= 0.40) return { kind: 'crypto_treasury', share: crypto.val / assets.val,
+    reason: `Digital assets are ${Math.round(100 * crypto.val / assets.val)}% of total assets; the value is the holdings, which this model does not price` };
+  if (String(sic || '') === '6798') {
+    const property = ['RealEstateInvestmentPropertyNet', 'RealEstateInvestmentPropertyAtCost', 'PropertyPlantAndEquipmentNet', 'RealEstateGrossAtCarryingValue', 'TimberAndTimberlands', 'OperatingLeaseRightOfUseAsset']
+      .map(t => latestInstant(g, [t], asOf)).filter(x => x && Math.abs(new Date(x.end) - new Date(assets.end)) < 200 * 86400000)
+      .reduce((m, x) => Math.max(m, x.val), 0);
+    if (property / assets.val < 0.15) return { kind: 'mortgage_reit', share: property / assets.val,
+      reason: `Mortgage/financial REIT: property is ${Math.round(100 * property / assets.val)}% of assets; its value is a leveraged loan/securities book this model does not price` };
+  }
+  return null;
+}
+
 // Most recent quarter's YoY revenue growth — a much more current momentum signal
 // than a 3yr trailing CAGR. Looks for a quarter ending ~12 months before the latest one.
 function recentQuarterYoYGrowth(quarters) {
@@ -1306,6 +1335,7 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
     priceHistory,
     quarterly: quarters,
     ttmOverlay,
+    valuationExclusion: (() => { try { return detectValuationExclusion(facts, metadata.sic); } catch (e) { return null; } })(),
     corporateActionNormalization,
     splitEventRepair,
     filingCorporateAction,
@@ -1318,7 +1348,7 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
 }
 
 const api = {
-  fetchSecFacts, fetchSecFactsByCik, fetchSecSubmissions, fetchSecSubmissionsByCik, classifyCompanyMetadata, parseAnnualFinancials, parseQuarterlyRevenue, parseTrailingTwelveMonths, applyTtmOverlay, recentQuarterYoYGrowth, blendedForwardGrowth,
+  fetchSecFacts, fetchSecFactsByCik, fetchSecSubmissions, fetchSecSubmissionsByCik, classifyCompanyMetadata, parseAnnualFinancials, parseQuarterlyRevenue, parseTrailingTwelveMonths, applyTtmOverlay, detectValuationExclusion, recentQuarterYoYGrowth, blendedForwardGrowth,
   fetchStooqPrice, fetchStooqHistory, fetchYahooHistory, fetchBacktestHistory,
   fetchFinnhubProfile, fetchFinnhubQuote, fetchFinnhubRevenueEstimate,
   buildStockRecord, latestDilutedSharesFromFacts, normalizeHistoryForCorporateAction, shareDenominatorLooksSuspicious, reconcileSharesWithLiveMarketCap, getTickerCikMap, normalizeSecTicker, normalizeFinnhubTicker, fetchWithTimeout,

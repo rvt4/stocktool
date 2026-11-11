@@ -11,7 +11,7 @@ assert(steady&&!steady.cyclical&&!steady.atPeak);
 const air=R.cycleProfile(yrs([10,11,4.4,7,10,11,11.5,12],[.06,.06,-.3,-.05,.005,.06,.05,.06])); // 2022 profit collapse
 assert(air.cyclical&&!air.atPeak,'airline '+JSON.stringify(air));
 // Chicken producer: margins swing 1% -> 9%; now 9% vs ~3% median -> cyclical at peak.
-const chick=R.cycleProfile(yrs([10,10.5,11,12,13,13,13.5,14],[.03,.01,.035,.04,.02,.03,.08,.09]));
+const chick=R.cycleProfile(yrs([10,10.5,11,12,13,13,13.5,14],[.03,.01,.035,.04,.012,.03,.08,.09])); // two slump years
 assert(chick.cyclical&&chick.atPeak,'chicken '+JSON.stringify(chick));
 // Pandemic-only shock (2020) is not a cycle: a hotel/travel name that fell 60% in 2020 only.
 const travel=R.cycleProfile(yrs([10,11,4.4,8,11,12,13,14],[.2,.2,-.5,.1,.2,.21,.2,.21]));

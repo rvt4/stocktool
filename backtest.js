@@ -40,7 +40,7 @@ const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {buildOwnerStrategyLab}=require('./owner-strategy-lab');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='build70-ttm';
+const MODEL_VERSION='build71';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -545,7 +545,7 @@ function historicalStockFromData(ticker,sector,rawFacts,priceHistory,asOf,diagno
 }
 
 function compactModel(stock,f,q,v,d){return {
-  ticker:stock.ticker,name:stock.name||stock.ticker,sector:stock.sector,industry:stock.industry||null,sic:stock.sic||null,isBiopharma:!!stock.isBiopharma,marketCap:stock.valuation?.marketCap??null,category:f.category||null,dividendYield:stock.valuation?.dividendYield??0,price:stock.price.current,rating:d.rating,underwrittenCAGR:d.underwrittenCAGR??null,
+  ticker:stock.ticker,name:stock.name||stock.ticker,modelSupport:v.modelSupport??null,valuationExclusion:stock.valuationExclusion?{kind:stock.valuationExclusion.kind}:null,sector:stock.sector,industry:stock.industry||null,sic:stock.sic||null,isBiopharma:!!stock.isBiopharma,marketCap:stock.valuation?.marketCap??null,category:f.category||null,dividendYield:stock.valuation?.dividendYield??0,price:stock.price.current,rating:d.rating,underwrittenCAGR:d.underwrittenCAGR??null,
   investmentScore:d.investmentScore,opportunityScore:d.opportunityScore,opportunityQualityScore:d.opportunityQualityScore,activatedQualityScore:d.activatedQualityScore,qualityActivation:d.qualityActivation,reliabilityScore:d.reliabilityScore,expectedCAGR:v.expectedCAGR,expectedAlpha:d.expectedAlpha,
   fiveYearExpectedCAGR:v.fiveYearExpectedCAGR,bearCAGR:v.bearCAGR,bullCAGR:v.bullCAGR,
   fairValue:v.fairValueEstimate,buyPrice:v.requiredReturnBuyPrice,marginOfSafety:v.marginOfSafety,
@@ -2016,7 +2016,7 @@ async function main(){
         const before={...diagnostics};
         const asOfSector=membership.get(ticker)?.sector||sector;
         const stock=historicalStockFromData(ticker,asOfSector,facts,history,asOf,diagnostics);
-        if(stock){ const meta=classifyCompanyMetadata(facts,submissions,asOfSector); stock.name=meta.name||ticker; stock.industry=meta.industry; stock.sic=meta.sic; stock.isBiopharma=meta.isBiopharma; }
+        if(stock){ const meta=classifyCompanyMetadata(facts,submissions,asOfSector); stock.name=meta.name||ticker; stock.industry=meta.industry; stock.sic=meta.sic; stock.isBiopharma=meta.isBiopharma; try{stock.valuationExclusion=require('./data-fetchers').detectValuationExclusion(facts,meta.sic,String(asOf));}catch(e){} }
         if(!stock){
           if(skipExamples.length<20){
             let reason='historical_stock_unavailable';
@@ -2061,6 +2061,16 @@ async function main(){
   }
   const flat=[]; const snapshotOutput=[];
   for(const asOf of dates){const rows=snapshots.get(asOf);rank(rows);flat.push(...rows.map(r=>({...r,asOf})));snapshotOutput.push({asOf,count:rows.length,rows,growthOnlyRows:growthOnlySnapshots.get(asOf)||[]});}
+  // Build 71: scorecard by live rank. Do the top-ranked stocks carry the most over-optimistic forecasts?
+  // (Ranks 1-20 have trailed ranks 21-50 in every build.) Rewrites the file written above with a byRank table.
+  try{
+    const {liveRankedRows}=require('./owner-strategy-lab');const rankOf=new Map();
+    for(const snap of snapshotOutput)for(const r of liveRankedRows(snap.rows))if(Number.isFinite(r.liveRank))rankOf.set(r.ticker+'|'+snap.asOf,r.liveRank);
+    for(const x of forecastScored)x.rank=rankOf.get(x.t+'|'+x.asOf)??null;
+    const card=buildScorecard(forecastScored,{modelVersion:MODEL_VERSION});
+    fs.writeFileSync(path.join(__dirname,'data','forecast-scorecard.json'),JSON.stringify(card,null,1));
+    console.log('Forecast scorecard rewritten with rank buckets.');
+  }catch(e){console.error('Scorecard rank pass failed:',e.message);}
   // Build 36: the strategy the app actually recommends. Written to its own small file first,
   // so a later failure in the legacy labs cannot lose it.
   let ownerStrategyLab=null;

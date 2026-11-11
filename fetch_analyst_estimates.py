@@ -161,6 +161,18 @@ def fetch_one(ticker):
         except Exception as e:
             log.warning(f"{ticker}: growth estimate fetch failed ({e})")
 
+        # Build 71: estimate revisions. Yahoo's EPS trend table gives today's consensus and the
+        # consensus 90 days ago for the current and next fiscal year (free). A sharp cut is the
+        # earliest public sign of a guidance cut, before it shows up in a 10-Q.
+        eps_current_year_90d_ago = None
+        eps_next_year_90d_ago = None
+        try:
+            trend = t.get_eps_trend()
+            eps_current_year_90d_ago = _row_value(trend, "0y", "90daysAgo")
+            eps_next_year_90d_ago = _row_value(trend, "+1y", "90daysAgo")
+        except Exception as e:
+            log.warning(f"{ticker}: eps trend fetch failed ({e})")
+
         analyst_target_mean = None
         analyst_target_low = None
         analyst_target_high = None
@@ -206,6 +218,8 @@ def fetch_one(ticker):
             "eps_current_year": eps_current_year,
             "eps_next_year": eps_next_year,
             "eps_growth_long_term": eps_growth_long_term,
+            "eps_current_year_90d_ago": eps_current_year_90d_ago,
+            "eps_next_year_90d_ago": eps_next_year_90d_ago,
             "analyst_target_mean": analyst_target_mean,
             "analyst_target_low": analyst_target_low,
             "analyst_target_high": analyst_target_high,
@@ -233,9 +247,18 @@ def upsert_batch(rows):
     resp = requests.post(url, headers=headers, json=rows, timeout=30)
     # Build 54: if the new column hasn't been added in Supabase yet, retry without it instead of
     # losing the whole night's estimates.
-    if resp.status_code not in (200, 201, 204) and "eps_growth_long_term" in resp.text:
-        log.warning("Column eps_growth_long_term missing in Supabase; upserting without it. Run the Build 54 SQL to enable long-term growth.")
-        rows = [{k: v for k, v in r.items() if k != "eps_growth_long_term"} for r in rows]
+    # Build 54/71: if a newer column hasn't been added in Supabase yet, retry without it instead of
+    # losing the whole night's estimates (see README-build71 for the SQL).
+    optional = ("eps_growth_long_term", "eps_current_year_90d_ago", "eps_next_year_90d_ago")
+    for _ in range(len(optional)):
+        if resp.status_code in (200, 201, 204): break
+        missing = [c for c in optional if c in resp.text and rows and c in rows[0]]
+        if not missing:
+            # PostgREST names one missing column at a time; drop every optional one as a last resort
+            missing = [c for c in optional if rows and c in rows[0]]
+            if not missing: break
+        log.warning(f"Column(s) {missing} missing in Supabase; upserting without them. Run the SQL in README-build71.txt.")
+        rows = [{k: v for k, v in r.items() if k not in missing} for r in rows]
         resp = requests.post(url, headers=headers, json=rows, timeout=30)
     if resp.status_code not in (200, 201, 204):
         # Log the actual URL that was requested (safe — contains no secret, the key
