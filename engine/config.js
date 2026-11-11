@@ -71,6 +71,8 @@ function clamp(v, lo, hi) {
 }
 
 function rate(v) {
+  // Build 67b: Number(null) is 0, so missing analyst data used to read as "0% growth" (ROKU, CNA, COKE...).
+  if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
   if (!Number.isFinite(n)) return null;
   return Math.abs(n) > 1.5 ? n / 100 : n;

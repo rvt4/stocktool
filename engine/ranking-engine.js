@@ -67,6 +67,31 @@ function reliabilityAdjustedAlpha(r){
   return adj>0?adj*f:adj;
 }
 
+// Build 68: value-trap check (live rule; the frozen legacy backtest rank is unchanged).
+// Cheap-but-shrinking businesses (CMCSA, CHTR, CPB, LKQ, BBWI...) filled the top ranks, and ranks 1-20 trailed
+// ranks 21-50 in the backtest. Business growth = average of trailing-12-month revenue growth and the 3-year
+// revenue CAGR (either alone if only one exists). Rank-score points (0-100 scale) are subtracted below each
+// threshold. A recovering company (3-year shrink, TTM +10%) lands around +2% and takes only the mild cut.
+const VALUE_TRAP=[{below:0,points:15,label:'shrinking revenue'},{below:.03,points:8,label:'revenue growth under 3%'},{below:.05,points:3,label:'revenue growth under 5%'}];
+function revenueCagr3(years){
+  const ys=(years||[]).filter(y=>finite(y?.revenue)>0&&!y.revenueIsProxy);
+  if(ys.length<3)return null;
+  const lb=Math.min(3,ys.length-1),g=Math.pow(ys.at(-1).revenue/ys[ys.length-1-lb].revenue,1/lb)-1;
+  return Number.isFinite(g)?g:null;
+}
+function businessGrowth(r){
+  const t=finite(r.revenueGrowthTTM),c=finite(r.revenueCAGR3);
+  const ok=x=>x!=null&&x>-.6&&x<3;
+  const v=[t,c].filter(ok);
+  return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;
+}
+function valueTrapPenalty(r){
+  const g=businessGrowth(r);
+  if(g==null)return {growth:null,points:0,label:null};
+  const hit=VALUE_TRAP.find(x=>g<x.below);
+  return {growth:g,points:hit?hit.points:0,label:hit?hit.label:null};
+}
+
 function buildModelDScores(rows,{alphaGate=ALPHA_GATE,reliability=false}={}){
   const eligible=(rows||[]).filter(r=>(finite(r.expectedAlpha)??-Infinity)>=alphaGate);
   if(!eligible.length) return eligible;
@@ -80,9 +105,14 @@ function buildModelDScores(rows,{alphaGate=ALPHA_GATE,reliability=false}={}){
   eligible.forEach((r,i)=>{
     const pieces=[quality[i],moat[i],growth[i],compounder[i]].filter(Number.isFinite);
     const basket=pieces.length?pieces.reduce((a,b)=>a+b,0)/pieces.length:null;
-    const score=Number.isFinite(alpha[i])&&Number.isFinite(basket)
+    let score=Number.isFinite(alpha[i])&&Number.isFinite(basket)
       ?0.5*alpha[i]+0.5*basket
       :null;
+    if(reliability){
+      const p=valueTrapPenalty(r);
+      r.rankBusinessGrowth=p.growth;r.rankGrowthPenalty=p.points||0;r.rankGrowthPenaltyReason=p.label;
+      if(Number.isFinite(score)&&p.points)score-=p.points/100;
+    }
     r.rankEligible=true;
     r.rankAlphaPercentile=alpha[i];
     r.rankQualityBasketPercentile=basket;
@@ -141,4 +171,4 @@ function applyModelDRanking(rows,{rankField='overallRank',universeSizeField='glo
   return sorted;
 }
 
-module.exports={stressedAlpha,ALPHA_GATE,reliabilityAdjustedAlpha,percentileRanks,buildModelDScores,compareRank,applyModelDRanking};
+module.exports={VALUE_TRAP,revenueCagr3,businessGrowth,valueTrapPenalty,stressedAlpha,ALPHA_GATE,reliabilityAdjustedAlpha,percentileRanks,buildModelDScores,compareRank,applyModelDRanking};

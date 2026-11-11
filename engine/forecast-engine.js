@@ -78,7 +78,11 @@ function buildGrowthForecast(stock,years,cfg){
   // acquisition resets and highly erratic series receive less weight in the long-range fade.
   const historyReliability=clamp((hist.length/5)*clamp(1-histDispersion/.22,.20,1),.15,1);
   const recentAnnual=hist.at(-1)??historicalAnchor, recentQuarter=latestQuarterYoY(stock.quarterly);
-  const a1=safeAnalystGrowth(a.revenueGrowthCurrentYear??a.revenueGrowthFwd), a2=safeAnalystGrowth(a.revenueGrowthNextYear);
+  // Build 67b: a growth of exactly 0 with no revenue estimate behind it is a placeholder (pre-revenue biotech,
+  // empty yfinance rows), not a forecast; and no analysts means no consensus.
+  const noCoverage=finite(a.numAnalysts)===0;
+  const realGrowth=(g,revEst)=>noCoverage||(g===0&&!(finite(revEst)>0))?null:g;
+  const a1=realGrowth(safeAnalystGrowth(a.revenueGrowthCurrentYear??a.revenueGrowthFwd),a.revenueCurrentYear??a.revenueAvgCurrentYear), a2=realGrowth(safeAnalystGrowth(a.revenueGrowthNextYear),a.revenueNextYear??a.revenueAvgNextYear);
   const analysts=Math.max(0,finite(a.numAnalysts)||0);
   // V12.5: explicit consensus should be the primary near-term underwriting input.
   // History is a cross-check, not a 25-55% drag on a well-covered inflecting business.

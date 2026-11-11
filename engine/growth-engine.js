@@ -11,10 +11,16 @@ const {isFinancialLike}=require('./config');
 const finite=v=>{if(v===null||v===undefined||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null;};
 const DAY=86400000;
 
+// Build 68: the list was dominated by cyclical spikes (memory at peak pricing, oil, silver), acquisition jumps and
+// data glitches, because it rewarded "growth speeding up this quarter". Now a company also needs growth that has
+// lasted (3-year revenue CAGR >= 10%) and no big revenue drop in the last four years (cyclical businesses swing
+// down as hard as they swing up). Multi-year growth gets its own weight; acceleration counts for less.
 const GROWTH={
   minRevenue:300e6,        // last fiscal year
   minGrowth:0.15,          // current revenue growth to qualify as a growth company
-  weights:{revGrowth:.15,revAccel:.20,opMarginChange:.15,ruleOf40:.15,fcfMarginChange:.10,sbcChange:.05,momentum:.20},
+  minDurableGrowth:0.10,   // 3-year revenue CAGR (annual reports)
+  maxRevenueDrop:-0.15,    // any yearly revenue fall worse than this in the last 4 years = cyclical, not eligible
+  weights:{revGrowth:.15,durableGrowth:.15,revAccel:.10,opMarginChange:.10,ruleOf40:.15,fcfMarginChange:.10,sbcChange:.05,momentum:.20},
   // exit rule (backtest arm + live review): growth below this, score below this percentile, or momentum below 0
   exitGrowth:0.10, exitScore:50, exitMomentum:0,
 };
@@ -62,17 +68,30 @@ function growthSignals(stock,priceHistory,asOf){
   const last=a.at(-1), prev=a.at(-2), two=a.at(-3);
   out.revenue=last.rev;
   const yoy=quarterlyYoY(stock?.quarterly);
+  const annualGrowth=last.rev/prev.rev-1;
   // current growth and acceleration: quarterly when available, annual otherwise
   if(yoy.length>=2){
     const cur=yoy.at(-1); const earlier=[...yoy].reverse().find(x=>cur.t-x.t>=150*DAY);
-    out.revGrowth=cur.g; out.revAccel=earlier?cur.g-earlier.g:null; out.growthBasis='quarterly';
+    // Build 68: a quarterly figure 100+ pts away from the annual one and above 150% is a mismatched or partial
+    // quarter (MU showed 346%, SNDK 378%, CBOE 262%), not real growth: fall back to annual.
+    const glitch=cur.g>1.5&&Math.abs(cur.g-annualGrowth)>1.0;
+    if(!glitch){out.revGrowth=cur.g; out.revAccel=earlier?cur.g-earlier.g:null; out.growthBasis='quarterly';}
+    else out.dataWarnings=['quarterly growth looked wrong; used annual'];
   }
   if(!Number.isFinite(out.revGrowth)){
     out.revGrowth=last.rev/prev.rev-1; out.revAccel=(last.rev/prev.rev-1)-(prev.rev/two.rev-1); out.growthBasis='annual';
   }
   if(!Number.isFinite(out.revAccel)&&a.length>=3)out.revAccel=(last.rev/prev.rev-1)-(prev.rev/two.rev-1);
-  out.opMargin=last.op;
-  out.opMarginChange=last.op!=null&&two.op!=null?last.op-two.op:null;
+  if(Number.isFinite(out.revAccel))out.revAccel=Math.max(-1,Math.min(1,out.revAccel)); // ARWR showed -10,290 pts
+  // Build 68: durability and cyclicality from annual reports.
+  const lb=Math.min(3,a.length-1);
+  out.durableGrowth=Math.pow(last.rev/a[a.length-1-lb].rev,1/lb)-1;
+  const drops=a.slice(-5).map((x,i,arr)=>i?x.rev/arr[i-1].rev-1:null).filter(Number.isFinite);
+  out.worstRevenueDrop=drops.length?Math.min(...drops):null;
+  // Operating margins outside -200%..+90% are tagging errors (APA showed 100%).
+  const okOp=x=>x!=null&&x>-2&&x<.9?x:null;
+  out.opMargin=okOp(last.op);
+  out.opMarginChange=okOp(last.op)!=null&&okOp(two.op)!=null?last.op-two.op:null;
   out.turnedProfitable=last.op!=null&&last.op>0&&a.slice(-4,-1).some(x=>x.op!=null&&x.op<=0);
   out.fcfAfterSbcMargin=last.fcfAfterSbc;
   out.fcfMarginChange=last.fcfAfterSbc!=null&&two.fcfAfterSbc!=null?last.fcfAfterSbc-two.fcfAfterSbc:null;
@@ -81,9 +100,14 @@ function growthSignals(stock,priceHistory,asOf){
   out.ruleOf40=Number.isFinite(out.revGrowth)&&last.fcfAfterSbc!=null?out.revGrowth+last.fcfAfterSbc:null;
   out.momentum=momentum12_1(priceHistory,asOf);
   const financial=isFinancialLike(stock);
-  out.eligible=!financial&&last.rev>=GROWTH.minRevenue&&out.revGrowth>=GROWTH.minGrowth&&Number.isFinite(out.momentum);
-  if(!out.eligible)out.why=financial?'financial company':last.rev<GROWTH.minRevenue?'revenue under $300M':!(out.revGrowth>=GROWTH.minGrowth)?'growth under 15%':'no 12-month price history';
+  const cyclical=Number.isFinite(out.worstRevenueDrop)&&out.worstRevenueDrop<GROWTH.maxRevenueDrop;
+  const durable=out.durableGrowth>=GROWTH.minDurableGrowth;
+  out.eligible=!financial&&last.rev>=GROWTH.minRevenue&&out.revGrowth>=GROWTH.minGrowth&&durable&&!cyclical&&Number.isFinite(out.momentum);
+  if(!out.eligible)out.why=financial?'financial company':last.rev<GROWTH.minRevenue?'revenue under $300M':!(out.revGrowth>=GROWTH.minGrowth)?'growth under 15%'
+    :!durable?`only ${(out.durableGrowth*100).toFixed(0)}%/yr over 3 years (a spike, not lasting growth)`
+    :cyclical?`cyclical: revenue fell ${(-out.worstRevenueDrop*100).toFixed(0)}% in one of the last 4 years`:'no 12-month price history';
   const P=x=>(x*100).toFixed(0)+'%', S=x=>(x>=0?'+':'')+(x*100).toFixed(0)+' pts';
+  if(out.durableGrowth>=.20)out.reasonsUp.push(`Lasting growth: ${P(out.durableGrowth)} a year over 3 years`);
   if(out.revAccel>=.03)out.reasonsUp.push(`Growth speeding up: ${P(out.revGrowth)} now, ${S(out.revAccel)} vs two quarters earlier`);
   else if(out.revAccel<=-.05)out.reasonsDown.push(`Growth slowing: ${P(out.revGrowth)} now, ${S(out.revAccel)} vs two quarters earlier`);
   if(out.turnedProfitable)out.reasonsUp.push('Turned profitable on an operating basis');
