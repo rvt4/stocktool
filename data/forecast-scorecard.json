@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-11-11T17:18:06.309Z",
- "modelVersion": "build70-ttm",
+ "generatedAt": "2026-11-11T20:06:18.045Z",
+ "modelVersion": "build71",
  "readMe": [
   "Revenue error = ln(actual/forecast); bias > 0 means the model forecast too LOW. Margin errors are in margin points (0.02 = 2 pts).",
   "skill = 1 - model median abs error / baseline median abs error. Positive = the model beats that naive forecast; negative = the naive forecast was more accurate.",
@@ -8,8 +8,8 @@
   "Historical runs have no analyst estimates, so consensus-based rules are not tested here (see forecast-accuracy.json for live tracking).",
   "Group tables (by growth, sector, category, reliability, flag, snapshot year) use the year 3 horizon."
  ],
- "observations": 70699,
- "uniqueTickers": 1006,
+ "observations": 70698,
+ "uniqueTickers": 1005,
  "headline": [
   "year 1: revenue off by a median 6.1% (bias -0.9%, 30% better than the naive fade); net margin off by 3.0 pts (bias 0.1 pts, 21% better than \"3-yr median margin persists\")",
   "year 2: revenue off by a median 12.9% (bias -2.0%, 15% better than the naive fade); net margin off by 4.2 pts (bias 0.6 pts, 10% better than \"3-yr median margin persists\")",
@@ -19,9 +19,9 @@
  ],
  "byHorizon": {
   "year 1": {
-   "n": 20795,
+   "n": 20794,
    "revenue": {
-    "n": 20795,
+    "n": 20794,
     "bias": -0.009,
     "medianAbsError": 0.0588,
     "meanAbsError": 0.1155,
@@ -30,55 +30,55 @@
     "vs": {
      "fade": {
       "baselineMedianAbsError": 0.0838,
-      "skill": 0.2986,
+      "skill": 0.2987,
       "modelCloserRate": 0.6852
      },
      "trend": {
-      "baselineMedianAbsError": 0.0918,
-      "skill": 0.3594,
+      "baselineMedianAbsError": 0.0919,
+      "skill": 0.36,
       "modelCloserRate": 0.7209
      },
      "flat": {
       "baselineMedianAbsError": 0.092,
       "skill": 0.3611,
-      "modelCloserRate": 0.6428
+      "modelCloserRate": 0.6427
      }
     }
    },
    "netMargin": {
-    "n": 17146,
+    "n": 17145,
     "bias": 0.0015,
-    "medianAbsError": 0.0297,
-    "meanAbsError": 0.0786,
+    "medianAbsError": 0.0296,
+    "meanAbsError": 0.0785,
     "within2pts": 0.3953,
     "vs": {
      "median3": {
       "baselineMedianAbsError": 0.0372,
-      "skill": 0.2094,
+      "skill": 0.2098,
       "modelCloserRate": 0.6157
      },
      "last": {
       "baselineMedianAbsError": 0.029,
-      "skill": -0.0106,
-      "modelCloserRate": 0.5084
+      "skill": -0.0105,
+      "modelCloserRate": 0.5085
      }
     }
    },
    "fcfMargin": {
-    "n": 16967,
-    "bias": 0.0019,
-    "medianAbsError": 0.0298,
-    "meanAbsError": 0.0661,
+    "n": 16966,
+    "bias": 0.002,
+    "medianAbsError": 0.0297,
+    "meanAbsError": 0.066,
     "within2pts": 0.3765,
     "vs": {
      "median3": {
       "baselineMedianAbsError": 0.0336,
-      "skill": 0.1182,
+      "skill": 0.1183,
       "modelCloserRate": 0.5964
      },
      "last": {
       "baselineMedianAbsError": 0.0273,
-      "skill": -0.0832,
+      "skill": -0.0831,
       "modelCloserRate": 0.5015
      }
     }
@@ -2747,6 +2747,67 @@
     "netMarginSkillVsMedian3WhenOff": 0.0783,
     "fcfMarginBias": -0.0187,
     "fcfMarginSkillVsMedian3": 0.1823
+   }
+  ]
+ },
+ "byRank": {
+  "horizon": "year 3",
+  "note": "Live rank at the snapshot (owner rule). Negative bias = model too optimistic.",
+  "rows": [
+   {
+    "rank": "1-20",
+    "n": 348,
+    "medianForecastCAGR": 0.1277,
+    "medianActualCAGR": 0.1006,
+    "revenueBias": -0.059,
+    "revenueSkillVsFade": -0.1137,
+    "netMarginBias": 0.0222,
+    "netMarginMedianAbsError": 0.0444,
+    "fcfMarginBias": -0.0015
+   },
+   {
+    "rank": "21-50",
+    "n": 539,
+    "medianForecastCAGR": 0.1215,
+    "medianActualCAGR": 0.0736,
+    "revenueBias": -0.1065,
+    "revenueSkillVsFade": 0.0753,
+    "netMarginBias": 0.0137,
+    "netMarginMedianAbsError": 0.0459,
+    "fcfMarginBias": -0.0033
+   },
+   {
+    "rank": "51-100",
+    "n": 897,
+    "medianForecastCAGR": 0.1009,
+    "medianActualCAGR": 0.0499,
+    "revenueBias": -0.1516,
+    "revenueSkillVsFade": -0.0593,
+    "netMarginBias": -0.004,
+    "netMarginMedianAbsError": 0.0393,
+    "fcfMarginBias": -0.0131
+   },
+   {
+    "rank": "101-250",
+    "n": 2697,
+    "medianForecastCAGR": 0.076,
+    "medianActualCAGR": 0.042,
+    "revenueBias": -0.092,
+    "revenueSkillVsFade": -0.013,
+    "netMarginBias": 0.0008,
+    "netMarginMedianAbsError": 0.0431,
+    "fcfMarginBias": -0.0077
+   },
+   {
+    "rank": "251+",
+    "n": 8587,
+    "medianForecastCAGR": 0.0656,
+    "medianActualCAGR": 0.0726,
+    "revenueBias": 0.012,
+    "revenueSkillVsFade": 0.1133,
+    "netMarginBias": 0.0152,
+    "netMarginMedianAbsError": 0.0443,
+    "fcfMarginBias": -0.0006
    }
   ]
  },
