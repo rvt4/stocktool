@@ -14,9 +14,9 @@ const mean=a=>{const v=a.filter(Number.isFinite);return v.length?v.reduce((x,y)=
 const median=a=>{const v=a.filter(Number.isFinite).sort((x,y)=>x-y);if(!v.length)return null;const m=Math.floor(v.length/2);return v.length%2?v[m]:(v[m-1]+v[m])/2;};
 const family=t=>{t=String(t||'').toUpperCase();return t==='GOOG'||t==='GOOGL'?'ALPHABET':t;};
 
-function liveRankedRows(rows){
+function liveRankedRows(rows,rankOpts={}){
   const c=(rows||[]).map(r=>({...r}));
-  applyModelDRanking(c,{rankField:'liveRank',universeSizeField:null,reliability:true});
+  applyModelDRanking(c,{rankField:'liveRank',universeSizeField:null,reliability:true,...rankOpts});
   return c;
 }
 
@@ -24,7 +24,7 @@ function shortlistEligible(r,{maxRank=20}={}){return RP.shortlistEntry(r,{rankFi
 
 // helpers: {adjustedReturnBetween, portfolioStats, dailyPortfolioRisk?}
 function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,helpers){
-  const {name,entry='shortlist',sizing='conviction',maxPositions=RP.SIZING.maxPositions,maxRank=20,transactionCostBps=10,trim=true,thesisBreak='review'}=opts||{};
+  const {name,entry='shortlist',sizing='conviction',maxPositions=RP.SIZING.maxPositions,maxRank=20,transactionCostBps=10,trim=true,thesisBreak='review',rankOpts={}}=opts||{};
   const {adjustedReturnBetween,portfolioStats}=helpers;
   const snaps=[...(snapshotOutput||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf)));
   let weights=new Map(),cash=1;               // fractions of portfolio; cash is held in SPY
@@ -35,7 +35,7 @@ function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,he
   const canEnter=r=>entry==='buyRated'?RP.entryEligible(r)&&shortlistEligible(r,{maxRank:Infinity}):shortlistEligible(r,{maxRank});
   for(let i=0;i<snaps.length-1;i++){
     const snap=snaps[i],next=snaps[i+1];
-    const rows=liveRankedRows(snap.rows);
+    const rows=liveRankedRows(snap.rows,rankOpts);
     const rowMap=new Map(rows.map(r=>[r.ticker,r]));
     let turnover=0;
     // 1) review existing holdings
@@ -115,20 +115,34 @@ function simulateMechanicalTopN(snapshotOutput,historyByTicker,spyHistory,{name,
 // Build 65: Growth Inflection rows for a snapshot: valued rows plus growth-only rows (companies the value
 // model cannot value, e.g. unprofitable after stock pay). Scored fresh each quarter, point-in-time.
 const GE=require('./engine/growth-engine');
-function growthRows(snap){
+// Build 68b variants (only narrow the Build 65 list; the stored rows were built with the live switches off):
+//   cyclical: drop names whose revenue fell >15% in a year of the last 4
+//   durable:  require 3-yr revenue CAGR >= 10%, score with durable-growth weights
+//   price:    durable + price/sales <= 20 (market cap / last fiscal-year revenue)
+function growthVariantOk(r,v){
+  const g=r.growth;if(!v)return true;
+  const cyc=g.cyclical===true||(Number.isFinite(g.worstRevenueDrop)&&g.worstRevenueDrop<GE.GROWTH.maxRevenueDrop);
+  const dur=g.lastingGrowth===true||(Number.isFinite(g.durableGrowth)&&g.durableGrowth>=GE.GROWTH.minDurableGrowth);
+  if(v==='cyclical')return !cyc;
+  if(v==='durable')return dur;
+  if(v==='price'){const ps=finite(r.marketCap)>0&&finite(g.revenue)>0?r.marketCap/g.revenue:null;return dur&&ps!=null&&ps<=20;}
+  return true;
+}
+function growthRows(snap,variant=null){
   const rows=[...(snap.rows||[]),...(snap.growthOnlyRows||[])].filter(r=>r&&r.growth).map(r=>({...r,growth:{...r.growth}}));
-  GE.scoreGrowthUniverse(rows,{field:'growth'});
+  for(const r of rows)if(r.growth.eligible&&!growthVariantOk(r,variant))r.growth.eligible=false;
+  GE.scoreGrowthUniverse(rows,{field:'growth',weights:variant==='durable'||variant==='price'?GE.GROWTH.durableWeights:GE.GROWTH.weights});
   return rows.filter(r=>r.growth.eligible).sort((a,b)=>a.growth.rank-b.growth.rank);
 }
 // Growth sleeve: buy the top N by growth score, equal weight; keep a holding while it stays in the top
 // keepRank AND passes the exit rule (growth >= 10%, 12-1 momentum >= 0, top half of growth names).
-function simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name,topN=10,keepRank=25,transactionCostBps=10}={},helpers){
+function simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name,topN=10,keepRank=25,transactionCostBps=10,variant=null}={},helpers){
   const {adjustedReturnBetween,portfolioStats}=helpers;
   const snaps=[...(snapshotOutput||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf)));
   const periods=[];let held=[];const sells=[];
   for(let i=0;i<snaps.length-1;i++){
     const snap=snaps[i],next=snaps[i+1];
-    const rows=growthRows(snap), byT=new Map(rows.map(r=>[r.ticker,r]));
+    const rows=growthRows(snap,variant), byT=new Map(rows.map(r=>[r.ticker,r]));
     const keep=[];
     for(const t of held){const r=byT.get(t);const ex=r?GE.growthExit(r.growth):{exit:true,reason:'no longer a growth company'};
       if(r&&!ex.exit&&r.growth.rank<=keepRank)keep.push(t);else sells.push({asOf:snap.asOf,ticker:t,reason:r&&!ex.exit?'dropped out of top '+keepRank:ex.reason});}
@@ -289,6 +303,13 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
   const G=simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name:'G · Growth Inflection: top 10 by growth score, equal weight, exit rule',topN:10,keepRank:25,transactionCostBps},H);
   const Cbase=arms.find(a=>a.name.startsWith('C ·'));
   arms.push(G, blendArms('H · 70% arm C (value rules) + 30% arm G (growth sleeve)',Cbase,G,.7,H));
+  // Build 69: arm C with and without the cyclical-at-peak rank penalty (whichever the live switch is NOT set to).
+  {const {CYCLE_PENALTY}=require('./engine/ranking-engine');const on=!CYCLE_PENALTY.live;
+   arms.push(simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name:`C2 · Same as C ${on?'WITH':'WITHOUT'} the cyclical-at-peak penalty (Build 69)`,entry:'shortlist',sizing:'conviction',maxPositions:15,transactionCostBps,rankOpts:{cycle:on}},H));}
+  // Build 68b: growth-list alternatives, same sleeve rules. Compare with G before switching anything on live.
+  arms.push(simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name:'G1 · Growth sleeve without cyclicals',topN:10,keepRank:25,transactionCostBps,variant:'cyclical'},H),
+    simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name:'G2 · Growth sleeve, lasting growth only (Build 68 rule)',topN:10,keepRank:25,transactionCostBps,variant:'durable'},H),
+    simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name:'G3 · Lasting growth + price/sales <= 20',topN:10,keepRank:25,transactionCostBps,variant:'price'},H));
   arms.forEach(split);
   for(const a of arms)a.attribution=attribution(a.periods,H,{splitYear});
   const csvRows=['arm,quarterStart,ticker,startWeight,quarterReturn,spyReturn,contribution,excessContribution,flag',...arms.flatMap(holdingsCsvRows)];

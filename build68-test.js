@@ -16,13 +16,19 @@ assert(steady.eligible,'steady grower should qualify: '+steady.why);
 assert(Math.abs(steady.durableGrowth-.25)<.01);
 assert(steady.reasonsUp.some(x=>/Lasting growth/.test(x)));
 
-// 2) Cyclical: big revenue fall two years ago, now booming (memory / oil pattern) -> not eligible.
-const cyc=GE.growthSignals(co([1e9,2e9,1.5e9,2.5e9,3.5e9]),px,null); // 3-yr CAGR 20%, but a -25% year
-assert(!cyc.eligible&&/cyclical/.test(cyc.why),'cyclical: '+cyc.why);
-
-// 3) One-year spike on a flat base (acquisition / rebound) -> not lasting growth.
-const spike=GE.growthSignals(co([2e9,2.02e9,2.0e9,1.98e9,2.6e9]),px,null);
-assert(!spike.eligible&&/spike/.test(spike.why),'spike: '+spike.why);
+// 2-3) Build 68b: by default (switches off, the Build 65 list) cyclicals and spikes stay eligible but carry a
+// warning label; with the switches on they are excluded with a reason.
+const cycCo=co([1e9,2e9,1.5e9,2.5e9,3.5e9]), spikeCo=co([2e9,2.02e9,2.0e9,1.98e9,2.6e9]); // -25% year; flat then +31%
+{
+  const cyc=GE.growthSignals(cycCo,px,null),spike=GE.growthSignals(spikeCo,px,null);
+  assert(cyc.eligible&&cyc.cyclical&&cyc.reasonsDown.some(x=>/^Cyclical/.test(x)),'cyclical label');
+  assert(spike.eligible&&!spike.lastingGrowth&&spike.reasonsDown.some(x=>/Recent spike/.test(x)),'spike label');
+  GE.GROWTH.requireDurable=true;GE.GROWTH.excludeCyclical=true;
+  const c2=GE.growthSignals(cycCo,px,null),s2=GE.growthSignals(spikeCo,px,null);
+  GE.GROWTH.requireDurable=false;GE.GROWTH.excludeCyclical=false;
+  assert(!c2.eligible&&/cyclical/.test(c2.why),'cyclical: '+c2.why);
+  assert(!s2.eligible&&/spike/.test(s2.why),'spike: '+s2.why);
+}
 
 // 4) Quarterly glitch (346% vs ~25% annual) falls back to annual growth; acceleration is clamped.
 const q=[];for(let y=2023;y<=2024;y++)for(const m of ['03-31','06-30','09-30','12-31'])q.push({end:`${y}-${m}`,val:5e8});
@@ -35,8 +41,9 @@ assert(gl.revAccel>=-1&&gl.revAccel<=1);
 const bad=GE.growthSignals(co([1e9,1.25e9,1.5625e9,1.953e9,2.441e9],{op:[.1,.1,.1,.1,1.0]}),px,null);
 assert.strictEqual(bad.opMargin,null);assert.strictEqual(bad.opMarginChange,null);
 
-// 6) Weights still sum to 1 and include durable growth.
-const w=GE.GROWTH.weights;assert(Math.abs(Object.values(w).reduce((a,b)=>a+b,0)-1)<1e-9&&w.durableGrowth>0);
+// 6) Both weight sets sum to 1; the live default is the Build 65 set.
+for(const w of [GE.GROWTH.weights,GE.GROWTH.durableWeights])assert(Math.abs(Object.values(w).reduce((a,b)=>a+b,0)-1)<1e-9);
+assert(GE.GROWTH.durableWeights.durableGrowth>0&&GE.GROWTH.weights.durableGrowth===undefined&&GE.GROWTH.requireDurable===false&&GE.GROWTH.excludeCyclical===false);
 
 // 7) revenueCagr3 and business growth.
 assert(Math.abs(R.revenueCagr3([{revenue:100},{revenue:110},{revenue:121},{revenue:133.1}])-.10)<1e-9);

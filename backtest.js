@@ -34,13 +34,13 @@ const {computeQuality}=require('./engine/quality-engine');
 const {valuate}=require('./engine/valuation-engine');
 const {growthSignals}=require('./engine/growth-engine');
 // Build 65: numeric growth signals only (reasons are rebuilt in the app), to keep snapshot files small.
-function compactGrowth(g){if(!g)return null;const o={eligible:!!g.eligible};for(const k of ['revenue','revGrowth','durableGrowth','worstRevenueDrop','revAccel','opMargin','opMarginChange','turnedProfitable','fcfAfterSbcMargin','fcfMarginChange','sbcIntensity','sbcChange','ruleOf40','momentum','growthBasis'])if(g[k]!==undefined&&g[k]!==null)o[k]=typeof g[k]==='number'?Math.round(g[k]*1e4)/1e4:g[k];return o;}
+function compactGrowth(g){if(!g)return null;const o={eligible:!!g.eligible};for(const k of ['revenue','revGrowth','durableGrowth','worstRevenueDrop','cyclical','lastingGrowth','revAccel','opMargin','opMarginChange','turnedProfitable','fcfAfterSbcMargin','fcfMarginChange','sbcIntensity','sbcChange','ruleOf40','momentum','growthBasis'])if(g[k]!==undefined&&g[k]!==null)o[k]=typeof g[k]==='number'?Math.round(g[k]*1e4)/1e4:g[k];return o;}
 const {rateStock}=require('./engine/rating-engine');
 const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {buildOwnerStrategyLab}=require('./owner-strategy-lab');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='build68-growth-durability';
+const MODEL_VERSION='build69';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -560,7 +560,7 @@ function compactModel(stock,f,q,v,d){return {
   valuationConsensus:v.valuationConsensus?{hasConsensusOutlier:!!v.valuationConsensus.hasConsensusOutlier,clusterSpread:v.valuationConsensus.clusterSpread??null,outlierGap:v.valuationConsensus.outlierGap??null}:null,
   valuationMethodEvidence:(v.methods||[]).map(m=>({name:m.name||null,family:m.family||null,reliability:m.reliability??null,weight:m.weight??null,fairValueToday:m.audit?.fairValueToday??null,hurdleValueToday:m.audit?.hurdleValueToday??null,outcome:m.outcome??null})),
   modelSupport:v.modelSupport,
-  revenueGrowthTTM:require('./review-policy').ttmRevenueGrowth(stock.quarterly,stock.financials?.years),revenueCAGR3:require('./engine/ranking-engine').revenueCagr3(stock.financials?.years),forwardEPS:f.rows?.[0]?.eps??null
+  revenueGrowthTTM:require('./review-policy').ttmRevenueGrowth(stock.quarterly,stock.financials?.years),revenueCAGR3:require('./engine/ranking-engine').revenueCagr3(stock.financials?.years),cycle:require('./engine/ranking-engine').cycleProfile(stock.financials?.years),forwardEPS:f.rows?.[0]?.eps??null
 };}
 function rank(rows){applyModelDRanking(rows,{rankField:'rank',universeSizeField:'universeSize'});}
 function attachRealized(row,history,spyHistory,asOf){
@@ -2028,7 +2028,7 @@ async function main(){
         // Build 65: Growth Inflection signals, point-in-time (history is cut at asOf inside growthSignals).
         let growth=null;
         try{growth=compactGrowth(growthSignals(stock,history,asOf));}catch(e){growth=null;}
-        const growthOnly=()=>{if(growth&&growth.eligible){const r={ticker,sector:asOfSector,price:stock.price?.current??null,growthOnly:true,growth};attachRealized(r,history,spyHistory,asOf);growthOnlySnapshots.get(asOf).push(r);diagnostics.growthOnlyObservations=(diagnostics.growthOnlyObservations||0)+1;}};
+        const growthOnly=()=>{if(growth&&growth.eligible){const r={ticker,sector:asOfSector,price:stock.price?.current??null,marketCap:stock.valuation?.marketCap??null,growthOnly:true,growth};attachRealized(r,history,spyHistory,asOf);growthOnlySnapshots.get(asOf).push(r);diagnostics.growthOnlyObservations=(diagnostics.growthOnlyObservations||0)+1;}};
         try{
           diagnostics.modelRuns++;
           const f=buildForecast(stock),q=computeQuality(stock,f),v=valuate(stock,f,q),d=rateStock(stock,f,q,v);
