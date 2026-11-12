@@ -9,19 +9,20 @@ const A=(st,prev,w)=>RP.holdingAdvice(st,prev||null,{weight:w===undefined?0.05:w
 assert.strictEqual(A(null).action,'Review');
 assert.strictEqual(A(s({rating:'Unrated'})).action,'Review');
 assert.strictEqual(A(s({modelSupport:'unsupported'})).tone,'review');
-// Quality and price both bad -> Sell
-assert.strictEqual(A(s({qualityScore:60,underwrittenCAGR:.03})).action,'Sell');
-// Expensive two reviews running: Sell unless quality 80+, then Sell some
+// Build 75: quality that fell after buying -> Sell; already low when first held -> Hold, don't add
+assert.strictEqual(A(s({qualityScore:60,underwrittenCAGR:.03}),{entryQ:80}).action,'Sell');
+assert.strictEqual(A(s({qualityScore:60,underwrittenCAGR:.03})).action,'Hold');
+// Expensive two reviews running: Sell (Build 75: same as the tested rule, no quality exception)
 assert.strictEqual(A(s({qualityScore:76,underwrittenCAGR:.04}),{u:.05}).action,'Sell');
 const core=A(s({qualityScore:88,underwrittenCAGR:.04}),{u:.05});
-assert.strictEqual(core.action,'Sell some');assert(/core/.test(core.headline));
+assert.strictEqual(core.action,'Sell');
 // Oversized -> Sell some toward 15%
 const big=A(s(),null,.24);assert.strictEqual(big.action,'Sell some');assert(/15%/.test(big.headline));
-// Quality slipped alone -> Sell some, not Sell
-assert.strictEqual(A(s({qualityScore:65,underwrittenCAGR:.10})).action,'Sell some');
-// Expensive and overweight vs target -> Sell some; expensive and at/under target -> Hold, don't add
+// Quality below the bar from the start -> Hold, don't add
+assert(/don’t add/.test(A(s({qualityScore:65,underwrittenCAGR:.10})).headline));
+// Build 75: the untested 'overweight vs target' trim is gone; expensive at the first reading -> Hold, don't add
 const tgt=RP.targetWeight(s({underwrittenCAGR:.05}));
-assert.strictEqual(A(s({underwrittenCAGR:.05}),null,(tgt||0)+.03).action,'Sell some');
+assert.strictEqual(A(s({underwrittenCAGR:.05}),null,(tgt||0)+.03).action,'Hold');
 const h=A(s({underwrittenCAGR:.05}),null,.005);assert.strictEqual(h.action,'Hold');assert(/don’t add/.test(h.headline));
 // Buyable and underweight -> Buy more; severe estimate cut -> Hold
 const b=A(s(),null,.01);assert.strictEqual(b.action,'Buy more');assert.strictEqual(b.tone,'buy');
@@ -29,7 +30,7 @@ assert.strictEqual(A(s({estimateRevision:{level:'severe',label:'Analysts cut est
 // GARP-only names (rank outside top 20) can also be Buy more
 assert.strictEqual(A(s({overallRank:300,underwrittenCAGR:.095}),null,.005).action,'Buy more');
 // Reasons: plain, capped, no duplicates, no tax boilerplate
-for(const r of [b,big,core,h]){assert(r.reasons.length<=7);assert.strictEqual(new Set(r.reasons).size,r.reasons.length);assert(!r.reasons.some(x=>/Taxable/.test(x)));}
+for(const r of [b,big,core,h]){assert(r.reasons.length<=8);assert.strictEqual(new Set(r.reasons).size,r.reasons.length);assert(!r.reasons.some(x=>/Taxable/.test(x)));}
 assert(b.reasons.some(x=>/12\.0% a year/.test(x)));
 // Sort order puts actions first
 const order=['Hold','Sell','Buy more','Review','Sell some'].sort((a,c)=>RP.ADVICE_ORDER[a]-RP.ADVICE_ORDER[c]);

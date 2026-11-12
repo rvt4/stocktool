@@ -71,8 +71,8 @@ function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,he
       if(!r) reason='left_universe_or_unmodeled';
       else{
         const m=memo.get(t)||{};
-        const st=RP.holdingStatus(r,{...(p?{u:finite(p.underwrittenCAGR??p.expectedCAGR),q:finite(p.qualityScore),peg:RP.pegOf(p)?.peg??null}:{}),streak:m.streak,entryEPS:m.entryEPS},{weight:w,thesisBreak,sellRule,marketMedian});
-        if(st.memo)memo.set(t,{streak:st.memo.streak,entryEPS:st.memo.entryEPS,halved:st.status==='Trim half'?(m.halved||false):false});
+        const st=RP.holdingStatus(r,{...(p?{u:finite(p.underwrittenCAGR??p.expectedCAGR),q:finite(p.qualityScore),peg:RP.pegOf(p)?.peg??null}:{}),streak:m.streak,entryEPS:m.entryEPS,entryQ:m.entryQ},{weight:w,thesisBreak,sellRule,marketMedian});
+        if(st.memo)memo.set(t,{streak:st.memo.streak,entryEPS:st.memo.entryEPS,entryQ:m.entryQ,halved:st.status==='Trim half'?(m.halved||false):false});
         if(st.status==='Trim half'&&!m.halved){const cut=w/2;realize(t,.5,snap.asOf,acc);weights.set(t,w-cut);cash+=cut;turnover+=cut;trims++;memo.set(t,{...memo.get(t),halved:true});continue;}
         if(st.status==='Sell candidate') reason=(finite(r.qualityScore)??100)<RP.BANDS.sellQuality?'quality_below_sell_floor':(st.reasons.some(x=>/^Business shrinking/.test(x))?'thesis_broken_business_shrinking':'low_return_two_reviews');
       }
@@ -87,7 +87,7 @@ function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,he
       const room=Math.max(0,RP.SIZING.sectorCapAtPurchase-sectorW(String(r.sector||'Unknown')));
       const amt=Math.min(cash,Math.max(0,target-cur),room);
       if(amt<RP.SIZING.minTrade)return false;
-      weights.set(r.ticker,cur+amt);cash-=amt;turnover+=amt;{const L=lots.get(r.ticker)||[];L.push({date:snap.asOf,basis:amt,value:amt});lots.set(r.ticker,L);}if(!cur){buys++;const rg=finite(r.revenueGrowthTTM);memo.set(r.ticker,{streak:rg!==null&&rg<0?1:0,entryEPS:finite(r.forwardEPS)});}return true;
+      weights.set(r.ticker,cur+amt);cash-=amt;turnover+=amt;{const L=lots.get(r.ticker)||[];L.push({date:snap.asOf,basis:amt,value:amt});lots.set(r.ticker,L);}if(!cur){buys++;const rg=finite(r.revenueGrowthTTM);memo.set(r.ticker,{streak:rg!==null&&rg<0?1:0,entryEPS:finite(r.forwardEPS),entryQ:finite(r.qualityScore)});}return true;
     };
     for(const t of [...weights.keys()]){const r=rowMap.get(t);if(r&&canEnter(r))buy(r);}
     const heldFam=new Set([...weights.keys()].map(family));
@@ -352,16 +352,14 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
      V('CQ · C with quality 80+',{entryOpts:{minQuality:80}}),
      V('C35W · top-35 cutoff + warning blocks',{maxRank:35,entryOpts:{blockSplit:true,blockCycleAtPeak:true}}),
      V('CG · GARP: quality 75+, revenue growth 10%+, return 9%+, any rank; best return first',{maxRank:Infinity,garp:true,entryOpts:{minReturn:RP.GARP.minReturn,minQuality:RP.GARP.minQuality,minGrowth:RP.GARP.minGrowth}}));}
-  // Build 74: PEG entry (trailing P/E / trailing EPS growth here: no historical analyst estimates) and
-  // sell-rule variants. Decision rule fixed in advance in README-build74.
+  // Build 75: 5-year PEG (the model's own EPS path, identical live and here) and sell-rule variants.
+  // Build 74's CP/CPQ/CPR/CR/CSQ/CGR were read and retired. Decision rule fixed in advance in README-build75.
   {const V=(name,o)=>simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name,entry:'shortlist',sizing:'conviction',maxPositions:15,transactionCostBps,...o},H);
-   arms.push(V('CP · PEG list: quality 75+, revenue growth 10%+, PEG <= 1.0, cheapest first, equal weight; sell when PEG > 2 twice',{entry:'peg',sizing:'equal',maxRank:Infinity,sellRule:'peg'}),
-     V('CPQ · PEG list, sells only on quality < 70 (never on price)',{entry:'peg',sizing:'equal',maxRank:Infinity,sellRule:'qualityOnly'}),
-     V('CPR · PEG list, sell on the market-relative return line',{entry:'peg',sizing:'equal',maxRank:Infinity,sellRule:'relative'}),
-     V('CR · C with the market-relative return sell line',{sellRule:'relative'}),
-     V('CSQ · C selling only on quality < 70 (never on price)',{sellRule:'qualityOnly'}),
-     V('CS2 · C selling half at the first low reading, the rest at the second',{sellRule:'staged'}),
-     V('CGR · GARP list with the market-relative sell line',{maxRank:Infinity,garp:true,sellRule:'relative',entryOpts:{minReturn:RP.GARP.minReturn,minQuality:RP.GARP.minQuality,minGrowth:RP.GARP.minGrowth}}));}
+   arms.push(V('CS2 · C selling half at the first low reading, the rest at the second',{sellRule:'staged'}),
+     V('CB · C, price sell only when BOTH checks agree (return < 6.5% AND 5-yr PEG > 2.5)',{sellRule:'both'}),
+     V('CBS · CB, selling half first, the rest at the second reading',{sellRule:'bothStaged'}),
+     V('CP5 · 5-yr PEG list: quality 75+, revenue growth 10%+, PEG <= 1.5, cheapest first, equal weight; both-agree sell',{entry:'peg',sizing:'equal',maxRank:Infinity,sellRule:'both'}),
+     V('CP5S · CP5 selling half first, the rest at the second reading',{entry:'peg',sizing:'equal',maxRank:Infinity,sellRule:'bothStaged'}));}
   // Build 68b: growth-list alternatives, same sleeve rules. Compare with G before switching anything on live.
   arms.push(simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name:'G1 · Growth sleeve without cyclicals',topN:10,keepRank:25,transactionCostBps,variant:'cyclical'},H),
     simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name:'G2 · Growth sleeve, lasting growth only (Build 68 rule)',topN:10,keepRank:25,transactionCostBps,variant:'durable'},H),

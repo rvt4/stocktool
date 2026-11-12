@@ -586,10 +586,10 @@ function renderScreener(){
   const status=s=>{const u=num(s.underwrittenCAGR??s.expectedReturn,NaN),buy=sort==='candidates'||(sort==='peg'?R.pegEntry(s):u>=R.GARP.minReturn);
    const w=R.entryWarnings(s),notes=[s.estimateRevision?.level?'analysts cut estimates':'',w.includes('split')?'valuation methods disagree':'',w.includes('cycle_peak')?'cyclical, profits near a peak':''].filter(Boolean);
    return {buy,label:buy?'Buy zone':'Watch',sub:buy?(notes.length?'Check: '+notes.join(', '):'No warnings'):(sort==='peg'?'PEG over '+R.PEG.buyMax.toFixed(1):'Return under '+pct(R.GARP.minReturn))+(notes.length?' · '+notes.join(', '):'')};};
-  if(head)head.innerHTML='<th>Company</th><th>Sector</th><th>Price</th><th>PEG</th><th>Revenue growth</th><th>Quality</th><th>Model return / yr</th><th>Status</th><th></th>';
+  if(head)head.innerHTML='<th>Company</th><th>Sector</th><th>Price</th><th>5-yr PEG</th><th>Revenue growth</th><th>Quality</th><th>Model return / yr</th><th>Status</th><th></th>';
   $('screenRows').innerHTML=top.map(s=>{const st=status(s);return `<tr><td><b>${esc(s.ticker)}</b><br><span class="muted">${esc(s.name||'')}</span></td><td>${esc(s.sector||'—')}</td><td>${money(getPrice(s))}</td><td><b>${pegTxt(s)}</b></td><td>${pct(R.businessGrowthOf(s))}</td><td>${esc(s.qualityScore??'—')}</td><td>${returnSummary(s)}</td><td><span class="action ${st.buy?'act-buy':'act-review'}">${st.label}</span><div class="muted small" style="margin-top:4px">${esc(st.sub)}</div></td><td><button class="ghost" data-ticker="${esc(s.ticker)}">Research →</button></td></tr>`}).join('');
   $('screenCards').innerHTML=top.map(s=>{const st=status(s);return `<article class="screen-card compact"><div class="screen-card-head"><div><strong>${esc(s.ticker)} <span class="muted">${esc(s.name||'')}</span></strong></div><span class="action ${st.buy?'act-buy':'act-review'}">${st.label}</span></div><div class="screen-card-stats"><span>PEG <b>${pegTxt(s)}</b></span><span>Return <b>${returnSummary(s)}</b></span><span>Growth <b>${pct(R.businessGrowthOf(s))}</b></span><span>Quality <b>${esc(s.qualityScore??'—')}</b></span><span>Price <b>${money(getPrice(s))}</b></span></div><div class="screen-card-footer"><span class="muted small">${esc(st.sub)}</span><button class="ghost" data-ticker="${esc(s.ticker)}">Research →</button></div></article>`}).join('');
-  if(sort==='peg')$('count').textContent=`${arr.length} quality growers: quality 75+, revenue growing 10%+, PEG 1.5 or less, cheapest for its growth first. Buy zone = PEG 1.0 or less. PEG = forward P/E ÷ expected earnings growth.`;
+  if(sort==='peg')$('count').textContent=`${arr.length} quality growers: quality 75+, revenue growing 10%+, 5-yr PEG 2.0 or less, cheapest for its growth first. Buy zone = 1.5 or less. 5-yr PEG = next year’s P/E ÷ the model’s revenue-per-share growth per year over 5 years (margins held flat; dilution counts).`;
   if(sort==='garp')$('count').textContent=`${arr.length} quality growers: quality 75+, revenue growing 10%+ a year, expected return 7%+. Buy zone = 9%+ a year.`;
   document.querySelectorAll('#screenRows [data-ticker],#screenCards [data-ticker]').forEach(b=>b.onclick=()=>choose(b.dataset.ticker));
   return;
@@ -699,12 +699,31 @@ function renderDashboard(){
   ['Next review',prior||snapshots[0]?esc(RP.nextReviewDate(snapshots[0])||'—'):'Not set','Save a snapshot each quarter in Portfolio']];
  const bar=(w,t)=>{if(w===null)return '';const W=Math.min(1,w/.25),T=t===null?null:Math.min(1,t/.25);
   return `<div class="wbar" title="Weight ${pct(w)}${t!==null?' · target '+pct(t):''}"><span class="wfill" style="width:${(W*100).toFixed(1)}%"></span>${T!==null?`<span class="wtarget" style="left:${(T*100).toFixed(1)}%"></span>`:''}</div><div class="wlabel">${pct(w)} of portfolio${t!==null?` · target ${pct(t)}`:''}</div>`;};
+ // Build 75: your saved projection next to the model's view (it does not change the tested advice).
+ const yourView=r=>{
+  const sp=saved.filter(p=>String(p.ticker).toUpperCase()===r.t).sort((a,b)=>String(b.updated_at||'').localeCompare(String(a.updated_at||'')))[0];
+  if(!sp)return `<div class="yourview empty-view"><span class="muted small">No projection of your own yet.</span> <button class="linkish" data-dticker="${esc(r.t)}">Add one →</button></div>`;
+  let calc=null,u=null,peg=null;
+  try{const A={...JSON.parse(JSON.stringify(sp.assumptions||{})),price:Number.isFinite(r.px)?r.px:sp.assumptions?.price};calc=calculate(A);const mr=calc?methodResults(A,calc):null;u=mr&&Number.isFinite(mr.cagr)?mr.cagr:calc?.cagr;
+   const y=calc?.years||[],e1=y[0]?.eps,e6=y[5]?.eps;if(e1>0&&e6>0&&Number.isFinite(r.px)){const g=Math.pow(e6/e1,1/5)-1;if(g>0)peg=(r.px/e1)/(g*100);}}catch(e){}
+  if(!Number.isFinite(u))return `<div class="yourview"><span class="muted small">Your ${esc(sp.scenario)} projection couldn’t be recalculated; open it to re-save.</span></div>`;
+  const mv=r.s?(r.s.underwrittenCAGR??r.s.expectedCAGR):null,m=mv==null?NaN:Number(mv),d=Number.isFinite(m)?u-m:null;
+  const act=r.advice.action;
+  const note=u>=0.11&&/Sell/.test(act)?'Your projection sees a buy-level return while the model says sell. Compare the growth and margin assumptions.'
+   :u<0.065&&/Buy|Hold/.test(act)?'Your projection sees it as expensive; the model is more forgiving.'
+   :d!==null&&Math.abs(d)<0.03?'You and the model roughly agree.'
+   :d!==null?`You’re ${d>0?'more optimistic':'more cautious'} than the model by ${Math.abs(d*100).toFixed(1)} pts a year.`:'';
+  return `<div class="yourview"><div class="yv-head"><small>Your view · ${esc(sp.scenario)} · saved ${esc(String(sp.updated_at||'').slice(0,10))}</small></div>
+   <div class="yv-stats"><div><small>Your return</small><b>${pct(u)}</b></div><div><small>Your 5Y PEG</small><b>${peg!==null?peg.toFixed(2):'—'}</b></div><div><small>Model return</small><b>${Number.isFinite(m)?pct(m):'—'}</b></div></div>
+   ${note?`<p class="muted small" style="margin:6px 0 0">${esc(note)}</p>`:''}</div>`;
+ };
  const card=r=>{const a=r.advice,s=r.s,u=s?(s.underwrittenCAGR??s.expectedCAGR):null,g=r.value!==null&&r.cost>0?r.value/r.cost-1:null;
   return `<article class="hcard ${ACTION_CLASS[a.action]||''}">
    <div class="hcard-top"><div><div class="hcard-ticker">${esc(r.t)}</div><div class="hcard-name">${esc(s?.name||'')}</div></div><span class="action ${ACTION_CLASS[a.action]||''}">${esc(a.action)}</span></div>
    <p class="hcard-headline">${esc(a.headline)}</p>
-   <div class="hcard-stats"><div><small>Value</small><b>${money(r.value)}</b></div><div><small>Gain</small><b class="${g!==null&&g>=0?'positive':'negative'}">${g===null?'—':(g>=0?'+':'')+pct(g)}</b></div><div><small>PEG</small><b>${(()=>{const p=RP.pegOf(s);return p&&p.peg!==null?p.peg.toFixed(2):'—';})()}</b></div><div><small>Return</small><b>${u===null||u===undefined?'—':pct(Number(u))}</b></div><div><small>Quality</small><b>${esc(s?.qualityScore??'—')}</b></div></div>
+   <div class="hcard-stats"><div><small>Value</small><b>${money(r.value)}</b></div><div><small>Gain</small><b class="${g!==null&&g>=0?'positive':'negative'}">${g===null?'—':(g>=0?'+':'')+pct(g)}</b></div><div><small>5Y PEG</small><b>${(()=>{const p=RP.pegOf(s);return p&&p.peg!==null?p.peg.toFixed(2):'—';})()}</b></div><div><small>Return</small><b>${u===null||u===undefined?'—':pct(Number(u))}</b></div><div><small>Quality</small><b>${esc(s?.qualityScore??'—')}</b></div></div>
    ${bar(r.weight,a.target)}
+   ${yourView(r)}
    ${a.reasons.length?`<details${a.action!=='Hold'?' open':''}><summary>Why</summary><ul>${a.reasons.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>`:''}
    ${s?`<button class="ghost" data-dticker="${esc(r.t)}">Open research →</button>`:''}
   </article>`;};
@@ -721,7 +740,7 @@ function renderDashboard(){
     :rows.length?`<div class="hgrid">${rows.map(card).join('')}</div>`:`<div class="empty"><p>No holdings yet. Add them under Portfolio.</p><button class="primary" data-goto="portfolio">Add holdings</button></div>`}
   </section>
   <section class="dash-section"><div class="section-head"><h2>Ideas for new money</h2><button class="ghost" data-goto="screener">See all ideas →</button></div>
-   <p class="muted small">PEG buy zone: quality 75+, revenue growing 10%+, PEG 1.0 or less (cheap for its growth). Cheapest first; you don’t own these yet.</p>
+   <p class="muted small">PEG buy zone: quality 75+, revenue growing 10%+, 5-yr PEG 1.5 or less. Cheapest for its growth first; you don’t own these yet.</p>
    ${ideaList.length?`<div class="ideas">${ideaList.map(idea).join('')}</div>`:'<div class="empty"><p>Nothing in the buy zone tonight. Holding cash or an index fund until prices improve is fine.</p></div>'}
   </section>
   <p class="disclaimer">Advice comes from the model’s backtested rules applied to tonight’s data. It is a prompt to do your own research, not financial advice. Expected returns are estimates, and the backtest (2019–2025, before taxes) leaned on a handful of big winners.</p>`;

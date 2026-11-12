@@ -20,7 +20,7 @@ const snaps=dates.map((asOf,qi)=>({asOf,rows:Array.from({length:N},(_,i)=>{
 })}));
 const lab=L.buildOwnerStrategyLab(snaps,hist,spy,H,{splitYear:2018});
 const arm=k=>lab.arms.find(a=>a.name.startsWith(k));
-assert.ok(lab.arms.length===25&&lab.benchmarks.equalWeightUniverse); // Build 62 added arm C0; Build 65 added G (growth) and H (70/30 blend); Build 68b added G1-G3; Build 69 added C2; Build 72 replaced C2 with C35, C50, CW, CQ, C35W, CG; Build 74 added CP, CPQ, CPR, CR, CSQ, CS2, CGR
+assert.ok(lab.arms.length===23&&lab.benchmarks.equalWeightUniverse); // Build 62 added arm C0; Build 65 added G (growth) and H (70/30 blend); Build 68b added G1-G3; Build 69 added C2; Build 72 replaced C2 with C35, C50, CW, CQ, C35W, CG; Build 75: CS2, CB, CBS, CP5, CP5S
 assert.ok(arm('C').portfolioCAGR>lab.benchmarks.equalWeightUniverse.portfolioCAGR,'planted signal should beat the equal-weight universe');
 assert.ok(arm('A').portfolioCAGR>lab.benchmarks.equalWeightUniverse.portfolioCAGR);
 assert.ok((arm('C').sellReasons.quality_below_sell_floor||0)>=1,'T3 quality collapse must trigger a sell');

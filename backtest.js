@@ -40,7 +40,7 @@ const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {buildOwnerStrategyLab}=require('./owner-strategy-lab');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='build74';
+const MODEL_VERSION='build75b';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -562,7 +562,7 @@ function compactModel(stock,f,q,v,d){return {
   methodsSplit:!!v.valuationConsensus?.methodsSplit,valuationConsensus:v.valuationConsensus?{hasConsensusOutlier:!!v.valuationConsensus.hasConsensusOutlier,clusterSpread:v.valuationConsensus.clusterSpread??null,outlierGap:v.valuationConsensus.outlierGap??null}:null,
   valuationMethodEvidence:(v.methods||[]).map(m=>({name:m.name||null,family:m.family||null,reliability:m.reliability??null,weight:m.weight??null,fairValueToday:m.audit?.fairValueToday??null,hurdleValueToday:m.audit?.hurdleValueToday??null,outcome:m.outcome??null})),
   modelSupport:v.modelSupport,
-  revenueGrowthTTM:require('./review-policy').ttmRevenueGrowth(stock.quarterly,stock.financials?.years),revenueCAGR3:require('./engine/ranking-engine').revenueCagr3(stock.financials?.years),cycle:require('./engine/ranking-engine').cycleProfile(stock.financials?.years),...require('./engine/ranking-engine').earningsProfile(stock.financials?.years,stock.valuation?.marketCap),forwardEPS:f.rows?.[0]?.eps??null
+  revenueGrowthTTM:require('./review-policy').ttmRevenueGrowth(stock.quarterly,stock.financials?.years),revenueCAGR3:require('./engine/ranking-engine').revenueCagr3(stock.financials?.years),cycle:require('./engine/ranking-engine').cycleProfile(stock.financials?.years),...require('./engine/ranking-engine').earningsProfile(stock.financials?.years,stock.valuation?.marketCap),forwardEPS:f.rows?.[0]?.eps??null,modelEPS0:f.rows?.[0]?.eps??null,modelEPS1:f.rows?.[1]?.eps??null,modelEPS5:f.rows?.[5]?.eps??null,modelRevPS0:((f.rows?.[0]?.revenue>0&&f.rows?.[0]?.shares>0)?f.rows[0].revenue/f.rows[0].shares:null),modelRev0:f.rows?.[0]?.revenue??null,modelRev5:f.rows?.[5]?.revenue??null,modelRevPS5:((f.rows?.[5]?.revenue>0&&f.rows?.[5]?.shares>0)?f.rows[5].revenue/f.rows[5].shares:null)
 };}
 function rank(rows){applyModelDRanking(rows,{rankField:'rank',universeSizeField:'universeSize'});}
 function attachRealized(row,history,spyHistory,asOf){

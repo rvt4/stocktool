@@ -56,8 +56,14 @@ function captureForecast(stock,f,asOf){
   const h=HORIZONS.map(k=>{const r=rows[k-1];if(!r)return null;
     return [finite(r.year),finite(r.revenue),finite(r.gaapNetMargin??r.netMargin),finite(r.preSbcFcfMargin??r.fcfMargin)];});
   if(!h[0]||h[0][0]!==b.baseYear+1)return null; // year labels must line up with the reported base year
+  // Build 75b: where the steady-margin-climb rule changed the forecast, also keep the forecast without it.
+  let alt=null;
+  if((f.forecastFlags||[]).includes('steady_margin_climb_applied')){
+    try{const f2=require('./engine/forecast-engine').buildForecast(stock,{marginTrend:false});const r2=f2?.rows||[];
+      alt=HORIZONS.map(k=>{const r=r2[k-1];return r?[finite(r.year),finite(r.gaapNetMargin??r.netMargin),finite(r.preSbcFcfMargin??r.fcfMargin)]:null;});}catch(e){alt=null;}
+  }
   return {ticker:stock.ticker,asOf,sector:stock.sector||'Unknown',category:f.category||null,
-    reliability:finite(f.forecastReliabilityScore),flags:[...new Set(f.forecastFlags||[])],...b,h};
+    reliability:finite(f.forecastReliabilityScore),flags:[...new Set(f.forecastFlags||[])],...b,h,alt};
 }
 
 function baselineRevenue(b,k){
@@ -85,7 +91,8 @@ function scoreForecasts(observations,actualYears){
         fg:Math.pow(rev/o.baseRevenue,1/k)-1,bg:base.fade>0?Math.pow(base.fade/o.baseRevenue,1/k)-1:null,ag:Math.pow(ar/o.baseRevenue,1/k)-1,
         rev:{model:le(ar,rev),trend:le(ar,base.trend),fade:le(ar,base.fade),flat:le(ar,base.flat)},
         net:{model:pe(an,net),last:pe(an,o.lastNet),median3:pe(an,o.medNet)},
-        fcf:{model:pe(af,fcf),last:pe(af,o.lastFcf),median3:pe(af,o.medFcf)}});
+        fcf:{model:pe(af,fcf),last:pe(af,o.lastFcf),median3:pe(af,o.medFcf)},
+        alt:o.alt&&o.alt[i]&&o.alt[i][0]===year?{net:pe(an,o.alt[i][1]),fcf:pe(af,o.alt[i][2])}:null});
     });
   }
   return out;
@@ -167,6 +174,21 @@ function verdictLines(byH){
   return lines;
 }
 
+// Build 75b: same companies and dates, forecast with vs without the steady-margin-climb rule.
+function marginTrendTest(scored){
+  const out={};
+  for(const k of HORIZONS){
+    const rows=scored.filter(r=>r.k===k&&r.alt);
+    const pair=(m)=>{const v=rows.filter(r=>Number.isFinite(r[m].model)&&Number.isFinite(r.alt[m]));if(!v.length)return null;
+      const w=v.map(r=>r[m].model),wo=v.map(r=>r.alt[m]);
+      const mae=a=>r4(median(a.map(Math.abs)));
+      return {n:v.length,withRule:{bias:r4(median(w)),medianAbsError:mae(w)},withoutRule:{bias:r4(median(wo)),medianAbsError:mae(wo)},
+        ruleCloserRate:r4(v.filter(r=>Math.abs(r[m].model)<Math.abs(r.alt[m])).length/v.length)};};
+    if(rows.length)out[`year ${k}`]={netMargin:pair('net'),fcfMargin:pair('fcf')};
+  }
+  return {readMe:'Forecasts where the rule fired, scored with and without it against what the companies reported. Lower medianAbsError and ruleCloserRate > 0.5 = the rule helps. Bias > 0 = forecast too LOW.',byHorizon:out};
+}
+
 function buildScorecard(scored,{modelVersion=null}={}){
   const byHorizon={};for(const k of HORIZONS){const rows=scored.filter(r=>r.k===k);if(rows.length)byHorizon[`year ${k}`]=block(rows);}
   const h3=scored.filter(r=>r.k===3),h1=scored.filter(r=>r.k===1);
@@ -188,10 +210,11 @@ function buildScorecard(scored,{modelVersion=null}={}){
     bySector:groupBy(focus,r=>r.sector||'Unknown'),
     bySnapshotYear:groupBy(focus,r=>String(r.asOf).slice(0,4)),
     byFlag:{horizon:focusLabel,rows:flagTable(focus)},
+    marginTrendTest:marginTrendTest(scored),
     byRank:{horizon:focusLabel,note:'Live rank at the snapshot (owner rule). Negative bias = model too optimistic.',rows:byRankTable(focus)},
     worstRevenueMisses:focus.filter(r=>Number.isFinite(r.rev.model)).sort((a,b)=>Math.abs(b.rev.model)-Math.abs(a.rev.model)).slice(0,30)
       .map(r=>({ticker:r.t,asOf:r.asOf,forecastCAGR:r4(r.fg),actualCAGR:r4(r.ag),fadeBaselineError:r4(r.rev.fade),modelError:r4(r.rev.model),flags:r.flags}))
   };
 }
 
-module.exports={captureForecast,scoreForecasts,buildScorecard,baselineInputs,baselineRevenue,HORIZONS};
+module.exports={marginTrendTest,captureForecast,scoreForecasts,buildScorecard,baselineInputs,baselineRevenue,HORIZONS};

@@ -7,7 +7,8 @@ assert.strictEqual(RP.holdingStatus(st({overallRank:5})).status,'Add candidate',
 assert.strictEqual(RP.holdingStatus(st({overallRank:35})).status,'Hold','outside top 20 is just Hold');
 assert.strictEqual(RP.holdingStatus(st({overallRank:5,underwrittenCAGR:.10})).status,'Hold','below hurdle is not an add');
 assert.strictEqual(RP.shortlistEntry(st({overallRank:5,rating:'Unrated'})),false);
-assert.strictEqual(RP.holdingStatus(st({qualityScore:65})).status,'Sell candidate');
+assert.strictEqual(RP.holdingStatus(st({qualityScore:65}),{entryQ:80}).status,'Sell candidate'); // Build 75: quality that fell after buying
+assert.strictEqual(RP.holdingStatus(st({qualityScore:65})).status,'Review'); // Build 75: already low when first held
 assert.strictEqual(RP.holdingStatus(st({qualityScore:72})).status,'Review');
 // low return: first time Review, second consecutive time Sell candidate
 assert.strictEqual(RP.holdingStatus(st({underwrittenCAGR:.05})).status,'Review');
