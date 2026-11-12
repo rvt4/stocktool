@@ -9,6 +9,7 @@
 const ALPHA_GATE = 0.00;
 
 function finite(v){
+  if(v===null||v===undefined||v==='')return null; // Build 74: missing stays missing (Number(null) is 0)
   const n=Number(v);
   return Number.isFinite(n)?n:null;
 }
@@ -214,9 +215,26 @@ function applyModelDRanking(rows,{rankField='overallRank',universeSizeField='glo
     const inTop=new Set(top25);
     sorted=[...top25,...sorted.filter(r=>!inTop.has(r))];
   }
-  sorted.forEach((r,i)=>{r[rankField]=i+1;});
+  // Build 71b (live rule): a stock the model could not value gets no rank number at all (AGNC showed #109).
+  if(reliability){const unval=r=>r.modelSupport==='unsupported'||!!r.valuationExclusion;
+    sorted=sorted.filter(r=>!unval(r)).concat(sorted.filter(unval));
+    sorted.forEach((r,i)=>{r[rankField]=unval(r)?null:i+1;});}
+  else sorted.forEach((r,i)=>{r[rankField]=i+1;});
   if(universeSizeField) for(const r of rows||[]) r[universeSizeField]=(rows||[]).length;
   return sorted;
 }
 
-module.exports={REVISION,estimateRevision,CYCLE_PENALTY,cycleProfile,cyclePenalty,VALUE_TRAP,revenueCagr3,businessGrowth,valueTrapPenalty,stressedAlpha,ALPHA_GATE,reliabilityAdjustedAlpha,percentileRanks,buildModelDScores,compareRank,applyModelDRanking};
+// Build 74: trailing earnings profile for the PEG list. P/E = market cap / latest net income;
+// EPS growth = 3-year CAGR of net income per share (null when either end is not positive).
+function earningsProfile(years,marketCap){
+  const ys=(years||[]).filter(y=>y&&y.netIncome!=null&&Number.isFinite(Number(y.netIncome)));
+  const last=ys.at(-1),mc=finite(marketCap);
+  const peTTM=last&&mc>0&&Number(last.netIncome)>0?mc/Number(last.netIncome):null;
+  let epsCAGR3=null;
+  if(ys.length>=3){const lb=Math.min(3,ys.length-1),a=ys[ys.length-1-lb],b=last;
+    const sh=y=>finite(y.sharesOutTTM)??finite(y.dilutedShares)??finite(y.sharesOutstanding);
+    const ea=sh(a)>0?Number(a.netIncome)/sh(a):null,eb=sh(b)>0?Number(b.netIncome)/sh(b):null;
+    if(ea>0&&eb>0){const g=Math.pow(eb/ea,1/lb)-1;if(Number.isFinite(g))epsCAGR3=g;}}
+  return {peTTM,epsCAGR3};
+}
+module.exports={earningsProfile,REVISION,estimateRevision,CYCLE_PENALTY,cycleProfile,cyclePenalty,VALUE_TRAP,revenueCagr3,businessGrowth,valueTrapPenalty,stressedAlpha,ALPHA_GATE,reliabilityAdjustedAlpha,percentileRanks,buildModelDScores,compareRank,applyModelDRanking};

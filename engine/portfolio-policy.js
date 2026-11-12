@@ -1,7 +1,7 @@
 'use strict';
 const { INVESTOR_ALPHA_HURDLE } = require('./config');
 
-function finite(v){const n=Number(v);return Number.isFinite(n)?n:null;}
+function finite(v){if(v===null||v===undefined||v==="")return null;const n=Number(v);return Number.isFinite(n)?n:null;}
 function mean(xs){return xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null;}
 function clamp(v,lo=0,hi=1){return Math.max(lo,Math.min(hi,v));}
 

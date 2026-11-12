@@ -10,6 +10,9 @@ function reverseBand(v, good, bad) { return 100 - scoreBand(v, good, bad); }
 function yoy(years, field) {
   const out=[]; for(let i=1;i<years.length;i++){const a=Number(years[i-1]?.[field]),b=Number(years[i]?.[field]);if(a>0&&Number.isFinite(b))out.push(b/a-1);} return out;
 }
+// Build 74: a missing value must stay missing. Number(null) is 0, which used to turn a missing ROIC
+// into a 0% ROIC for ~30% of the universe (V, AVGO, LLY, KLAC...), and missing FCF/margins into zeros.
+const fin=v=>(v===null||v===undefined||v==='')?NaN:Number(v);
 function stdev(a){const v=a.filter(Number.isFinite); if(v.length<2)return 0.15; const m=v.reduce((s,x)=>s+x,0)/v.length; return Math.sqrt(v.reduce((s,x)=>s+(x-m)**2,0)/v.length);}
 
 function computeQuality(stock, forecast) {
@@ -17,24 +20,25 @@ function computeQuality(stock, forecast) {
   const last = years[years.length - 1] || {};
   const revenueGrowth = yoy(years.slice(-5),'revenue').filter(x=>x>-0.8&&x<2);
   const shareGrowth = yoy(years.slice(-4),'sharesOutTTM').filter(x=>x>-0.5&&x<0.5);
-  const roic = median(years.slice(-3).map(y=>Number(y.roic)).filter(Number.isFinite));
-  const fcfMargins = years.slice(-4).map(y=>Number(y.revenue)>0&&Number.isFinite(Number(y.fcf))?Number(y.fcf)/Number(y.revenue):null).filter(Number.isFinite);
-  const opMargins = years.slice(-4).map(y=>Number(y.opMargin)).filter(Number.isFinite);
-  const positiveFCF = years.length ? years.filter(y=>Number(y.fcf)>0).length/years.length : 0;
+  const roic = median(years.slice(-3).map(y=>fin(y.roic)).filter(Number.isFinite));
+  const fcfMargins = years.slice(-4).map(y=>Number(y.revenue)>0&&Number.isFinite(fin(y.fcf))?fin(y.fcf)/Number(y.revenue):null).filter(Number.isFinite);
+  const opMargins = years.slice(-4).map(y=>fin(y.opMargin)).filter(Number.isFinite);
+  const fcfYears = years.filter(y=>Number.isFinite(fin(y.fcf)));
+  const positiveFCF = fcfYears.length ? fcfYears.filter(y=>fin(y.fcf)>0).length/fcfYears.length : 0;
   const growthMed = median(revenueGrowth) ?? 0;
   const growthVol = stdev(revenueGrowth);
   const dilution = median(shareGrowth) ?? 0;
-  const sbc = Number(last.sbcIntensity);
+  const sbc = fin(last.sbcIntensity);
   const debt = Number(last.totalDebt ?? last.longTermDebt) || 0;
   const cash = Number(last.cash) || 0;
-  const ebitda = Number(last.ebitda);
+  const ebitda = fin(last.ebitda);
   const netDebtToEbitda = ebitda>0 ? (debt-cash)/ebitda : null;
 
   const isFinancial=stock.financials?.dataQuality?.financialLikeRevenue===true;
-  const netMargins=years.slice(-4).map(y=>Number(y.revenue)>0&&Number.isFinite(Number(y.netIncome))?Number(y.netIncome)/Number(y.revenue):null).filter(Number.isFinite);
+  const netMargins=years.slice(-4).map(y=>Number(y.revenue)>0&&Number.isFinite(fin(y.netIncome))?fin(y.netIncome)/Number(y.revenue):null).filter(Number.isFinite);
   const profitability = isFinancial
     ? Math.round(0.55*scoreBand(median(netMargins)??0,0,.25)+0.45*scoreBand(growthMed,-.05,.15))
-    : Math.round(0.55*scoreBand(roic,-0.02,0.25)+0.45*scoreBand(median(fcfMargins)??-0.05,-0.05,0.20));
+    : Math.round(0.55*(Number.isFinite(roic)?scoreBand(roic,-0.02,0.25):scoreBand(median(netMargins)??0,0,0.25))+0.45*scoreBand(median(fcfMargins)??-0.05,-0.05,0.20));
   const growthQuality = Math.round(0.60*scoreBand(growthMed,-0.05,0.18)+0.40*reverseBand(growthVol,0.05,0.35));
   const cashQuality = isFinancial ? 55 : Math.round(70*positiveFCF + 0.30*scoreBand(median(fcfMargins)??-0.05,-0.05,0.15));
   const balanceSheet = Math.round(netDebtToEbitda==null?55:reverseBand(netDebtToEbitda,-1,4));
