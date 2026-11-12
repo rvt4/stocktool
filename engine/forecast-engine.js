@@ -401,8 +401,8 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     fcfPersistenceCount>=3
   );
   const saneStart=(latest,norm,lo,hi,band)=>clamp(Number.isFinite(latest)?latest:norm,Math.max(lo,norm-band),Math.min(hi,norm+band));
-  const currentOperating=saneStart(latestOp,rawOp,-.10,opCeiling,.10);
-  const currentEBITDA=Number.isFinite(rawEBITDA)?saneStart(latestEBITDA,rawEBITDA,-.05,ebitdaCeiling,.12):null;
+  let currentOperating=saneStart(latestOp,rawOp,-.10,opCeiling,.10);
+  let currentEBITDA=Number.isFinite(rawEBITDA)?saneStart(latestEBITDA,rawEBITDA,-.05,ebitdaCeiling,.12):null;
   let currentNet=saneStart(latestNet,rawNet,-.10,netCeiling,.10);
   const currentCFO=Number.isFinite(rawCFO)?saneStart(latestCFO,rawCFO,-.08,.70,.12):null;
   const currentCapex=Number.isFinite(latestCapex)?clamp(latestCapex,0,.45):Number.isFinite(rawCapex)?clamp(rawCapex,0,.45):null;
@@ -1051,13 +1051,21 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     // a lower analyst EPS (often from tax, interest or depreciation) never cuts the cash path.
     analystAnchorDelta.cashTarget=Math.max(0,analystAnchorDelta.target)*.5;
     analystAnchorDelta.cashMature=Math.max(0,analystAnchorDelta.mature)*.5;
-    if(analystAnchorApplied&&(analystAnchorDelta.cashTarget>0||analystAnchorDelta.cashMature>0)){
+    // Build 77b: operating and EBITDA margins are P&L lines, so they take the FULL earnings change
+    // (pre-tax), including year 1. Half strength left AMD at a 27% net margin on a 16% operating margin.
+    // Cash flow keeps the half-strength rule above (cash comes from the company's own history).
+    if(analystAnchorApplied){
       const pre=d=>d/(1-clamp(normalizedTaxRate,0,.35));
+      const pS=Math.max(0,analystAnchorDelta.start),pT=Math.max(0,analystAnchorDelta.target),pM=Math.max(pT,Math.max(0,analystAnchorDelta.mature));
+      if(Number.isFinite(currentOperating)) currentOperating=clamp(currentOperating+pre(pS),-.10,opCeiling);
+      if(Number.isFinite(currentEBITDA)) currentEBITDA=clamp(currentEBITDA+pre(pS),-.05,ebitdaCeiling);
+      targetOperating=clamp(targetOperating+pre(pT),-.10,opCeiling);
+      matureOperating=clamp(matureOperating+pre(pM),-.10,opCeiling);
+      if(Number.isFinite(targetEBITDA)) targetEBITDA=clamp(targetEBITDA+pre(pT),-.05,ebitdaCeiling);
+      if(Number.isFinite(matureTargetEBITDA)) matureTargetEBITDA=clamp(matureTargetEBITDA+pre(pM),-.05,ebitdaCeiling);
+    }
+    if(analystAnchorApplied&&(analystAnchorDelta.cashTarget>0||analystAnchorDelta.cashMature>0)){
       const dT=analystAnchorDelta.cashTarget,dM=Math.max(analystAnchorDelta.cashMature,dT);
-      targetOperating=clamp(targetOperating+pre(dT),-.10,opCeiling);
-      matureOperating=clamp(matureOperating+pre(dM),-.10,opCeiling);
-      if(Number.isFinite(targetEBITDA)) targetEBITDA=clamp(targetEBITDA+pre(dT),-.05,ebitdaCeiling);
-      if(Number.isFinite(matureTargetEBITDA)) matureTargetEBITDA=clamp(matureTargetEBITDA+pre(dM),-.05,ebitdaCeiling);
       if(Number.isFinite(targetFCF)) targetFCF=clamp(targetFCF+dT,-.10,fcfCeiling);
       if(Number.isFinite(matureTargetFCF)) matureTargetFCF=clamp(matureTargetFCF+dM,-.10,fcfCeiling);
       if(Number.isFinite(targetCapex)&&Number.isFinite(targetFCF)) targetCFO=clamp(targetFCF+targetCapex,-.08,.70);
@@ -1458,7 +1466,7 @@ function buildForecast(stock,opts={}){
     // asset sales) in recent net income were being carried forward as if they recur (AMZN, GOOGL: projected
     // net margin above operating margin). Ceiling = (operating margin + the company's typical non-operating
     // income over 5 years + 1 pt) after tax; the normalized/owner net adds back after-tax amortization.
-    if(Number.isFinite(operatingMargin)&&!margins.analystMarginAnchor?.applied){   // analyst-anchored recoveries are consensus-led, not one-off gains
+    if(Number.isFinite(operatingMargin)){   // Build 77b: applies to every company (operating margin now moves with analyst-led earnings)
       const t=clamp(margins.normalizedTaxRate??.21,0,.35), npo=finite(margins.nonOperatingMargin)??0;
       const gaapCeil=(operatingMargin+npo+.01)*(1-t);
       const amortBack=Number.isFinite(intangibleAmortizationMargin)?Math.max(0,intangibleAmortizationMargin)*(1-t):0;

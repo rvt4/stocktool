@@ -101,7 +101,9 @@ const GROWTH_CALIBRATION = { anchor: 0.065, keep: [1, 0.75, 0.55, 0.45, 0.40], k
 // in years 2-5. The starting, year-5 and mature (year-10) FCF targets are blended with that median by these
 // weight; the yearly rows interpolate between them. One weight for all three keeps the path's shape (a rising
 // path still rises), it just sits closer to the company's record. All 0 = off.
-const FCF_MEDIAN_BLEND = { start: 0.40, year5: 0.40, mature: 0.40 };
+// Build 77b: year 1 starts from the latest reported cash margin. The scorecard showed the plain 'last year'
+// baseline beat the blended start at year 1 (skill -8.5%); the blend still wins from year 2 on, so it stays there.
+const FCF_MEDIAN_BLEND = { start: 0, year5: 0.40, mature: 0.40 };
 // Build 75b: steady margin climbers. When operating margin has risen 3+ pts over the last 3 years without a
 // real down year, revenue kept growing, gross margin isn't falling and analysts don't expect a drop, the
 // model stops pulling margins back toward the historical median (AMZN-type businesses). Detection always
