@@ -41,6 +41,9 @@ jobs:
           node build72-test.js
           node build73-test.js
           node build74-test.js
+          node build75-test.js
+          node build76-test.js
+          node build77-test.js
       - name: Run backtest
         env:
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
