@@ -58,9 +58,11 @@ function initial(s){
   const eb=rowsAll.map(r=>nz(r.ebitdaMargin)*100),nd=rowsAll.map(r=>nz(r.netDebt)/1e9);
   if(eb.every(Number.isFinite)){a0.path.ebitda=eb;a0.shapes.ebitda='model';}
   if(nd.every(Number.isFinite)){a0.path.debt=nd;a0.shapes.debt='model';}
+  if(Number.isFinite(Number(s?.netDebtNow))&&s.netDebtNow!==null)a0.netDebtNow=Number(s.netDebtNow)/1e9;
  }
  a0.methods=seedMethods(s);
  syncEndpoints(a0);
+ a0.simple=simpleSeed(s);
  return a0;
 }
 // ---- Build 46: every valuation method, visible and editable ----
@@ -96,7 +98,7 @@ function ratingWhy(s){
 }
 function methodResults(a,r){
  if(!r||!a?.methods?.list?.length)return null;
- const price=a.price,ys=r.years,y10=ys[9],cashPS=Number.isFinite(r.cashBuildPS)?r.cashBuildPS:0,divs=r.value-r.exit-cashPS;
+ const price=a.price,ys=r.years,y10=ys[9],cashPS=Number.isFinite(r.cashBuildPS)?r.cashBuildPS:0,divs=r.value-r.exit;
  // Screener basis (Build 63): SBC is expensed in both net margin and FCF, and the share path excludes
  // employee-grant dilution, so it is counted exactly once. DCF discounts aggregate FCF over today's share count.
  const sh10=y10.shares,fcfAgg=ys.map(y=>y.revenue*1000*y.fcfMargin/100),fcfps=ys.map((y,i)=>fcfAgg[i]/y.shares);
@@ -105,7 +107,7 @@ function methodResults(a,r){
  const shares0=valid(r.startShares,ys[0].shares),fcfMethod=a.methods.list.find(m=>m.kind==='fcf');
  const rows=a.methods.list.map(m=>{
   let outcome=NaN,fair=NaN,note='';
-  if(m.kind==='eps'){const pe10=r.exit/y10.eps;outcome=y10.eps>0&&pe10>0?(y10.eps+sbcAdd)*pe10+divs+cashPS:NaN;note=(sbcAdd>0.005?`Year-10 EPS × P/E, + ${money(sbcAdd)}/sh SBC add-back (dilution already in share count)`:'Year-10 EPS × P/E (table)')+(Math.abs(cashPS)>0.005?`, ${cashPS>=0?'+':'−'} ${money(Math.abs(cashPS))}/sh cash built`:'');}
+  if(m.kind==='eps'){const pe10=(Number.isFinite(r.exitOps)?r.exitOps:r.exit)/y10.eps;outcome=y10.eps>0&&pe10>0?(y10.eps+sbcAdd)*pe10+divs+cashPS:NaN;note=(sbcAdd>0.005?`Year-10 EPS × P/E, + ${money(sbcAdd)}/sh SBC add-back (dilution already in share count)`:'Year-10 EPS × P/E (table)')+(Math.abs(cashPS)>0.005?`, ${cashPS>=0?'+':'−'} ${money(Math.abs(cashPS))}/sh cash built`:'');}
   else if(m.kind==='fcf'){outcome=fcfps[9]>0&&m.mult>0?fcfps[9]*m.mult+divs+cashPS:NaN;note='Year-10 FCF/share × P/FCF + cash built';}
   else if(m.kind==='ebitda'){
    const eb=a.path?.ebitda,dt=a.path?.debt;
@@ -239,7 +241,7 @@ function renderPathEditor(){
  const modelNotes=notes.length&&nativeScenario()!==null?`<div class="model-notes small">${notes.map(n=>'<p>'+esc(n)+'</p>').join('')}</div>`:'';
  el.innerHTML=modelNotes+`<details class="path-shape-box"${shapesOpen?' open':''}><summary class="small">Shapes (redraw a whole line)</summary><div class="path-shapes">${[...ALL_KEYS,...OPT_KEYS.filter(k=>Array.isArray(a.path[k]))].map(k=>`<label class="small">${esc(SERIES_LABELS[k])} ${shapeSel(k)}</label>`).join('')}</div></details>
  <div class="table-scroll"><table class="path-table"><thead><tr><th>Year</th>${COLS.map(([,l])=>`<th>${l}</th>`).join('')}<th>EPS</th><th>Price*</th><th>CAGR if sold</th></tr></thead><tbody>${reportedPathRows().map(h=>`<tr class="hist-row"><td>${esc(h.period)} <span class="hist-tag">reported</span></td>${COLS.map(([k])=>`<td>${hcell(h,k)}</td>`).join('')}<td>${money(h.eps)}</td><td>—</td><td>—</td></tr>`).join('')}${history?'':`<tr class="hist-row"><td colspan="${n}" class="muted small">Reported history not loaded for this company yet.</td></tr>`}<tr class="today-row"><td>Today</td>${COLS.map(([k])=>`<td>${k==='pe'?(Number.isFinite(a.peToday)?a.peToday.toFixed(1)+'×':'—'):'—'}</td>`).join('')}<td>${money(a.epsToday)}</td><td>${money(a.price)}</td><td>—</td></tr><tr class="proj-divider"><td colspan="${n}">Projected</td></tr>${a.path.growth.map((_,i)=>{const y=r?.years?.[i];return `<tr><td>${y?y.year:(Number.isFinite(a.firstYear)?a.firstYear:new Date().getFullYear()+1)+i}</td>${COLS.map(([k,,,step,dp])=>`<td><input type="number" inputmode="decimal" step="${step}" data-path="${k}" data-i="${i}" value="${Number(a.path[k][i].toFixed(dp))}"></td>`).join('')}<td>${y?money(y.eps):'—'}</td><td>${y?money(y.price):'—'}</td><td>${y&&Number.isFinite(y.cagrToDate)?pct(y.cagrToDate):'—'}</td></tr>`}).join('')}</tbody></table></div>
- <p class="muted small">* P/E is the trailing P/E at the end of each year, from today's P/E (Today row) to your exit P/E in the final year. With the default "Follows earnings" shape the P/E moves from today's P/E toward your exit P/E in proportion to how much of the forecast EPS growth has been delivered: a high multiple is paid for growth still to come, so it shrinks as that growth arrives (half the EPS growth done = halfway to the exit P/E, on a log scale). Change the Year-10 P/E to set the exit; pick "Even steps" to move it by time instead. In-between prices are illustrations of these assumptions, not forecasts; the 10-year result is what the model estimates. Price = that year's EPS × that year's P/E, so the last row is your exit; CAGR if sold includes dividends received. Shares chg is the yearly change in share count (negative = buybacks). Net margin is after SBC; FCF margin is before it, and SBC % is subtracted for owner FCF. Grey rows are reported SEC figures. Any edit switches to Custom.${nativeScenario()?' <b>In Base, this grid uses a simple EPS × P/E price, so its return differs from the blended Base CAGR above.</b>':''}</p>`;
+ <p class="muted small">* Price = EPS × P/E <b>plus the cash built since today per share</b> (today's net debt minus that year's, ÷ shares). Net debt follows your FCF, dividends and buybacks unless you type your own numbers. P/E is the trailing P/E at the end of each year, from today's P/E (Today row) to your exit P/E in the final year. With the default "Follows earnings" shape the P/E moves from today's P/E toward your exit P/E in proportion to how much of the forecast EPS growth has been delivered: a high multiple is paid for growth still to come, so it shrinks as that growth arrives (half the EPS growth done = halfway to the exit P/E, on a log scale). Change the Year-10 P/E to set the exit; pick "Even steps" to move it by time instead. In-between prices are illustrations of these assumptions, not forecasts; the 10-year result is what the model estimates. Price = that year's EPS × that year's P/E, so the last row is your exit; CAGR if sold includes dividends received. Shares chg is the yearly change in share count (negative = buybacks). Net margin is after SBC; FCF margin is before it, and SBC % is subtracted for owner FCF. Grey rows are reported SEC figures. Any edit switches to Custom.${nativeScenario()?' <b>In Base, this grid uses a simple EPS × P/E price, so its return differs from the blended Base CAGR above.</b>':''}</p>`;
  el.querySelector('.path-shape-box').addEventListener('toggle',e=>{shapesOpen=e.target.open;});
  el.querySelectorAll('[data-shape]').forEach(sel=>sel.onchange=()=>{
   const k=sel.dataset.shape;
@@ -286,25 +288,27 @@ function calculatePath(a){
   const px=eps>0?eps*pe:NaN,val=px+divs;
   years.push({year:(Number.isFinite(a.firstYear)?a.firstYear:new Date().getFullYear()+1)+i-1,revenue:r,ni,eps,shares:sh,ownerFCF:r*1000*fm/100,growth:g,netMargin:nm,fcfMargin:fm,sbc:sbcI,dilution:d,dividend:dps,pe,price:px,cagrToDate:val>0?Math.pow(val/price,1/i)-1:NaN});
  }
- // Build 77b: net debt follows YOUR cash flows. Unless you typed your own net-debt numbers, each year it falls
- // by owner FCF minus dividends paid minus buybacks (shares retired x that year's price). The cash built over the
- // horizon belongs to shareholders, so it's added to the exit value (EV/EBITDA uses the year-10 net debt).
+ // Build 77c: net debt is part of the price. Cash the company builds (or debt it pays down) after today belongs
+ // to shareholders, so each year's Price* = EPS x P/E + (net debt today - net debt that year) / shares.
+ // Unless you typed your own Net debt numbers, net debt rolls forward from YOUR projection: owner FCF minus
+ // dividends minus buybacks (shares retired x that year's EPS x P/E). Your own numbers are used as typed.
  let ndPath=null;
  if(Array.isArray(path.debt)&&path.debt.length>=10&&path.debt.slice(0,10).every(Number.isFinite)){
+  const flow=i=>{const y=years[i],p0=i>0?years[i-1]:{shares};const px=Number.isFinite(y.price)?y.price:0;
+   return (Number.isFinite(y.ownerFCF)?y.ownerFCF:0)-y.dividend*y.shares-Math.max(0,p0.shares-y.shares)*px;};   // $M
   if(!a.shapes||a.shapes.debt==='model'||!a.shapes.debt){
-   ndPath=[path.debt[0]];
-   for(let i=1;i<10;i++){const y=years[i],p0=years[i-1];
-    const bb=Math.max(0,p0.shares-y.shares)*(Number.isFinite(y.price)?y.price:0);
-    const flow=(Number.isFinite(y.ownerFCF)?y.ownerFCF:0)-y.dividend*y.shares-bb;   // $M
-    ndPath.push(ndPath[i-1]-flow/1000);}                                               // $B
-   path.debt=ndPath.slice();
-  } else ndPath=path.debt.slice(0,10);
-  ndPath.forEach((v,i)=>{years[i].netDebt=v;});
+   const nd0=Number.isFinite(a.netDebtNow)?a.netDebtNow:path.debt[0]+flow(0)/1000;
+   ndPath=[];let nd=nd0;for(let i=0;i<10;i++){nd-=flow(i)/1000;ndPath.push(nd);}
+   path.debt=ndPath.slice();a.netDebtStart=nd0;
+  } else {ndPath=path.debt.slice(0,10);a.netDebtStart=Number.isFinite(a.netDebtNow)?a.netDebtNow:ndPath[0];}
+  ndPath.forEach((v,i)=>{const y=years[i];y.netDebt=v;y.cashPS=y.shares>0?(a.netDebtStart-v)*1000/y.shares:0;y.opsPrice=y.price;
+   if(Number.isFinite(y.price)){y.price=y.price+y.cashPS;}});
+  let cum=0;years.forEach((y,i)=>{cum+=y.dividend;const val=y.price+cum;y.cagrToDate=val>0?Math.pow(val/price,1/(i+1))-1:NaN;});
  }
- const cashBuildPS=ndPath&&years[9].shares>0?(ndPath[0]-ndPath[9])*1000/years[9].shares:0;
- const exit=years.at(-1).price,value=exit+divs+(Number.isFinite(exit)?cashBuildPS:0);
+ const y10=years.at(-1),cashBuildPS=Number.isFinite(y10.cashPS)?y10.cashPS:0;
+ const exit=y10.price,value=exit+divs;
  const cagr=value>0?Math.pow(value/price,1/10)-1:NaN,hurdle=value/Math.pow(1+HURDLE,10);
- return {years,exit,cagr,hurdle,buy:hurdle*(1-mos/100),value,startShares:shares,cashBuildPS,netDebtPath:ndPath};
+ return {years,exit,exitOps:Number.isFinite(y10.opsPrice)?y10.opsPrice:exit,cagr,hurdle,buy:hurdle*(1-mos/100),value,startShares:shares,cashBuildPS,netDebtPath:ndPath};
 }
 function hideTickerMatches(){$('tickerMatches').hidden=true;$('tickerSearch').setAttribute('aria-expanded','false')}
 function renderTickerMatches(){const q=$('tickerSearch').value.trim().toLowerCase(),matches=stocks.filter(s=>!q||s.ticker.toLowerCase().includes(q)||(s.name||'').toLowerCase().includes(q)).sort((a,b)=>{const score=s=>s.ticker.toLowerCase()===q?0:s.ticker.toLowerCase().startsWith(q)?1:(s.name||'').toLowerCase().startsWith(q)?2:3;return score(a)-score(b)||a.ticker.localeCompare(b.ticker)}).slice(0,12);const box=$('tickerMatches');box.innerHTML=matches.map(s=>`<button type="button" role="option" data-ticker="${esc(s.ticker)}"><strong>${esc(s.ticker)}</strong> <span>${esc(s.name||'')}</span></button>`).join('')||'<p class="muted small">No matching companies</p>';box.hidden=false;$('tickerSearch').setAttribute('aria-expanded','true');box.querySelectorAll('[data-ticker]').forEach(b=>b.onclick=()=>choose(b.dataset.ticker))}
@@ -429,7 +433,61 @@ function valuationReconciliationHTML(stock,a,r){
  const cashWarning=a.dilution<0?`<p class="small ${cashGap>0?'warning':'muted'}">Simplified EPS sensitivity buyback assumption: ${a.shares.toFixed(1)}M → ${finalShares.toFixed(1)}M shares over 10 years. At <b>today's stock price held constant</b>, indicative repurchase spending is ${money(spendTotal)}M versus ${money(cashTotal)}M of cumulative simplified owner FCF; ${cashGap>0?`at least ${money(cashGap)}M of annual funding shortfalls before dividends, debt repayment or reinvestment.`:'no annual shortfall under this simplified price assumption.'} Actual future repurchase prices, available cash and capital needs may differ substantially. This is a funding diagnostic, not a funded buyback forecast.</p>`:'<p class="small muted">No net share retirement assumed in the manual scenario.</p>';
  return `<section class="assumption-review"><h3>Valuation reconciliation · screener vs manual</h3><p class="small muted">The screener blends valuation methods and applies underwriting adjustments. The editable EPS × P/E sensitivity is NOT the screener base case. The screener's own annual forecast and blended valuation appear above when Base is selected.</p><div class="table-scroll"><table><thead><tr><th>Driver</th><th>Screener</th><th>EPS sensitivity</th></tr></thead><tbody><tr><td>Year-10 revenue</td><td>${fmtB(modelRevenue)}</td><td>$${terminal.revenue.toFixed(2)}B</td></tr><tr><td>Year-10 net income</td><td>${fmtB(Number(modelLast?.netIncome))}</td><td>${money(terminal.ni)}M</td></tr><tr><td>Year-10 shares</td><td>${Number.isFinite(modelShares)?(modelShares/1e6).toFixed(1)+'M':'—'}</td><td>${finalShares.toFixed(1)}M</td></tr><tr><td>Year-10 EPS</td><td>${Number.isFinite(modelEPS)?money(modelEPS):'—'}</td><td>${money(terminal.eps)}</td></tr><tr><td>Year-10 exit value / share</td><td>${Number.isFinite(modelExit)?money(modelExit):'—'}</td><td>${money(r.exit)}</td></tr><tr><td>Exit P/E</td><td>${modelImpliedPE?modelImpliedPE.toFixed(1)+'× (blended implied; not an actual P/E)':'Not comparable'}</td><td>${a.multiple.toFixed(1)}×</td></tr><tr><td>Expected 10Y CAGR</td><td>${pct(stock.expectedReturn)}</td><td>${pct(r.cagr)}</td></tr><tr><td>${HURDLE_LABEL} + MOS entry</td><td>${money(Number(stock.requiredReturnBuyPrice))}</td><td>${money(r.buy)}</td></tr></tbody></table></div><p class="small muted">18× P/E sensitivity: ${money(terminal.eps*18)} exit, ${pct(stressCAGR)} CAGR (flat dividends included). Screener modeled return is ${pct(stock.expectedReturn)}; gap to your case is ${((Number(stock.expectedReturn)-r.cagr)*100).toFixed(1)} percentage points. Screener share counts are raw shares; manual share counts are in millions.</p><h4>Individual screener valuation methods</h4>${methodRows?`<div class="table-scroll"><table><thead><tr><th>Method</th><th>Year-10 target/share</th><th>Audit detail</th></tr></thead><tbody>${methodRows}</tbody></table></div>`:'<p class="small muted">Method-level values are missing from this screener snapshot.</p>'}<p class="small muted">The methods above are inputs to the blended model, not additive contributions. Exact weights and normalization adjustments are not exposed in the current feed; they cannot be independently reconstructed here.</p>${cashWarning}</section>`;
 }
-function renderValuation(){if(!current)return;$('noStock').hidden=true;$('valuation').hidden=false;ensurePath(assumptions);renderPathEditor();renderMethods();if(history)renderHistory();const a=assumptions,r=calculate(a),price=getPrice(current);const native=nativeScenario(),sc=$('scenario').value,rows=nativeRows(current),hasNative=rows.length>0;
+// ===== Build 78: simple projection (revenue growth, EPS, share change, exit P/E) =====
+// Everything else is derived by engine/simple-path.js, the same code the nightly runs.
+function simpleSeed(s){
+ const sp=s?.simplePath;if(!sp||!Array.isArray(sp.years)||sp.years.length<10)return null;
+ const c=JSON.parse(JSON.stringify(sp));const px=getPrice(s);if(Number.isFinite(px)&&px>0){c.price=px;const e1=c.years[0].eps;c.peToday=e1>0?px/e1:c.peToday;}
+ return {sp:c,g:c.years.map(y=>y.revenueGrowth),m:c.years.map(y=>y.netMargin),d:c.years.map(y=>y.shareChange),exitPE:c.exitPE,pe:Array(10).fill(null),nd:Array(10).fill(null),edited:false};
+}
+function simpleResult(a){
+ const st=a?.simple;if(!st||!window.SimplePath)return null;
+ const r=SimplePath.calculateSimple(st.sp,{revenueGrowth:st.g,shareChange:st.d,netMargin:st.m,exitPE:st.exitPE,exitPESet:!!st.exitPESet,pe:st.pe||[],netDebt:st.nd||[]});
+ if(!r||!Number.isFinite(r.value))return null;
+ r.hurdle=r.value/Math.pow(1+HURDLE,10);r.buy=r.hurdle*(1-(valid(a.mos,0))/100);r.simple=true;return r;
+}
+function renderSimple(){
+ const el=$('simplePanel');if(!el)return;const a=assumptions,st=a?.simple;
+ if(!st){el.innerHTML='<h3>Your projection</h3><p class="muted small">No simple projection for this company yet (needs a 10-year model forecast). Use the advanced editor below.</p>';return;}
+ const r=simpleResult(a);if(!r){el.innerHTML='<p class="muted small">Could not calculate this projection.</p>';return;}
+ const sp=st.sp,ys=r.years,price=sp.price,model=valid(current?.expectedCAGR,NaN);
+ const inp=(k,i,v,step,set)=>`<input class="sp-in${set?' sp-set':''}" type="number" step="${step}" data-sp="${k}" data-i="${i}" value="${v}">`;
+ const yr=i=>sp.years[i].year??(new Date().getFullYear()+i);
+ const e0=valid(sp.eps0,NaN);
+ const rowsHtml=ys.map((y,i)=>{const prevEps=i?ys[i-1].eps:e0,epsG=prevEps>0&&Number.isFinite(y.eps)?y.eps/prevEps-1:NaN;
+  return `<tr><td>${yr(i)}</td><td>${inp('g',i,(st.g[i]*100).toFixed(1),0.5)}</td><td class="muted">${money(y.rev/1e9)}B</td><td>${Number.isFinite(epsG)?inp('eg',i,(epsG*100).toFixed(1),0.5):`<span class="muted">n/a</span>`}</td><td><b>${money(y.eps)}</b></td><td>${inp('d',i,(st.d[i]*100).toFixed(2),0.25)}</td><td class="muted">${pct(y.margin)}</td><td class="muted">${money(y.ownerFcf/y.sh)}</td><td>${inp('nd',i,(y.netDebt/1e9).toFixed(1),1,y.netDebtSet)}</td><td>${inp('pe',i,y.pe.toFixed(1),0.5,y.peSet)}</td><td><b>${Number.isFinite(y.price)?money(y.price):'—'}</b></td><td>${pct(y.cagrToDate)}</td></tr>`;}).join('');
+ const src=sp.basis==='consensus_years_1_2'?`Years ${yr(0)}–${yr(1)}: analysts' consensus (${sp.analysts} analysts; EPS trimmed 3% and 8% because consensus tends to be revised down). Later years: the model's growth fade and margin drift.`:'No usable analyst consensus: all years from the model.';
+ const oneOff=sp.oneOffYear1?`<p class="small warning">Analysts' ${yr(0)} EPS of ${money(sp.oneOffYear1.analystEps)} includes one-time gains; the autofill values the clean ${money(sp.oneOffYear1.cleanEps)}.</p>`:'';
+ el.innerHTML=`<div class="section-head"><h3>Your projection</h3><button class="ghost" id="spReset">Reset to autofill</button></div>
+  <p class="muted small">Edit <b>revenue growth</b>, <b>EPS growth</b> and <b>share change</b>; P/E and net debt are filled in for you but editable too (yours show highlighted). EPS, net margin, free cash flow and price are calculated. ${esc(src)}</p>${oneOff}
+  <div class="kpis sp-kpis"><div class="kpi"><small>Your 10-yr return</small><strong>${pct(r.cagr)}</strong><em>model base ${Number.isFinite(model)?pct(model):'—'}</em></div>
+   <div class="kpi"><small>${yr(9)} price</small><strong>${money(r.exit)}</strong><em>incl. ${money(ys[9].cashPS)}/sh cash built</em></div>
+   <div class="kpi"><small>Price for ${Math.round(HURDLE*100)}%/yr</small><strong>${money(r.hurdle)}</strong><em>today ${money(price)}</em></div>
+   <div class="kpi"><small>EPS growth, 10 yrs</small><strong>${ys[0].eps>0&&ys[9].eps>0?pct(Math.pow(ys[9].eps/ys[0].eps,1/9)-1):'—'}</strong><em>a year, ${yr(0)}–${yr(9)}</em></div></div>
+  <div class="table-scroll"><table class="sp-table"><thead><tr><th>Year</th><th>Revenue growth %</th><th>Revenue</th><th>EPS growth %</th><th>EPS</th><th>Share chg %</th><th>Net margin</th><th>FCF / share</th><th>Net debt $B</th><th>P/E</th><th>Price*</th><th>CAGR if sold</th></tr></thead>
+  <tbody><tr class="hist-row"><td>Last year</td><td>—</td><td>${money(sp.revenue0/1e9)}B</td><td>—</td><td>${Number.isFinite(e0)?money(e0):'—'}</td><td>—</td><td>—</td><td>—</td><td>${Number.isFinite(sp.netDebtNow)?(sp.netDebtNow/1e9).toFixed(1):'—'}</td><td>${Number.isFinite(sp.peToday)?sp.peToday.toFixed(1)+'×':'—'}</td><td>${money(price)}</td><td>—</td></tr>${rowsHtml}</tbody></table></div>
+  <p class="muted small">* Price = EPS × P/E + cash built since today per share (today’s net debt minus that year’s, ÷ shares). Changing one year’s EPS growth keeps the later years’ growth rates. A P/E or net debt you type stays fixed for that year, and net debt rolls forward from it. “Reset to autofill” clears everything. EPS is on the analyst basis (before stock pay and acquisition amortization); stock pay counts through the share change and in free cash flow (after stock pay). Net margin = EPS × shares ÷ revenue. FCF follows EPS at the company's modelled cash conversion. Net debt falls by FCF minus dividends and buybacks. P/E glides from today's to your year-10 P/E as earnings grow.</p>`;
+ el.querySelectorAll('[data-sp]').forEach(inp=>inp.onchange=()=>{
+  const k=inp.dataset.sp,i=Number(inp.dataset.i),v=Number(inp.value);if(!Number.isFinite(v))return;
+  const cur=simpleResult(assumptions);
+  st.pe=st.pe||Array(10).fill(null);st.nd=st.nd||Array(10).fill(null);
+  if(k==='g')st.g[i]=v/100;
+  else if(k==='d')st.d[i]=v/100;
+  else if(k==='pe'){if(v>0){if(i===9){st.exitPE=v;st.exitPESet=true;}else st.pe[i]=v;}}
+  else if(k==='nd')st.nd[i]=v*1e9;
+  else if(k==='eg'&&cur){
+   // New EPS for this year; later years keep their own growth rates (all scale by the same factor).
+   const prev=i?cur.years[i-1].eps:valid(st.sp.eps0,NaN),y=cur.years[i],target=prev*(1+v/100);
+   if(Number.isFinite(target)){
+    if(y.eps>0&&target>0){const f=target/y.eps;for(let j=i;j<10;j++)st.m[j]*=f;}
+    else{const dm=target*y.sh/y.rev-st.m[i];for(let j=i;j<10;j++)st.m[j]+=dm;}
+   }
+  }
+  st.edited=true;markCustom();renderSimple();
+ });
+ const rb=$('spReset');if(rb)rb.onclick=()=>{assumptions.simple=simpleSeed(current);renderSimple();};
+}
+function renderValuation(){if(!current)return;$('noStock').hidden=true;$('valuation').hidden=false;renderSimple();ensurePath(assumptions);renderPathEditor();renderMethods();if(history)renderHistory();const a=assumptions,r=calculate(a),price=getPrice(current);const native=nativeScenario(),sc=$('scenario').value,rows=nativeRows(current),hasNative=rows.length>0;
  const modelCagr=nativeCAGR(current,sc),modelBuy=valid(current.requiredReturnBuyPrice,NaN);
  const modelExit=valid(current.tenYearPriceTarget,NaN);
  const underwritingCagr=valid(current.underwrittenCAGR,NaN);
@@ -688,7 +746,7 @@ async function saveProjection(){if(!current)return toast('Choose a company first
 function loadSaved(ticker,scenario){const p=saved.find(p=>p.ticker===ticker&&p.scenario===scenario);if(!p)return toast('No saved scenario for this company');choose(ticker);$('scenario').value=scenario;const base=initial(current),sa=JSON.parse(JSON.stringify(p.assumptions||{}));if(!sa.path){delete base.path;delete base.shapes;}assumptions={...base,...sa};ensurePath(assumptions);assumptionsEdited=true;$('notes').value=p.notes||'';renderFields();renderValuation();}
 async function saveHolding(){if(!requireAuth())return;const ticker=$('holdingTicker').value.trim().toUpperCase(),shares=Number($('holdingShares').value),cost=Number($('holdingCost').value);if(!ticker||!Number.isFinite(shares)||shares<0||!Number.isFinite(cost)||cost<0||!$('holdingShares').value||!$('holdingCost').value)return toast('Enter ticker, shares and cost per share');const {error}=await client.from('stock_holdings').upsert({user_id:user.id,ticker,shares,cost_basis:cost,updated_at:new Date().toISOString()},{onConflict:'user_id,ticker'});if(error)return toast(error.message);toast('Holding saved');await sync();}
 async function remove(table,id){if(!requireAuth()||!confirm('Delete this saved item?'))return;const {error}=await client.from(table).delete().eq('id',id);if(error)return toast(error.message);await sync();}
-function renderPortfolio(){let total=0,cost=0;const pvTotal=holdings.reduce((a,h)=>{const px=getPrice(byTicker.get(String(h.ticker).toUpperCase()));return a+(Number.isFinite(px)?px*h.shares:0)},0);const rows=holdings.map(h=>{const s=byTicker.get(h.ticker),price=getPrice(s),value=Number.isFinite(price)?price*h.shares:NaN,invested=h.cost_basis*h.shares;if(Number.isFinite(value)){total+=value;cost+=invested;}const prevH=(priorSnapshot()?.holdings||[]).find(x=>x.ticker===String(h.ticker).toUpperCase())||null,wt=pvTotal>0&&Number.isFinite(price)?price*h.shares/pvTotal:null,tw=window.ReviewPolicy&&s?window.ReviewPolicy.targetWeight(s):null,adv=window.ReviewPolicy?window.ReviewPolicy.holdingAdvice(s,prevH,{weight:wt}):null,st=adv?{status:adv.action,reasons:[adv.headline]}:null,stCls=adv?{Sell:'status-sell','Sell some':'status-review',Review:'status-review','Buy more':'status-add',Hold:'status-hold'}[adv.action]:'';const chg=prevH&&present(prevH.u)&&present(s?.underwrittenCAGR)?`<div class="muted small">CAGR ${pct(prevH.u)} → ${pct(Number(s.underwrittenCAGR))}${present(prevH.q)?' · Q '+prevH.q+' → '+esc(s?.qualityScore??'—'):''}</div>`:'';return `<tr><td>${esc(h.ticker)}</td><td class="status-cell">${st?`<span class="status-pill ${stCls}">${esc(st.status)}</span><div class="muted small">${esc(st.reasons[0])}</div>${chg}${wt!==null?`<div class="muted small">Weight ${pct(wt)}${tw!==null?' · target at cost '+pct(tw):''}</div>`:''}`:'—'}</td><td>${h.shares}</td><td>${money(h.cost_basis)}</td><td>${money(price)}</td><td>${money(value)}</td><td>${Number.isFinite(value)?money(value-invested):'—'}</td><td><button data-delete-h="${h.id}">Remove</button></td></tr>`});$('holdingRows').innerHTML=rows.join('')||'<tr><td colspan="8" class="muted">No holdings saved.</td></tr>';$('portfolioMetrics').innerHTML=[['Priced holdings value',money(total)],['Cost of priced holdings',money(cost)],['Unrealized gain/loss',money(total-cost)],['Saved projections',saved.length]].map(([k,v])=>`<div class="metric"><small>${k}</small><strong>${v}</strong></div>`).join('');$('savedRows').innerHTML=saved.map(p=>{const r=calculate(p.assumptions),mr=r?methodResults(p.assumptions,r):null;return `<tr><td>${esc(p.ticker)}</td><td>${esc(p.scenario)}</td><td>${mr&&Number.isFinite(mr.cagr)?pct(mr.cagr):r?pct(r.cagr):'—'}</td><td>${esc((p.updated_at||'').slice(0,10))}</td><td><button data-load="${esc(p.ticker)}" data-scenario="${esc(p.scenario)}">Open</button> <button data-delete-p="${p.id}">Delete</button></td></tr>`}).join('')||'<tr><td colspan="5" class="muted">No projections saved.</td></tr>';$('holdingRows').querySelectorAll('[data-delete-h]').forEach(b=>b.onclick=()=>remove('stock_holdings',b.dataset.deleteH));$('savedRows').querySelectorAll('[data-delete-p]').forEach(b=>b.onclick=()=>remove('stock_projections',b.dataset.deleteP));$('savedRows').querySelectorAll('[data-load]').forEach(b=>b.onclick=()=>loadSaved(b.dataset.load,b.dataset.scenario));renderReview();renderDashboard();}
+function renderPortfolio(){let total=0,cost=0;const pvTotal=holdings.reduce((a,h)=>{const px=getPrice(byTicker.get(String(h.ticker).toUpperCase()));return a+(Number.isFinite(px)?px*h.shares:0)},0);const rows=holdings.map(h=>{const s=byTicker.get(h.ticker),price=getPrice(s),value=Number.isFinite(price)?price*h.shares:NaN,invested=h.cost_basis*h.shares;if(Number.isFinite(value)){total+=value;cost+=invested;}const prevH=(priorSnapshot()?.holdings||[]).find(x=>x.ticker===String(h.ticker).toUpperCase())||null,wt=pvTotal>0&&Number.isFinite(price)?price*h.shares/pvTotal:null,tw=window.ReviewPolicy&&s?window.ReviewPolicy.targetWeight(s):null,adv=window.ReviewPolicy?window.ReviewPolicy.holdingAdvice(s,prevH,{weight:wt}):null,st=adv?{status:adv.action,reasons:[adv.headline]}:null,stCls=adv?{Sell:'status-sell','Sell some':'status-review',Review:'status-review','Buy more':'status-add',Hold:'status-hold'}[adv.action]:'';const chg=prevH&&present(prevH.u)&&present(s?.underwrittenCAGR)?`<div class="muted small">CAGR ${pct(prevH.u)} → ${pct(Number(s.underwrittenCAGR))}${present(prevH.q)?' · Q '+prevH.q+' → '+esc(s?.qualityScore??'—'):''}</div>`:'';return `<tr><td>${esc(h.ticker)}</td><td class="status-cell">${st?`<span class="status-pill ${stCls}">${esc(st.status)}</span><div class="muted small">${esc(st.reasons[0])}</div>${chg}${wt!==null?`<div class="muted small">Weight ${pct(wt)}${tw!==null?' · target at cost '+pct(tw):''}</div>`:''}`:'—'}</td><td>${h.shares}</td><td>${money(h.cost_basis)}</td><td>${money(price)}</td><td>${money(value)}</td><td>${Number.isFinite(value)?money(value-invested):'—'}</td><td><button data-delete-h="${h.id}">Remove</button></td></tr>`});$('holdingRows').innerHTML=rows.join('')||'<tr><td colspan="8" class="muted">No holdings saved.</td></tr>';$('portfolioMetrics').innerHTML=[['Priced holdings value',money(total)],['Cost of priced holdings',money(cost)],['Unrealized gain/loss',money(total-cost)],['Saved projections',saved.length]].map(([k,v])=>`<div class="metric"><small>${k}</small><strong>${v}</strong></div>`).join('');$('savedRows').innerHTML=saved.map(p=>{const sr=p.assumptions?.simple?.edited?simpleResult(p.assumptions):null,r=sr?null:calculate(p.assumptions),mr=r?methodResults(p.assumptions,r):null;return `<tr><td>${esc(p.ticker)}</td><td>${esc(p.scenario)}</td><td>${sr?pct(sr.cagr):mr&&Number.isFinite(mr.cagr)?pct(mr.cagr):r?pct(r.cagr):'—'}</td><td>${esc((p.updated_at||'').slice(0,10))}</td><td><button data-load="${esc(p.ticker)}" data-scenario="${esc(p.scenario)}">Open</button> <button data-delete-p="${p.id}">Delete</button></td></tr>`}).join('')||'<tr><td colspan="5" class="muted">No projections saved.</td></tr>';$('holdingRows').querySelectorAll('[data-delete-h]').forEach(b=>b.onclick=()=>remove('stock_holdings',b.dataset.deleteH));$('savedRows').querySelectorAll('[data-delete-p]').forEach(b=>b.onclick=()=>remove('stock_projections',b.dataset.deleteP));$('savedRows').querySelectorAll('[data-load]').forEach(b=>b.onclick=()=>loadSaved(b.dataset.load,b.dataset.scenario));renderReview();renderDashboard();}
 async function auth(){if(!client)return;const {data:{session}}=await client.auth.getSession();user=session?.user||null;$('loginBtn').hidden=!!user;$('logoutBtn').hidden=!user;$('userLabel').textContent=user?.email||'';if(user)await sync();else{saved=[];holdings=[];snapshots=localSnapshots();snapshotStore='local';renderPortfolio();}}
 async function submitAuth(kind){if(!client)return;const email=$('email').value.trim(),password=$('password').value;if(!email||!password)return $('authMessage').textContent='Enter email and password';const {error}=kind==='signUp'?await client.auth.signUp({email,password}):await client.auth.signInWithPassword({email,password});if(error)return $('authMessage').textContent=error.message;$('authMessage').textContent=kind==='signUp'?'Account created. Check your email for confirmation if required.':'Signed in.';await auth();if(user)$('authModal').hidden=true;}
 async function boot(){document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>page(b.dataset.page));try{const mc=localStorage.getItem('stocktool-mincap');if(mc!==null&&$('minCap'))$('minCap').value=mc;}catch(e){}
@@ -720,7 +778,9 @@ function renderDashboard(){
   const sp=saved.filter(p=>String(p.ticker).toUpperCase()===r.t).sort((a,b)=>String(b.updated_at||'').localeCompare(String(a.updated_at||'')))[0];
   if(!sp)return `<div class="yourview empty-view"><span class="muted small">No projection of your own yet.</span> <button class="linkish" data-dticker="${esc(r.t)}">Add one →</button></div>`;
   let calc=null,u=null,peg=null;
-  try{const A={...JSON.parse(JSON.stringify(sp.assumptions||{})),price:Number.isFinite(r.px)?r.px:sp.assumptions?.price};calc=calculate(A);const mr=calc?methodResults(A,calc):null;u=mr&&Number.isFinite(mr.cagr)?mr.cagr:calc?.cagr;
+  try{const A={...JSON.parse(JSON.stringify(sp.assumptions||{})),price:Number.isFinite(r.px)?r.px:sp.assumptions?.price};
+   if(A.simple?.edited&&A.simple.sp){A.simple.sp.price=Number.isFinite(r.px)?r.px:A.simple.sp.price;calc=simpleResult(A);u=calc?.cagr;}
+   else{calc=calculate(A);const mr=calc?methodResults(A,calc):null;u=mr&&Number.isFinite(mr.cagr)?mr.cagr:calc?.cagr;}
    const y=calc?.years||[],e1=y[0]?.eps,e6=y[5]?.eps;if(e1>0&&e6>0&&Number.isFinite(r.px)){const g=Math.pow(e6/e1,1/5)-1;if(g>0)peg=(r.px/e1)/(g*100);}}catch(e){}
   if(!Number.isFinite(u))return `<div class="yourview"><span class="muted small">Your ${esc(sp.scenario)} projection couldn’t be recalculated; open it to re-save.</span></div>`;
   const mv=r.s?(r.s.expectedCAGR??r.s.expectedReturn??r.s.underwrittenCAGR):null,m=mv==null?NaN:Number(mv),d=Number.isFinite(m)?u-m:null;

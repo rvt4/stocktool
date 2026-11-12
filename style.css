@@ -180,3 +180,12 @@ th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04
 button.linkish{background:none;border:0;padding:0;color:var(--accent);font-size:12px;cursor:pointer}
 
 .hcard-stats em.cautious{display:block;font-style:normal;color:var(--muted);font-size:10px;margin-top:1px}
+
+/* Build 78: simple projection */
+.sp-in{width:74px;padding:6px 8px;font-size:13px}
+.sp-table td,.sp-table th{white-space:nowrap}
+.sp-kpis{grid-template-columns:repeat(4,minmax(0,1fr));margin:10px 0 14px}
+.advanced-box>summary{cursor:pointer;color:var(--muted);padding:4px 0}
+.advanced-box[open]>summary{margin-bottom:12px}
+@media (max-width:760px){.sp-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.sp-in{width:62px}}
+.sp-in.sp-set{border-color:var(--accent);background:rgba(91,140,255,.10)}
