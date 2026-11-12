@@ -805,6 +805,12 @@ function valuate(stock,forecast,quality){
   const shares0=inferredShares0, netDebt=(finite(last.totalDebt)||finite(last.longTermDebt)||0)-(finite(last.cash)||0);
   const terminalNetDebt=finite(f.netDebt)??netDebt;
   const year5NetDebt=finite(rows[Math.min(4,rows.length-1)]?.netDebt)??netDebt;
+  // Build 77: cash the company builds (or debt it pays down) over the horizon belongs to shareholders.
+  // The share path only reflects the buybacks the model plans, so unspent owner cash piled up in net debt.
+  // EV-based exits already subtract net debt; the P/E and FCF exits never counted it, so it vanished.
+  const cashBuildPerShare=(sh,nd)=>sh>0&&Number.isFinite(nd)&&Number.isFinite(netDebt)?(netDebt-nd)/sh:0;
+  const terminalCashBuildPS=cashBuildPerShare(finite(rows.at(-1)?.shares),terminalNetDebt);
+  const year5CashBuildPS=cashBuildPerShare(finite(rows[Math.min(4,rows.length-1)]?.shares),year5NetDebt);
   const marketCap=price>0&&shares0>0?price*shares0:null, revenue0=finite(last.revenue)>0?finite(last.revenue):null;
   const q=(quality.qualityScore||50)/100, growth=clamp(forecast.year5OperatingGrowth??forecast.rows?.at(-1)?.revenueGrowth??forecast.sustainableGrowth??forecast.revenueGrowthAnchor,0,.18);
   const methods=[], base=normalizedOperatingBase(stock,forecast);
@@ -1002,13 +1008,13 @@ function valuate(stock,forecast,quality){
       // repurchases/capital allocation, so adding explicit FCF on top was systematically
       // double-counting owner cash and made FCF-exit values track the (also inflated) DCF.
       // Dividends are added later because this is now an exit-only method.
-      const terminalFCFValue=f.fcfPerShare*m;
-      { const w=archetypeMethodWeight(archetype,'FCF',rel.score); if(w>0)addMethod(methods,{name:'FCF exit',target:terminalFCFValue,weight:w,reliability:rel.score,price,family:'cashflow',cashFlowInclusive:false,audit:{exitMultiple:m,currentMultiple:currentPFCF,anchorMultiple:anchorPFCF,rawAnchorMultiple:rawAnchorPFCF,exitPersistence:EXIT_MULTIPLE_PERSISTENCE,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,terminalExitValue:terminalFCFValue,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
+      const terminalFCFValue=f.fcfPerShare*m+terminalCashBuildPS;
+      { const w=archetypeMethodWeight(archetype,'FCF',rel.score); if(w>0)addMethod(methods,{name:'FCF exit',target:terminalFCFValue,weight:w,reliability:rel.score,price,family:'cashflow',cashFlowInclusive:false,audit:{cashBuildPerShare:terminalCashBuildPS,exitMultiple:m,currentMultiple:currentPFCF,anchorMultiple:anchorPFCF,rawAnchorMultiple:rawAnchorPFCF,exitPersistence:EXIT_MULTIPLE_PERSISTENCE,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,terminalExitValue:terminalFCFValue,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
     }
     if(Number(epsX)>0&&normEPS>0){
       const exit=coherentExits.EPS, m=persistentExit(anchorPE,exit.multiple,8,49,{floor:4.5});
       const rel=methodReliability(stock,forecast,'EPS',normEPS,epsX,quality);
-      { const w=archetypeMethodWeight(archetype,'EPS',rel.score); if(w>0)addMethod(methods,{name:'EPS exit',target:epsX*m,weight:w,reliability:rel.score,price,family:'earnings',audit:{exitMultiple:m,currentMultiple:currentPE,anchorMultiple:anchorPE,consensusRecoveryFactor:consensusRecovery,exitPersistence:EXIT_MULTIPLE_PERSISTENCE,metric:epsX,sbcAddBackFraction:sbcFrac,reportedYear10EPS:f.eps,normalizedCurrentMetric:normEPS,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
+      { const w=archetypeMethodWeight(archetype,'EPS',rel.score); if(w>0)addMethod(methods,{name:'EPS exit',target:epsX*m+terminalCashBuildPS,weight:w,reliability:rel.score,price,family:'earnings',audit:{cashBuildPerShare:terminalCashBuildPS,exitMultiple:m,currentMultiple:currentPE,anchorMultiple:anchorPE,consensusRecoveryFactor:consensusRecovery,exitPersistence:EXIT_MULTIPLE_PERSISTENCE,metric:epsX,sbcAddBackFraction:sbcFrac,reportedYear10EPS:f.eps,normalizedCurrentMetric:normEPS,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
     }
     if(allowEnterpriseScopeMethods&&Number(f.ebitda)>0&&Number(f.shares)>0&&normEBITDA>0){
       const exit=coherentExits.EBITDA;
@@ -1092,8 +1098,8 @@ function valuate(stock,forecast,quality){
     const mult=kind?horizonExitMultiple(kind,terminalMult,forecast,quality):terminalMult; let target5=null;
     if(m.name==='10Y DCF'||m.name==='Residual income') target5=finite(m.audit?.year5Value);
     else if(m.name==='Book / ROE exit') target5=finite(m.audit?.year5Outcome);
-    else if(/EPS exit/i.test(m.name)&&mult>0&&finite(y5.eps)>0) target5=sbcNeutralEPS(y5,finite(m.audit?.sbcAddBackFraction)??0)*mult;
-    else if(/FCF exit/i.test(m.name)&&mult>0&&finite(y5.fcfPerShare)>0) target5=y5.fcfPerShare*mult;
+    else if(/EPS exit/i.test(m.name)&&mult>0&&finite(y5.eps)>0) target5=sbcNeutralEPS(y5,finite(m.audit?.sbcAddBackFraction)??0)*mult+year5CashBuildPS;
+    else if(/FCF exit/i.test(m.name)&&mult>0&&finite(y5.fcfPerShare)>0) target5=y5.fcfPerShare*mult+year5CashBuildPS;
     else if(/EV\/EBITDA exit/i.test(m.name)&&mult>0&&finite(y5.ebitda)>0&&finite(y5.shares)>0){const eq=y5.ebitda*mult-year5NetDebt;target5=eq>0?eq/y5.shares:null;}
     else if(/EV\/Sales fallback/i.test(m.name)&&mult>0&&finite(y5.revenue)>0&&finite(y5.shares)>0){const eq=y5.revenue*mult-year5NetDebt;target5=eq>0?eq/y5.shares:null;}
     const outcome5=target5>0?target5+(m.cashFlowInclusive?0:year5DividendValue):null;

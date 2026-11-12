@@ -1285,6 +1285,9 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     matureGrowthReinvestmentShare,normalizedCFO:rawCFO,cashEconomicsTarget:matureTargetFCF,profitabilityConsistencyApplied,driverReconciliation,economicSbcCostNow,economicSbcCostTarget,economicSbcCostMature,
     structuralCapitalLightCashConversion,recurringFcfCfoRatio,fcfCeiling,crossMarginCoherenceApplied,structuralMarginGuardrailApplied,unsupportedMarginExpansionLimited,structuralTargetNetCeiling,structuralMatureNetCeiling,
     unexplainedFcfCompressionPrevented,broadCashCompressionEvidence,temporaryMarginReset,
+    nonOperatingMargin:(()=>{ // Build 77: typical pre-tax non-operating income (interest, other) as a share of revenue
+      const t=clamp(normalizedTaxRate,0,.35);const v=years.slice(-5).map(y=>{const n=pctMargin(y,'netIncome'),o=pctMargin(y,'operatingIncome');return Number.isFinite(n)&&Number.isFinite(o)?n/(1-t)-o:null;}).filter(Number.isFinite);
+      return v.length>=3?clamp(median(v),-.05,.03):0;})(),
     normalizedTaxRate,gaapCurrentNet,gaapTargetNet,gaapMatureTargetNet,
     oneTimeChargesLatest:oneTimeSeries.at(-1)??0,backlogCoverage:(()=>{const r=finite(years.at(-1)?.rpo),v=finite(years.at(-1)?.revenue);return r>0&&v>0?r/v:null;})(),
     marginEvidence,
@@ -1414,6 +1417,7 @@ function buildForecast(stock,opts={}){
   if(margins.marginTrendOn&&Number.isFinite(margins.currentFCF)&&Number.isFinite(margins.targetFCF)&&margins.targetFCF<margins.currentFCF){
     const d=margins.currentFCF-margins.targetFCF;margins.targetFCF=margins.currentFCF;if(Number.isFinite(margins.targetCFO))margins.targetCFO+=d;
   }
+  let netMarginCeilingApplied=false;
   for(let i=0;i<HORIZON_YEARS;i++){
     if(revenue!=null)revenue*=1+growth.growthPath[i]; dividend*=1+dividendGrowth;
     // Two-stage margin path: years 1-5 move toward the near/medium-term normalized
@@ -1449,6 +1453,17 @@ function buildForecast(stock,opts={}){
       netMargin+=dNet; if(Number.isFinite(gaapNetMargin))gaapNetMargin+=dNet;
       if(Number.isFinite(operatingMargin))operatingMargin+=dOp; if(Number.isFinite(ebitdaMargin))ebitdaMargin+=dOp;
       if(Number.isFinite(fcfMargin))fcfMargin+=dNet;
+    }
+    // Build 77: net margin can't run ahead of what operations earn. One-off gains (investment mark-ups,
+    // asset sales) in recent net income were being carried forward as if they recur (AMZN, GOOGL: projected
+    // net margin above operating margin). Ceiling = (operating margin + the company's typical non-operating
+    // income over 5 years + 1 pt) after tax; the normalized/owner net adds back after-tax amortization.
+    if(Number.isFinite(operatingMargin)&&!margins.analystMarginAnchor?.applied){   // analyst-anchored recoveries are consensus-led, not one-off gains
+      const t=clamp(margins.normalizedTaxRate??.21,0,.35), npo=finite(margins.nonOperatingMargin)??0;
+      const gaapCeil=(operatingMargin+npo+.01)*(1-t);
+      const amortBack=Number.isFinite(intangibleAmortizationMargin)?Math.max(0,intangibleAmortizationMargin)*(1-t):0;
+      if(Number.isFinite(gaapNetMargin)&&gaapNetMargin>gaapCeil){gaapNetMargin=gaapCeil;netMarginCeilingApplied=true;}
+      if(Number.isFinite(netMargin)&&netMargin>gaapCeil+amortBack){netMargin=gaapCeil+amortBack;netMarginCeilingApplied=true;}
     }
     const cfoMargin=Number.isFinite(fcfMargin)&&Number.isFinite(capexMargin)
       ? clamp(fcfMargin+capexMargin,-.08,.70)
@@ -1522,6 +1537,7 @@ function buildForecast(stock,opts={}){
     shares:{recent:recentShareGrowth,normalized:medianShareGrowth,observed:observedDilution,model:dilutionRate,mature:matureDilutionRate,path:dilutionPath,ownerPath:ownerDilutionPath,sbcDilution,sbcNow,sbcNormalized,normalizedSbc,sbcImpliedDilution,buybackCapacity},
   };
   const forecastFlags=[...new Set(capitalAllocationFlags)];
+  if(netMarginCeilingApplied)forecastFlags.push('net_margin_capped_by_operations');
   if(margins.steadyMarginClimb)forecastFlags.push('steady_margin_climb');
   if(margins.marginTrendOn)forecastFlags.push('steady_margin_climb_applied');
   if(growth.structuralStepUp)forecastFlags.push('structural_revenue_step_up_detected');

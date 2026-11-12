@@ -107,5 +107,6 @@ const FCF_MEDIAN_BLEND = { start: 0.40, year5: 0.40, mature: 0.40 };
 // model stops pulling margins back toward the historical median (AMZN-type businesses). Detection always
 // runs (flag 'steady_margin_climb'); 'enabled' switches the effect. The scorecard re-runs flagged forecasts
 // with the effect off so the two can be compared on the same companies and dates.
-const MARGIN_TREND = { enabled: true, minRise: 0.03, maxStepDrop: 0.015, minOpMargin: 0.03, currentWeight: 0.85, durabilityBoost: 0.35, fcfBlendScale: 0.4 };
+const MARGIN_TREND = { enabled: false,  // Build 76: OFF — failed its scorecard test (rule closer only 30-37% of the time)
+  minRise: 0.03, maxStepDrop: 0.015, minOpMargin: 0.03, currentWeight: 0.85, durabilityBoost: 0.35, fcfBlendScale: 0.4 };
 module.exports = { GROWTH_CALIBRATION, FCF_MEDIAN_BLEND, MARGIN_TREND, SECTOR, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, EXIT_MULTIPLE_PERSISTENCE, EXIT_PREMIUM_BAND, EXIT_ANCHOR_MAX_MULTIPLE, DCF_EXIT_TV_WEIGHT, INVESTOR_MARGIN_OF_SAFETY, MANUAL_CORPORATE_ACTIONS, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, MARKET_RETURN, isStructuralFinancial, isFinancialLike, sectorConfig, clamp, rate, median, avg };
