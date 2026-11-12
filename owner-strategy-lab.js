@@ -22,9 +22,29 @@ function liveRankedRows(rows,rankOpts={}){
 
 function shortlistEligible(r,opts={}){return RP.shortlistEntry(r,{rankField:'liveRank',...opts});}
 
+// Build 74: after-tax view for a taxable account. Taxes are paid out of the portfolio when gains are
+// realized (assumed rates below; dividends and the SPY cash sleeve are not taxed here, so idle cash is
+// treated like a tax-free index holding). "Liquidated" also taxes the unrealized gains left at the end, so
+// strategies that defer gains are compared fairly. SPY after tax = buy and hold, taxed once at the end.
+const TAX={shortTerm:0.35,longTerm:0.20};
+function afterTaxSummary(periods,lots,lossCarry,tax,portfolioStats){
+  const pre=portfolioStats(periods,{periodsPerYear:4});
+  const at=portfolioStats(periods.map(p=>({...p,portfolioReturn:p.afterTaxReturn??p.portfolioReturn})),{periodsPerYear:4});
+  if(!at.periodCount)return null;
+  const endDate=periods.at(-1)?.asOf;
+  let st=0,lt=0;for(const L of lots.values())for(const l of L){const g=l.value-l.basis;if((Date.parse(endDate)-Date.parse(l.date))/864e5>=365)lt+=g;else st+=g;}
+  let taxable=Math.max(0,st+lt-lossCarry);const stShare=st+lt>0?Math.max(0,st)/(Math.max(0,st)+Math.max(0,lt)||1):0;
+  const liqTax=taxable*(stShare*tax.shortTerm+(1-stShare)*tax.longTerm);   // fraction of final portfolio
+  const W=1+at.cumulativeReturn,liqW=W*(1-liqTax),yrs=at.yearCount;
+  const spyW=1+at.spyCumulativeReturn,spyLiqW=spyW-(spyW-1)*tax.longTerm;
+  const c=w=>yrs>0&&w>0?Math.pow(w,1/yrs)-1:null;
+  return {rates:tax,preTaxCAGR:pre.portfolioCAGR,afterTaxCAGR:at.portfolioCAGR,afterTaxLiquidatedCAGR:c(liqW),
+    spyAfterTaxLiquidatedCAGR:c(spyLiqW),afterTaxExcessVsSpy:c(liqW)!==null&&c(spyLiqW)!==null?c(liqW)-c(spyLiqW):null,
+    taxDragPerYear:pre.portfolioCAGR!==null&&c(liqW)!==null?pre.portfolioCAGR-c(liqW):null,unrealizedTaxAtEnd:liqTax};
+}
 // helpers: {adjustedReturnBetween, portfolioStats, dailyPortfolioRisk?}
 function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,helpers){
-  const {name,entry='shortlist',sizing='conviction',maxPositions=RP.SIZING.maxPositions,maxRank=RP.ENTRY.maxRank,transactionCostBps=10,trim=true,thesisBreak='review',rankOpts={},entryOpts={},garp=false}=opts||{};
+  const {name,entry='shortlist',sizing='conviction',maxPositions=RP.SIZING.maxPositions,maxRank=RP.ENTRY.maxRank,transactionCostBps=10,trim=true,thesisBreak='review',rankOpts={},entryOpts={},garp=false,sellRule=RP.SELL.rule,tax=TAX}=opts||{};
   const {adjustedReturnBetween,portfolioStats}=helpers;
   const snaps=[...(snapshotOutput||[])].sort((a,b)=>String(a.asOf).localeCompare(String(b.asOf)));
   let weights=new Map(),cash=1;               // fractions of portfolio; cash is held in SPY
@@ -32,12 +52,18 @@ function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,he
   const memo=new Map();                       // ticker -> thesis memo {streak, entryEPS} while held (Build 62)
   const periods=[],sellReasons={},soldLog=[];let buys=0,sells=0,trims=0;
   const targetOf=r=>sizing==='equal'?1/maxPositions:RP.targetWeight(r);
-  const canEnter=r=>entry==='buyRated'?RP.entryEligible(r)&&shortlistEligible(r,{maxRank:Infinity}):shortlistEligible(r,{maxRank,...entryOpts});
+  // Build 74: tax lots. lots: ticker -> [{date,basis,value}] in the same portfolio-fraction units as weights.
+  const lots=new Map();let lossCarry=0,taxPaidTotal=0,stGainsTotal=0,ltGainsTotal=0;
+  const realize=(t,f,asOf,acc)=>{const L=lots.get(t)||[];for(const l of L){const g=f*(l.value-l.basis);const days=(Date.parse(asOf)-Date.parse(l.date))/864e5;if(days>=365)acc.lt+=g;else acc.st+=g;l.value*=1-f;l.basis*=1-f;}if(f>=1-1e-9)lots.delete(t);};
+  const pegOf=r=>{const p=RP.pegOf(r);return p&&p.peg!==null?p.peg:Infinity;};
+  const canEnter=r=>entry==='peg'?RP.pegEntry(r,entryOpts):entry==='buyRated'?RP.entryEligible(r)&&shortlistEligible(r,{maxRank:Infinity}):shortlistEligible(r,{maxRank,...entryOpts});
   for(let i=0;i<snaps.length-1;i++){
     const snap=snaps[i],next=snaps[i+1];
     const rows=liveRankedRows(snap.rows,rankOpts);
     const rowMap=new Map(rows.map(r=>[r.ticker,r]));
-    let turnover=0;
+    let turnover=0;const acc={st:0,lt:0};
+    const us=rows.map(r=>finite(r.underwrittenCAGR??r.expectedCAGR)).filter(x=>x!==null).sort((a,b)=>a-b);
+    const marketMedian=us.length?us[us.length>>1]:null;
     // 1) review existing holdings
     for(const [t,w] of [...weights]){
       const r=rowMap.get(t),p=prevRow.get(t);
@@ -45,12 +71,13 @@ function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,he
       if(!r) reason='left_universe_or_unmodeled';
       else{
         const m=memo.get(t)||{};
-        const st=RP.holdingStatus(r,{...(p?{u:finite(p.underwrittenCAGR??p.expectedCAGR),q:finite(p.qualityScore)}:{}),streak:m.streak,entryEPS:m.entryEPS},{weight:w,thesisBreak});
-        if(st.memo)memo.set(t,{streak:st.memo.streak,entryEPS:st.memo.entryEPS});
+        const st=RP.holdingStatus(r,{...(p?{u:finite(p.underwrittenCAGR??p.expectedCAGR),q:finite(p.qualityScore),peg:RP.pegOf(p)?.peg??null}:{}),streak:m.streak,entryEPS:m.entryEPS},{weight:w,thesisBreak,sellRule,marketMedian});
+        if(st.memo)memo.set(t,{streak:st.memo.streak,entryEPS:st.memo.entryEPS,halved:st.status==='Trim half'?(m.halved||false):false});
+        if(st.status==='Trim half'&&!m.halved){const cut=w/2;realize(t,.5,snap.asOf,acc);weights.set(t,w-cut);cash+=cut;turnover+=cut;trims++;memo.set(t,{...memo.get(t),halved:true});continue;}
         if(st.status==='Sell candidate') reason=(finite(r.qualityScore)??100)<RP.BANDS.sellQuality?'quality_below_sell_floor':(st.reasons.some(x=>/^Business shrinking/.test(x))?'thesis_broken_business_shrinking':'low_return_two_reviews');
       }
-      if(reason){weights.delete(t);memo.delete(t);cash+=w;turnover+=w;sells++;soldLog.push({ticker:t,asOf:snap.asOf,reason});sellReasons[reason]=(sellReasons[reason]||0)+1;continue;}
-      if(trim&&w>RP.SIZING.trimAbove){const cut=w-RP.SIZING.trimTo;weights.set(t,RP.SIZING.trimTo);cash+=cut;turnover+=cut;trims++;}
+      if(reason){realize(t,1,snap.asOf,acc);weights.delete(t);memo.delete(t);cash+=w;turnover+=w;sells++;soldLog.push({ticker:t,asOf:snap.asOf,reason});sellReasons[reason]=(sellReasons[reason]||0)+1;continue;}
+      if(trim&&w>RP.SIZING.trimAbove){const cut=w-RP.SIZING.trimTo;realize(t,cut/w,snap.asOf,acc);weights.set(t,RP.SIZING.trimTo);cash+=cut;turnover+=cut;trims++;}
     }
     // 2) buy: top up qualifying holdings first, then new names in rank order
     const sectorOf=t=>String((rowMap.get(t)||{}).sector||'Unknown');
@@ -60,13 +87,13 @@ function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,he
       const room=Math.max(0,RP.SIZING.sectorCapAtPurchase-sectorW(String(r.sector||'Unknown')));
       const amt=Math.min(cash,Math.max(0,target-cur),room);
       if(amt<RP.SIZING.minTrade)return false;
-      weights.set(r.ticker,cur+amt);cash-=amt;turnover+=amt;if(!cur){buys++;const rg=finite(r.revenueGrowthTTM);memo.set(r.ticker,{streak:rg!==null&&rg<0?1:0,entryEPS:finite(r.forwardEPS)});}return true;
+      weights.set(r.ticker,cur+amt);cash-=amt;turnover+=amt;{const L=lots.get(r.ticker)||[];L.push({date:snap.asOf,basis:amt,value:amt});lots.set(r.ticker,L);}if(!cur){buys++;const rg=finite(r.revenueGrowthTTM);memo.set(r.ticker,{streak:rg!==null&&rg<0?1:0,entryEPS:finite(r.forwardEPS)});}return true;
     };
     for(const t of [...weights.keys()]){const r=rowMap.get(t);if(r&&canEnter(r))buy(r);}
     const heldFam=new Set([...weights.keys()].map(family));
     // GARP arm buys the highest underwritten return first; the others buy in model-rank order.
     const ret=r=>finite(r.underwrittenCAGR)??finite(r.expectedCAGR)??-1;
-    const cands=rows.filter(r=>canEnter(r)&&!heldFam.has(family(r.ticker))).sort(garp?(a,b)=>ret(b)-ret(a):(a,b)=>a.liveRank-b.liveRank);
+    const cands=rows.filter(r=>canEnter(r)&&!heldFam.has(family(r.ticker))).sort(entry==='peg'?(a,b)=>pegOf(a)-pegOf(b):garp?(a,b)=>ret(b)-ret(a):(a,b)=>a.liveRank-b.liveRank);
     for(const r of cands){
       if(weights.size>=maxPositions||cash<RP.SIZING.minTrade)break;
       if(heldFam.has(family(r.ticker)))continue;
@@ -81,15 +108,22 @@ function simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,opts,he
     const held=[];
     for(const [t,w] of [...weights]){
       const x=adjustedReturnBetween(historyByTicker.get(t)||[],snap.asOf,next.asOf,{executeAfterStart:true});
-      const rr=x?x.return:0;gross+=w*rr;const e=w*(1+rr);weights.set(t,e);end+=e;held.push([t,w,rr,!!x]);
+      const rr=x?x.return:0;gross+=w*rr;const e=w*(1+rr);weights.set(t,e);end+=e;held.push([t,w,rr,!!x]);for(const l of (lots.get(t)||[]))l.value*=1+rr;
     }
     cash=cash*(1+spy.return);
-    if(end>0){for(const [t,w] of weights)weights.set(t,w/end);cash/=end;}
+    if(end>0){for(const [t,w] of weights)weights.set(t,w/end);cash/=end;for(const L of lots.values())for(const l of L){l.value/=end;l.basis/=end;}}
     const cost=turnover*transactionCostBps/10000;
-    periods.push({asOf:snap.asOf,startYear:Number(String(snap.asOf).slice(0,4)),holdings:holdingsAtStart,cashWeight:cashAtStart,maxHoldingWeight:maxW,turnover,portfolioReturn:gross-cost,spyReturn:spy.return,held});
+    // Tax on this review's sales: short- and long-term net against each other, then against carried losses.
+    let st=acc.st,lt=acc.lt;stGainsTotal+=st;ltGainsTotal+=lt;
+    if(st<0&&lt>0){const o=Math.min(-st,lt);st+=o;lt-=o;}else if(lt<0&&st>0){const o=Math.min(-lt,st);lt+=o;st-=o;}
+    if(st<0){lossCarry+=-st;st=0;}if(lt<0){lossCarry+=-lt;lt=0;}
+    {const o=Math.min(lossCarry,st);st-=o;lossCarry-=o;}{const o=Math.min(lossCarry,lt);lt-=o;lossCarry-=o;}
+    const taxPaid=st*tax.shortTerm+lt*tax.longTerm;taxPaidTotal+=taxPaid;
+    periods.push({asOf:snap.asOf,startYear:Number(String(snap.asOf).slice(0,4)),holdings:holdingsAtStart,cashWeight:cashAtStart,maxHoldingWeight:maxW,turnover,portfolioReturn:gross-cost,afterTaxReturn:gross-cost-taxPaid,taxPaid,spyReturn:spy.return,held});
   }
   const stats=portfolioStats(periods,{periodsPerYear:4});
-  return {name,entry,sizing,maxPositions,maxRank,transactionCostBps,trim,...stats,
+  const afterTax=afterTaxSummary(periods,lots,lossCarry,tax,portfolioStats);
+  return {name,entry,sizing,maxPositions,maxRank,transactionCostBps,trim,sellRule,...stats,afterTax,taxPaidTotal,shortTermGains:stGainsTotal,longTermGains:ltGainsTotal,
     averageHoldings:mean(periods.map(p=>p.holdings)),averageCash:mean(periods.map(p=>p.cashWeight)),
     annualTurnover:(mean(periods.map(p=>p.turnover))||0)*4,buys,sells,trims,sellReasons,thesisBreak,
     thesisBreakSells:soldLog.filter(x=>x.reason==='thesis_broken_business_shrinking')};
@@ -256,7 +290,7 @@ function holdingsCsvRows(arm){
 const KEEP=['portfolioCAGR','spyCAGR','annualizedExcess','annualVolatility','periodEndMaxDrawdown','beatSpyRate','periodCount','yearCount','finalWealth10k','spyFinalWealth10k'];
 function compact(s){
   if(!s)return null;
-  const o={};for(const k of ['name','entry','sizing','maxPositions','topN','keepRank','growthSells','averageHoldings','averageCash','annualTurnover','buys','sells','trims','sellReasons','thesisBreak','thesisBreakSells','vsEqualWeightUniverse'])if(s[k]!==undefined)o[k]=s[k];
+  const o={};for(const k of ['name','entry','sizing','maxPositions','topN','keepRank','growthSells','averageHoldings','averageCash','annualTurnover','buys','sells','trims','sellReasons','thesisBreak','thesisBreakSells','vsEqualWeightUniverse','sellRule','afterTax','afterTaxSplit','taxPaidTotal','shortTermGains','longTermGains'])if(s[k]!==undefined)o[k]=s[k];
   for(const k of KEEP)if(s[k]!==undefined)o[k]=s[k];
   for(const k of ['development','validation'])if(s[k])o[k]=Object.fromEntries(KEEP.filter(x=>s[k][x]!==undefined).map(x=>[x,s[k][x]]));
   if(s.attribution)o.attribution=s.attribution;
@@ -276,9 +310,9 @@ function entryFunnel(snapshotOutput){
     const ret=rows.filter(r=>(u(r)??-1)>=RP.SIZING.hurdle),qual=ret.filter(r=>(q(r)??0)>=RP.BANDS.reviewQuality);
     per.push({asOf:snap.asOf,modeled:rows.length,returnAboveHurdle:ret.length,plusQuality75:qual.length,
       shortlistEligible:rows.filter(r=>shortlistEligible(r)).length,buyRated:rows.filter(r=>['Buy','Strong Buy','Exceptional Buy'].includes(r.rating)).length,
-      buyRatedEntryEligible:rows.filter(r=>RP.entryEligible(r)&&shortlistEligible(r,{maxRank:Infinity})).length});
+      buyRatedEntryEligible:rows.filter(r=>RP.entryEligible(r)&&shortlistEligible(r,{maxRank:Infinity})).length,pegEligible:rows.filter(r=>RP.pegEntry(r)).length});
   }
-  const keys=['modeled','returnAboveHurdle','plusQuality75','shortlistEligible','buyRated','buyRatedEntryEligible'];
+  const keys=['modeled','returnAboveHurdle','plusQuality75','shortlistEligible','buyRated','buyRatedEntryEligible','pegEligible'];
   const summary=Object.fromEntries(keys.map(k=>{const v=per.map(x=>x[k]);return [k,{median:median(v),min:v.length?Math.min(...v):null,max:v.length?Math.max(...v):null}];}));
   return {summary,byQuarter:per};
 }
@@ -289,6 +323,10 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
     const ps=s.periods||[];
     s.development={...H.portfolioStats(ps.filter(p=>p.startYear<splitYear),{periodsPerYear:4})};
     s.validation={...H.portfolioStats(ps.filter(p=>p.startYear>=splitYear),{periodsPerYear:4})};
+    // Build 74: excess after taxes paid along the way (no end-of-period liquidation), per period.
+    if(ps.some(p=>Number.isFinite(p.afterTaxReturn))){const at=x=>x.map(p=>({...p,portfolioReturn:p.afterTaxReturn??p.portfolioReturn}));
+      const d=H.portfolioStats(at(ps.filter(p=>p.startYear<splitYear)),{periodsPerYear:4}),v=H.portfolioStats(at(ps.filter(p=>p.startYear>=splitYear)),{periodsPerYear:4});
+      s.afterTaxSplit={developmentExcess:d.annualizedExcess??null,validationExcess:v.annualizedExcess??null};}
     return s;
   };
   const universe=split(simulateUniverseEqualWeight(snapshotOutput,historyByTicker,spyHistory,H));
@@ -314,6 +352,16 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
      V('CQ · C with quality 80+',{entryOpts:{minQuality:80}}),
      V('C35W · top-35 cutoff + warning blocks',{maxRank:35,entryOpts:{blockSplit:true,blockCycleAtPeak:true}}),
      V('CG · GARP: quality 75+, revenue growth 10%+, return 9%+, any rank; best return first',{maxRank:Infinity,garp:true,entryOpts:{minReturn:RP.GARP.minReturn,minQuality:RP.GARP.minQuality,minGrowth:RP.GARP.minGrowth}}));}
+  // Build 74: PEG entry (trailing P/E / trailing EPS growth here: no historical analyst estimates) and
+  // sell-rule variants. Decision rule fixed in advance in README-build74.
+  {const V=(name,o)=>simulateOwnerStrategy(snapshotOutput,historyByTicker,spyHistory,{name,entry:'shortlist',sizing:'conviction',maxPositions:15,transactionCostBps,...o},H);
+   arms.push(V('CP · PEG list: quality 75+, revenue growth 10%+, PEG <= 1.0, cheapest first, equal weight; sell when PEG > 2 twice',{entry:'peg',sizing:'equal',maxRank:Infinity,sellRule:'peg'}),
+     V('CPQ · PEG list, sells only on quality < 70 (never on price)',{entry:'peg',sizing:'equal',maxRank:Infinity,sellRule:'qualityOnly'}),
+     V('CPR · PEG list, sell on the market-relative return line',{entry:'peg',sizing:'equal',maxRank:Infinity,sellRule:'relative'}),
+     V('CR · C with the market-relative return sell line',{sellRule:'relative'}),
+     V('CSQ · C selling only on quality < 70 (never on price)',{sellRule:'qualityOnly'}),
+     V('CS2 · C selling half at the first low reading, the rest at the second',{sellRule:'staged'}),
+     V('CGR · GARP list with the market-relative sell line',{maxRank:Infinity,garp:true,sellRule:'relative',entryOpts:{minReturn:RP.GARP.minReturn,minQuality:RP.GARP.minQuality,minGrowth:RP.GARP.minGrowth}}));}
   // Build 68b: growth-list alternatives, same sleeve rules. Compare with G before switching anything on live.
   arms.push(simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name:'G1 · Growth sleeve without cyclicals',topN:10,keepRank:25,transactionCostBps,variant:'cyclical'},H),
     simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name:'G2 · Growth sleeve, lasting growth only (Build 68 rule)',topN:10,keepRank:25,transactionCostBps,variant:'durable'},H),
@@ -340,4 +388,4 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
   };
 }
 
-module.exports={growthRows,simulateGrowthSleeve,blendArms,growthBucketOutcomes,attribution,holdingsCsvRows,entryFunnel,liveRankedRows,shortlistEligible,simulateOwnerStrategy,simulateMechanicalTopN,simulateUniverseEqualWeight,rankBucketOutcomes,buildOwnerStrategyLab};
+module.exports={TAX,afterTaxSummary,growthRows,simulateGrowthSleeve,blendArms,growthBucketOutcomes,attribution,holdingsCsvRows,entryFunnel,liveRankedRows,shortlistEligible,simulateOwnerStrategy,simulateMechanicalTopN,simulateUniverseEqualWeight,rankBucketOutcomes,buildOwnerStrategyLab};

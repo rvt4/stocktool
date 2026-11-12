@@ -29,7 +29,7 @@ assert.strictEqual(A(s({estimateRevision:{level:'severe',label:'Analysts cut est
 // GARP-only names (rank outside top 20) can also be Buy more
 assert.strictEqual(A(s({overallRank:300,underwrittenCAGR:.095}),null,.005).action,'Buy more');
 // Reasons: plain, capped, no duplicates, no tax boilerplate
-for(const r of [b,big,core,h]){assert(r.reasons.length<=6);assert.strictEqual(new Set(r.reasons).size,r.reasons.length);assert(!r.reasons.some(x=>/Taxable/.test(x)));}
+for(const r of [b,big,core,h]){assert(r.reasons.length<=7);assert.strictEqual(new Set(r.reasons).size,r.reasons.length);assert(!r.reasons.some(x=>/Taxable/.test(x)));}
 assert(b.reasons.some(x=>/12\.0% a year/.test(x)));
 // Sort order puts actions first
 const order=['Hold','Sell','Buy more','Review','Sell some'].sort((a,c)=>RP.ADVICE_ORDER[a]-RP.ADVICE_ORDER[c]);

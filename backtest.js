@@ -40,7 +40,7 @@ const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {buildOwnerStrategyLab}=require('./owner-strategy-lab');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='build73';
+const MODEL_VERSION='build74';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -49,7 +49,7 @@ const LIMIT=Math.max(0,Number(process.env.BACKTEST_LIMIT||0));
 const RATE_LIMIT_DELAY_MS=Number(process.env.BACKTEST_RATE_LIMIT_DELAY_MS||350);
 const HISTORY_YEARS=Math.max(12,new Date().getUTCFullYear()-START+2);
 function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
-function finite(v){const n=Number(v);return Number.isFinite(n)?n:null;}
+function finite(v){if(v===null||v===undefined||v==="")return null;const n=Number(v);return Number.isFinite(n)?n:null;}
 function cagr(a,b,n){return a>0&&b>0&&n>0?Math.pow(b/a,1/n)-1:null;}
 function median(a){const v=a.filter(Number.isFinite).sort((x,y)=>x-y);if(!v.length)return null;const m=Math.floor(v.length/2);return v.length%2?v[m]:(v[m-1]+v[m])/2;}
 function isoDate(d){return new Date(d).toISOString().slice(0,10);}
@@ -562,7 +562,7 @@ function compactModel(stock,f,q,v,d){return {
   methodsSplit:!!v.valuationConsensus?.methodsSplit,valuationConsensus:v.valuationConsensus?{hasConsensusOutlier:!!v.valuationConsensus.hasConsensusOutlier,clusterSpread:v.valuationConsensus.clusterSpread??null,outlierGap:v.valuationConsensus.outlierGap??null}:null,
   valuationMethodEvidence:(v.methods||[]).map(m=>({name:m.name||null,family:m.family||null,reliability:m.reliability??null,weight:m.weight??null,fairValueToday:m.audit?.fairValueToday??null,hurdleValueToday:m.audit?.hurdleValueToday??null,outcome:m.outcome??null})),
   modelSupport:v.modelSupport,
-  revenueGrowthTTM:require('./review-policy').ttmRevenueGrowth(stock.quarterly,stock.financials?.years),revenueCAGR3:require('./engine/ranking-engine').revenueCagr3(stock.financials?.years),cycle:require('./engine/ranking-engine').cycleProfile(stock.financials?.years),forwardEPS:f.rows?.[0]?.eps??null
+  revenueGrowthTTM:require('./review-policy').ttmRevenueGrowth(stock.quarterly,stock.financials?.years),revenueCAGR3:require('./engine/ranking-engine').revenueCagr3(stock.financials?.years),cycle:require('./engine/ranking-engine').cycleProfile(stock.financials?.years),...require('./engine/ranking-engine').earningsProfile(stock.financials?.years,stock.valuation?.marketCap),forwardEPS:f.rows?.[0]?.eps??null
 };}
 function rank(rows){applyModelDRanking(rows,{rankField:'rank',universeSizeField:'universeSize'});}
 function attachRealized(row,history,spyHistory,asOf){

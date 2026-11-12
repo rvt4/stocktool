@@ -136,7 +136,7 @@ th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04
 .hcard-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
 .hcard-ticker{font-size:18px;font-weight:700}.hcard-name{color:var(--muted);font-size:12px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hcard-headline{margin:0;font-size:14px;font-weight:500}
-.hcard-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;background:var(--bg);border-radius:9px;padding:9px}
+.hcard-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;background:var(--bg);border-radius:9px;padding:9px}
 .hcard-stats small{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em}.hcard-stats b{font-size:13px}
 .hcard details{font-size:13px}.hcard summary{cursor:pointer;color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
 .hcard ul{margin:8px 0 0;padding-left:18px;line-height:1.45}.hcard li{margin:3px 0}

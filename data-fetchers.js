@@ -256,9 +256,11 @@ function applyTtmOverlay(years, ttm) {
 }
 
 // Build 71: businesses the revenue/margin model cannot value, detected from the balance sheet (no manual lists).
-//  - crypto treasury: digital assets are 40%+ of total assets (BMNR, MSTR). Value = holdings, not earnings.
-//  - mortgage / financial REIT: a REIT (SIC 6798) whose property and equipment are under 15% of assets
-//    (AGNC, NLY, STWD): a leveraged bond/loan book; equity REITs own buildings, towers, data centers, timber.
+//  - crypto treasury: the company's OWN digital assets, net of crypto it holds for customers, are 40%+ of total
+//    assets (BMNR, MSTR). Brokers/exchanges (SIC 6211, 6200, 6099) hold customer crypto and are skipped (HOOD).
+//  - mortgage / financial REIT: a REIT (SIC 6798) whose assets are mostly securities and loans (>= 50%) and whose
+//    property is under 15% of assets (AGNC, NLY, STWD). Build 71b: positive identification; the first version
+//    only looked for missing property and caught tower, timber, casino and storage REITs (AMT, WY, VICI, IRM).
 function latestInstant(usGaap, tags, asOf = null) {
   let best = null;
   for (const tag of tags) {
@@ -272,13 +274,21 @@ function detectValuationExclusion(facts, sic, asOf = null) {
   const assets = latestInstant(g, ['Assets'], asOf);
   if (!(assets?.val > 0)) return null;
   const crypto = latestInstant(g, ['CryptoAssetFairValue', 'CryptoAssetFairValueNoncurrent', 'CryptoAssetFairValueCurrent', 'CryptoAssetCost', 'DigitalAssets', 'DigitalAssetsNoncurrent'], asOf);
-  if (crypto && crypto.val / assets.val >= 0.40) return { kind: 'crypto_treasury', share: crypto.val / assets.val,
-    reason: `Digital assets are ${Math.round(100 * crypto.val / assets.val)}% of total assets; the value is the holdings, which this model does not price` };
+  const custodial = latestInstant(g, ['SafeguardingLiabilityCryptoAsset', 'CryptoAssetSafeguardingLiability', 'SafeguardingLiability', 'CustomerCryptoAssetsLiability'], asOf);
+  const ownCrypto = crypto ? crypto.val - (custodial?.val > 0 ? custodial.val : 0) : 0;
+  const broker = ['6211', '6200', '6099', '6221'].includes(String(sic || ''));
+  if (!broker && ownCrypto / assets.val >= 0.40) return { kind: 'crypto_treasury', share: ownCrypto / assets.val,
+    reason: `Digital assets are ${Math.round(100 * ownCrypto / assets.val)}% of total assets; the value is the holdings, which this model does not price` };
   if (String(sic || '') === '6798') {
     const property = ['RealEstateInvestmentPropertyNet', 'RealEstateInvestmentPropertyAtCost', 'PropertyPlantAndEquipmentNet', 'RealEstateGrossAtCarryingValue', 'TimberAndTimberlands', 'OperatingLeaseRightOfUseAsset']
       .map(t => latestInstant(g, [t], asOf)).filter(x => x && Math.abs(new Date(x.end) - new Date(assets.end)) < 200 * 86400000)
       .reduce((m, x) => Math.max(m, x.val), 0);
-    if (property / assets.val < 0.15) return { kind: 'mortgage_reit', share: property / assets.val,
+    const paper = ['AvailableForSaleSecuritiesDebtSecurities', 'AvailableForSaleSecurities', 'MarketableSecurities', 'TradingSecurities', 'DebtSecuritiesAvailableForSaleExcludingAccruedInterest',
+      'MortgageLoansOnRealEstate', 'MortgageLoansOnRealEstateCommercialAndConsumerNet', 'LoansAndLeasesReceivableNetReportedAmount', 'LoansReceivableHeldForInvestmentNet',
+      'FinancingReceivableExcludingAccruedInterestAfterAllowanceForCreditLoss', 'LoansHeldForSaleMortgages', 'ResidentialMortgageLoansHeldForInvestment', 'SecuritiesForReverseRepurchaseAgreements']
+      .map(t => latestInstant(g, [t], asOf)).filter(x => x && Math.abs(new Date(x.end) - new Date(assets.end)) < 200 * 86400000)
+      .reduce((s, x) => s + Math.max(0, x.val), 0);
+    if (property / assets.val < 0.15 && paper / assets.val >= 0.50) return { kind: 'mortgage_reit', share: property / assets.val, paperShare: paper / assets.val,
       reason: `Mortgage/financial REIT: property is ${Math.round(100 * property / assets.val)}% of assets; its value is a leveraged loan/securities book this model does not price` };
   }
   return null;
@@ -707,11 +717,14 @@ function parseAnnualFinancials(facts, maxYears = 10) {
       const investedCapital = Number.isFinite(equity)
         ? totalDebt + equity - cash
         : null;
-      const nopat = Number.isFinite(Number(y.operatingIncome))
+      // Build 74: fall back to net income when operating income isn't tagged, and treat negative
+      // invested capital with positive profits (buyback-funded negative equity) as a high return
+      // rather than "unknown" (capped at 40%).
+      const nopat = y.operatingIncome != null && Number.isFinite(Number(y.operatingIncome))
         ? Number(y.operatingIncome) * 0.79
-        : null;
-      const roic = Number.isFinite(nopat) && Number.isFinite(investedCapital) && investedCapital > 0
-        ? nopat / investedCapital
+        : (y.netIncome != null && Number.isFinite(Number(y.netIncome)) ? Number(y.netIncome) : null);
+      const roic = Number.isFinite(nopat) && Number.isFinite(investedCapital)
+        ? (investedCapital > 0 ? Math.min(nopat / investedCapital, 2) : (nopat > 0 ? 0.40 : null))
         : null;
       const inventoryTurnover = (y.cogs != null && y.inventory) ? y.cogs / y.inventory : null;
       // EBITDA is only published when D&A is actually available. Previously a missing

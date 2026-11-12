@@ -561,6 +561,7 @@ function renderScreener(){
  // 75+), the same rule the backtest and the new-money planner use. Replaces the strict "Buy" rating as the list to
  // act on (that rule, arm D, roughly matched SPY). Warnings are shown, not hidden.
  if(sort==='candidates')arr=arr.filter(s=>window.ReviewPolicy.shortlistEntry(s));
+ if(sort==='peg'){const R=window.ReviewPolicy;arr=arr.filter(s=>R.pegEntry(s,{maxPeg:R.PEG.watchMax})).sort((a,b)=>R.pegOf(a).peg-R.pegOf(b).peg);}
  if(sort==='garp'){const R=window.ReviewPolicy;arr=arr.filter(s=>R.garpEntry(s,{minReturn:R.GARP.listMinReturn})).sort((a,b)=>num(b.underwrittenCAGR??b.expectedReturn,-9)-num(a.underwrittenCAGR??a.expectedReturn,-9));}
  if(sort==='growth')arr=stocks.filter(s=>s.growth?.eligible&&(s.ticker+' '+(s.name||'')).toLowerCase().includes(q)&&(!sector||s.sector===sector)&&(!minCap||num(s.marketCap,0)>=minCap)).sort((a,b)=>a.growth.rank-b.growth.rank);
  const seen=new Set();arr=arr.filter(s=>{const family=companyFamily(s.ticker);if(seen.has(family))return false;seen.add(family);return true;});
@@ -580,13 +581,15 @@ function renderScreener(){
   return;
  }
  // Build 73: plain-English table for the two lists you act on (GARP, Buy candidates).
- if(sort==='garp'||sort==='candidates'){const R=window.ReviewPolicy;
-  const status=s=>{const u=num(s.underwrittenCAGR??s.expectedReturn,NaN),buy=sort==='candidates'||u>=R.GARP.minReturn;
+ if(sort==='garp'||sort==='candidates'||sort==='peg'){const R=window.ReviewPolicy;
+  const pegTxt=s=>{const p=R.pegOf(s);return p&&p.peg!==null?p.peg.toFixed(2):'—';};
+  const status=s=>{const u=num(s.underwrittenCAGR??s.expectedReturn,NaN),buy=sort==='candidates'||(sort==='peg'?R.pegEntry(s):u>=R.GARP.minReturn);
    const w=R.entryWarnings(s),notes=[s.estimateRevision?.level?'analysts cut estimates':'',w.includes('split')?'valuation methods disagree':'',w.includes('cycle_peak')?'cyclical, profits near a peak':''].filter(Boolean);
-   return {buy,label:buy?'Buy zone':'Watch',sub:buy?(notes.length?'Check: '+notes.join(', '):'No warnings'):'Return under '+pct(R.GARP.minReturn)+(notes.length?' · '+notes.join(', '):'')};};
-  if(head)head.innerHTML='<th>Company</th><th>Sector</th><th>Price</th><th>Exp. return / yr</th><th>Revenue growth</th><th>Quality</th><th>Status</th><th>Model rank</th><th></th>';
-  $('screenRows').innerHTML=top.map(s=>{const st=status(s);return `<tr><td><b>${esc(s.ticker)}</b><br><span class="muted">${esc(s.name||'')}</span></td><td>${esc(s.sector||'—')}</td><td>${money(getPrice(s))}</td><td><b>${returnSummary(s)}</b></td><td>${pct(R.businessGrowthOf(s))}</td><td>${esc(s.qualityScore??'—')}</td><td><span class="action ${st.buy?'act-buy':'act-review'}">${st.label}</span><div class="muted small" style="margin-top:4px">${esc(st.sub)}</div></td><td>${esc(s.overallRank??'—')}</td><td><button class="ghost" data-ticker="${esc(s.ticker)}">Research →</button></td></tr>`}).join('');
-  $('screenCards').innerHTML=top.map(s=>{const st=status(s);return `<article class="screen-card compact"><div class="screen-card-head"><div><strong>${esc(s.ticker)} <span class="muted">${esc(s.name||'')}</span></strong></div><span class="action ${st.buy?'act-buy':'act-review'}">${st.label}</span></div><div class="screen-card-stats"><span>Return <b>${returnSummary(s)}</b></span><span>Growth <b>${pct(R.businessGrowthOf(s))}</b></span><span>Quality <b>${esc(s.qualityScore??'—')}</b></span><span>Price <b>${money(getPrice(s))}</b></span></div><div class="screen-card-footer"><span class="muted small">${esc(st.sub)}</span><button class="ghost" data-ticker="${esc(s.ticker)}">Research →</button></div></article>`}).join('');
+   return {buy,label:buy?'Buy zone':'Watch',sub:buy?(notes.length?'Check: '+notes.join(', '):'No warnings'):(sort==='peg'?'PEG over '+R.PEG.buyMax.toFixed(1):'Return under '+pct(R.GARP.minReturn))+(notes.length?' · '+notes.join(', '):'')};};
+  if(head)head.innerHTML='<th>Company</th><th>Sector</th><th>Price</th><th>PEG</th><th>Revenue growth</th><th>Quality</th><th>Model return / yr</th><th>Status</th><th></th>';
+  $('screenRows').innerHTML=top.map(s=>{const st=status(s);return `<tr><td><b>${esc(s.ticker)}</b><br><span class="muted">${esc(s.name||'')}</span></td><td>${esc(s.sector||'—')}</td><td>${money(getPrice(s))}</td><td><b>${pegTxt(s)}</b></td><td>${pct(R.businessGrowthOf(s))}</td><td>${esc(s.qualityScore??'—')}</td><td>${returnSummary(s)}</td><td><span class="action ${st.buy?'act-buy':'act-review'}">${st.label}</span><div class="muted small" style="margin-top:4px">${esc(st.sub)}</div></td><td><button class="ghost" data-ticker="${esc(s.ticker)}">Research →</button></td></tr>`}).join('');
+  $('screenCards').innerHTML=top.map(s=>{const st=status(s);return `<article class="screen-card compact"><div class="screen-card-head"><div><strong>${esc(s.ticker)} <span class="muted">${esc(s.name||'')}</span></strong></div><span class="action ${st.buy?'act-buy':'act-review'}">${st.label}</span></div><div class="screen-card-stats"><span>PEG <b>${pegTxt(s)}</b></span><span>Return <b>${returnSummary(s)}</b></span><span>Growth <b>${pct(R.businessGrowthOf(s))}</b></span><span>Quality <b>${esc(s.qualityScore??'—')}</b></span><span>Price <b>${money(getPrice(s))}</b></span></div><div class="screen-card-footer"><span class="muted small">${esc(st.sub)}</span><button class="ghost" data-ticker="${esc(s.ticker)}">Research →</button></div></article>`}).join('');
+  if(sort==='peg')$('count').textContent=`${arr.length} quality growers: quality 75+, revenue growing 10%+, PEG 1.5 or less, cheapest for its growth first. Buy zone = PEG 1.0 or less. PEG = forward P/E ÷ expected earnings growth.`;
   if(sort==='garp')$('count').textContent=`${arr.length} quality growers: quality 75+, revenue growing 10%+ a year, expected return 7%+. Buy zone = 9%+ a year.`;
   document.querySelectorAll('#screenRows [data-ticker],#screenCards [data-ticker]').forEach(b=>b.onclick=()=>choose(b.dataset.ticker));
   return;
@@ -700,15 +703,15 @@ function renderDashboard(){
   return `<article class="hcard ${ACTION_CLASS[a.action]||''}">
    <div class="hcard-top"><div><div class="hcard-ticker">${esc(r.t)}</div><div class="hcard-name">${esc(s?.name||'')}</div></div><span class="action ${ACTION_CLASS[a.action]||''}">${esc(a.action)}</span></div>
    <p class="hcard-headline">${esc(a.headline)}</p>
-   <div class="hcard-stats"><div><small>Value</small><b>${money(r.value)}</b></div><div><small>Gain</small><b class="${g!==null&&g>=0?'positive':'negative'}">${g===null?'—':(g>=0?'+':'')+pct(g)}</b></div><div><small>Exp. return</small><b>${u===null||u===undefined?'—':pct(Number(u))}</b></div><div><small>Quality</small><b>${esc(s?.qualityScore??'—')}</b></div></div>
+   <div class="hcard-stats"><div><small>Value</small><b>${money(r.value)}</b></div><div><small>Gain</small><b class="${g!==null&&g>=0?'positive':'negative'}">${g===null?'—':(g>=0?'+':'')+pct(g)}</b></div><div><small>PEG</small><b>${(()=>{const p=RP.pegOf(s);return p&&p.peg!==null?p.peg.toFixed(2):'—';})()}</b></div><div><small>Return</small><b>${u===null||u===undefined?'—':pct(Number(u))}</b></div><div><small>Quality</small><b>${esc(s?.qualityScore??'—')}</b></div></div>
    ${bar(r.weight,a.target)}
    ${a.reasons.length?`<details${a.action!=='Hold'?' open':''}><summary>Why</summary><ul>${a.reasons.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>`:''}
    ${s?`<button class="ghost" data-dticker="${esc(r.t)}">Open research →</button>`:''}
   </article>`;};
  const heldFam=new Set(rows.map(r=>companyFamily(r.t)));
- const ideas=stocks.filter(s=>RP.garpEntry(s)&&!heldFam.has(companyFamily(s.ticker))).sort((a,b)=>num(b.underwrittenCAGR??b.expectedCAGR,-9)-num(a.underwrittenCAGR??a.expectedCAGR,-9));
+ const ideas=stocks.filter(s=>RP.pegEntry(s)&&!heldFam.has(companyFamily(s.ticker))).sort((a,b)=>RP.pegOf(a).peg-RP.pegOf(b).peg);
  const seenI=new Set(),ideaList=ideas.filter(s=>{const f=companyFamily(s.ticker);if(seenI.has(f))return false;seenI.add(f);return true;}).slice(0,8);
- const idea=s=>{const w=RP.entryWarnings(s),rv=s.estimateRevision?.level;return `<button class="idea" data-dticker="${esc(s.ticker)}"><span class="idea-t">${esc(s.ticker)}</span><span class="idea-n">${esc(s.name||'')}</span><span class="idea-m">${pct(Number(s.underwrittenCAGR??s.expectedCAGR))}<small>return</small></span><span class="idea-m">${pct(RP.businessGrowthOf(s))}<small>growth</small></span><span class="idea-m">${esc(s.qualityScore)}<small>quality</small></span>${w.length||rv?`<span class="idea-warn">${[rv?'estimate cut':'',w.includes('split')?'valuation split':'',w.includes('cycle_peak')?'cyclical peak':''].filter(Boolean).join(' · ')}</span>`:''}</button>`;};
+ const idea=s=>{const w=RP.entryWarnings(s),rv=s.estimateRevision?.level;return `<button class="idea" data-dticker="${esc(s.ticker)}"><span class="idea-t">${esc(s.ticker)}</span><span class="idea-n">${esc(s.name||'')}</span><span class="idea-m">${RP.pegOf(s).peg.toFixed(2)}<small>PEG</small></span><span class="idea-m">${pct(RP.businessGrowthOf(s))}<small>growth</small></span><span class="idea-m">${esc(s.qualityScore)}<small>quality</small></span>${w.length||rv?`<span class="idea-warn">${[rv?'estimate cut':'',w.includes('split')?'valuation split':'',w.includes('cycle_peak')?'cyclical peak':''].filter(Boolean).join(' · ')}</span>`:''}</button>`;};
  const signedOut=!user;
  el.innerHTML=`
   <div class="kpis">${kpis.map(([k,v,sub])=>`<div class="kpi"><small>${k}</small><strong>${v}</strong><em>${sub}</em></div>`).join('')}</div>
@@ -718,7 +721,7 @@ function renderDashboard(){
     :rows.length?`<div class="hgrid">${rows.map(card).join('')}</div>`:`<div class="empty"><p>No holdings yet. Add them under Portfolio.</p><button class="primary" data-goto="portfolio">Add holdings</button></div>`}
   </section>
   <section class="dash-section"><div class="section-head"><h2>Ideas for new money</h2><button class="ghost" data-goto="screener">See all ideas →</button></div>
-   <p class="muted small">GARP buy zone: quality 75+, revenue growing 10%+ a year, expected return 9%+ a year. You don’t own these yet.</p>
+   <p class="muted small">PEG buy zone: quality 75+, revenue growing 10%+, PEG 1.0 or less (cheap for its growth). Cheapest first; you don’t own these yet.</p>
    ${ideaList.length?`<div class="ideas">${ideaList.map(idea).join('')}</div>`:'<div class="empty"><p>Nothing in the buy zone tonight. Holding cash or an index fund until prices improve is fine.</p></div>'}
   </section>
   <p class="disclaimer">Advice comes from the model’s backtested rules applied to tonight’s data. It is a prompt to do your own research, not financial advice. Expected returns are estimates, and the backtest (2019–2025, before taxes) leaned on a handful of big winners.</p>`;

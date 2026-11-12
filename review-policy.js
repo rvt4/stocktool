@@ -35,6 +35,18 @@
     sectorCapAtPurchase:0.30,
     minTrade:0.005,
   };
+  // Build 74: PEG list (quality growth at a reasonable price). PEG = P/E / growth (in %).
+  // Forward when analysts cover it (price / next-year EPS, next-year EPS growth); otherwise trailing
+  // (market cap / last net income, 3-year EPS-per-share CAGR). Growth is capped at 1.5x revenue
+  // growth so a one-off earnings jump can't flatter the ratio, and at 50%.
+  const PEG={buyMax:1.0,watchMax:1.5,sellAbove:2.0,minQuality:75,minGrowth:0.10,minEpsGrowth:0.08,growthCap:0.50,revenueMultiple:1.5};
+  // Build 74: which valuation sell rule is live. 'current' = expected return under 6.5% two reviews
+  // running. Alternatives are tested in the backtest (owner strategy lab) before any is switched on:
+  //   relative    : line = min(6.5%, market median expected return - 3 pts)
+  //   qualityOnly : never sell on valuation; only quality < 70 sells
+  //   peg         : expensive = PEG above 2 (falls back to the return line when there is no PEG)
+  //   staged      : current line, but sell half at the first low reading and the rest at the second
+  const SELL={rule:'current',relativeGap:0.03};
   const BUY_TIERS=['Buy','Strong Buy','Exceptional Buy'];
   const num=v=>{if(v===null||v===undefined||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null;};
   const priceOf=s=>num(s?.price??s?.currentPrice??s?.stockPrice);
@@ -119,6 +131,43 @@
     return BUY_TIERS.includes(s.rating||'')&&u!==null&&u>=SIZING.hurdle&&q!==null&&q>=BANDS.reviewQuality&&price!==null&&buy!==null&&price<=buy;
   }
 
+  function pegOf(s){
+    if(!s) return null;
+    const a=s.analystEstimates||{}, px=priceOf(s), bg=businessGrowthOf(s), rg=num(a.revenueGrowthNextYear);
+    let pe=null,eg=null,source=null;
+    const eNext=num(a.epsNextYear);
+    if(eNext!==null&&eNext>0&&px!==null&&px>0){pe=px/eNext;eg=num(a.epsGrowthNextYear)??num(a.epsGrowthFwd);source='forward';}
+    if(pe===null||eg===null){const t=num(s.peTTM);if(t!==null&&t>0){pe=t;eg=num(s.epsCAGR3);source='trailing';}}
+    if(pe===null) return null;
+    const revBase=Math.max(rg??-1,bg??-1);
+    let g=eg!==null?eg:bg;
+    if(g===null) return null;
+    if(revBase>-1) g=Math.min(g,PEG.revenueMultiple*Math.max(revBase,0));
+    g=Math.min(g,PEG.growthCap);
+    if(!(g>0)) return {peg:null,pe,growth:g,source};
+    return {peg:pe/(g*100),pe,growth:g,source};
+  }
+  // On the PEG list: quality 75+, revenue growing 10%+, earnings growth 8%+, PEG <= maxPeg.
+  function pegEntry(s,{maxPeg=PEG.buyMax,minQuality=PEG.minQuality,minGrowth=PEG.minGrowth}={}){
+    if(!s||s.valuationExclusion) return false;
+    const q=num(s.qualityScore),bg=businessGrowthOf(s),p=pegOf(s);
+    return q!==null&&q>=minQuality&&bg!==null&&bg>=minGrowth&&!!p&&p.peg!==null&&p.growth>=PEG.minEpsGrowth&&p.peg<=maxPeg;
+  }
+  // Valuation sell test under the chosen rule. Returns {expensive, line, why}.
+  function valuationCheck(s,ctx={}){
+    const rule=ctx.sellRule||SELL.rule, u=returnOf(s);
+    if(rule==='qualityOnly') return {expensive:false,rule};
+    if(rule==='peg'){const p=pegOf(s);if(p&&p.peg!==null)return {expensive:p.peg>PEG.sellAbove,rule,peg:p.peg};}
+    let line=BANDS.lowReturn;
+    if(rule==='relative'){const m=num(ctx.marketMedian);if(m!==null)line=Math.min(BANDS.lowReturn,m-SELL.relativeGap);}
+    return {expensive:u!==null&&u<line,rule,line};
+  }
+  function prevExpensive(prev,check){
+    if(!prev) return false;
+    if(check.rule==='peg'&&check.peg!==undefined){const pp=num(prev.peg);return pp!==null?pp>PEG.sellAbove:false;}
+    const pu=num(prev.u);return pu!==null&&check.line!==undefined&&pu<check.line;
+  }
+
   // New-money plan. holdings: [{ticker, value, stock}], candidates: ordered stock records (research priority).
   // Fills holdings that are below target and still buyable first, then opens new positions in order.
   function planContribution({holdings=[],candidates=[],cash=0}={}){
@@ -156,10 +205,11 @@
     const u=returnOf(s), q=num(s.qualityScore), rating=s.rating||'';
     const sell=[], review=[];
     if(q!==null&&q<BANDS.sellQuality) sell.push('Quality '+q+' is below '+BANDS.sellQuality+'; re-check the thesis');
-    if(u!==null&&u<BANDS.lowReturn){
-      const prevU=num(prev?.u);
-      if(prevU!==null&&prevU<BANDS.lowReturn) sell.push('Expected return below '+pctTxt(BANDS.lowReturn)+' for two reviews in a row ('+pctTxt(prevU)+' then '+pctTxt(u)+')');
-      else review.push('Expected return '+pctTxt(u)+' is below '+pctTxt(BANDS.lowReturn)+'; sell candidate if still low next review');
+    const vc=valuationCheck(s,ctx); let trimHalf=false;
+    if(vc.expensive){
+      const what=vc.peg!==undefined?'PEG above '+PEG.sellAbove:'Expected return below '+pctTxt(vc.line);
+      if(prevExpensive(prev,vc)) sell.push(what+' for two reviews in a row');
+      else{review.push(what+'; sell candidate if still there next review');if(vc.rule==='staged')trimHalf=true;}
     }
     const memo=thesisMemo(s,prev);
     const thesisAction=ctx.thesisBreak===false?'off':(ctx.thesisBreak==='sell'||ctx.thesisBreak===true?'sell':BANDS.thesisAction);
@@ -177,6 +227,7 @@
     const w=num(ctx.weight);
     if(w!==null&&w>SIZING.trimAbove) review.push('Position is '+pctTxt(w)+' of the portfolio; consider trimming toward '+pctTxt(SIZING.trimTo));
     if(sell.length) return {status:'Sell candidate',reasons:[...sell,...review],memo};
+    if(trimHalf) return {status:'Trim half',reasons:review,memo};
     if(review.length) return {status:'Review',reasons:review,memo};
     if(shortlistEntry(s)){
       if(w!==null&&w>=targetWeight(s)) return {status:'Hold',reasons:['Still passes the buy rules, but already at or above its '+pctTxt(targetWeight(s))+' target size'],memo};
@@ -193,7 +244,7 @@
     for(const s of stocks){const p=priceOf(s);if(p!==null&&p>0)prices[String(s.ticker).toUpperCase()]=p;}
     return {
       version:1,takenAt,generatedAt,
-      holdings:holdings.map(h=>{const t=String(h.ticker).toUpperCase(),s=by.get(t),st=holdingStatus(s,prevH.get(t));return {ticker:t,shares:num(h.shares),price:priceOf(s),u:returnOf(s),q:num(s?.qualityScore),rating:s?.rating??null,status:st.status,rg:st.memo?.rg??null,streak:st.memo?.streak??0,entryEPS:st.memo?.entryEPS??null};}),
+      holdings:holdings.map(h=>{const t=String(h.ticker).toUpperCase(),s=by.get(t),st=holdingStatus(s,prevH.get(t));return {ticker:t,shares:num(h.shares),price:priceOf(s),u:returnOf(s),q:num(s?.qualityScore),peg:pegOf(s)?.peg??null,rating:s?.rating??null,status:st.status,rg:st.memo?.rg??null,streak:st.memo?.streak??0,entryEPS:st.memo?.entryEPS??null};}),
       shortlist:shortlist.slice(0,BANDS.shortlistSize).map((s,i)=>({ticker:String(s.ticker).toUpperCase(),position:i+1,price:priceOf(s),u:returnOf(s),q:num(s.qualityScore),rating:s.rating??null,rank:num(s.overallRank)})),
       prices,
     };
@@ -233,19 +284,21 @@
     const u=returnOf(s), q=num(s.qualityScore), g=businessGrowthOf(s), target=targetWeight(s);
     const rev=s.estimateRevision||null, warn=entryWarnings(s);
     const unvaluable=s.rating==='Unrated'||s.modelSupport==='unsupported';
-    const prevU=num(prev&&prev.u);
-    const lowQ=q!==null&&q<BANDS.sellQuality, lowU=u!==null&&u<BANDS.lowReturn, twoLow=lowU&&prevU!==null&&prevU<BANDS.lowReturn;
+    const vc=valuationCheck(s,ctx), pg=pegOf(s);
+    const lowQ=q!==null&&q<BANDS.sellQuality, lowU=vc.expensive, twoLow=lowU&&prevExpensive(prev,vc);
     const why=[];
     if(u!==null) why.push(u>=SIZING.hurdle?`Expected return ${p1(u)} a year, above the ${p0(SIZING.hurdle)} hurdle`
       :!lowU?`Expected return ${p1(u)} a year: fair, under the ${p0(SIZING.hurdle)} hurdle`
-      :`Expected return ${p1(u)} a year: the price has run ahead of the value (floor ${p1(BANDS.lowReturn)})`+(twoLow?`, for two reviews in a row`:''));
+      :`Expected return ${p1(u)} a year: the price has run ahead of the value`+(vc.line!==undefined?` (floor ${p1(vc.line)})`:'')+(twoLow?`, for two reviews in a row`:''));
     if(q!==null) why.push(q>=85?`Quality ${q}: top tier`:q>=BANDS.reviewQuality?`Quality ${q}: good`:!lowQ?`Quality ${q}: below the ${BANDS.reviewQuality} comfort level`:`Quality ${q}: below the ${BANDS.sellQuality} line where the thesis is in doubt`);
     if(g!==null) why.push(g>=0.10?`Revenue growing ${p0(g)} a year`:g>=0.03?`Revenue growing a modest ${p0(g)} a year`:g>=0?`Revenue roughly flat`:`Revenue shrinking ${p0(-g)} a year`);
+    if(pg&&pg.peg!==null) why.push(`PEG ${pg.peg.toFixed(2)} (P/E ${pg.pe.toFixed(1)} on ${p0(pg.growth)} earnings growth${pg.source==='trailing'?', trailing':''})`+(pg.peg<=PEG.buyMax?': cheap for its growth':pg.peg<=PEG.watchMax?': fair for its growth':pg.peg>PEG.sellAbove?': pricey for its growth':''));
+    if(lowU&&pg&&pg.peg!==null&&pg.peg<=PEG.buyMax) why.push('The two price checks disagree: cheap on PEG, expensive on the long-term model. The Build 74 backtest decides which one the sell rule should trust');
     if(rev&&rev.level) why.push(rev.label);
     if(warn.includes('split')) why.push('Valuation methods disagree, so treat the fair value as rough');
     if(warn.includes('cycle_peak')) why.push('Cyclical business with profits near a peak');
     const out=(action,tone,headline,lead=[])=>{
-      const reasons=[...lead,...why].slice(0,6);
+      const reasons=[...lead,...why].slice(0,7);
       return {action,tone,headline,reasons,weight,target};
     };
     if(unvaluable) return out('Review','review','The model can’t value this one; judge it on your own research',[s.modelSupportReason||'No reliable valuation']);
@@ -255,10 +308,10 @@
     if(lowQ) return out('Sell some','trim','Sell some and re-check the thesis: quality has slipped below 70');
     if(twoLow) return out('Sell some','trim','Sell some: great business, but expensive two reviews running; keep a core position');
     if(lowU&&weight!==null&&target!==null&&weight>target+0.01) return out('Sell some','trim',`Sell some: expensive now; trim toward its ${p1(target)} target`,['If it is still this expensive next quarter, sell the rest']);
-    const buyable=shortlistEntry(s)||garpEntry(s);
+    const buyable=shortlistEntry(s)||garpEntry(s)||pegEntry(s);
     if(buyable&&weight!==null&&target!==null&&weight<target-0.01){
       if(rev&&rev.level==='severe') return out('Hold','hold','Hold: would be a buy, but analysts just cut estimates sharply; wait a quarter');
-      return out('Buy more','buy',`Buy more: up to about ${p1(target)} of the portfolio (now ${p1(weight)})`,[shortlistEntry(s)?'Passes the backtested buy rule':'In the GARP buy zone (quality growth at a fair price)']);
+      return out('Buy more','buy',`Buy more: up to about ${p1(target)} of the portfolio (now ${p1(weight)})`,[shortlistEntry(s)?'Passes the backtested buy rule':pegEntry(s)?'On the PEG buy list (quality growth, PEG 1.0 or less)':'In the GARP buy zone (quality growth at a fair price)']);
     }
     if(lowU) return out('Hold','hold','Hold, but don’t add: priced ahead of its value',['Becomes a sell if it is still this expensive next quarter']);
     if(q!==null&&q<BANDS.reviewQuality) return out('Hold','hold','Hold and keep an eye on quality');
@@ -266,6 +319,6 @@
   }
   const ADVICE_ORDER={Sell:0,'Sell some':1,'Buy more':2,Review:3,Hold:4};
 
-  const api={holdingAdvice,ADVICE_ORDER,ENTRY,GARP,garpEntry,businessGrowthOf,entryWarnings,ttmRevenueGrowth,thesisMemo,BANDS,SIZING,convictionScore,targetWeight,sizeTier,shortlistEntry,entryEligible,planContribution,holdingStatus,buildSnapshot,shortlistPerformance,nextReviewDate};
+  const api={PEG,SELL,pegOf,pegEntry,valuationCheck,prevExpensive,holdingAdvice,ADVICE_ORDER,ENTRY,GARP,garpEntry,businessGrowthOf,entryWarnings,ttmRevenueGrowth,thesisMemo,BANDS,SIZING,convictionScore,targetWeight,sizeTier,shortlistEntry,entryEligible,planContribution,holdingStatus,buildSnapshot,shortlistPerformance,nextReviewDate};
   if(typeof module!=='undefined'&&module.exports) module.exports=api; else root.ReviewPolicy=api;
 })(typeof window!=='undefined'?window:globalThis);
