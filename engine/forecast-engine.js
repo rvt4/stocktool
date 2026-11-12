@@ -1,5 +1,5 @@
 'use strict';
-const { GROWTH_CALIBRATION, FCF_MEDIAN_BLEND, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, TERMINAL_GROWTH_CAP, isFinancialLike, sectorConfig, clamp, rate, median, avg } = require('./config');
+const { GROWTH_CALIBRATION, FCF_MEDIAN_BLEND, MARGIN_TREND, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, TERMINAL_GROWTH_CAP, isFinancialLike, sectorConfig, clamp, rate, median, avg } = require('./config');
 
 function cagr(a,b,n){ if(!(a>0)||!(b>0)||!(n>0))return null; return Math.pow(b/a,1/n)-1; }
 function yoySeries(years,field){const out=[];for(let i=1;i<years.length;i++){const a=Number(years[i-1]?.[field]),b=Number(years[i]?.[field]);if(a>0&&Number.isFinite(b))out.push(b/a-1);}return out;}
@@ -252,7 +252,7 @@ function buildGrowthForecast(stock,years,cfg){
   return {calibration:{anchor:GROWTH_CALIBRATION?.anchor??null,uncalibratedYears1to5:uncalibratedPath},longTermConsensus:{raw:ltgRaw,revenueEquivalent:ltgRevenue,weight:ltgWeight},backlogEvidence:{coverage:backlogCoverage,growth:backlogGrowth,signal:backlogSignal,weight:backlogWeight},growthCeiling:{years3to5:midCap,sources:strongSources.length},growthPath,y1,y2,matureGrowth,year5Growth:year5Adj,historicalAnchor,recentAnnual,recentQuarter,qualityHint,reinvestmentPersistence,analystWeight,analystWeightYear2,directAnalystYears:2,structuralStepUp,structuralStepDown,analystUsed:a1!=null||a2!=null,historyReliability,histDispersion,forecastReliabilityScore};
 }
 
-function buildMarginForecast(stock,years,cfg,growthInfo){
+function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
   // Margin forecasting is built from one coherent operating model. We forecast operating
   // profitability first, translate it into EBITDA / net income / CFO using the company's
   // own historical relationships, and derive FCF as CFO minus capex. This avoids three
@@ -445,7 +445,20 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
 
   const recentOpMedian=median(opSeries.filter(Number.isFinite).slice(-3));
   const longOpMedian=median(opSeries.filter(Number.isFinite).slice(-6));
-  const normalizedOperating=weightedAverage([[rawOp,.50],[recentOpMedian,.25],[longOpMedian,.25]])??rawOp;
+  // Build 75b: steady margin climb (see MARGIN_TREND in config).
+  const MT=MARGIN_TREND||{};
+  const opRecent4=opSeries.slice(-4), revRecent4=years.slice(-4).map(y=>finite(y?.revenue));
+  const steadyMarginClimb=!isFinancialLike(stock)&&opRecent4.length===4&&opRecent4.every(Number.isFinite)
+    &&opRecent4[3]>=(MT.minOpMargin??.03)&&opRecent4[3]-opRecent4[0]>=(MT.minRise??.03)
+    &&opRecent4.slice(1).every((m,i)=>m-opRecent4[i]>=-(MT.maxStepDrop??.015))
+    &&Math.max(...opRecent4.slice(1).map((m,i)=>m-opRecent4[i]))<=0.6*(opRecent4[3]-opRecent4[0])   // gradual, not one jump
+    &&revRecent4.every(r=>r>0)&&revRecent4.slice(1).every((r,i)=>r>=revRecent4[i]*0.98)
+    &&grossTrend>=-.003&&analystMarginDelta>=-.005&&(growthInfo.y1??growthInfo.year5Growth??0)>.03;
+  const marginTrendOn=steadyMarginClimb&&(opts.marginTrend??MT.enabled)!==false;
+  const cw=clamp(finite(MT.currentWeight)??.85,0,1);
+  const normalizedOperating=(marginTrendOn
+    ? weightedAverage([[currentOperating,cw],[rawOp,1-cw]])   // rawOp is itself a recent median; climbers start from today's margin
+    : weightedAverage([[rawOp,.50],[recentOpMedian,.25],[longOpMedian,.25]]))??rawOp;
   let targetOperating=clamp(normalizedOperating+leverageSignal*.75+analystMarginDelta*.18,-.10,opCeiling);
   targetOperating=clamp(weightedAverage([[targetOperating,.62],[currentOperating,.38]]),-.10,opCeiling);
 
@@ -1113,6 +1126,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
       }
       const preVol=pre.length>=3?median(pre.map(x=>Math.abs(x-median(pre)))):null;
       if(preVol!=null&&preVol>.04){durability-=.10;durabilityEvidence.push('volatile_margin_history');}
+      if(marginTrendOn){durability+=(MARGIN_TREND?.durabilityBoost??.35);durabilityEvidence.push('steady_margin_climb');}
       durability=clamp(durability,0,.8);
       reversionShare=baseReversion*(1-durability);
       if(pre.length<3){reversionShare=0;durabilityEvidence.push('no_comparable_scale_history');}
@@ -1275,6 +1289,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     oneTimeChargesLatest:oneTimeSeries.at(-1)??0,backlogCoverage:(()=>{const r=finite(years.at(-1)?.rpo),v=finite(years.at(-1)?.revenue);return r>0&&v>0?r/v:null;})(),
     marginEvidence,
     provenMarginRails:{net:netRail,operating:opRail,ebitda:ebitdaRail},
+    steadyMarginClimb,marginTrendOn,
     peakMarginDiscipline:{applied:peakMarginApplied,baseReversion,reversionShare,durability,durabilityEvidence,elevatedYears,preBoomBaseline,provenNet,delta:peakMarginDelta},
     crisisRecovery,analystMarginAnchor:{applied:analystAnchorApplied,weight:anchorW,revenueBaseMismatch,consensusBasis,sbcDeduction,analystNet1,analystNet2,provenNet,expectsImprovement:analystExpectsImprovement,delta:analystAnchorDelta},
     currentNormalizationAddback,targetNormalizationAddback,matureNormalizationAddback,
@@ -1283,10 +1298,10 @@ function buildMarginForecast(stock,years,cfg,growthInfo){
     driverTargetOperating,driverCoverage,driverModelReliable,driverResidual,leverageIntensity,residualOpexNow,residualDriverTargetOperating,residualDriverWeight
   };
 }
-function buildForecast(stock){
+function buildForecast(stock,opts={}){
   const years=stock.financials?.years||[], last=years.at(-1)||{}, cfg=sectorConfig(stock.sector);
   const growth=buildGrowthForecast(stock,years,cfg);
-  const margins=buildMarginForecast(stock,years,cfg,growth);
+  const margins=buildMarginForecast(stock,years,cfg,growth,opts);
 
   const shareGrowth=yoySeries(years.slice(-5),'sharesOutTTM').filter(x=>x>-.25&&x<.30);
   const recentShareGrowth=shareGrowth.at(-1), medianShareGrowth=median(shareGrowth)??0;
@@ -1387,13 +1402,17 @@ function buildForecast(stock){
     const toBasis=sbc=>{const x=Number.isFinite(sbc)&&sbc>0?sbc:0;return fcfMedian3-x*(1-ownerTax)*(1-sbcShareAddedBack(x));};
     // CFO is the balancing item (FCF + capex), so it moves by the same amount.
     for(const [key,sbcKey,cfoKey,w] of [['currentFCF','sbcNowForEarnings','currentCFO',W.start],['targetFCF','sbcTarget','targetCFO',W.year5],['matureTargetFCF','sbcMature','matureCFO',W.mature]]){
-      const wt=clamp(finite(w)??0,0,1);
+      const wt=clamp((finite(w)??0)*(margins.marginTrendOn?clamp(finite(MARGIN_TREND?.fcfBlendScale)??.4,0,1):1),0,1);
       if(wt>0&&Number.isFinite(margins[key])){
         const before=margins[key];margins[key]=clamp(before+wt*(toBasis(margins[sbcKey])-before),-.10,ceil);
         if(Number.isFinite(margins[cfoKey]))margins[cfoKey]+=margins[key]-before;
         fcfMedianBlendApplied=true;
       }
     }
+  }
+  // Build 75b: a steady margin climber's year-5 cash margin doesn't sit below today's.
+  if(margins.marginTrendOn&&Number.isFinite(margins.currentFCF)&&Number.isFinite(margins.targetFCF)&&margins.targetFCF<margins.currentFCF){
+    const d=margins.currentFCF-margins.targetFCF;margins.targetFCF=margins.currentFCF;if(Number.isFinite(margins.targetCFO))margins.targetCFO+=d;
   }
   for(let i=0;i<HORIZON_YEARS;i++){
     if(revenue!=null)revenue*=1+growth.growthPath[i]; dividend*=1+dividendGrowth;
@@ -1503,6 +1522,8 @@ function buildForecast(stock){
     shares:{recent:recentShareGrowth,normalized:medianShareGrowth,observed:observedDilution,model:dilutionRate,mature:matureDilutionRate,path:dilutionPath,ownerPath:ownerDilutionPath,sbcDilution,sbcNow,sbcNormalized,normalizedSbc,sbcImpliedDilution,buybackCapacity},
   };
   const forecastFlags=[...new Set(capitalAllocationFlags)];
+  if(margins.steadyMarginClimb)forecastFlags.push('steady_margin_climb');
+  if(margins.marginTrendOn)forecastFlags.push('steady_margin_climb_applied');
   if(growth.structuralStepUp)forecastFlags.push('structural_revenue_step_up_detected');
   if(growth.structuralStepDown)forecastFlags.push('structural_revenue_step_down_detected');
   if(margins.abnormalCapexCycle)forecastFlags.push('abnormal_capex_cycle_normalized');

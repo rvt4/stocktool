@@ -102,4 +102,10 @@ const GROWTH_CALIBRATION = { anchor: 0.065, keep: [1, 0.75, 0.55, 0.45, 0.40], k
 // weight; the yearly rows interpolate between them. One weight for all three keeps the path's shape (a rising
 // path still rises), it just sits closer to the company's record. All 0 = off.
 const FCF_MEDIAN_BLEND = { start: 0.40, year5: 0.40, mature: 0.40 };
-module.exports = { GROWTH_CALIBRATION, FCF_MEDIAN_BLEND, SECTOR, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, EXIT_MULTIPLE_PERSISTENCE, EXIT_PREMIUM_BAND, EXIT_ANCHOR_MAX_MULTIPLE, DCF_EXIT_TV_WEIGHT, INVESTOR_MARGIN_OF_SAFETY, MANUAL_CORPORATE_ACTIONS, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, MARKET_RETURN, isStructuralFinancial, isFinancialLike, sectorConfig, clamp, rate, median, avg };
+// Build 75b: steady margin climbers. When operating margin has risen 3+ pts over the last 3 years without a
+// real down year, revenue kept growing, gross margin isn't falling and analysts don't expect a drop, the
+// model stops pulling margins back toward the historical median (AMZN-type businesses). Detection always
+// runs (flag 'steady_margin_climb'); 'enabled' switches the effect. The scorecard re-runs flagged forecasts
+// with the effect off so the two can be compared on the same companies and dates.
+const MARGIN_TREND = { enabled: true, minRise: 0.03, maxStepDrop: 0.015, minOpMargin: 0.03, currentWeight: 0.85, durabilityBoost: 0.35, fcfBlendScale: 0.4 };
+module.exports = { GROWTH_CALIBRATION, FCF_MEDIAN_BLEND, MARGIN_TREND, SECTOR, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, EXIT_MULTIPLE_PERSISTENCE, EXIT_PREMIUM_BAND, EXIT_ANCHOR_MAX_MULTIPLE, DCF_EXIT_TV_WEIGHT, INVESTOR_MARGIN_OF_SAFETY, MANUAL_CORPORATE_ACTIONS, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, MARKET_RETURN, isStructuralFinancial, isFinancialLike, sectorConfig, clamp, rate, median, avg };
