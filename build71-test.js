@@ -41,8 +41,16 @@ const f=(tags)=>({facts:{'us-gaap':Object.fromEntries(Object.entries(tags).map((
 const crypto=f({Assets:[I('2024-12-31',100,'2025-02-15'),I('2025-09-30',1000,'2025-11-10')],CryptoAssetFairValueNoncurrent:[I('2025-09-30',800,'2025-11-10')]});
 assert.strictEqual(D.detectValuationExclusion(crypto,'6199').kind,'crypto_treasury');
 assert.strictEqual(D.detectValuationExclusion(crypto,'6199','2025-06-30'),null,'before the crypto pivot was filed, it is not a crypto treasury');
-const mreit=f({Assets:[I('2025-09-30',1000)],RealEstateInvestmentPropertyNet:[I('2025-09-30',20)]});
+const mreit=f({Assets:[I('2025-09-30',1000)],RealEstateInvestmentPropertyNet:[I('2025-09-30',20)],AvailableForSaleSecuritiesDebtSecurities:[I('2025-09-30',850)]});
 assert.strictEqual(D.detectValuationExclusion(mreit,'6798').kind,'mortgage_reit');
+// Build 71b: a REIT with untagged property but no securities/loan book is NOT a mortgage REIT (towers, timber, casinos).
+const tower=f({Assets:[I('2025-09-30',1000)],IntangibleAssetsNetExcludingGoodwill:[I('2025-09-30',400)]});
+assert.strictEqual(D.detectValuationExclusion(tower,'6798'),null);
+// Broker holding customer crypto (HOOD) is not a crypto treasury; neither is crypto offset by a safeguarding liability.
+const broker=f({Assets:[I('2025-09-30',1000)],CryptoAssetFairValueCurrent:[I('2025-09-30',600)]});
+assert.strictEqual(D.detectValuationExclusion(broker,'6211'),null);
+const custodian=f({Assets:[I('2025-09-30',1000)],CryptoAssetFairValueCurrent:[I('2025-09-30',600)],SafeguardingLiabilityCryptoAsset:[I('2025-09-30',590)]});
+assert.strictEqual(D.detectValuationExclusion(custodian,'7372'),null);
 const equityReit=f({Assets:[I('2025-09-30',1000)],RealEstateInvestmentPropertyNet:[I('2025-09-30',780)]});
 assert.strictEqual(D.detectValuationExclusion(equityReit,'6798'),null);
 assert.strictEqual(D.detectValuationExclusion(mreit,'3711'),null,'only REITs can be mortgage REITs');
@@ -54,6 +62,7 @@ const mk=()=>[row('OK'),row('UNSUP',{modelSupport:'unsupported'}),row('CRYPTO',{
 const live=mk();R.applyModelDRanking(live,{rankField:'r',universeSizeField:null,reliability:true});
 const L=Object.fromEntries(live.map(x=>[x.ticker,x]));
 assert(L.OK.r&&!L.UNSUP.rankEligible&&!L.CRYPTO.rankEligible,'unsupported / excluded stocks must not be ranked live');
+assert(L.UNSUP.r===null&&L.CRYPTO.r===null,'and they get no rank number (71b)');
 const legacy=mk();R.applyModelDRanking(legacy,{rankField:'r',universeSizeField:null});
 assert(legacy.find(x=>x.ticker==='UNSUP').rankEligible,'legacy rank unchanged');
 
