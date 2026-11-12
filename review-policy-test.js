@@ -1,6 +1,7 @@
 'use strict';
 const assert=require('assert');
 const RP=require('./review-policy');
+RP.SELL.rule='current'; // these tests cover the 'current' sell rule; Build 76 made 'bothStaged' live
 const st=(o)=>({ticker:'X',currentPrice:100,underwrittenCAGR:.12,qualityScore:85,rating:'Hold',requiredReturnBuyPrice:90,...o});
 assert.strictEqual(RP.holdingStatus(st({})).status,'Hold');
 assert.strictEqual(RP.holdingStatus(st({overallRank:5})).status,'Add candidate','top-20, above hurdle, quality 75+');

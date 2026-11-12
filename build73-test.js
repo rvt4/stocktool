@@ -2,6 +2,7 @@
 // Build 73: per-holding advice (Buy more / Hold / Sell some / Sell / Review) shown on the dashboard.
 const assert=require('assert');
 const RP=require('./review-policy');
+RP.SELL.rule='current'; // these tests cover the 'current' sell rule; Build 76 made 'bothStaged' live
 const base={ticker:'X',rating:'Watch',overallRank:10,underwrittenCAGR:.12,qualityScore:85,revenueGrowthTTM:.15,revenueCAGR3:.15};
 const s=o=>({...base,...o});
 const A=(st,prev,w)=>RP.holdingAdvice(st,prev||null,{weight:w===undefined?0.05:w});

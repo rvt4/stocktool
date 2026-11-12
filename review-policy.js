@@ -47,7 +47,7 @@
   //   qualityOnly : never sell on valuation; only quality < 70 sells
   //   peg         : expensive = PEG above 2 (falls back to the return line when there is no PEG)
   //   staged      : current line, but sell half at the first low reading and the rest at the second
-  const SELL={rule:'current',relativeGap:0.03};
+  const SELL={rule:'bothStaged',relativeGap:0.03};   // Build 76: CBS won the Build 75 backtest (after tax +3.4 pts/yr vs C, both periods)
   const BUY_TIERS=['Buy','Strong Buy','Exceptional Buy'];
   const num=v=>{if(v===null||v===undefined||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null;};
   const priceOf=s=>num(s?.price??s?.currentPrice??s?.stockPrice);
@@ -335,9 +335,10 @@
     const uLow=u!==null&&vc.line!==undefined&&u<vc.line;
     const pegCheap=pg&&pg.peg!==null&&pg.peg<=PEG.buyMax;
     const why=[];
-    if(u!==null) why.push(u>=SIZING.hurdle?`Long-term model: ${p1(u)} a year expected, above the ${p0(SIZING.hurdle)} hurdle`
-      :!uLow?`Long-term model: ${p1(u)} a year expected; fair, under the ${p0(SIZING.hurdle)} hurdle`
-      :`Long-term model: ${p1(u)} a year expected; the price is ahead of the value (floor ${p1(vc.line)})`+(twoLow?`, two reviews in a row`:''));
+    const base=num(s.expectedCAGR??s.expectedReturn), both=base!==null&&Math.abs(base-u)>=0.005?`base case ${p1(base)}, cautious ${p1(u)}`:`${p1(base??u)}`;
+    if(u!==null) why.push(u>=SIZING.hurdle?`Long-term model: ${both} a year; the cautious number clears the ${p0(SIZING.hurdle)} hurdle`
+      :!uLow?`Long-term model: ${both} a year; fair, under the ${p0(SIZING.hurdle)} hurdle`
+      :`Long-term model: ${both} a year; the cautious number is under the ${p1(vc.line)} floor`+(twoLow?`, two reviews in a row`:''));
     if(pg&&pg.peg!==null) why.push(`5-yr PEG ${pg.peg.toFixed(2)}: P/E ${pg.pe.toFixed(1)} on ${p0(pg.growth)} a year growth`+(pg.source==='model5y'?(pg.marginCredit>0.0005?` (revenue per share + ${(pg.marginCredit*100).toFixed(1)} pts margin gains analysts expect)`:' (revenue per share, next 5 years)'):pg.source==='analyst1y'?' (next year’s earnings, analysts)':' (trailing earnings)')+' — '+(pg.peg<=1.0?'cheap':pg.peg<=PEG.buyMax?'reasonable':pg.peg<=PEG.sellAbove?'full price':'pricey')+' for its growth');
     else if(pg&&pg.peg===null) why.push('No PEG: no growth expected');
     if(uLow&&pegCheap) why.push(vc.pegLine!==undefined?'The price checks disagree (cheap on PEG, rich on the long-term model), so no sell on price':'The price checks disagree: cheap on PEG, rich on the long-term model');

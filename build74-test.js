@@ -2,6 +2,7 @@
 // Build 74: null-safe quality inputs, PEG list, sell-rule variants, after-tax backtest accounting.
 const assert=require('assert');
 const RP=require('./review-policy');
+RP.SELL.rule='current'; // these tests cover the 'current' sell rule; Build 76 made 'bothStaged' live
 const {computeQuality}=require('./engine/quality-engine');
 const {earningsProfile}=require('./engine/ranking-engine');
 const L=require('./owner-strategy-lab');

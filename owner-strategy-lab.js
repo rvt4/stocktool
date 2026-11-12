@@ -249,6 +249,28 @@ function rankBucketOutcomes(snapshotOutput){
   return out;
 }
 
+// Build 76: are the model's return numbers too low or too high? Bucket every modeled stock-date by its
+// predicted CAGR (base case and cautious/underwritten) and report what it actually returned afterwards.
+function returnCalibration(snapshotOutput){
+  const buckets=[['below 0%',-Infinity,0],['0-4%',0,.04],['4-7%',.04,.07],['7-10%',.07,.10],['10-13%',.10,.13],['13%+',.13,Infinity]];
+  const all=[];for(const snap of snapshotOutput||[])for(const r of snap.rows||[])all.push(r);
+  const out={readMe:'predicted = the model\'s expected CAGR at the time; realized = actual total-return CAGR over the next N years; spy = SPY over the same windows. realized - predicted > 0 means the model was too LOW.'};
+  for(const [label,field] of [['base',r=>finite(r.expectedCAGR)],['cautious',r=>finite(r.underwrittenCAGR)]]){
+    out[label]={};
+    for(const n of [3,5]){
+      const real=`realized${n}YTotalReturnCAGR`,ex=`excess${n}YTotalReturnCAGR`;
+      out[label][`${n}Y`]=buckets.map(([b,lo,hi])=>{
+        const v=all.filter(r=>{const p=field(r);return p!==null&&p>=lo&&p<hi&&finite(r[real])!==null;});
+        const pr=median(v.map(field)),re=median(v.map(r=>r[real])),sp=median(v.map(r=>finite(r[ex])!==null?r[real]-r[ex]:null).filter(x=>x!==null));
+        return {bucket:b,n:v.length,medianPredicted:pr,medianRealized:re,medianSpy:sp,realizedMinusPredicted:pr!==null&&re!==null?re-pr:null};
+      });
+      const v=all.filter(r=>field(r)!==null&&finite(r[real])!==null);
+      out[label][`${n}Y overall`]={n:v.length,medianPredicted:median(v.map(field)),medianRealized:median(v.map(r=>r[real]))};
+    }
+  }
+  return out;
+}
+
 // Build 61: where did the returns come from? For each arm: every stock's contribution (start weight x
 // quarterly return, summed over quarters), its contribution versus SPY (what it added over just holding
 // SPY with that money), and the strategy's return if its biggest winners had only earned SPY.
@@ -379,6 +401,7 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
     },
     entryFunnel:entryFunnel(snapshotOutput),
     rankBuckets:rankBucketOutcomes(snapshotOutput),
+    returnCalibration:returnCalibration(snapshotOutput),
     growthBuckets:growthBucketOutcomes(snapshotOutput),
     benchmarks:{equalWeightUniverse:compact(universe)},
     arms:arms.map(compact),
@@ -386,4 +409,4 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
   };
 }
 
-module.exports={TAX,afterTaxSummary,growthRows,simulateGrowthSleeve,blendArms,growthBucketOutcomes,attribution,holdingsCsvRows,entryFunnel,liveRankedRows,shortlistEligible,simulateOwnerStrategy,simulateMechanicalTopN,simulateUniverseEqualWeight,rankBucketOutcomes,buildOwnerStrategyLab};
+module.exports={returnCalibration,TAX,afterTaxSummary,growthRows,simulateGrowthSleeve,blendArms,growthBucketOutcomes,attribution,holdingsCsvRows,entryFunnel,liveRankedRows,shortlistEligible,simulateOwnerStrategy,simulateMechanicalTopN,simulateUniverseEqualWeight,rankBucketOutcomes,buildOwnerStrategyLab};

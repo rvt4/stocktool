@@ -569,7 +569,7 @@ function renderScreener(){
  if(balanced)arr=sectorBalanced(arr);
  $('count').textContent=sort==='garp'?`${arr.length} GARP stocks: quality 75+, revenue growing 10%+ a year, underwritten return 7%+, any model rank, best return first. 9%+ = buy zone. Being tested in the backtest (arm CG).`:sort==='candidates'?`${arr.length} buy candidates: top-20 model rank, underwritten return 11%+, quality 75+ (the backtested rule, strategy C). Few or none is normal when the market looks fully priced. Warnings are shown on the cards.`:`${arr.length} distinct companies of ${stocks.length} ticker listings · showing first ${Math.min(200,arr.length)} · Research scores are heuristic, not verified valuations${balanced?' · max 3 per sector in each 15 (pick a sector to see all of it)':''}`;
  const top=arr.slice(0,200);
- const returnSummary=s=>present(s.underwrittenCAGR)?pct(Number(s.underwrittenCAGR)):'—';
+ const returnSummary=s=>{const b=present(s.expectedCAGR??s.expectedReturn)?Number(s.expectedCAGR??s.expectedReturn):null,c=present(s.underwrittenCAGR)?Number(s.underwrittenCAGR):null;if(b===null&&c===null)return '—';return b!==null&&c!==null&&Math.abs(b-c)>=.005?`${pct(b)} <span class="muted small">(cautious ${pct(c)})</span>`:pct(b??c);};
  const baseSummary=s=>present(s.expectedReturn)?pct(Number(s.expectedReturn)):'—';
  const head=document.querySelector('.screen-table thead tr');
  if(sort==='growth'){
@@ -707,7 +707,7 @@ function renderDashboard(){
   try{const A={...JSON.parse(JSON.stringify(sp.assumptions||{})),price:Number.isFinite(r.px)?r.px:sp.assumptions?.price};calc=calculate(A);const mr=calc?methodResults(A,calc):null;u=mr&&Number.isFinite(mr.cagr)?mr.cagr:calc?.cagr;
    const y=calc?.years||[],e1=y[0]?.eps,e6=y[5]?.eps;if(e1>0&&e6>0&&Number.isFinite(r.px)){const g=Math.pow(e6/e1,1/5)-1;if(g>0)peg=(r.px/e1)/(g*100);}}catch(e){}
   if(!Number.isFinite(u))return `<div class="yourview"><span class="muted small">Your ${esc(sp.scenario)} projection couldn’t be recalculated; open it to re-save.</span></div>`;
-  const mv=r.s?(r.s.underwrittenCAGR??r.s.expectedCAGR):null,m=mv==null?NaN:Number(mv),d=Number.isFinite(m)?u-m:null;
+  const mv=r.s?(r.s.expectedCAGR??r.s.expectedReturn??r.s.underwrittenCAGR):null,m=mv==null?NaN:Number(mv),d=Number.isFinite(m)?u-m:null;
   const act=r.advice.action;
   const note=u>=0.11&&/Sell/.test(act)?'Your projection sees a buy-level return while the model says sell. Compare the growth and margin assumptions.'
    :u<0.065&&/Buy|Hold/.test(act)?'Your projection sees it as expensive; the model is more forgiving.'
@@ -721,7 +721,7 @@ function renderDashboard(){
   return `<article class="hcard ${ACTION_CLASS[a.action]||''}">
    <div class="hcard-top"><div><div class="hcard-ticker">${esc(r.t)}</div><div class="hcard-name">${esc(s?.name||'')}</div></div><span class="action ${ACTION_CLASS[a.action]||''}">${esc(a.action)}</span></div>
    <p class="hcard-headline">${esc(a.headline)}</p>
-   <div class="hcard-stats"><div><small>Value</small><b>${money(r.value)}</b></div><div><small>Gain</small><b class="${g!==null&&g>=0?'positive':'negative'}">${g===null?'—':(g>=0?'+':'')+pct(g)}</b></div><div><small>5Y PEG</small><b>${(()=>{const p=RP.pegOf(s);return p&&p.peg!==null?p.peg.toFixed(2):'—';})()}</b></div><div><small>Return</small><b>${u===null||u===undefined?'—':pct(Number(u))}</b></div><div><small>Quality</small><b>${esc(s?.qualityScore??'—')}</b></div></div>
+   <div class="hcard-stats"><div><small>Value</small><b>${money(r.value)}</b></div><div><small>Gain</small><b class="${g!==null&&g>=0?'positive':'negative'}">${g===null?'—':(g>=0?'+':'')+pct(g)}</b></div><div><small>5Y PEG</small><b>${(()=>{const p=RP.pegOf(s);return p&&p.peg!==null?p.peg.toFixed(2):'—';})()}</b></div><div><small>Return</small><b>${(()=>{const b=s?(s.expectedCAGR??s.expectedReturn):null;return b==null?(u==null?'—':pct(Number(u))):pct(Number(b));})()}</b>${s&&s.underwrittenCAGR!=null&&(s.expectedCAGR??s.expectedReturn)!=null&&Math.abs(s.underwrittenCAGR-(s.expectedCAGR??s.expectedReturn))>=.005?`<em class="cautious">cautious ${pct(Number(s.underwrittenCAGR))}</em>`:''}</div><div><small>Quality</small><b>${esc(s?.qualityScore??'—')}</b></div></div>
    ${bar(r.weight,a.target)}
    ${yourView(r)}
    ${a.reasons.length?`<details${a.action!=='Hold'?' open':''}><summary>Why</summary><ul>${a.reasons.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>`:''}

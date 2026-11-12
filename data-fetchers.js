@@ -505,8 +505,22 @@ function parseAnnualFinancials(facts, maxYears = 10) {
   pullAnnual('PaymentsToAcquireBusinessesGross', 'acquisitions');
   pullAnnual('InventoryNet', 'inventory');
   pullAnnual('CostOfGoodsAndServicesSold', 'cogs');
-  pullAnnual('DepreciationDepletionAndAmortization', 'da');
-  pullAnnual('DepreciationAmortizationAndAccretionNet', 'da'); // fallback tag
+  // Build 77: D&A comes under many tags; the old code knew two (and the second overwrote the first), so
+  // ~40% of companies had no EBITDA. Collect each candidate separately, then pick per year by priority;
+  // depreciation + intangible amortization are summed when only those pieces are filed.
+  const DA_TAGS=['DepreciationDepletionAndAmortization','DepreciationAndAmortization','DepreciationAmortizationAndAccretionNet',
+    'DepreciationAmortizationAndOther','DepreciationDepletionAndAmortizationPropertyPlantAndEquipment','OtherDepreciationAndAmortization'];
+  DA_TAGS.forEach((tag,i)=>pullAnnual(tag,`_da${i}`));
+  pullAnnual('Depreciation','_dep');
+  pullAnnual('DepreciationNonproduction','_dep2');
+  pullAnnual('AmortizationOfIntangibleAssets','_amort');
+  for(const y of Object.values(byYear)){
+    let v=null,src=null;
+    for(let i=0;i<DA_TAGS.length&&v===null;i++){const x=Number(y[`_da${i}`]);if(Number.isFinite(x)&&x>=0){v=x;src=DA_TAGS[i];}}
+    if(v===null){const d=Number(y._dep??y._dep2);if(Number.isFinite(d)&&d>=0){const a=Number(y._amort);v=d+(Number.isFinite(a)&&a>0?a:0);src='Depreciation+Amortization';}}
+    if(v!==null){y.da=v;y.daSource=src;}
+    for(const k of Object.keys(y))if(/^_da\d+(Source)?$|^_dep2?(Source)?$|^_amort(Source)?$/.test(k))delete y[k];
+  }
 
   // SEC Company Facts normally reports share counts as raw shares, but a small
   // number of filings expose values scaled in thousands or millions. Reconcile

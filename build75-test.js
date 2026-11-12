@@ -56,7 +56,7 @@ const a2=RP.holdingAdvice(ex,{u:.04,peg:1},{weight:.12,sellRule:'both'});
 assert.strictEqual(a2.action,'Hold');assert(a2.reasons.some(r=>/disagree/.test(r)));assert(a2.reasons.some(r=>/^5-yr PEG 1\.00/.test(r)));
 const a3=RP.holdingAdvice({...ex,price:300},null,{weight:.05,sellRule:'bothStaged'});
 assert.strictEqual(a3.action,'Sell some');assert(/half/i.test(a3.headline));
-assert.strictEqual(RP.SELL.rule,'current','live sell rule waits for the backtest');
+assert.strictEqual(RP.SELL.rule,'bothStaged','Build 76: CBS won the backtest and is live');
 
 // 5) Backtest: entry quality is remembered; a quality drop after buying sells; both-rule holds through disagreement.
 const days=[];for(let d=new Date('2016-01-01');d<=new Date('2018-03-15');d.setUTCDate(d.getUTCDate()+1))days.push(d.toISOString().slice(0,10));
@@ -89,7 +89,7 @@ assert(RP.holdingAdvice(mc,null,{weight:.12}).reasons.some(r=>/margin gains anal
       operatingCashFlow:R*(n+.07),capex:R*.04,sbc:R*.02,sbcIntensity:.02,sharesOutTTM:1e8,roic:.2,totalDebt:3e8,cash:4e8});if(i<5)R*=1.12;}
     return {ticker:'X',sector,price:{current:R*nets[5]/1e8*30},financials:{years,dataQuality:{}},valuation:{},analystEstimates:null};};
   const climb=co([.02,.03,.05,.07,.09,.11],'Consumer Discretionary');
-  const on=buildForecast(climb),off=buildForecast(climb,{marginTrend:false});
+  const on=buildForecast(climb,{marginTrend:true}),off=buildForecast(climb,{marginTrend:false}); // Build 76: rule off by default; tested explicitly
   assert(on.forecastFlags.includes('steady_margin_climb_applied')&&off.forecastFlags.includes('steady_margin_climb')&&!off.forecastFlags.includes('steady_margin_climb_applied'));
   assert(on.rows[4].netMargin>off.rows[4].netMargin+0.005,'climber keeps more of its margin by year 5');
   assert(on.rows[4].netMargin<on.rows[0].netMargin+0.005,'but the rule holds margins, it does not extrapolate the climb');
