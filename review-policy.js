@@ -216,6 +216,56 @@
     return new Date(Date.parse(snap.takenAt)+BANDS.reviewDays*864e5).toISOString().slice(0,10);
   }
 
-  const api={ENTRY,GARP,garpEntry,businessGrowthOf,entryWarnings,ttmRevenueGrowth,thesisMemo,BANDS,SIZING,convictionScore,targetWeight,sizeTier,shortlistEntry,entryEligible,planContribution,holdingStatus,buildSnapshot,shortlistPerformance,nextReviewDate};
+  // Build 73: one plain-English call per holding: Buy more / Hold / Sell some / Sell / Review, with the reasons.
+  // Built on the backtested rules (quality and return bands, target sizes, the C and GARP buy rules).
+  //   Sell      : quality under 70 AND expected return under 6.5% (both the business and the price fail), or
+  //               expected return under 6.5% at two reviews in a row on a business below quality 80
+  //   Sell some : position over 20% of the portfolio (trim to ~15%); quality under 70 alone (the backtest sells
+  //               these; the dashboard takes some off and asks for a thesis check); expensive two reviews running
+  //               on a great business (keep a core); or expensive and above its target size
+  //   Buy more  : passes the C or GARP buy rule, more than 1 pt under its target size, no severe estimate cut
+  //   Review    : not in the data, or the model cannot value it
+  //   Hold      : everything else (a lower rank alone is never a reason to sell)
+  function holdingAdvice(s,prev,ctx={}){
+    const weight=num(ctx.weight);
+    const p1=x=>(x*100).toFixed(1)+'%', p0=x=>Math.round(x*100)+'%';
+    if(!s) return {action:'Review',tone:'review',headline:'Not in tonight’s data; check the ticker',reasons:[],weight,target:null};
+    const u=returnOf(s), q=num(s.qualityScore), g=businessGrowthOf(s), target=targetWeight(s);
+    const rev=s.estimateRevision||null, warn=entryWarnings(s);
+    const unvaluable=s.rating==='Unrated'||s.modelSupport==='unsupported';
+    const prevU=num(prev&&prev.u);
+    const lowQ=q!==null&&q<BANDS.sellQuality, lowU=u!==null&&u<BANDS.lowReturn, twoLow=lowU&&prevU!==null&&prevU<BANDS.lowReturn;
+    const why=[];
+    if(u!==null) why.push(u>=SIZING.hurdle?`Expected return ${p1(u)} a year, above the ${p0(SIZING.hurdle)} hurdle`
+      :!lowU?`Expected return ${p1(u)} a year: fair, under the ${p0(SIZING.hurdle)} hurdle`
+      :`Expected return ${p1(u)} a year: the price has run ahead of the value (floor ${p1(BANDS.lowReturn)})`+(twoLow?`, for two reviews in a row`:''));
+    if(q!==null) why.push(q>=85?`Quality ${q}: top tier`:q>=BANDS.reviewQuality?`Quality ${q}: good`:!lowQ?`Quality ${q}: below the ${BANDS.reviewQuality} comfort level`:`Quality ${q}: below the ${BANDS.sellQuality} line where the thesis is in doubt`);
+    if(g!==null) why.push(g>=0.10?`Revenue growing ${p0(g)} a year`:g>=0.03?`Revenue growing a modest ${p0(g)} a year`:g>=0?`Revenue roughly flat`:`Revenue shrinking ${p0(-g)} a year`);
+    if(rev&&rev.level) why.push(rev.label);
+    if(warn.includes('split')) why.push('Valuation methods disagree, so treat the fair value as rough');
+    if(warn.includes('cycle_peak')) why.push('Cyclical business with profits near a peak');
+    const out=(action,tone,headline,lead=[])=>{
+      const reasons=[...lead,...why].slice(0,6);
+      return {action,tone,headline,reasons,weight,target};
+    };
+    if(unvaluable) return out('Review','review','The model can’t value this one; judge it on your own research',[s.modelSupportReason||'No reliable valuation']);
+    if(lowQ&&lowU) return out('Sell','sell','Sell: both the business quality and the price have turned against it');
+    if(twoLow&&!(q!==null&&q>=80)) return out('Sell','sell','Sell: the price has stayed well ahead of the value for two reviews');
+    if(weight!==null&&weight>SIZING.trimAbove) return out('Sell some','trim',`Sell some: trim from ${p1(weight)} toward about ${p0(SIZING.trimTo)} of the portfolio`,[`One position this big can swing the whole portfolio (limit ${p0(SIZING.trimAbove)})`]);
+    if(lowQ) return out('Sell some','trim','Sell some and re-check the thesis: quality has slipped below 70');
+    if(twoLow) return out('Sell some','trim','Sell some: great business, but expensive two reviews running; keep a core position');
+    if(lowU&&weight!==null&&target!==null&&weight>target+0.01) return out('Sell some','trim',`Sell some: expensive now; trim toward its ${p1(target)} target`,['If it is still this expensive next quarter, sell the rest']);
+    const buyable=shortlistEntry(s)||garpEntry(s);
+    if(buyable&&weight!==null&&target!==null&&weight<target-0.01){
+      if(rev&&rev.level==='severe') return out('Hold','hold','Hold: would be a buy, but analysts just cut estimates sharply; wait a quarter');
+      return out('Buy more','buy',`Buy more: up to about ${p1(target)} of the portfolio (now ${p1(weight)})`,[shortlistEntry(s)?'Passes the backtested buy rule':'In the GARP buy zone (quality growth at a fair price)']);
+    }
+    if(lowU) return out('Hold','hold','Hold, but don’t add: priced ahead of its value',['Becomes a sell if it is still this expensive next quarter']);
+    if(q!==null&&q<BANDS.reviewQuality) return out('Hold','hold','Hold and keep an eye on quality');
+    return out('Hold','hold',buyable?'Hold: already at its target size':q!==null&&q>=80&&u!==null&&u>=0.09?'Hold: strong business at a fair price':'Hold: nothing here calls for a change');
+  }
+  const ADVICE_ORDER={Sell:0,'Sell some':1,'Buy more':2,Review:3,Hold:4};
+
+  const api={holdingAdvice,ADVICE_ORDER,ENTRY,GARP,garpEntry,businessGrowthOf,entryWarnings,ttmRevenueGrowth,thesisMemo,BANDS,SIZING,convictionScore,targetWeight,sizeTier,shortlistEntry,entryEligible,planContribution,holdingStatus,buildSnapshot,shortlistPerformance,nextReviewDate};
   if(typeof module!=='undefined'&&module.exports) module.exports=api; else root.ReviewPolicy=api;
 })(typeof window!=='undefined'?window:globalThis);
