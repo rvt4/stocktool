@@ -96,7 +96,7 @@ function ratingWhy(s){
 }
 function methodResults(a,r){
  if(!r||!a?.methods?.list?.length)return null;
- const price=a.price,ys=r.years,y10=ys[9],divs=r.value-r.exit;
+ const price=a.price,ys=r.years,y10=ys[9],cashPS=Number.isFinite(r.cashBuildPS)?r.cashBuildPS:0,divs=r.value-r.exit-cashPS;
  // Screener basis (Build 63): SBC is expensed in both net margin and FCF, and the share path excludes
  // employee-grant dilution, so it is counted exactly once. DCF discounts aggregate FCF over today's share count.
  const sh10=y10.shares,fcfAgg=ys.map(y=>y.revenue*1000*y.fcfMargin/100),fcfps=ys.map((y,i)=>fcfAgg[i]/y.shares);
@@ -105,11 +105,11 @@ function methodResults(a,r){
  const shares0=valid(r.startShares,ys[0].shares),fcfMethod=a.methods.list.find(m=>m.kind==='fcf');
  const rows=a.methods.list.map(m=>{
   let outcome=NaN,fair=NaN,note='';
-  if(m.kind==='eps'){const pe10=r.exit/y10.eps;outcome=y10.eps>0&&pe10>0?(y10.eps+sbcAdd)*pe10+divs:NaN;note=sbcAdd>0.005?`Year-10 EPS × P/E, + ${money(sbcAdd)}/sh SBC add-back (dilution already in share count)`:'Year-10 EPS × P/E (table)';}
-  else if(m.kind==='fcf'){outcome=fcfps[9]>0&&m.mult>0?fcfps[9]*m.mult+divs:NaN;note='Year-10 FCF/share × P/FCF';}
+  if(m.kind==='eps'){const pe10=r.exit/y10.eps;outcome=y10.eps>0&&pe10>0?(y10.eps+sbcAdd)*pe10+divs+cashPS:NaN;note=(sbcAdd>0.005?`Year-10 EPS × P/E, + ${money(sbcAdd)}/sh SBC add-back (dilution already in share count)`:'Year-10 EPS × P/E (table)')+(Math.abs(cashPS)>0.005?`, ${cashPS>=0?'+':'−'} ${money(Math.abs(cashPS))}/sh cash built`:'');}
+  else if(m.kind==='fcf'){outcome=fcfps[9]>0&&m.mult>0?fcfps[9]*m.mult+divs+cashPS:NaN;note='Year-10 FCF/share × P/FCF + cash built';}
   else if(m.kind==='ebitda'){
    const eb=a.path?.ebitda,dt=a.path?.debt;
-   if(Array.isArray(eb)&&Array.isArray(dt)&&m.mult>0){const ebitda=ys[9].revenue*1000*eb[9]/100;outcome=(ebitda*m.mult-dt[9]*1000)/sh10+divs;}
+   if(Array.isArray(eb)&&Array.isArray(dt)&&m.mult>0){const ebitda=ys[9].revenue*1000*eb[9]/100,nd10=Number.isFinite(ys[9].netDebt)?ys[9].netDebt:dt[9];outcome=(ebitda*m.mult-nd10*1000)/sh10+divs;}
    note='(Year-10 EBITDA × EV/EBITDA − net debt) / shares';
   }
   else if(m.kind==='dcf'){
@@ -286,9 +286,25 @@ function calculatePath(a){
   const px=eps>0?eps*pe:NaN,val=px+divs;
   years.push({year:(Number.isFinite(a.firstYear)?a.firstYear:new Date().getFullYear()+1)+i-1,revenue:r,ni,eps,shares:sh,ownerFCF:r*1000*fm/100,growth:g,netMargin:nm,fcfMargin:fm,sbc:sbcI,dilution:d,dividend:dps,pe,price:px,cagrToDate:val>0?Math.pow(val/price,1/i)-1:NaN});
  }
- const exit=years.at(-1).price,value=exit+divs;
+ // Build 77b: net debt follows YOUR cash flows. Unless you typed your own net-debt numbers, each year it falls
+ // by owner FCF minus dividends paid minus buybacks (shares retired x that year's price). The cash built over the
+ // horizon belongs to shareholders, so it's added to the exit value (EV/EBITDA uses the year-10 net debt).
+ let ndPath=null;
+ if(Array.isArray(path.debt)&&path.debt.length>=10&&path.debt.slice(0,10).every(Number.isFinite)){
+  if(!a.shapes||a.shapes.debt==='model'||!a.shapes.debt){
+   ndPath=[path.debt[0]];
+   for(let i=1;i<10;i++){const y=years[i],p0=years[i-1];
+    const bb=Math.max(0,p0.shares-y.shares)*(Number.isFinite(y.price)?y.price:0);
+    const flow=(Number.isFinite(y.ownerFCF)?y.ownerFCF:0)-y.dividend*y.shares-bb;   // $M
+    ndPath.push(ndPath[i-1]-flow/1000);}                                               // $B
+   path.debt=ndPath.slice();
+  } else ndPath=path.debt.slice(0,10);
+  ndPath.forEach((v,i)=>{years[i].netDebt=v;});
+ }
+ const cashBuildPS=ndPath&&years[9].shares>0?(ndPath[0]-ndPath[9])*1000/years[9].shares:0;
+ const exit=years.at(-1).price,value=exit+divs+(Number.isFinite(exit)?cashBuildPS:0);
  const cagr=value>0?Math.pow(value/price,1/10)-1:NaN,hurdle=value/Math.pow(1+HURDLE,10);
- return {years,exit,cagr,hurdle,buy:hurdle*(1-mos/100),value,startShares:shares};
+ return {years,exit,cagr,hurdle,buy:hurdle*(1-mos/100),value,startShares:shares,cashBuildPS,netDebtPath:ndPath};
 }
 function hideTickerMatches(){$('tickerMatches').hidden=true;$('tickerSearch').setAttribute('aria-expanded','false')}
 function renderTickerMatches(){const q=$('tickerSearch').value.trim().toLowerCase(),matches=stocks.filter(s=>!q||s.ticker.toLowerCase().includes(q)||(s.name||'').toLowerCase().includes(q)).sort((a,b)=>{const score=s=>s.ticker.toLowerCase()===q?0:s.ticker.toLowerCase().startsWith(q)?1:(s.name||'').toLowerCase().startsWith(q)?2:3;return score(a)-score(b)||a.ticker.localeCompare(b.ticker)}).slice(0,12);const box=$('tickerMatches');box.innerHTML=matches.map(s=>`<button type="button" role="option" data-ticker="${esc(s.ticker)}"><strong>${esc(s.ticker)}</strong> <span>${esc(s.name||'')}</span></button>`).join('')||'<p class="muted small">No matching companies</p>';box.hidden=false;$('tickerSearch').setAttribute('aria-expanded','true');box.querySelectorAll('[data-ticker]').forEach(b=>b.onclick=()=>choose(b.dataset.ticker))}

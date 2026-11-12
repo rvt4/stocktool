@@ -50,4 +50,23 @@ const run=s=>{const f=buildForecast(s),q=computeQuality(s,f),v=valuate(s,f,q);re
   assert(gain.rows[4].gaapNetMargin<=clean.rows[4].gaapNetMargin+.03,'one-off gain mostly gone by year 5');
   assert(!clean.forecastFlags.includes('net_margin_capped_by_operations'),'a normal company is untouched');
 }
+
+// 4) Build 77b (AMD-shaped): analysts expect a big margin step-up. The P&L must stay coherent — operating and
+// EBITDA margins rise with the analyst-led earnings, GAAP net never sits above what operations support —
+// and year-1 cash margin starts from the latest reported, not a blend with older years.
+{
+  const years=[];let R=20e9;const sh=1.6e9,hist=[[.02,.04,.03],[.05,.08,.06],[.08,.10,.10],[.10,.12,.14],[.12,.13,.16]]; // [net, op, ownerFCF]
+  hist.forEach(([n,o,f],i)=>{R*=1.15;years.push({year:2021+i,revenue:R,grossProfit:R*.5,operatingIncome:R*o,opMargin:o,netIncome:R*n,ebitda:R*(o+.08),da:R*.08,
+    fcf:R*(f+.04),fcfSBCAdjusted:R*f,cfo:R*(f+.07),operatingCashFlow:R*(f+.07),capex:R*.03,sbc:R*.04,sbcIntensity:.04,sharesOutTTM:sh,roic:.12,totalDebt:2e9,cash:5e9,taxRate:.15,intangibleAmortization:R*.06});});
+  const r1=R*1.5,r2=r1*1.8;
+  const s={ticker:'AMDX',sector:'Technology',financials:{years,dataQuality:{}},price:{current:200},valuation:{dividendYield:0},growthYear1:.5,
+    analystEstimates:{numAnalysts:40,revenueCurrentYear:r1,revenueNextYear:r2,revenueGrowthCurrentYear:.5,revenueGrowthNextYear:.8,epsCurrentYear:.20*r1/sh,epsNextYear:.30*r2/sh,epsGrowthCurrentYear:.9,epsGrowthNextYear:1.2}};
+  const f=buildForecast(s);
+  f.rows.forEach((r,i)=>{
+    if(Number.isFinite(r.gaapNetMargin)&&Number.isFinite(r.operatingMargin)) assert(r.gaapNetMargin<=r.operatingMargin+.005,`year ${i+1}: GAAP net ${r.gaapNetMargin.toFixed(3)} above operating ${r.operatingMargin.toFixed(3)}`);
+    if(Number.isFinite(r.ebitdaMargin)&&Number.isFinite(r.operatingMargin)) assert(r.ebitdaMargin>=r.operatingMargin-.001,`year ${i+1}: EBITDA below operating`);
+  });
+  assert(f.rows[2].operatingMargin>.20,'operating margin follows the analyst-led earnings step-up: '+f.rows[2].operatingMargin);
+  assert(Math.abs(f.rows[0].fcfMargin-.16)<.015,'year-1 owner cash margin starts from the latest (16%), got '+f.rows[0].fcfMargin);
+}
 console.log('build77 tests passed');

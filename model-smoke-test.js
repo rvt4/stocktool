@@ -44,7 +44,11 @@ for(let i=0;i<leverage.financials.years.length;i++){
   y.fcfSBCAdjusted=y.revenue*m; y.fcf=y.revenue*(m+.01); y.operatingIncome=y.revenue*(m+.07); y.opMargin=m+.07;
 }
 const levForecast=buildForecast(leverage);
-assert(levForecast.marginTargets.fcf>=levForecast.marginAssumptions.fcf,'supported operating leverage should not be forced back to historical margins');
+// Build 77b: year 1 now starts from the latest cash margin (scorecard: 'last year' beats the blended start), and
+// the evidence-based 3-yr-median pull applies from year 2 on. The invariant is that supported leverage isn't
+// forced back to HISTORICAL margins: the target stays within 1.5 pts of today and well above the 3-yr median.
+{const h=leverage.financials.years.slice(-3).map(y=>y.fcfSBCAdjusted/y.revenue).sort((a,b)=>a-b)[1];
+ assert(levForecast.marginTargets.fcf>=levForecast.marginAssumptions.fcf-.015&&levForecast.marginTargets.fcf>h+.02,'supported operating leverage should not be forced back to historical margins');}
 
 
 // A very expensive but modelable company must remain rated rather than disappearing as
