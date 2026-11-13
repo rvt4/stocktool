@@ -19,6 +19,18 @@
 const finite = v => (v === null || v === undefined || v === '') ? null : (Number.isFinite(Number(v)) ? Number(v) : null);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
+// Build 79: cash the company keeps is worth $1 per $1 (the "cash built" part of the price), and its interest
+// must not be counted a second time through EPS x P/E. The model's non-operating income (interest, other) is a
+// share of revenue, so it grows as the company grows; that growth stands in for interest on the new cash.
+// This returns the after-tax interest already inside earnings for the cash built so far: the growth in
+// non-operating income, capped at a normal yield on that cash. The price takes it out before applying the P/E.
+const CASH_YIELD = 0.04;
+function interestInEarnings(cashBuilt, revenue, revenue0, nonOperatingMargin, taxRate) {
+  if (!(cashBuilt > 0) || !(nonOperatingMargin > 0) || !(revenue > revenue0) || !(revenue0 > 0)) return 0;
+  const t = clamp(finite(taxRate) ?? .21, 0, .35);
+  return Math.min(nonOperatingMargin * (revenue - revenue0), CASH_YIELD * cashBuilt) * (1 - t);
+}
+
 function buildSimplePath(stock, forecast, valuation) {
   const rows = forecast?.rows || [];
   if (rows.length < 10) return null;
@@ -60,20 +72,24 @@ function buildSimplePath(stock, forecast, valuation) {
       oneOff = { analystEps: aEps[0], cleanEps: (margin[1] + .02) * revenue[0] / sh[0] };
       margin[0] = margin[1] + .02;
     }
+    // Later years: carry the model's trend in GAAP profit (+ amortization), NOT its stock-pay fade. The model
+    // fades stock pay as a share of revenue without lifting GAAP profit to match, so the adjusted margin used to
+    // collapse for heavy stock-pay companies (SNOW 12% -> 3%). Stock pay is charged via dilution and buybacks.
+    const core = rows.map(r => { const t = clamp(finite(r.taxRate) ?? .21, 0, .35);
+      return (finite(r.gaapNetMargin) ?? finite(r.netMargin) ?? 0) + Math.max(0, finite(r.intangibleAmortizationMargin) ?? 0) * (1 - t); });
     for (let i = 2; i < 10; i++) {
       revenue[i] = revenue[i - 1] * (1 + (finite(rows[i].revenueGrowth) ?? 0));
-      margin[i] = margin[1] + (adjMargin[i] - adjMargin[1]);
+      margin[i] = margin[1] + (core[i] - core[1]);
     }
   }
 
-  // Cash conversion: owner FCF (after stock pay) per dollar of adjusted earnings, from the model's own path.
-  const conv = rows.map((r, i) => {
-    const fcf = finite(r.fcfMargin);
-    if (fcf === null) return 0;
-    return adjMargin[i] > .02 ? clamp(fcf / adjMargin[i], -1, 2) : null;
-  });
+  // Cash conversion: PRE-stock-pay FCF per dollar of adjusted earnings, from the model's own path. Stock pay
+  // is charged separately (Build 78c): as dilution in the share count, and as cash only for the shares the
+  // company actually buys back. Using after-stock-pay FCF as well counted it twice (SNOW, NET: -15 to -20%/yr).
+  const preFcf = rows.map(r => finite(r.preSbcFcfMargin) ?? ((finite(r.fcfMargin) ?? 0) + Math.max(0, finite(r.sbcMargin) ?? 0)));
+  const conv = rows.map((r, i) => adjMargin[i] > .02 ? clamp(preFcf[i] / adjMargin[i], -1, 2.5) : null);
   // Where earnings are too small for a ratio, carry the cash margin itself.
-  const fcfMarginFallback = rows.map(r => finite(r.fcfMargin) ?? 0);
+  const fcfMarginFallback = preFcf.slice();
 
   const years = [];
   let prevRev = rev0, prevSh = sh0;
@@ -91,19 +107,21 @@ function buildSimplePath(stock, forecast, valuation) {
       cashConversion: conv[i],
       fcfMarginFallback: fcfMarginFallback[i],
       dividendPerShare: Math.max(0, finite(r.dividendPerShare) ?? 0),
+      sbcMargin: Math.max(0, finite(r.sbcMargin) ?? 0),
+      preSbc: true,
     });
     prevRev = revenue[i]; prevSh = sh[i];
   }
 
   // Exit P/E on the same (analyst) EPS basis as the table.
-  // The engine's multiple applies to its own year-10 EPS; convert only the BASIS (reported -> analyst-style,
-  // which adds back stock pay and amortization) using the model's same-year figures on both bases.
+  // Year-10 P/E: the engine's exit multiple (set from growth, quality and durability). It is NOT cut for
+  // stock pay: in this table stock pay is already charged through dilution (share change) and in FCF, so a
+  // lower multiple would count it twice (Build 78 did: SNOW's P/E was pinned at 6x).
   const audit = (valuation?.methods || []).find(m => m.name === 'EPS exit')?.audit || null;
-  const m = finite(audit?.exitMultiple);
-  const eps10 = years[9].eps, rep10 = finite(rows[9].eps), adj10 = adjMargin[9] * rev[9] / sh[9];
-  let exitPE = m && rep10 > 0 && adj10 > 0 ? m * rep10 / adj10 : null;
+  const eps10 = years[9].eps;
+  let exitPE = finite(audit?.exitMultiple);
   if (!(exitPE > 0)) exitPE = finite(valuation?.tenYearPriceTarget) && eps10 > 0 ? valuation.tenYearPriceTarget / eps10 : 20;
-  exitPE = clamp(exitPE, 6, 60);
+  exitPE = clamp(exitPE, 8, 45);
 
   // Last year's EPS on the same basis, so year 1 has a growth rate too: consensus this-year EPS / (1 + its
   // growth) when analysts give it, else the model's year-1 margin applied to last year's revenue and shares.
@@ -111,7 +129,7 @@ function buildSimplePath(stock, forecast, valuation) {
   let eps0 = useConsensus && aEps[0] > 0 && cyG !== null && cyG > -0.9 ? aEps[0] / (1 + cyG) : null;
   if (!(eps0 > 0)) eps0 = adjMargin[0] * rev0 / sh0;
   return {
-    version: 2,
+    version: 4,
     eps0,
     basis: useConsensus ? 'consensus_years_1_2' : 'model',
     analysts: n,
@@ -120,6 +138,8 @@ function buildSimplePath(stock, forecast, valuation) {
     revenue0: rev0,
     shares0: sh0,
     netDebtNow: finite(valuation?.netDebt),
+    nonOperatingMargin: finite(rows[9].nonOperatingMargin) ?? 0,
+    taxRate: clamp(finite(rows[9].taxRate) ?? .21, 0, .35),
     peToday: years[0].eps > 0 ? price / years[0].eps : null,
     exitPE,
     years,
@@ -138,9 +158,10 @@ function calculateSimple(sp, edits = {}) {
     rev *= 1 + g[i]; sh *= 1 + d[i];
     const margin = edits.netMargin ? edits.netMargin[i] : sp.years[i].netMargin;
     const eps = margin * rev / sh;
-    const c = sp.years[i].cashConversion;
-    const ownerFcf = c === null ? sp.years[i].fcfMarginFallback * rev : eps * sh * c;
-    out.push({ rev, sh, eps, margin, ownerFcf, dps: sp.years[i].dividendPerShare });
+    const Y = sp.years[i], c = Y.cashConversion;
+    const fcf = c === null ? Y.fcfMarginFallback * rev : eps * sh * c;          // pre-stock-pay when Y.preSbc
+    const sbc = Y.preSbc ? (Y.sbcMargin || 0) * rev : 0;
+    out.push({ rev, sh, eps, margin, preFcf: fcf, sbc, ownerFcf: fcf - sbc, dps: Y.dividendPerShare });
   }
   // P/E glides from today's forward P/E to the exit P/E in step with earnings progress (log scale).
   const exitPE = edits.exitPE ?? sp.exitPE, e0 = out[0].eps, e10 = out[9].eps;
@@ -154,13 +175,18 @@ function calculateSimple(sp, edits = {}) {
     y.pe = i === 9 && !peSet ? exitPE : (peSet ?? pe0 * Math.pow(exitPE / pe0, t));
     y.peSet = !!peSet || (i === 9 && !!edits.exitPESet);
     y.opsPrice = y.eps > 0 ? y.eps * y.pe : NaN;
-    const buyback = Math.max(0, prevSh - y.sh) * (Number.isFinite(y.opsPrice) ? y.opsPrice : 0);
-    nd -= y.ownerFcf - y.dps * y.sh - buyback;
+    // Cash buybacks = shares that offset stock-pay issuance plus any net reduction, at that year's price.
+    // Shares issued for stock pay ~ stock pay $ / price; net change = issued - bought.
+    const px = Number.isFinite(y.opsPrice) && y.opsPrice > 0 ? y.opsPrice : null;
+    const buyback = px ? Math.max(0, y.sbc - (y.sh - prevSh) * px) : y.sbc;
+    nd -= y.preFcf - y.dps * y.sh - buyback;
     // A net debt you type replaces the rolled-forward figure; later years roll on from it.
     if (edits.netDebt && Number.isFinite(edits.netDebt[i])) { nd = edits.netDebt[i]; y.netDebtSet = true; }
     y.netDebt = nd;
     y.cashPS = (nd0 - nd) / y.sh;
-    y.price = Number.isFinite(y.opsPrice) ? y.opsPrice + y.cashPS : NaN;
+    // Interest on that cash already in EPS: taken out at the P/E so the cash counts once, at $1.
+    y.interestPS = interestInEarnings(nd0 - nd, y.rev, sp.revenue0, sp.nonOperatingMargin, sp.taxRate) / y.sh;
+    y.price = Number.isFinite(y.opsPrice) ? y.opsPrice - y.pe * y.interestPS + y.cashPS : NaN;
     divs += y.dps;
     y.cagrToDate = y.price + divs > 0 ? Math.pow((y.price + divs) / price, 1 / (i + 1)) - 1 : NaN;
     prevSh = y.sh;
@@ -169,5 +195,5 @@ function calculateSimple(sp, edits = {}) {
   return { years: out, exit: out[9].price, value, cagr: value > 0 ? Math.pow(value / price, .1) - 1 : NaN };
 }
 
-return { buildSimplePath, calculateSimple };
+return { buildSimplePath, calculateSimple, interestInEarnings, CASH_YIELD };
 });

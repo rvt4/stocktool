@@ -967,9 +967,16 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
   const gaapLatest=Number.isFinite(latestNet)?latestNet:null;
   let sbcDeduction=sbcAfterTax*.5; // only if the basis can't be inferred
   let consensusBasis='unknown';
-  if(Number.isFinite(raw1)&&Number.isFinite(gaapLatest)&&sbcAfterTax>.002){
-    const exSbc=Math.abs(raw1-(gaapLatest+sbcAfterTax)),inclSbc=Math.abs(raw1-gaapLatest);
-    if(exSbc<inclSbc){sbcDeduction=sbcAfterTax;consensusBasis='excludes_sbc';}else{sbcDeduction=0;consensusBasis='includes_sbc';}
+  // Build 77c: most acquirers' consensus EPS also excludes acquisition amortization (AMD/Xilinx, AVGO).
+  // Treating that EPS as GAAP-minus-SBC left the amortization in, and the owner add-back then counted it
+  // a second time (AMD: 27.5% "net" margin, above analysts' own non-GAAP margin).
+  const amortAfterTax=Math.max(0,finite(amortNow)??0)*(1-normalizedTaxRate);
+  let amortDeduction=0;
+  if(Number.isFinite(raw1)&&Number.isFinite(gaapLatest)&&(sbcAfterTax>.002||amortAfterTax>.002)){
+    const cands=[['includes_sbc',0,0],['excludes_sbc',sbcAfterTax,0]];
+    if(amortAfterTax>.002){cands.push(['excludes_sbc_and_amortization',sbcAfterTax,amortAfterTax],['excludes_amortization',0,amortAfterTax]);}
+    const best=cands.map(([b,sd,ad])=>[b,sd,ad,Math.abs(raw1-(gaapLatest+sd+ad))]).sort((a,b)=>a[3]-b[3])[0];
+    consensusBasis=best[0];sbcDeduction=best[1];amortDeduction=best[2];
   }
   // Build 56: SBC is deducted in DOLLARS, not as a fixed share of revenue. Stock pay grows more
   // slowly than revenue at a fast grower, so a constant % overstated the deduction (AMD: 5% of
@@ -983,7 +990,9 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     const sbcGrowth=clamp(revCagr*.5,.05,.20);
     return clamp(sbcDeduction*revNowAnchor*Math.pow(1+sbcGrowth,t)/r,0,sbcDeduction*1.25);
   };
-  const impliedNet=(eps,rev,h,t)=>{const x=rawImplied(eps,rev,h);return x!=null?clamp(x-sbcShare(rev,t),-.10,netCeiling):null;};
+  // Amortization is a fixed dollar amount that rolls off; as a share of revenue it shrinks as revenue grows.
+  const amortShare=(rev,t)=>{const r=finite(rev);if(!(amortDeduction>0))return 0;if(!(revNowAnchor>0)||!(r>0))return amortDeduction;return clamp(amortDeduction*revNowAnchor*Math.pow(.9,t)/r,0,amortDeduction);};
+  const impliedNet=(eps,rev,h,t)=>{const x=rawImplied(eps,rev,h);return x!=null?clamp(x-sbcShare(rev,t)-amortShare(rev,t),-.10,netCeiling):null;};
   const analystNet1=impliedNet(aCov.epsCurrentYear,aCov.revenueCurrentYear,.03,1);
   const analystNet2=impliedNet(aCov.epsNextYear,aCov.revenueNextYear,.08,2);
   // "Improvement" means margins recovering, not just EPS growing with revenue: next year's
@@ -1056,7 +1065,9 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     // Cash flow keeps the half-strength rule above (cash comes from the company's own history).
     if(analystAnchorApplied){
       const pre=d=>d/(1-clamp(normalizedTaxRate,0,.35));
-      const pS=Math.max(0,analystAnchorDelta.start),pT=Math.max(0,analystAnchorDelta.target),pM=Math.max(pT,Math.max(0,analystAnchorDelta.mature));
+      // Both directions (Build 48 rule: no optimism-only bias). Net is now tied to operating margin, so a
+      // lower analyst EPS has to show up in operating margin too, or it would be cancelled.
+      const pS=analystAnchorDelta.start,pT=analystAnchorDelta.target,pM=pT>0?Math.max(pT,analystAnchorDelta.mature):analystAnchorDelta.mature;
       if(Number.isFinite(currentOperating)) currentOperating=clamp(currentOperating+pre(pS),-.10,opCeiling);
       if(Number.isFinite(currentEBITDA)) currentEBITDA=clamp(currentEBITDA+pre(pS),-.05,ebitdaCeiling);
       targetOperating=clamp(targetOperating+pre(pT),-.10,opCeiling);
@@ -1293,6 +1304,8 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     matureGrowthReinvestmentShare,normalizedCFO:rawCFO,cashEconomicsTarget:matureTargetFCF,profitabilityConsistencyApplied,driverReconciliation,economicSbcCostNow,economicSbcCostTarget,economicSbcCostMature,
     structuralCapitalLightCashConversion,recurringFcfCfoRatio,fcfCeiling,crossMarginCoherenceApplied,structuralMarginGuardrailApplied,unsupportedMarginExpansionLimited,structuralTargetNetCeiling,structuralMatureNetCeiling,
     unexplainedFcfCompressionPrevented,broadCashCompressionEvidence,temporaryMarginReset,
+    recentNonOperatingMargin:(()=>{const t=clamp(normalizedTaxRate,0,.35),y=years.at(-1);const n=y?pctMargin(y,'netIncome'):null,o=y?pctMargin(y,'operatingIncome'):null;return Number.isFinite(n)&&Number.isFinite(o)?n/(1-t)-o:null;})(),
+    currentOperatingStart:currentOperating,
     nonOperatingMargin:(()=>{ // Build 77: typical pre-tax non-operating income (interest, other) as a share of revenue
       const t=clamp(normalizedTaxRate,0,.35);const v=years.slice(-5).map(y=>{const n=pctMargin(y,'netIncome'),o=pctMargin(y,'operatingIncome');return Number.isFinite(n)&&Number.isFinite(o)?n/(1-t)-o:null;}).filter(Number.isFinite);
       return v.length>=3?clamp(median(v),-.05,.03):0;})(),
@@ -1462,16 +1475,30 @@ function buildForecast(stock,opts={}){
       if(Number.isFinite(operatingMargin))operatingMargin+=dOp; if(Number.isFinite(ebitdaMargin))ebitdaMargin+=dOp;
       if(Number.isFinite(fcfMargin))fcfMargin+=dNet;
     }
-    // Build 77: net margin can't run ahead of what operations earn. One-off gains (investment mark-ups,
-    // asset sales) in recent net income were being carried forward as if they recur (AMZN, GOOGL: projected
-    // net margin above operating margin). Ceiling = (operating margin + the company's typical non-operating
-    // income over 5 years + 1 pt) after tax; the normalized/owner net adds back after-tax amortization.
-    if(Number.isFinite(operatingMargin)){   // Build 77b: applies to every company (operating margin now moves with analyst-led earnings)
-      const t=clamp(margins.normalizedTaxRate??.21,0,.35), npo=finite(margins.nonOperatingMargin)??0;
-      const gaapCeil=(operatingMargin+npo+.01)*(1-t);
-      const amortBack=Number.isFinite(intangibleAmortizationMargin)?Math.max(0,intangibleAmortizationMargin)*(1-t):0;
-      if(Number.isFinite(gaapNetMargin)&&gaapNetMargin>gaapCeil){gaapNetMargin=gaapCeil;netMarginCeilingApplied=true;}
-      if(Number.isFinite(netMargin)&&netMargin>gaapCeil+amortBack){netMargin=gaapCeil+amortBack;netMarginCeilingApplied=true;}
+    // Build 77c: ONE P&L. GAAP net margin is tied to operating margin every year:
+    //   net = (operating margin + non-operating income) x (1 - tax), within +/-1 pt pre-tax.
+    // Non-operating income starts at the latest year's actual (interest, gains) and fades to the company's
+    // 5-year typical level by year 3, so one-off gains don't persist (GOOGL, AMZN) and net can't wander away
+    // from operations (GOOGL's net margin used to dip 33% -> 27% -> 35% on a flat 37-39% operating margin).
+    // The owner/normalized net keeps its add-backs (amortization, one-time charges) on top.
+    let rowNonOperating=null;
+    if(Number.isFinite(operatingMargin)&&Number.isFinite(gaapNetMargin)){
+      const t=clamp(margins.normalizedTaxRate??.21,0,.35), typ=finite(margins.nonOperatingMargin)??0;
+      const recent=finite(margins.recentNonOperatingMargin);
+      const fade=i===0?.5:i===1?.25:0;
+      const npo=Number.isFinite(recent)?typ+(clamp(recent,-.08,.08)-typ)*fade:typ;
+      rowNonOperating=npo;
+      const lo=(operatingMargin+npo-.01)*(1-t), hi=(operatingMargin+npo+.01)*(1-t);
+      const gap=Number.isFinite(netMargin)?netMargin-gaapNetMargin:0;
+      const tied=clamp(gaapNetMargin,lo,hi);
+      if(Math.abs(tied-gaapNetMargin)>1e-9){netMarginCeilingApplied=true;gaapNetMargin=tied;if(Number.isFinite(netMargin))netMargin=tied+gap;}
+    }
+    // EBITDA = operating margin + D&A, with D&A moving smoothly from today's level to the year-10 level
+    // (it used to be its own path and wobbled: NVDA 63% -> 57% -> 63% on a flat 55% operating margin).
+    if(Number.isFinite(operatingMargin)&&Number.isFinite(margins.currentEBITDA)&&Number.isFinite(margins.currentOperatingStart)){
+      const da0=Math.max(0,margins.currentEBITDA-margins.currentOperatingStart);
+      const daM=Number.isFinite(margins.matureTargetEBITDA)&&Number.isFinite(margins.matureOperating)?Math.max(0,margins.matureTargetEBITDA-margins.matureOperating):da0;
+      ebitdaMargin=operatingMargin+da0+(daM-da0)*i/(HORIZON_YEARS-1);
     }
     const cfoMargin=Number.isFinite(fcfMargin)&&Number.isFinite(capexMargin)
       ? clamp(fcfMargin+capexMargin,-.08,.70)
@@ -1520,7 +1547,7 @@ function buildForecast(stock,opts={}){
     // reduces net debt, but avoid negative net debt (cash buildup) in this conservative bridge.
     projectedNetDebt-=Math.max(0,buybackBudget-actualSpend);
     rows.push({year:(finite(last.year)||new Date().getFullYear())+i+1,revenueGrowth:growth.growthPath[i],revenue,
-      grossMargin,rdMargin,sgaMargin,sbcMargin,intangibleAmortizationMargin,taxRate:margins.normalizedTaxRate,
+      grossMargin,rdMargin,sgaMargin,sbcMargin,intangibleAmortizationMargin,taxRate:margins.normalizedTaxRate,nonOperatingMargin:rowNonOperating,
       operatingMargin,fcfMargin:Number.isFinite(ownerFcfMargin)?ownerFcfMargin:fcfMargin,preSbcFcfMargin,cfoMargin,capexMargin,ebitdaMargin,gaapNetMargin,
       netMargin:Number.isFinite(ownerNetMargin)?ownerNetMargin:netMargin,normalizedNetMargin,normalizedNetIncome,
       fcf,ebitda,gaapNetIncome,netIncome,grossDilution:dilutionPath[i],shares,netDebt:projectedNetDebt,buybackSpend:actualSpend,debtRepayment,requestedDilution:requestedChange,actualDilution:actualChange,eps:shares>0&&netIncome!=null?netIncome/shares:null,
