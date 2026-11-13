@@ -98,7 +98,7 @@ function ratingWhy(s){
 }
 function methodResults(a,r){
  if(!r||!a?.methods?.list?.length)return null;
- const price=a.price,ys=r.years,y10=ys[9],cashPS=Number.isFinite(r.cashBuildPS)?r.cashBuildPS:0,divs=r.value-r.exit;
+ const price=a.price,ys=r.years,y10=ys[9],cashPS=Number.isFinite(r.cashBuildPS)?r.cashBuildPS:0,intPS=Number.isFinite(r.interestPS)?r.interestPS:0,divs=r.value-r.exit;
  // Screener basis (Build 63): SBC is expensed in both net margin and FCF, and the share path excludes
  // employee-grant dilution, so it is counted exactly once. DCF discounts aggregate FCF over today's share count.
  const sh10=y10.shares,fcfAgg=ys.map(y=>y.revenue*1000*y.fcfMargin/100),fcfps=ys.map((y,i)=>fcfAgg[i]/y.shares);
@@ -107,8 +107,8 @@ function methodResults(a,r){
  const shares0=valid(r.startShares,ys[0].shares),fcfMethod=a.methods.list.find(m=>m.kind==='fcf');
  const rows=a.methods.list.map(m=>{
   let outcome=NaN,fair=NaN,note='';
-  if(m.kind==='eps'){const pe10=(Number.isFinite(r.exitOps)?r.exitOps:r.exit)/y10.eps;outcome=y10.eps>0&&pe10>0?(y10.eps+sbcAdd)*pe10+divs+cashPS:NaN;note=(sbcAdd>0.005?`Year-10 EPS × P/E, + ${money(sbcAdd)}/sh SBC add-back (dilution already in share count)`:'Year-10 EPS × P/E (table)')+(Math.abs(cashPS)>0.005?`, ${cashPS>=0?'+':'−'} ${money(Math.abs(cashPS))}/sh cash built`:'');}
-  else if(m.kind==='fcf'){outcome=fcfps[9]>0&&m.mult>0?fcfps[9]*m.mult+divs+cashPS:NaN;note='Year-10 FCF/share × P/FCF + cash built';}
+  if(m.kind==='eps'){const pe10=(Number.isFinite(r.exitOps)?r.exitOps:r.exit)/y10.eps;outcome=y10.eps>0&&pe10>0?(y10.eps+sbcAdd-intPS)*pe10+divs+cashPS:NaN;note=(sbcAdd>0.005?`Year-10 EPS × P/E, + ${money(sbcAdd)}/sh SBC add-back (dilution already in share count)`:'Year-10 EPS × P/E (table)')+(Math.abs(cashPS)>0.005?`, ${cashPS>=0?'+':'−'} ${money(Math.abs(cashPS))}/sh cash built`:'');}
+  else if(m.kind==='fcf'){outcome=fcfps[9]>0&&m.mult>0?(fcfps[9]-intPS)*m.mult+divs+cashPS:NaN;note='Year-10 FCF/share × P/FCF + cash built';}
   else if(m.kind==='ebitda'){
    const eb=a.path?.ebitda,dt=a.path?.debt;
    if(Array.isArray(eb)&&Array.isArray(dt)&&m.mult>0){const ebitda=ys[9].revenue*1000*eb[9]/100,nd10=Number.isFinite(ys[9].netDebt)?ys[9].netDebt:dt[9];outcome=(ebitda*m.mult-nd10*1000)/sh10+divs;}
@@ -301,14 +301,17 @@ function calculatePath(a){
    ndPath=[];let nd=nd0;for(let i=0;i<10;i++){nd-=flow(i)/1000;ndPath.push(nd);}
    path.debt=ndPath.slice();a.netDebtStart=nd0;
   } else {ndPath=path.debt.slice(0,10);a.netDebtStart=Number.isFinite(a.netDebtNow)?a.netDebtNow:ndPath[0];}
+  // Build 79: the interest on that cash already inside EPS is taken out at the P/E, so the cash counts once ($1 per $1).
+  const sp0=a.simple&&a.simple.sp,npo=sp0?sp0.nonOperatingMargin:0,tx=sp0?sp0.taxRate:.21;
   ndPath.forEach((v,i)=>{const y=years[i];y.netDebt=v;y.cashPS=y.shares>0?(a.netDebtStart-v)*1000/y.shares:0;y.opsPrice=y.price;
-   if(Number.isFinite(y.price)){y.price=y.price+y.cashPS;}});
+   y.interestPS=y.shares>0&&typeof SimplePath!=='undefined'?SimplePath.interestInEarnings(a.netDebtStart-v,y.revenue,revenue,npo,tx)*1000/y.shares:0;
+   if(Number.isFinite(y.price)){y.price=y.price-y.pe*y.interestPS+y.cashPS;}});
   let cum=0;years.forEach((y,i)=>{cum+=y.dividend;const val=y.price+cum;y.cagrToDate=val>0?Math.pow(val/price,1/(i+1))-1:NaN;});
  }
  const y10=years.at(-1),cashBuildPS=Number.isFinite(y10.cashPS)?y10.cashPS:0;
  const exit=y10.price,value=exit+divs;
  const cagr=value>0?Math.pow(value/price,1/10)-1:NaN,hurdle=value/Math.pow(1+HURDLE,10);
- return {years,exit,exitOps:Number.isFinite(y10.opsPrice)?y10.opsPrice:exit,cagr,hurdle,buy:hurdle*(1-mos/100),value,startShares:shares,cashBuildPS,netDebtPath:ndPath};
+ return {years,exit,exitOps:Number.isFinite(y10.opsPrice)?y10.opsPrice:exit,interestPS:Number.isFinite(y10.interestPS)?y10.interestPS:0,cagr,hurdle,buy:hurdle*(1-mos/100),value,startShares:shares,cashBuildPS,netDebtPath:ndPath};
 }
 function hideTickerMatches(){$('tickerMatches').hidden=true;$('tickerSearch').setAttribute('aria-expanded','false')}
 function renderTickerMatches(){const q=$('tickerSearch').value.trim().toLowerCase(),matches=stocks.filter(s=>!q||s.ticker.toLowerCase().includes(q)||(s.name||'').toLowerCase().includes(q)).sort((a,b)=>{const score=s=>s.ticker.toLowerCase()===q?0:s.ticker.toLowerCase().startsWith(q)?1:(s.name||'').toLowerCase().startsWith(q)?2:3;return score(a)-score(b)||a.ticker.localeCompare(b.ticker)}).slice(0,12);const box=$('tickerMatches');box.innerHTML=matches.map(s=>`<button type="button" role="option" data-ticker="${esc(s.ticker)}"><strong>${esc(s.ticker)}</strong> <span>${esc(s.name||'')}</span></button>`).join('')||'<p class="muted small">No matching companies</p>';box.hidden=false;$('tickerSearch').setAttribute('aria-expanded','true');box.querySelectorAll('[data-ticker]').forEach(b=>b.onclick=()=>choose(b.dataset.ticker))}
@@ -446,10 +449,22 @@ function simpleResult(a){
  if(!r||!Number.isFinite(r.value))return null;
  r.hurdle=r.value/Math.pow(1+HURDLE,10);r.buy=r.hurdle*(1-(valid(a.mos,0))/100);r.simple=true;return r;
 }
+// Build 79: the last five reported years above the simple projection (same SEC history as the advanced table).
+function simpleHistoryRows(){
+ const ann=(history?.annual||[]).filter(x=>Number.isFinite(x.revenue)&&x.revenue>0).slice(-6);
+ if(!history)return '<tr class="hist-row"><td colspan="12" class="muted small">Reported history not loaded for this company yet.</td></tr>';
+ const epsOf=x=>valid(x.eps,Number.isFinite(x.netIncome)&&x.shares>0?x.netIncome/x.shares:NaN);
+ return ann.slice(1).map((x,i)=>{const p=ann[i],e=epsOf(x),pe=epsOf(p);
+  const g=p.revenue>0?x.revenue/p.revenue-1:NaN,eg=pe>0&&Number.isFinite(e)?e/pe-1:NaN,d=x.shares>0&&p.shares>0?x.shares/p.shares-1:NaN;
+  const nm=Number.isFinite(x.netIncome)?x.netIncome/x.revenue:NaN,fps=Number.isFinite(x.fcf)&&x.shares>0?(x.fcf-(Number.isFinite(x.sbc)?x.sbc:0))/x.shares:NaN;
+  const nd=Number.isFinite(x.netDebt)?(x.netDebt/1e9).toFixed(1):'—';
+  return `<tr class="hist-row"><td>${esc(x.period)} <span class="hist-tag">reported</span></td><td>${pct(g)}</td><td>${money(x.revenue/1e9)}B</td><td>${pct(eg)}</td><td>${Number.isFinite(e)?money(e):'—'}</td><td>${pct(d)}</td><td>${pct(nm)}</td><td>${Number.isFinite(fps)?money(fps):'—'}</td><td>${nd}</td><td>—</td><td>—</td><td>—</td></tr>`;}).join('');
+}
 function renderSimple(){
  const el=$('simplePanel');if(!el)return;const a=assumptions,st=a?.simple;
  if(!st){el.innerHTML='<h3>Your projection</h3><p class="muted small">No simple projection for this company yet (needs a 10-year model forecast). Use the advanced editor below.</p>';return;}
  const r=simpleResult(a);if(!r){el.innerHTML='<p class="muted small">Could not calculate this projection.</p>';return;}
+ const noValue=!Number.isFinite(r.cagr);
  const sp=st.sp,ys=r.years,price=sp.price,model=valid(current?.expectedCAGR,NaN);
  const inp=(k,i,v,step,set)=>`<input class="sp-in${set?' sp-set':''}" type="number" step="${step}" data-sp="${k}" data-i="${i}" value="${v}">`;
  const yr=i=>sp.years[i].year??(new Date().getFullYear()+i);
@@ -460,12 +475,14 @@ function renderSimple(){
  const oneOff=sp.oneOffYear1?`<p class="small warning">Analysts' ${yr(0)} EPS of ${money(sp.oneOffYear1.analystEps)} includes one-time gains; the autofill values the clean ${money(sp.oneOffYear1.cleanEps)}.</p>`:'';
  el.innerHTML=`<div class="section-head"><h3>Your projection</h3><button class="ghost" id="spReset">Reset to autofill</button></div>
   <p class="muted small">Edit <b>revenue growth</b>, <b>EPS growth</b> and <b>share change</b>; P/E and net debt are filled in for you but editable too (yours show highlighted). EPS, net margin, free cash flow and price are calculated. ${esc(src)}</p>${oneOff}
-  <div class="kpis sp-kpis"><div class="kpi"><small>Your 10-yr return</small><strong>${pct(r.cagr)}</strong><em>model base ${Number.isFinite(model)?pct(model):'—'}</em></div>
-   <div class="kpi"><small>${yr(9)} price</small><strong>${money(r.exit)}</strong><em>incl. ${money(ys[9].cashPS)}/sh cash built</em></div>
+  ${noValue?`<p class="small warning">EPS is still at or below zero by ${yr(9)}, so a P/E price doesn't mean anything yet. Raise EPS growth (or margins via EPS) until year-10 EPS is positive, or use the Advanced editor's cash-flow and sales methods.</p>`:''}
+  <div class="kpis sp-kpis"><div class="kpi"><small>Your 10-yr return</small><strong>${noValue?'n/a':pct(r.cagr)}</strong><em>model base ${Number.isFinite(model)?pct(model):'—'}</em></div>
+   <div class="kpi"><small>${yr(9)} price</small><strong>${money(r.exit)}</strong><em>incl. ${money(ys[9].cashPS-ys[9].pe*(ys[9].interestPS||0))}/sh cash built (net of its interest)</em></div>
    <div class="kpi"><small>Price for ${Math.round(HURDLE*100)}%/yr</small><strong>${money(r.hurdle)}</strong><em>today ${money(price)}</em></div>
    <div class="kpi"><small>EPS growth, 10 yrs</small><strong>${ys[0].eps>0&&ys[9].eps>0?pct(Math.pow(ys[9].eps/ys[0].eps,1/9)-1):'—'}</strong><em>a year, ${yr(0)}–${yr(9)}</em></div></div>
   <div class="table-scroll"><table class="sp-table"><thead><tr><th>Year</th><th>Revenue growth %</th><th>Revenue</th><th>EPS growth %</th><th>EPS</th><th>Share chg %</th><th>Net margin</th><th>FCF / share</th><th>Net debt $B</th><th>P/E</th><th>Price*</th><th>CAGR if sold</th></tr></thead>
-  <tbody><tr class="hist-row"><td>Last year</td><td>—</td><td>${money(sp.revenue0/1e9)}B</td><td>—</td><td>${Number.isFinite(e0)?money(e0):'—'}</td><td>—</td><td>—</td><td>—</td><td>${Number.isFinite(sp.netDebtNow)?(sp.netDebtNow/1e9).toFixed(1):'—'}</td><td>${Number.isFinite(sp.peToday)?sp.peToday.toFixed(1)+'×':'—'}</td><td>${money(price)}</td><td>—</td></tr>${rowsHtml}</tbody></table></div>
+  <tbody>${simpleHistoryRows()}<tr class="today-row"><td>Starting point</td><td>—</td><td>${money(sp.revenue0/1e9)}B</td><td>—</td><td>${Number.isFinite(e0)?money(e0):'—'}</td><td>—</td><td>—</td><td>—</td><td>${Number.isFinite(sp.netDebtNow)?(sp.netDebtNow/1e9).toFixed(1):'—'}</td><td>${Number.isFinite(sp.peToday)?sp.peToday.toFixed(1)+'×':'—'}</td><td>${money(price)}</td><td>—</td></tr>${rowsHtml}</tbody></table></div>
+  <p class="muted small">Grey rows are the last five reported years (SEC filings). Their EPS is <b>GAAP</b> (after stock pay and amortization), so it runs below the analyst-basis EPS in the Starting point row and the projection; growth rates and net margins are on the same GAAP basis. FCF/share there is after stock pay, like the projection.</p>
   <p class="muted small">* Price = EPS × P/E + cash built since today per share (today’s net debt minus that year’s, ÷ shares). Changing one year’s EPS growth keeps the later years’ growth rates. A P/E or net debt you type stays fixed for that year, and net debt rolls forward from it. “Reset to autofill” clears everything. EPS is on the analyst basis (before stock pay and acquisition amortization); stock pay counts through the share change and in free cash flow (after stock pay). Net margin = EPS × shares ÷ revenue. FCF follows EPS at the company's modelled cash conversion. Net debt falls by FCF minus dividends and buybacks. P/E glides from today's to your year-10 P/E as earnings grow.</p>`;
  el.querySelectorAll('[data-sp]').forEach(inp=>inp.onchange=()=>{
   const k=inp.dataset.sp,i=Number(inp.dataset.i),v=Number(inp.value);if(!Number.isFinite(v))return;

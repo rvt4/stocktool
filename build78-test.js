@@ -17,8 +17,10 @@ let sp=buildSimplePath({price:{current:500}},{rows},val);
 assert.strictEqual(sp.basis,'model');
 assert(near(sp.years[0].netMargin,adjM)&&near(sp.years[0].eps,adjM*rows[0].revenue/rows[0].shares));
 assert(near(sp.years[3].revenueGrowth,.10)&&near(sp.years[3].shareChange,-.01));
-assert(near(sp.exitPE,20*.20/adjM,1e-9),'exit P/E converted to the analyst basis only (same-year model figures)');
-assert(near(sp.years[0].cashConversion,.18/adjM));
+// Build 78c: exit P/E = the engine's multiple, not cut for stock pay (charged via dilution and buybacks instead).
+assert(near(sp.exitPE,20,1e-9));
+// Cash conversion is PRE-stock-pay FCF (18% owner + 3% stock pay = 21%) per $ of adjusted earnings.
+assert(near(sp.years[0].cashConversion,.21/adjM,1e-9)&&sp.years[0].preSbc&&near(sp.years[0].sbcMargin,.03));
 
 // 2) Consensus for years 1-2 (trimmed 3% / 8%), model drift after.
 const an={numAnalysts:12,revenueCurrentYear:rows[0].revenue*1.02,revenueNextYear:rows[1].revenue*1.03,epsCurrentYear:30,epsNextYear:34};
@@ -27,6 +29,9 @@ assert.strictEqual(sp.basis,'consensus_years_1_2');
 assert(near(sp.years[0].eps,30*.97,1e-9)&&near(sp.years[1].eps,34*.92,1e-9),'consensus EPS, trimmed');
 assert(near(sp.years[0].revenue,an.revenueCurrentYear));
 assert(near(sp.years[4].netMargin,sp.years[1].netMargin,1e-9),'flat model margin -> margin holds at the year-2 level');
+// A fading stock-pay share with flat GAAP profit must not drag the analyst-basis margin down (SNOW case).
+{const r2=rows.map((r,i)=>({...r,sbcMargin:.03-.002*i}));const s2=buildSimplePath({price:{current:500},analystEstimates:an},{rows:r2},val);
+ assert(near(s2.years[9].netMargin,s2.years[1].netMargin,1e-9),'stock-pay fade ignored in the margin trend');}
 // thin coverage or a mismatched revenue base falls back to the model
 assert.strictEqual(buildSimplePath({price:{current:500},analystEstimates:{...an,numAnalysts:2}},{rows},val).basis,'model');
 assert.strictEqual(buildSimplePath({price:{current:500},analystEstimates:{...an,revenueCurrentYear:rows[0].revenue*2}},{rows},val).basis,'model');
@@ -79,5 +84,21 @@ assert(/engine\/simple-path\.js/.test(fs.readFileSync('index.html','utf8')));
   assert(near(n4.years[4].netDebt-50e9,base.years[4].netDebt-base.years[3].netDebt,1e3),'later years roll on from the typed figure');
   assert(n4.years[9].price<base.years[9].price&&n4.cagr<base.cagr);
   assert(!base.years[9].peSet&&calculateSimple(sp,{exitPE:25,exitPESet:true}).years[9].peSet);
+}
+
+// 7) Build 78c: stock pay costs cash only for the shares actually bought back.
+{
+  const base=calculateSimple(sp);
+  // Flat share count -> all stock-pay shares are bought back -> stock pay $ leaves as cash.
+  const flat=calculateSimple(sp,{shareChange:sp.years.map(()=>0)});
+  const y=flat.years[5],prev=flat.years[4];
+  const flow=y.preFcf-y.dps*y.sh-Math.max(0,y.sbc-(y.sh-prev.sh)*y.opsPrice);
+  assert(near(prev.netDebt-y.netDebt,flow,1e3),'net debt falls by pre-stock-pay FCF minus dividends minus buybacks');
+  assert(near(y.ownerFcf,y.preFcf-y.sbc,1e-6));
+  // Share count rising by the full stock-pay issuance -> no buyback cash -> more cash kept than with a flat count.
+  const iss=sp.years.map((Y,i)=>.03*base.years[i].rev/(base.years[i].opsPrice*base.years[i].sh));
+  const dil=calculateSimple(sp,{shareChange:iss});
+  assert(dil.years[9].netDebt<flat.years[9].netDebt,'dilution instead of buybacks keeps the cash');
+  assert(dil.years[9].eps<flat.years[9].eps,'...but lowers EPS');
 }
 console.log('build78 tests passed');

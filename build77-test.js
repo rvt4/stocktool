@@ -45,8 +45,10 @@ const run=s=>{const f=buildForecast(s),q=computeQuality(s,f),v=valuate(s,f,q);re
 {
   const clean=run(co({})).f, gain=run(co({net:[.20,.20,.20,.20,.30,.32]})).f;   // op margin unchanged at 25%
   assert(gain.forecastFlags.includes('net_margin_capped_by_operations'));
-  const t=.21, ceilNet=(.25+.01)*(1-t)+.02;   // generous: op + typical non-op + 1pt, after tax (+ slack)
-  gain.rows.forEach((r,i)=>{assert(r.gaapNetMargin<=ceilNet,`year ${i+1} GAAP net ${r.gaapNetMargin}`);});
+  // Build 77c: year 1 keeps half of last year's non-operating income, year 2 a quarter, then the 5-yr typical level.
+  const t=.21, ceilNet=(.25+.01)*(1-t)+.02;   // op + typical non-op + 1pt, after tax (+ slack)
+  gain.rows.forEach((r,i)=>{if(i>=2)assert(r.gaapNetMargin<=ceilNet,`year ${i+1} GAAP net ${r.gaapNetMargin}`);});
+  assert(gain.rows[0].gaapNetMargin<.32-.05&&gain.rows[0].gaapNetMargin>gain.rows[2].gaapNetMargin,'the gain fades: year 1 below last year, above year 3');
   assert(gain.rows[4].gaapNetMargin<=clean.rows[4].gaapNetMargin+.03,'one-off gain mostly gone by year 5');
   assert(!clean.forecastFlags.includes('net_margin_capped_by_operations'),'a normal company is untouched');
 }
@@ -68,5 +70,14 @@ const run=s=>{const f=buildForecast(s),q=computeQuality(s,f),v=valuate(s,f,q);re
   });
   assert(f.rows[2].operatingMargin>.20,'operating margin follows the analyst-led earnings step-up: '+f.rows[2].operatingMargin);
   assert(Math.abs(f.rows[0].fcfMargin-.16)<.015,'year-1 owner cash margin starts from the latest (16%), got '+f.rows[0].fcfMargin);
+  // Build 77c: consensus that excludes SBC AND acquisition amortization is recognised, so the owner net margin
+  // (GAAP + amortization add-back) can't exceed analysts' own non-GAAP margin (it used to: AMD 27.5% vs ~25%).
+  const anc=JSON.stringify(f).match(/"consensusBasis":"([a-z_]+)"/);
+  assert(anc,'anchor diagnostics present');assert.strictEqual(anc[1],'excludes_sbc_and_amortization');
+  [0,1].forEach(i=>assert(f.rows[i].netMargin<=[.20,.30][i]+.01,`year ${i+1} owner net ${f.rows[i].netMargin.toFixed(3)} above analysts' non-GAAP margin`));
+  // net follows operating margin smoothly: no dip-and-recover
+  const nm=f.rows.map(r=>r.gaapNetMargin),om=f.rows.map(r=>r.operatingMargin);
+  nm.forEach((v,i)=>assert(v<=om[i]+.005&&v>=(om[i]-.12),`year ${i+1} net ${v.toFixed(3)} vs op ${om[i].toFixed(3)}`));
+  for(let i=1;i<10;i++)assert(Math.abs(f.rows[i].ebitdaMargin-f.rows[i-1].ebitdaMargin)<=Math.abs(om[i]-om[i-1])+.02,'EBITDA moves with operating margin, no wobble');
 }
 console.log('build77 tests passed');
