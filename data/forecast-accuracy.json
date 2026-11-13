@@ -1,0 +1,41 @@
+{
+ "generatedAt": "2026-11-13T19:42:15.351Z",
+ "snapshots": 1,
+ "firstSnapshot": "2026-11-13",
+ "note": "error = actual reported revenue / forecast - 1. Positive = the model forecast too LOW (company grew faster). Based on monthly snapshots compared once the forecast year has been reported.",
+ "observations": 0,
+ "byHorizon": {},
+ "byForecastGrowth": {},
+ "byEvidence": {},
+ "bySector": {},
+ "worstMisses": [],
+ "consensusEps": {
+  "note": "error = actual EPS (analyst basis) / saved consensus - 1. Negative = analysts too optimistic. suggestedTrim needs 150+ observations; compare with CONSENSUS_TRIM in engine/simple-path.js ([this year, next year, ...]).",
+  "observations": 0,
+  "byHorizon": {},
+  "worstMisses": [],
+  "revisions90dToday": {
+   "thisYear": {
+    "n": 841,
+    "median": 0.01119056545195729
+   },
+   "nextYear": {
+    "n": 864,
+    "median": 0.00503266784547951
+   }
+  },
+  "revisionHistory": [
+   {
+    "asOf": "2026-11-13",
+    "thisYear": {
+     "n": 841,
+     "median": 0.01119056545195729
+    },
+    "nextYear": {
+     "n": 864,
+     "median": 0.00503266784547951
+    }
+   }
+  ]
+ }
+}
