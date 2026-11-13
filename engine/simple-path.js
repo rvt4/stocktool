@@ -9,7 +9,7 @@
 // row and as cash (owner FCF is after stock pay, i.e. the cost of buying those shares back).
 //
 // Autofill:
-//   years 1-2  analysts' consensus revenue and EPS (EPS trimmed 3% / 8%: consensus tends to be revised down)
+//   years 1-2  analysts' consensus revenue and EPS (EPS trimmed per CONSENSUS_TRIM, fading out by year 5)
 //              when 3+ analysts cover it and their revenue base matches ours; otherwise the model.
 //   years 3-10 revenue growth = the model's (Build 67 calibrated fade, scored by the forecast scorecard);
 //              margin = year-2 margin + the model's own margin drift from year 2.
@@ -25,6 +25,15 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 // This returns the after-tax interest already inside earnings for the cash built so far: the growth in
 // non-operating income, capped at a normal yield on that cash. The price takes it out before applying the P/E.
 const CASH_YIELD = 0.04;
+
+// Build 80c: how much to trim analysts' EPS, by projection year. Consensus is optimistic on average, most
+// at longer horizons, but large companies also beat the final estimate most quarters, and over the 90 days
+// to Nov 2026 estimates were revised UP (this year +1.1%, next year +0.5% median, 840+ companies).
+// So: 1% this year (mostly reported), 4% next year, fading to zero by year 5, so a one-year correction never
+// becomes a permanent cut to long-run EPS (the old flat 3% / 8% did, costing ~0.8 pt/yr on every stock).
+// Starting estimates only: track-forecasts.js now records consensus monthly and measures the actual error;
+// replace these with its suggestedTrim once it has a year of data.
+const CONSENSUS_TRIM = [0.01, 0.04, 0.04 * 2 / 3, 0.04 / 3, 0, 0, 0, 0, 0, 0];
 function interestInEarnings(cashBuilt, revenue, revenue0, nonOperatingMargin, taxRate) {
   if (!(cashBuilt > 0) || !(nonOperatingMargin > 0) || !(revenue > revenue0) || !(revenue0 > 0)) return 0;
   const t = clamp(finite(taxRate) ?? .21, 0, .35);
@@ -47,7 +56,8 @@ function buildSimplePath(stock, forecast, valuation) {
     return g + Math.max(0, finite(r.sbcMargin) ?? 0) * (1 - t) + Math.max(0, finite(r.intangibleAmortizationMargin) ?? 0) * (1 - t);
   });
   const rev = rows.map(r => finite(r.revenue)), sh = rows.map(r => finite(r.shares));
-  if (!rev.every(v => v > 0) || !sh.every(v => v > 0) || !adjMargin.every(v => v !== null)) return null;
+  if (!rev.every(v => v > 0) || !sh.every(v => v > 0)) return null;
+  if (!adjMargin.every(v => v !== null)) return buildEpsOnlyPath(stock, rows, valuation, price, a, n, rev, sh);
   const rev0 = rev[0] / (1 + (finite(rows[0].revenueGrowth) ?? 0));
   const sh0 = sh[0] / (1 + (finite(rows[0].actualDilution) ?? 0));
 
@@ -59,11 +69,10 @@ function buildSimplePath(stock, forecast, valuation) {
   const revenue = rev.slice(), margin = adjMargin.slice();
   let oneOff = null;
   if (useConsensus) {
-    const hair = [.03, .08];
+    // Untrimmed consensus here; the trim schedule is applied to every year below.
     for (let i = 0; i < 2; i++) {
       revenue[i] = aRev[i];
-      const e = aEps[i] > 0 ? aEps[i] * (1 - hair[i]) : aEps[i];
-      margin[i] = e * sh[i] / revenue[i];
+      margin[i] = aEps[i] * sh[i] / revenue[i];
     }
     // One-off gains: when this year's consensus margin sits well above next year's while revenue grows
     // (investment mark-ups, asset sales: GOOGL, AMZN in 2026), next year is the clean run-rate. The autofill
@@ -81,6 +90,9 @@ function buildSimplePath(stock, forecast, valuation) {
       revenue[i] = revenue[i - 1] * (1 + (finite(rows[i].revenueGrowth) ?? 0));
       margin[i] = margin[1] + (core[i] - core[1]);
     }
+    // Optimism trim, fading to zero by year 5 (losses are not trimmed).
+    for (let i = 0; i < 10; i++) if (margin[i] > 0) margin[i] *= 1 - CONSENSUS_TRIM[i];
+    if (oneOff) oneOff.cleanEps = margin[0] * revenue[0] / sh[0];
   }
 
   // Cash conversion: PRE-stock-pay FCF per dollar of adjusted earnings, from the model's own path. Stock pay
@@ -146,6 +158,51 @@ function buildSimplePath(stock, forecast, valuation) {
   };
 }
 
+// Build 80b: banks, insurers and other lenders (JPM, AXP, SOFI, UNH). The model values them on EPS alone
+// (no operating-margin or free-cash-flow rows: a lender's "cash flow" is mostly its balance sheet growing),
+// so the simple table follows that: EPS from consensus for years 1-2 (same fading trims), then the model's
+// own EPS growth path, and the model's exit P/E. Net margin is shown (EPS x shares / revenue) and editable
+// the same way. No free cash flow and no cash build: retained earnings fund loan and float growth, and the
+// shareholder return is the dividend plus the buybacks already in the share count.
+function buildEpsOnlyPath(stock, rows, valuation, price, a, n, rev, sh) {
+  const audit = (valuation?.methods || []).find(m => m.name === 'Normalized EPS exit')?.audit;
+  const base = finite(audit?.normalizedEPSBase), path = audit?.epsGrowthPath;
+  if (!(base > 0) || !Array.isArray(path) || path.length < 10) return null;
+  const rev0 = rev[0] / (1 + (finite(rows[0].revenueGrowth) ?? 0));
+  const sh0 = sh[0] / (1 + (finite(rows[0].actualDilution) ?? 0));
+  const eps = []; let e = base;
+  for (let i = 0; i < 10; i++) { e *= 1 + (finite(path[i]) ?? 0); eps.push(e); }
+  // Consensus for years 1-2 when it's in the same ballpark as the model (within 40%: guards against a
+  // different EPS basis or a bad feed value).
+  const aEps = [finite(a.epsCurrentYear), finite(a.epsNextYear)];
+  const near = (x, m) => x > 0 && m > 0 && Math.abs(x / m - 1) <= .40;
+  const useConsensus = n >= 3 && near(aEps[0], eps[0]) && near(aEps[1], eps[1]);
+  if (useConsensus) {
+    // Consensus levels for years 1-2, then the model's growth path from there; the trim fades out by year 5.
+    // The model's own path already carries the fading trim when it used consensus levels: undo it first.
+    const un = i => audit.consensusLevels ? eps[i] / (1 - CONSENSUS_TRIM[i]) : eps[i];
+    const raw = eps.map((v, i) => i < 2 ? aEps[i] : un(i) * aEps[1] / un(1));
+    for (let i = 0; i < 10; i++) eps[i] = raw[i] > 0 ? raw[i] * (1 - CONSENSUS_TRIM[i]) : raw[i];
+  }
+  const years = [];
+  let prevRev = rev0, prevSh = sh0;
+  for (let i = 0; i < 10; i++) {
+    const r = rows[i];
+    years.push({ year: finite(r.year), revenueGrowth: rev[i] / prevRev - 1, revenue: rev[i], shareChange: sh[i] / prevSh - 1, shares: sh[i],
+      eps: eps[i], netMargin: eps[i] * sh[i] / rev[i], cashConversion: null, fcfMarginFallback: 0,
+      dividendPerShare: Math.max(0, finite(r.dividendPerShare) ?? 0), sbcMargin: 0, preSbc: false });
+    prevRev = rev[i]; prevSh = sh[i];
+  }
+  const cyG = finite(a.epsGrowthCurrentYear);
+  let eps0 = useConsensus && cyG !== null && cyG > -0.9 ? aEps[0] / (1 + cyG) : base;
+  return {
+    version: 4, epsOnly: true, eps0, basis: useConsensus ? 'consensus_years_1_2' : 'model', analysts: n, oneOffYear1: null,
+    price, revenue0: rev0, shares0: sh0, netDebtNow: null, nonOperatingMargin: 0, taxRate: .21,
+    peToday: years[0].eps > 0 ? price / years[0].eps : null,
+    exitPE: clamp(finite(audit.exitMultiple) ?? 15, 6, 35), years,
+  };
+}
+
 // Same arithmetic the Research page uses, so tests can check the page and the nightly agree.
 function calculateSimple(sp, edits = {}) {
   if (!sp || !sp.years || sp.years.length < 10) return null;
@@ -179,7 +236,8 @@ function calculateSimple(sp, edits = {}) {
     // Shares issued for stock pay ~ stock pay $ / price; net change = issued - bought.
     const px = Number.isFinite(y.opsPrice) && y.opsPrice > 0 ? y.opsPrice : null;
     const buyback = px ? Math.max(0, y.sbc - (y.sh - prevSh) * px) : y.sbc;
-    nd -= y.preFcf - y.dps * y.sh - buyback;
+    if (!sp.epsOnly) nd -= y.preFcf - y.dps * y.sh - buyback;
+    else { y.preFcf = NaN; y.ownerFcf = NaN; }
     // A net debt you type replaces the rolled-forward figure; later years roll on from it.
     if (edits.netDebt && Number.isFinite(edits.netDebt[i])) { nd = edits.netDebt[i]; y.netDebtSet = true; }
     y.netDebt = nd;
@@ -195,5 +253,5 @@ function calculateSimple(sp, edits = {}) {
   return { years: out, exit: out[9].price, value, cagr: value > 0 ? Math.pow(value / price, .1) - 1 : NaN };
 }
 
-return { buildSimplePath, calculateSimple, interestInEarnings, CASH_YIELD };
+return { buildSimplePath, calculateSimple, interestInEarnings, CASH_YIELD, CONSENSUS_TRIM };
 });

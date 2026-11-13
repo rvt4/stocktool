@@ -955,10 +955,20 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
   // decides whether the company's historical SBC is deducted in full or not at all.
   const sbcAfterTax=Math.max(0,sbcNow)*(1-normalizedTaxRate);
   // Consensus EPS is optimistic on average (estimates tend to be revised down), so haircut it:
-  // 3% for the current year (mostly reported) and 8% for next year. Losses are not haircut.
+  // per CONSENSUS_TRIM (simple-path.js), fading out by year 5. Losses are not haircut.
   const haircut=(e,h)=>e>0?e*(1-h):e;
   const rawImplied=(eps,rev,h=0)=>{const e=finite(eps),r=finite(rev);return e!=null&&r>0&&lastShares>0?haircut(e,h)*lastShares/r:null;};
-  const raw1=rawImplied(aCov.epsCurrentYear,aCov.revenueCurrentYear);
+  const raw1Reported=rawImplied(aCov.epsCurrentYear,aCov.revenueCurrentYear);
+  // Build 80: one-off gains in this year's consensus (investment mark-ups, asset sales: GOOGL 2026, EPS +81%
+  // then -23% next year). When this year's implied margin sits 3+ points above next year's while revenue
+  // grows, next year is the clean run-rate: use it (+2 pts) for this year too. Otherwise the inflated year
+  // fooled the basis test (GOOGL read as "excludes stock pay", so ~6 pts of stock pay was taken off a GAAP
+  // consensus and the operating margin dipped 36% -> 29% before climbing back to 39%).
+  const raw2Plain=rawImplied(aCov.epsNextYear,aCov.revenueNextYear);
+  const consensusOneOff=Number.isFinite(raw1Reported)&&Number.isFinite(raw2Plain)&&raw2Plain>0&&raw1Reported>raw2Plain+.03
+    &&finite(aCov.revenueNextYear)>finite(aCov.revenueCurrentYear);
+  const raw1=consensusOneOff?raw2Plain+.02:raw1Reported;
+  const cleanEps1=consensusOneOff&&finite(aCov.revenueCurrentYear)>0&&lastShares>0?raw1*finite(aCov.revenueCurrentYear)/lastShares:finite(aCov.epsCurrentYear);
   // Skip the anchor when analysts' revenue base doesn't match the company we model (spin-offs,
   // big divestitures, different fiscal year): EPS on one base vs revenue on another is meaningless.
   const modelRev1=finite(years.at(-1)?.revenue)>0&&Number.isFinite(growthInfo.y1)?finite(years.at(-1).revenue)*(1+growthInfo.y1):null;
@@ -993,8 +1003,13 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
   // Amortization is a fixed dollar amount that rolls off; as a share of revenue it shrinks as revenue grows.
   const amortShare=(rev,t)=>{const r=finite(rev);if(!(amortDeduction>0))return 0;if(!(revNowAnchor>0)||!(r>0))return amortDeduction;return clamp(amortDeduction*revNowAnchor*Math.pow(.9,t)/r,0,amortDeduction);};
   const impliedNet=(eps,rev,h,t)=>{const x=rawImplied(eps,rev,h);return x!=null?clamp(x-sbcShare(rev,t)-amortShare(rev,t),-.10,netCeiling):null;};
-  const analystNet1=impliedNet(aCov.epsCurrentYear,aCov.revenueCurrentYear,.03,1);
-  const analystNet2=impliedNet(aCov.epsNextYear,aCov.revenueNextYear,.08,2);
+  // Build 80c: consensus trims come from one schedule (engine/simple-path.js CONSENSUS_TRIM), fading to zero
+  // by year 5. The year-5 target is anchored to next year's margin WITHOUT the trim: an optimism correction
+  // for one forecast year shouldn't become a permanent cut to long-run earnings.
+  const { CONSENSUS_TRIM }=require('./simple-path');
+  const analystNet1=impliedNet(cleanEps1,aCov.revenueCurrentYear,CONSENSUS_TRIM[0],1);
+  const analystNet2=impliedNet(aCov.epsNextYear,aCov.revenueNextYear,CONSENSUS_TRIM[1],2);
+  const analystNet2Plain=impliedNet(aCov.epsNextYear,aCov.revenueNextYear,0,2);
   // "Improvement" means margins recovering, not just EPS growing with revenue: next year's
   // implied margin is clearly higher than this year's, or EPS turns from a loss to a profit.
   const analystExpectsImprovement=Number.isFinite(finite(aCov.epsNextYear))&&finite(aCov.epsNextYear)>0&&(
@@ -1030,7 +1045,8 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     // 6.7% while its operating margin was 20%. Put the analyst figures on the normalized basis first.
     const addN1=currentNormalizationAddback, addN2=currentNormalizationAddback+.25*(targetNormalizationAddback-currentNormalizationAddback);
     const normN1=Number.isFinite(analystNet1)?Math.min(netCeiling,analystNet1+addN1):null;
-    const normN2=Number.isFinite(analystNet2)?Math.min(netCeiling,analystNet2+addN2):null;
+    const n2Anchor=Number.isFinite(analystNet2Plain)?analystNet2Plain:analystNet2;
+    const normN2=Number.isFinite(n2Anchor)?Math.min(netCeiling,n2Anchor+addN2):null;
     if(Number.isFinite(normN1)&&Math.abs(normN1-currentNet)>.015) currentNet=clamp(currentNet+anchorW*(normN1-currentNet),-.10,netCeiling);
     const nearAnchor=Number.isFinite(normN2)?normN2:normN1;
     if(Number.isFinite(nearAnchor)&&Math.abs(nearAnchor-targetNet)>.015) targetNet=clamp(targetNet+anchorW*(nearAnchor-targetNet),-.10,netCeiling);
@@ -1100,7 +1116,13 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     const oldT=targetNet,oldM=matureTargetNet;
     // Compare like with like: the 10-year history is REPORTED (GAAP) margin, so test today's reported
     // margin, not the normalized one (which adds back acquisition amortization, e.g. AMD/Xilinx).
-    const reportedNow=Number.isFinite(gaapCurrentNet)?gaapCurrentNet:currentNet;
+    let reportedNow=Number.isFinite(gaapCurrentNet)?gaapCurrentNet:currentNet;
+    // Build 80b: one-off gains below the operating line (investment mark-ups: AMZN's Anthropic stake put
+    // reported net at 15.5% on a 12.7% operating margin) are not a margin peak. Test the margin the
+    // operations earn: (latest operating margin + typical non-operating income) after tax, +1 pt slack.
+    {const t=clamp(normalizedTaxRate,0,.35);
+     const npoT=(()=>{const v=years.slice(-5).map(y=>{const n=pctMargin(y,'netIncome'),o=pctMargin(y,'operatingIncome');return Number.isFinite(n)&&Number.isFinite(o)?n/(1-t)-o:null;}).filter(Number.isFinite);return v.length>=3?clamp(median(v),-.05,.03):0;})();
+     if(Number.isFinite(latestOp)){const clean=(latestOp+npoT)*(1-t)+.01;if(reportedNow>clean){reportedNow=clean;durabilityEvidence.push('one_off_gains_excluded');}}}
     const elevated=reportedNow>provenNet+.03&&reportedNow>Math.max(provenNet,.01)*1.4;
     if(elevated){
       // Durability: some booms are structural. Score the evidence and revert less when it's strong.
@@ -1132,8 +1154,10 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
       const rev5=revs.length>=6?Math.pow(revs.at(-1)/revs.at(-6),1/5)-1:null;
       if(rev5!=null&&rev5>.15){durability+=.15;durabilityEvidence.push('strong_revenue_scale');}
       if(Number.isFinite(analystNet2)&&anchorW>0&&!revenueBaseMismatch){
-        if(analystNet2>=reportedNow-.005){durability+=.15;durabilityEvidence.push('analysts_expect_margin_to_hold');}
-        else if(analystNet2<reportedNow-.02){durability-=.10;durabilityEvidence.push('analysts_expect_margin_to_fall');}
+        // Build 80b: compare before the optimism trim; the haircut alone made a flat margin look like a fall.
+        const a2=Number.isFinite(analystNet2Plain)?analystNet2Plain:analystNet2;
+        if(a2>=reportedNow-.005){durability+=.15;durabilityEvidence.push('analysts_expect_margin_to_hold');}
+        else if(a2<reportedNow-.02){durability-=.10;durabilityEvidence.push('analysts_expect_margin_to_fall');}
       }
       // Backlog (remaining performance obligations): contracted future revenue is the best free
       // evidence that a boom has legs. A big and growing backlog supports durability; a shrinking one doesn't.
@@ -1315,7 +1339,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     provenMarginRails:{net:netRail,operating:opRail,ebitda:ebitdaRail},
     steadyMarginClimb,marginTrendOn,
     peakMarginDiscipline:{applied:peakMarginApplied,baseReversion,reversionShare,durability,durabilityEvidence,elevatedYears,preBoomBaseline,provenNet,delta:peakMarginDelta},
-    crisisRecovery,analystMarginAnchor:{applied:analystAnchorApplied,weight:anchorW,revenueBaseMismatch,consensusBasis,sbcDeduction,analystNet1,analystNet2,provenNet,expectsImprovement:analystExpectsImprovement,delta:analystAnchorDelta},
+    crisisRecovery,analystMarginAnchor:{applied:analystAnchorApplied,weight:anchorW,revenueBaseMismatch,consensusBasis,consensusOneOff,sbcDeduction,analystNet1,analystNet2,provenNet,expectsImprovement:analystExpectsImprovement,delta:analystAnchorDelta},
     currentNormalizationAddback,targetNormalizationAddback,matureNormalizationAddback,
     grossNow,grossTarget,grossMature,rdNow,rdTarget,rdMature,sgaNow,sgaTarget,sgaMature,
     sbcNowForEarnings,sbcTarget,sbcMature,amortNow,amortTarget,amortMature,
