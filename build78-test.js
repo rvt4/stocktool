@@ -22,16 +22,16 @@ assert(near(sp.exitPE,20,1e-9));
 // Cash conversion is PRE-stock-pay FCF (18% owner + 3% stock pay = 21%) per $ of adjusted earnings.
 assert(near(sp.years[0].cashConversion,.21/adjM,1e-9)&&sp.years[0].preSbc&&near(sp.years[0].sbcMargin,.03));
 
-// 2) Consensus for years 1-2 (trimmed 3% / 8%), model drift after.
+// 2) Consensus for years 1-2 (Build 80c: trimmed 1% / 4%, fading to zero by year 5), model drift after.
 const an={numAnalysts:12,revenueCurrentYear:rows[0].revenue*1.02,revenueNextYear:rows[1].revenue*1.03,epsCurrentYear:30,epsNextYear:34};
 sp=buildSimplePath({price:{current:500},analystEstimates:an},{rows},val);
 assert.strictEqual(sp.basis,'consensus_years_1_2');
-assert(near(sp.years[0].eps,30*.97,1e-9)&&near(sp.years[1].eps,34*.92,1e-9),'consensus EPS, trimmed');
+assert(near(sp.years[0].eps,30*.99,1e-9)&&near(sp.years[1].eps,34*.96,1e-9),'consensus EPS, trimmed');
 assert(near(sp.years[0].revenue,an.revenueCurrentYear));
-assert(near(sp.years[4].netMargin,sp.years[1].netMargin,1e-9),'flat model margin -> margin holds at the year-2 level');
+assert(near(sp.years[4].netMargin,sp.years[1].netMargin/.96,1e-9),'flat model margin -> untrimmed year-2 margin by year 5 (trim faded out)');
 // A fading stock-pay share with flat GAAP profit must not drag the analyst-basis margin down (SNOW case).
 {const r2=rows.map((r,i)=>({...r,sbcMargin:.03-.002*i}));const s2=buildSimplePath({price:{current:500},analystEstimates:an},{rows:r2},val);
- assert(near(s2.years[9].netMargin,s2.years[1].netMargin,1e-9),'stock-pay fade ignored in the margin trend');}
+ assert(near(s2.years[9].netMargin,s2.years[1].netMargin/.96,1e-9),'stock-pay fade ignored in the margin trend');}
 // thin coverage or a mismatched revenue base falls back to the model
 assert.strictEqual(buildSimplePath({price:{current:500},analystEstimates:{...an,numAnalysts:2}},{rows},val).basis,'model');
 assert.strictEqual(buildSimplePath({price:{current:500},analystEstimates:{...an,revenueCurrentYear:rows[0].revenue*2}},{rows},val).basis,'model');
@@ -40,7 +40,7 @@ assert.strictEqual(buildSimplePath({price:{current:500},analystEstimates:{...an,
 const spike={...an,epsCurrentYear:60};                           // margin far above next year's
 sp=buildSimplePath({price:{current:500},analystEstimates:spike},{rows},val);
 assert(sp.oneOffYear1&&near(sp.oneOffYear1.analystEps,60));
-assert(near(sp.years[0].netMargin,sp.years[1].netMargin+.02,1e-9));
+assert(near(sp.years[0].netMargin,(sp.years[1].netMargin/.96+.02)*.99,1e-9),'clean year 1 = untrimmed year-2 margin + 2 pts, then the year-1 trim');
 
 // 4) Calculator: price = EPS x P/E + cash built per share; one consistent return.
 sp=buildSimplePath({price:{current:500}},{rows},val);

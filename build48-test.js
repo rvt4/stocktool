@@ -252,7 +252,7 @@ console.log('Build 48 tests passed',JSON.stringify({turnY10:[+a0[9].toFixed(3),+
   if(au){
     assert(au.consensusLevels===true,'should use consensus levels');
     const y2=au.normalizedEPSBase*(1+au.epsGrowthPath[0])*(1+au.epsGrowthPath[1]);
-    assert(Math.abs(y2/(st.analystEstimates.epsNextYear*.92)-1)<.02,'year-2 EPS should match haircut consensus: '+y2);
+    assert(Math.abs(y2/(st.analystEstimates.epsNextYear*.96)-1)<.02,'year-2 EPS should match trimmed consensus (Build 80c: 4%): '+y2);
     console.log('financial consensus levels ok',au.epsGrowthPath.slice(0,3).map(x=>+x.toFixed(3)));
   } else console.log('financial fixture not valued as financial; methods',r.v.methods.map(x=>x.name));
 }

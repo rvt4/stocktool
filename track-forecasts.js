@@ -29,9 +29,52 @@ function snapshotRow(s){
   const b=s.projectionAssumptions?.forecastBridge?.revenue||{};
   const ltg=b.longTermConsensus||{};
   return [finite(p[0].year),finite(p[0].revenue),finite(p[0].revenueGrowth),finite(p[1].year),finite(p[1].revenue),finite(p[1].revenueGrowth),
-    finite(s.analystEstimates?.numAnalysts),finite(ltg.raw),finite(b.backlogEvidence?.signal),String(s.sector||'')];
+    finite(s.analystEstimates?.numAnalysts),finite(ltg.raw),finite(b.backlogEvidence?.signal),String(s.sector||''),
+    // Build 80c: analysts' EPS (consensus basis) for this year and next, and this year's growth vs last year's
+    // actual on the same basis, so last year's ACTUAL adjusted EPS = epsCY / (1 + epsGrowthCY).
+    finite(s.analystEstimates?.epsCurrentYear),finite(s.analystEstimates?.epsNextYear),finite(s.analystEstimates?.epsGrowthCurrentYear)];
 }
-const COLS=['y1Year','y1Revenue','y1Growth','y2Year','y2Revenue','y2Growth','numAnalysts','longTermConsensus','backlogSignal','sector'];
+const COLS=['y1Year','y1Revenue','y1Growth','y2Year','y2Revenue','y2Growth','numAnalysts','longTermConsensus','backlogSignal','sector','epsCY','epsNY','epsGrowthCY'];
+
+// Build 80c: how wrong is consensus EPS? Compare each saved estimate with the actual EPS the company later
+// reported ON THE SAME (analyst) BASIS. yfinance gives no reported adjusted EPS, but once a year is over its
+// 'current year' growth rate is measured from it: actual = epsCurrentYear / (1 + epsGrowthCurrentYear).
+// error = actual / forecast - 1: negative = analysts were too optimistic. Suggested trim = -median error.
+function actualEpsMap(snapshots,stocks){
+  const act=new Map(); // ticker|fy -> actual
+  const put=(t,fy,e,g)=>{if(fy!=null&&e>0&&g!=null&&g>-.9){const a=e/(1+g);if(a>0)act.set(t+'|'+(fy-1),a);}};
+  for(const snap of snapshots)for(const [t,row] of Object.entries(snap.rows||{})){const r=Object.fromEntries(COLS.map((c,i)=>[c,row[i]]));put(t,r.y1Year,r.epsCY,r.epsGrowthCY);}
+  for(const s of stocks){const fy=finite((s.valuationProjection||[])[0]?.year);put(s.ticker,fy,finite(s.analystEstimates?.epsCurrentYear),finite(s.analystEstimates?.epsGrowthCurrentYear));}
+  return act;
+}
+function evaluateEps(snapshots,stocks){
+  const act=actualEpsMap(snapshots,stocks),obs=[];
+  for(const snap of snapshots)for(const [t,row] of Object.entries(snap.rows||{})){
+    const r=Object.fromEntries(COLS.map((c,i)=>[c,row[i]]));
+    if(!((r.numAnalysts??0)>=3))continue;
+    for(const [h,fy,f] of [['this year',r.y1Year,r.epsCY],['next year',r.y2Year,r.epsNY]]){
+      const a=act.get(t+'|'+fy);if(!(f>0)||!(a>0))continue;
+      const err=a/f-1;if(Math.abs(err)>1)continue; // basis change or bad feed value
+      obs.push({ticker:t,asOf:snap.asOf,horizon:h,fy,error:err});
+    }
+  }
+  const clip=x=>Math.max(-.3,Math.min(.3,x));
+  const sum=list=>{const md=median(list.map(o=>o.error));return {n:list.length,medianError:md,meanErrorClipped:mean(list.map(o=>clip(o.error))),
+    shareTooHigh:list.length?list.filter(o=>o.error<0).length/list.length:null,
+    suggestedTrim:list.length>=150&&md!=null?Math.max(0,-md):null};};
+  const by={};for(const o of obs)(by[o.horizon]??=[]).push(o);
+  return {note:'error = actual EPS (analyst basis) / saved consensus - 1. Negative = analysts too optimistic. suggestedTrim needs 150+ observations; compare with CONSENSUS_TRIM in engine/simple-path.js ([this year, next year, ...]).',
+    observations:obs.length,byHorizon:Object.fromEntries(Object.entries(by).map(([k,v])=>[k,sum(v)])),
+    worstMisses:obs.slice().sort((a,b)=>Math.abs(b.error)-Math.abs(a.error)).slice(0,15)};
+}
+// Today's 90-day revisions: an early read on the direction of analyst errors while the history builds up.
+function revisions90d(stocks){
+  const cur=[],nxt=[];
+  for(const s of stocks){const a=s.analystEstimates||{};if(!((a.numAnalysts??0)>=5))continue;
+    const c=finite(a.epsCurrentYear),c0=finite(a.epsCurrentYear90dAgo),n=finite(a.epsNextYear),n0=finite(a.epsNextYear90dAgo);
+    if(c>0&&c0>0)cur.push(c/c0-1);if(n>0&&n0>0)nxt.push(n/n0-1);}
+  return {thisYear:{n:cur.length,median:median(cur)},nextYear:{n:nxt.length,median:median(nxt)}};
+}
 
 function bucketOf(g){if(g==null)return 'unknown';if(g<0)return '<0%';if(g<.10)return '0-10%';if(g<.20)return '10-20%';if(g<.30)return '20-30%';return '30%+';}
 
@@ -78,9 +121,13 @@ function trackForecasts(output,{dataDir=path.join(__dirname,'data'),now=new Date
     store.columns=COLS;
     fs.writeFileSync(file,JSON.stringify(store));
   }
-  const report={generatedAt:now.toISOString(),snapshots:store.snapshots.length,firstSnapshot:store.snapshots[0]?.asOf??null,...evaluate(store.snapshots,stocks)};
+  const rev=revisions90d(stocks);
+  store.revisionHistory=(store.revisionHistory||[]).filter(r=>String(r.asOf).slice(0,7)!==month).concat([{asOf:now.toISOString().slice(0,10),...rev}]).slice(-60);
+  fs.writeFileSync(file,JSON.stringify(store));
+  const report={generatedAt:now.toISOString(),snapshots:store.snapshots.length,firstSnapshot:store.snapshots[0]?.asOf??null,...evaluate(store.snapshots,stocks),
+    consensusEps:{...evaluateEps(store.snapshots,stocks),revisions90dToday:rev,revisionHistory:store.revisionHistory}};
   fs.writeFileSync(path.join(dataDir,'forecast-accuracy.json'),JSON.stringify(report,null,1));
   return report;
 }
 
-module.exports={trackForecasts,evaluate,reportedBase,snapshotRow,COLS};
+module.exports={trackForecasts,evaluate,evaluateEps,revisions90d,reportedBase,snapshotRow,COLS};
