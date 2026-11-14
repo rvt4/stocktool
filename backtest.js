@@ -40,7 +40,7 @@ const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {buildOwnerStrategyLab}=require('./owner-strategy-lab');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='build80c';
+const MODEL_VERSION='build82';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -2036,7 +2036,13 @@ async function main(){
           const f=buildForecast(stock),q=computeQuality(stock,f),v=valuate(stock,f,q),d=rateStock(stock,f,q,v);
           if(!Number.isFinite(v.expectedCAGR)){ try{capturedForecasts.push(captureForecast(stock,f,asOf));}catch(e){} diagnostics.missingExpectedCAGR++; growthOnly(); if(skipExamples.length<20)skipExamples.push({ticker,asOf,reason:'missing_expected_cagr'}); continue; }
           try{capturedForecasts.push(captureForecast(stock,f,asOf));}catch(e){}
-          const row=compactModel(stock,f,q,v,d); row.growth=growth; attachRealized(row,history,spyHistory,asOf); snapshots.get(asOf).push(row); diagnostics.modeledObservations++;
+          const row=compactModel(stock,f,q,v,d); row.growth=growth;
+          // Build 82 experiment: long-run growth ~1 pt higher AND exit P/E leaning on growth (less of today's
+          // multiple carried to year 10). Year-end snapshots only, to keep run time down. Scored in
+          // ownerStrategyLab.returnVariantTest against realized returns; nothing live uses it.
+          if(String(asOf).slice(5,10)==='12-31'){try{const f2=buildForecast(stock,{matureGrowthLift:.01}),q2=computeQuality(stock,f2),v2=valuate(stock,f2,q2,{exitPersistence:.30});
+            if(Number.isFinite(v2.expectedCAGR))row.altExpectedCAGR=v2.expectedCAGR;}catch(e){}}
+          attachRealized(row,history,spyHistory,asOf); snapshots.get(asOf).push(row); diagnostics.modeledObservations++;
         }catch(e){diagnostics.modelFailures++;growthOnly();errors.push({ticker,asOf,error:e.message}); if(skipExamples.length<20)skipExamples.push({ticker,asOf,reason:'model_failure',error:e.message});}
       }
       // Build 66: score this ticker's forecasts against everything it has reported since (latest filings).

@@ -271,6 +271,31 @@ function returnCalibration(snapshotOutput){
   return out;
 }
 
+// Build 82: does "long-run growth ~1 pt higher + exit P/E that follows growth" predict returns better than
+// the live model? Same stocks and dates (year-end snapshots). Pre-set rule (written before results):
+// adopt only if the variant's median absolute error vs realized return is lower at 3Y AND 5Y, its rank
+// correlation with realized returns is not worse by more than 0.01 at either, and its 3Y error is also
+// lower in both halves (before 2022 / 2022+).
+function returnVariantTest(snapshotOutput){
+  const rows=[];for(const snap of snapshotOutput||[])for(const r of snap.rows||[])if(finite(r.altExpectedCAGR)!==null&&finite(r.expectedCAGR)!==null)rows.push({...r,asOf:snap.asOf??r.asOf});
+  const spearman=(xs,ys)=>{const n=xs.length;if(n<10)return null;const rk=a=>{const o=a.map((v,i)=>[v,i]).sort((p,q)=>p[0]-q[0]),r=new Array(n);o.forEach(([,i],k)=>r[i]=k);return r;};
+    const a=rk(xs),b=rk(ys),ma=(n-1)/2;let num=0,da=0,db=0;for(let i=0;i<n;i++){num+=(a[i]-ma)*(b[i]-ma);da+=(a[i]-ma)**2;db+=(b[i]-ma)**2;}return num/Math.sqrt(da*db);};
+  const score=(list,n)=>{const real=`realized${n}YTotalReturnCAGR`;const v=list.filter(r=>finite(r[real])!==null);if(v.length<50)return null;
+    const err=(f)=>median(v.map(r=>Math.abs(r[real]-f(r))));const bias=(f)=>median(v.map(r=>r[real]-f(r)));
+    const byDate=new Map();for(const r of v)(byDate.get(r.asOf)||byDate.set(r.asOf,[]).get(r.asOf)).push(r);
+    const corr=(f)=>{const c=[...byDate.values()].map(g=>spearman(g.map(f),g.map(r=>r[real]))).filter(x=>x!==null);return c.length?c.reduce((x,y)=>x+y,0)/c.length:null;};
+    const M=r=>r.expectedCAGR,A=r=>r.altExpectedCAGR;
+    return {n:v.length,model:{medianAbsError:err(M),bias:bias(M),rankCorrelation:corr(M),medianPredicted:median(v.map(M))},
+      variant:{medianAbsError:err(A),bias:bias(A),rankCorrelation:corr(A),medianPredicted:median(v.map(A))}};};
+  const out={readMe:'Variant = long-run revenue growth +1 pt (fade ends ~3.5-4% instead of ~2.5-3%) AND exit multiples carry 30% of today\'s multiple instead of 60% (lean on the growth-based multiple). Error = realized - predicted CAGR. bias > 0 = predictions too low. rankCorrelation = average Spearman correlation of predicted vs realized across snapshot dates (higher = better ranking).',n:rows.length};
+  for(const n of [3,5])out[`${n}Y`]=score(rows,n);
+  out.halves3Y={before2022:score(rows.filter(r=>String(r.asOf)<'2022'),3),from2022:score(rows.filter(r=>String(r.asOf)>='2022'),3)};
+  const ok=k=>{const s=out[k];return !!(s&&s.variant.medianAbsError<s.model.medianAbsError&&(s.variant.rankCorrelation??-1)>=(s.model.rankCorrelation??1)-.01);};
+  const half=h=>!!(h&&h.variant.medianAbsError<h.model.medianAbsError);
+  out.adopt=ok('3Y')&&ok('5Y')&&half(out.halves3Y.before2022)&&half(out.halves3Y.from2022);
+  return out;
+}
+
 // Build 61: where did the returns come from? For each arm: every stock's contribution (start weight x
 // quarterly return, summed over quarters), its contribution versus SPY (what it added over just holding
 // SPY with that money), and the strategy's return if its biggest winners had only earned SPY.
@@ -402,6 +427,7 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
     entryFunnel:entryFunnel(snapshotOutput),
     rankBuckets:rankBucketOutcomes(snapshotOutput),
     returnCalibration:returnCalibration(snapshotOutput),
+    returnVariantTest:returnVariantTest(snapshotOutput),
     growthBuckets:growthBucketOutcomes(snapshotOutput),
     benchmarks:{equalWeightUniverse:compact(universe)},
     arms:arms.map(compact),
@@ -409,4 +435,4 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
   };
 }
 
-module.exports={returnCalibration,TAX,afterTaxSummary,growthRows,simulateGrowthSleeve,blendArms,growthBucketOutcomes,attribution,holdingsCsvRows,entryFunnel,liveRankedRows,shortlistEligible,simulateOwnerStrategy,simulateMechanicalTopN,simulateUniverseEqualWeight,rankBucketOutcomes,buildOwnerStrategyLab};
+module.exports={returnVariantTest,returnCalibration,TAX,afterTaxSummary,growthRows,simulateGrowthSleeve,blendArms,growthBucketOutcomes,attribution,holdingsCsvRows,entryFunnel,liveRankedRows,shortlistEligible,simulateOwnerStrategy,simulateMechanicalTopN,simulateUniverseEqualWeight,rankBucketOutcomes,buildOwnerStrategyLab};

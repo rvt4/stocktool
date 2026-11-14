@@ -18,7 +18,7 @@ for(let i=0;i<10;i++){R*=1.10;rows.push({year:2026+i,revenue:R,revenueGrowth:.10
   sbcMargin:0,intangibleAmortizationMargin:0,taxRate:.20,fcfMargin:.25,preSbcFcfMargin:.25,eps:.25*R/S,dividendPerShare:0,nonOperatingMargin:.02});}
 const val={methods:[{name:'EPS exit',audit:{exitMultiple:20}}],netDebt:0};
 const sp=buildSimplePath({price:{current:500}},{rows},val);
-assert.strictEqual(sp.version,4);
+assert.strictEqual(sp.version,5);
 assert(near(sp.nonOperatingMargin,.02)&&near(sp.taxRate,.2));
 const r=calculateSimple(sp);
 const y=r.years[9];
