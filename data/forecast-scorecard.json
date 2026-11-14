@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-11-14T18:27:35.170Z",
- "modelVersion": "build82b",
+ "generatedAt": "2026-11-14T20:02:21.562Z",
+ "modelVersion": "build83",
  "readMe": [
   "Revenue error = ln(actual/forecast); bias > 0 means the model forecast too LOW. Margin errors are in margin points (0.02 = 2 pts).",
   "skill = 1 - model median abs error / baseline median abs error. Positive = the model beats that naive forecast; negative = the naive forecast was more accurate.",
