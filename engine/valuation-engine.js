@@ -1003,21 +1003,20 @@ function valuate(stock,forecast,quality,opts={}){
       return Math.max(1,fct/Math.pow(1.15,2));
     })();
     const sbcFrac=sbcAddBackFraction(forecast), epsX=sbcNeutralEPS(f,sbcFrac);
-    // Build 82: today's P/E anchor uses the EPS the operations earned. A one-off item below the operating
-    // line (META 2025: a ~$16B deferred-tax charge cut EPS from ~$29 to $23.49, so its "current P/E" read
-    // 27.7x and lifted the exit to 25x; AMZN/GOOGL investment gains do the opposite) is not the run-rate.
-    // Clean EPS = (latest operating margin + typical non-operating income) after the normal tax rate.
-    // Used only for the multiple anchor, and only when reported EPS is 15%+ away from it.
+    // Build 82b: today's P/E anchor corrects a one-off TAX year only (META 2025: a ~$16B deferred-tax charge
+    // took the effective rate to ~30% vs a normal ~18%, cutting EPS from ~$27 to $23 and lifting its
+    // "current P/E" and exit multiple). Build 82 rebuilt EPS from the operating margin instead, but that mixed
+    // bases (CRM: GAAP operating income after amortization vs a normalized EPS without it) and missed
+    // interest income (AMZN, GOOGL), so it RAISED those P/Es. This version stays on the same basis: it only
+    // re-taxes the year at the normal rate, when the effective rate is 8+ points off it and the model's
+    // normalized EPS hasn't already removed it (within 10% of reported EPS).
     const peBaseEPS=(()=>{
-      const mg=forecast.forecastBridge?.margins||{}, rev=finite(last.revenue), op=finite(last.operatingIncome);
-      const sh=Number(shares0)>0?Number(shares0):null, t=clamp(finite(mg.normalizedTaxRate)??.21,0,.35);
-      if(!(rev>0)||!Number.isFinite(op)||!(op>0)||!sh||!(normEPS>0))return normEPS;
-      const clean=(op/rev+(finite(mg.nonOperatingMargin)??0))*(1-t)*rev/sh, ni=finite(last.netIncome);
-      if(!(clean>0)||!Number.isFinite(ni))return normEPS;
-      // Both the reported EPS and the normalized EPS must sit 15%+ from clean in the same direction:
-      // that means a below-the-line item the normalization didn't remove (not a basis difference).
-      const gap=normEPS/clean-1, gapReported=ni/sh/clean-1;
-      return Math.abs(gap)>.15&&Math.abs(gapReported)>.15&&Math.sign(gap)===Math.sign(gapReported)?clean:normEPS;
+      const mg=forecast.forecastBridge?.margins||{}, pre=finite(last.pretaxIncome), tax=finite(last.incomeTaxExpense), ni=finite(last.netIncome);
+      const sh=Number(shares0)>0?Number(shares0):null, tN=finite(mg.normalizedTaxRate);
+      if(!(normEPS>0)||!(pre>0)||!Number.isFinite(tax)||!Number.isFinite(tN)||!sh||!(ni>0))return normEPS;
+      const eff=tax/pre;
+      if(Math.abs(eff-tN)<.08||Math.abs(normEPS/(ni/sh)-1)>.10)return normEPS;
+      return normEPS*(1-clamp(tN,0,.35))/(1-clamp(eff,-.20,.60));
     })();
     const anchorPE=anchorAbove(price>0&&peBaseEPS>0?price/peBaseEPS/consensusRecovery:null,4.5);
     // Build 58c: today's FCF can be depressed by a capex or working-capital cycle (AMD 188x P/FCF vs
