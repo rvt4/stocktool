@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-11-14T13:54:14.444Z",
+ "generatedAt": "2026-11-14T17:35:51.487Z",
  "snapshots": 1,
  "firstSnapshot": "2026-11-13",
  "note": "error = actual reported revenue / forecast - 1. Positive = the model forecast too LOW (company grew faster). Based on monthly snapshots compared once the forecast year has been reported.",
