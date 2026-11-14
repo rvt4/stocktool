@@ -44,8 +44,11 @@ function baselineInputs(years){
   const g3=Math.pow(last.revenue/first.revenue,1/lb)-1;
   const recent=ys.slice(-3);
   const net=recent.map(y=>margin(y.netIncome,y.revenue)),fcf=recent.map(y=>margin(y.fcf,y.revenue));
+  // Build 81: trailing cash conversion (FCF / net income) for the FCF variant test; profitable years only.
+  const conv=recent.map(y=>finite(y.netIncome)>0&&finite(y.fcf)!=null?y.fcf/y.netIncome:null).filter(Number.isFinite);
   return {baseYear:finite(last.year),baseRevenue:last.revenue,g3:Number.isFinite(g3)?clamp(g3,-.30,.50):null,
-    lastNet:net.at(-1),medNet:median(net),lastFcf:fcf.at(-1),medFcf:median(fcf)};
+    lastNet:net.at(-1),medNet:median(net),lastFcf:fcf.at(-1),medFcf:median(fcf),
+    conv:conv.length>=2?clamp(median(conv),.3,2):null};
 }
 
 // Called once per (ticker, snapshot) right after buildForecast. Small on purpose.
@@ -92,10 +95,55 @@ function scoreForecasts(observations,actualYears){
         rev:{model:le(ar,rev),trend:le(ar,base.trend),fade:le(ar,base.fade),flat:le(ar,base.flat)},
         net:{model:pe(an,net),last:pe(an,o.lastNet),median3:pe(an,o.medNet)},
         fcf:{model:pe(af,fcf),last:pe(af,o.lastFcf),median3:pe(af,o.medFcf)},
+        fcfv:fcfVariants(o,k,net,fcf,af,pe),
         alt:o.alt&&o.alt[i]&&o.alt[i][0]===year?{net:pe(an,o.alt[i][1]),fcf:pe(af,o.alt[i][2])}:null});
     });
   }
   return out;
+}
+
+// Build 81: candidate FCF-margin forecasts, scored on the same companies and dates as the model's. The
+// model loses to "3-yr median FCF margin persists" at year 5 and to "last year's persists" at year 1, so:
+//   glide      : last year's FCF margin gliding to the 3-yr median by year 3 (no model at all)
+//   conv       : the model's NET margin x trailing cash conversion (FCF / net income): ties FCF to the
+//                net-margin forecast, which now beats its baseline at every horizon
+//   blend      : half model, half 3-yr median
+//   convBlend  : half conv, half 3-yr median
+//   modelGlide : half model, half glide
+// Where a variant can't be computed (losses, short history) it falls back to the model's number, so every
+// variant is scored on exactly the model's rows.
+function fcfVariants(o,k,net,fcf,af,pe){
+  if(!Number.isFinite(fcf))return null;
+  const med=Number.isFinite(o.medFcf)?o.medFcf:null,last=Number.isFinite(o.lastFcf)?o.lastFcf:med;
+  const glide=last!=null&&med!=null?last+(med-last)*Math.min(1,k/3):fcf;
+  const conv=Number.isFinite(net)&&net>0&&o.conv!=null?net*o.conv:fcf;
+  const half=(a,b)=>b!=null?(a+b)/2:a;
+  const v={glide,conv,blend:half(fcf,med),convBlend:half(conv,med),modelGlide:(fcf+glide)/2};
+  return Object.fromEntries(Object.entries(v).map(([n,x])=>[n,pe(af,x)]));
+}
+const FCF_VARIANTS=['glide','conv','blend','convBlend','modelGlide'];
+function fcfVariantTest(scored){
+  const mae=a=>median(a.map(Math.abs));
+  const stat=(rows)=>{const v=rows.filter(r=>r.fcfv&&Number.isFinite(r.fcf.model));if(v.length<MIN_GROUP)return null;
+    const m=mae(v.map(r=>r.fcf.model)),out={n:v.length,model:{medianAbsError:r4(m),bias:r4(median(v.map(r=>r.fcf.model)))}};
+    for(const n of FCF_VARIANTS){const e=v.map(r=>r.fcfv[n]).filter(Number.isFinite);const x=mae(e);
+      out[n]={medianAbsError:r4(x),bias:r4(median(e)),skillVsModel:m>0?r4(1-x/m):null,
+        closerThanModel:r4(v.filter(r=>Number.isFinite(r.fcfv[n])&&Math.abs(r.fcfv[n])<Math.abs(r.fcf.model)).length/v.length)};}
+    return out;};
+  const byHorizon={},halves={};
+  for(const k of HORIZONS){const rows=scored.filter(r=>r.k===k);const st=stat(rows);if(st)byHorizon[`year ${k}`]=st;
+    const a=stat(rows.filter(r=>String(r.asOf)<'2022-07-01')),b=stat(rows.filter(r=>String(r.asOf)>='2022-07-01'));
+    if(a||b)halves[`year ${k}`]={before2022H2:a,from2022H2:b};}
+  // Pre-set decision rule (written before seeing results): a variant replaces the model's FCF path only if
+  // it beats the model by 3%+ on median abs error at year 3 AND year 5, is closer than the model on more
+  // than half the forecasts at both, and also beats it in both halves of the snapshot dates at year 3.
+  const pass=n=>{const y3=byHorizon['year 3']?.[n],y5=byHorizon['year 5']?.[n],h=halves['year 3'];
+    return !!(y3&&y5&&y3.skillVsModel>=.03&&y5.skillVsModel>=.03&&y3.closerThanModel>.5&&y5.closerThanModel>.5
+      &&h?.before2022H2?.[n]?.skillVsModel>0&&h?.from2022H2?.[n]?.skillVsModel>0);};
+  const passing=FCF_VARIANTS.filter(pass).sort((a,b)=>(byHorizon['year 5'][b].skillVsModel+byHorizon['year 3'][b].skillVsModel)-(byHorizon['year 5'][a].skillVsModel+byHorizon['year 3'][a].skillVsModel));
+  return {readMe:'Error = actual FCF margin - forecast, in margin points. skillVsModel > 0 = the variant was more accurate than the model. Decision rule (set in advance): adopt a variant only if it beats the model by 3%+ at years 3 and 5, is closer more than half the time at both, and wins in both halves of the snapshot dates at year 3.',
+    variants:{glide:'last FCF margin -> 3-yr median by year 3',conv:'model net margin x trailing FCF/net income',blend:'50% model, 50% 3-yr median',convBlend:'50% conv, 50% 3-yr median',modelGlide:'50% model, 50% glide'},
+    byHorizon,halves,passing,winner:passing[0]??null};
 }
 
 // One metric (rev / net / fcf) for a list of scored rows.
@@ -211,10 +259,11 @@ function buildScorecard(scored,{modelVersion=null}={}){
     bySnapshotYear:groupBy(focus,r=>String(r.asOf).slice(0,4)),
     byFlag:{horizon:focusLabel,rows:flagTable(focus)},
     marginTrendTest:marginTrendTest(scored),
+    fcfVariantTest:fcfVariantTest(scored),
     byRank:{horizon:focusLabel,note:'Live rank at the snapshot (owner rule). Negative bias = model too optimistic.',rows:byRankTable(focus)},
     worstRevenueMisses:focus.filter(r=>Number.isFinite(r.rev.model)).sort((a,b)=>Math.abs(b.rev.model)-Math.abs(a.rev.model)).slice(0,30)
       .map(r=>({ticker:r.t,asOf:r.asOf,forecastCAGR:r4(r.fg),actualCAGR:r4(r.ag),fadeBaselineError:r4(r.rev.fade),modelError:r4(r.rev.model),flags:r.flags}))
   };
 }
 
-module.exports={marginTrendTest,captureForecast,scoreForecasts,buildScorecard,baselineInputs,baselineRevenue,HORIZONS};
+module.exports={fcfVariantTest,fcfVariants,marginTrendTest,captureForecast,scoreForecasts,buildScorecard,baselineInputs,baselineRevenue,HORIZONS};
