@@ -62,4 +62,11 @@ function company({taxCharge=0,shareJump=0,cy=null,n=0}={}){
   const t2=returnVariantTest(snaps.map(s=>({...s,rows:s.rows.map(r=>({...r,altExpectedCAGR:r.realized3YTotalReturnCAGR+.08}))})));
   assert.strictEqual(t2.adopt,false);
 }
+// 2b) an investment gain (normal tax rate) must not move the anchor (Build 82 raised AMZN/GOOGL/CRM P/Es)
+{
+  const {computeQuality}=require('./engine/quality-engine');const {valuate}=require('./engine/valuation-engine');
+  const s=company();const y=s.financials.years.at(-1),g=y.revenue*.05;y.pretaxIncome+=g;y.incomeTaxExpense+=g*.15;y.netIncome+=g*.85;
+  const f=buildForecast(s),q=computeQuality(s,f),v=valuate(s,f,q);const a=v.methods.find(m=>m.name==='EPS exit').audit;
+  assert(Math.abs(a.peAnchorEPS/a.normalizedCurrentMetric-1)<1e-9,'gain with a normal tax rate: anchor EPS unchanged');
+}
 console.log('build82 tests passed');
