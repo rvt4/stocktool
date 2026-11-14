@@ -40,7 +40,7 @@ const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {buildOwnerStrategyLab}=require('./owner-strategy-lab');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='build82b';
+const MODEL_VERSION='build83';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -1987,7 +1987,7 @@ async function main(){
   console.log('Historical universe coverage:', JSON.stringify(historicalUniverse.coverage));
   const spyHistory=await fetchBacktestHistory('SPY',HISTORY_YEARS);
   if(!spyHistory.length) throw new Error('SPY historical price history was empty; cannot benchmark backtest.');
-  const snapshots=new Map(dates.map(d=>[d,[]])); const errors=[]; const historyByTicker=new Map(); const growthOnlySnapshots=new Map(dates.map(d=>[d,[]]));
+  const snapshots=new Map(dates.map(d=>[d,[]])); const altSnapshots=new Map(dates.map(d=>[d,[]])); const errors=[]; const historyByTicker=new Map(); const growthOnlySnapshots=new Map(dates.map(d=>[d,[]]));
   const diagnostics={
     tickerDateAttempts:0,tickersFetched:0,tickerFetchFailures:0,identityCikFetches:0,identityTickerFallbackFetches:0,
     usableFinancialHistory:0,insufficientFinancialHistory:0,
@@ -2040,8 +2040,10 @@ async function main(){
           // Build 82 experiment: long-run growth ~1 pt higher AND exit P/E leaning on growth (less of today's
           // multiple carried to year 10). Year-end snapshots only, to keep run time down. Scored in
           // ownerStrategyLab.returnVariantTest against realized returns; nothing live uses it.
-          if(String(asOf).slice(5,10)==='12-31'){try{const f2=buildForecast(stock,{matureGrowthLift:.01}),q2=computeQuality(stock,f2),v2=valuate(stock,f2,q2,{exitPersistence:.30});
-            if(Number.isFinite(v2.expectedCAGR))row.altExpectedCAGR=v2.expectedCAGR;}catch(e){}}
+          // Build 83: every snapshot (not just year-end), and a full alternative row so a strategy arm can
+          // pick stocks with the experiment's numbers and rankings (arm CX). Roughly doubles model run time.
+          try{const f2=buildForecast(stock,{matureGrowthLift:.01}),q2=computeQuality(stock,f2),v2=valuate(stock,f2,q2,{exitPersistence:.30}),d2=rateStock(stock,f2,q2,v2);
+            if(Number.isFinite(v2.expectedCAGR)){row.altExpectedCAGR=v2.expectedCAGR;const alt=compactModel(stock,f2,q2,v2,d2);alt.growth=growth;attachRealized(alt,history,spyHistory,asOf);altSnapshots.get(asOf).push(alt);}}catch(e){}
           attachRealized(row,history,spyHistory,asOf); snapshots.get(asOf).push(row); diagnostics.modeledObservations++;
         }catch(e){diagnostics.modelFailures++;growthOnly();errors.push({ticker,asOf,error:e.message}); if(skipExamples.length<20)skipExamples.push({ticker,asOf,reason:'model_failure',error:e.message});}
       }
@@ -2067,6 +2069,7 @@ async function main(){
   }
   const flat=[]; const snapshotOutput=[];
   for(const asOf of dates){const rows=snapshots.get(asOf);rank(rows);flat.push(...rows.map(r=>({...r,asOf})));snapshotOutput.push({asOf,count:rows.length,rows,growthOnlyRows:growthOnlySnapshots.get(asOf)||[]});}
+  const altSnapshotOutput=[];for(const asOf of dates){const rows=altSnapshots.get(asOf)||[];rank(rows);altSnapshotOutput.push({asOf,count:rows.length,rows,growthOnlyRows:[]});}
   // Build 71: scorecard by live rank. Do the top-ranked stocks carry the most over-optimistic forecasts?
   // (Ranks 1-20 have trailed ranks 21-50 in every build.) Rewrites the file written above with a byRank table.
   try{
@@ -2082,7 +2085,7 @@ async function main(){
   let ownerStrategyLab=null;
   try{
     ownerStrategyLab=FREQUENCY==='quarterly'
-      ?buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,{adjustedReturnBetween,portfolioStats},{transactionCostBps:Math.max(0,finite(process.env.BACKTEST_TRANSACTION_COST_BPS)??10)})
+      ?buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,{adjustedReturnBetween,portfolioStats},{transactionCostBps:Math.max(0,finite(process.env.BACKTEST_TRANSACTION_COST_BPS)??10),altSnapshotOutput})
       :{skipped:'Owner strategy lab needs BACKTEST_FREQUENCY=quarterly'};
   }catch(e){ownerStrategyLab={error:e.message};console.error('Owner strategy lab failed:',e);}
   {

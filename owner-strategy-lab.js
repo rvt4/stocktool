@@ -364,7 +364,7 @@ function entryFunnel(snapshotOutput){
   return {summary,byQuarter:per};
 }
 
-function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers,{splitYear=2022,transactionCostBps=10}={}){
+function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers,{splitYear=2022,transactionCostBps=10,altSnapshotOutput=null}={}){
   const H=helpers;
   const split=s=>{
     const ps=s.periods||[];
@@ -407,6 +407,17 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
      V('CBS · CB, selling half first, the rest at the second reading',{sellRule:'bothStaged'}),
      V('CP5 · 5-yr PEG list: quality 75+, revenue growth 10%+, PEG <= 1.5, cheapest first, equal weight; both-agree sell',{entry:'peg',sizing:'equal',maxRank:Infinity,sellRule:'both'}),
      V('CP5S · CP5 selling half first, the rest at the second reading',{entry:'peg',sizing:'equal',maxRank:Infinity,sellRule:'bothStaged'}));}
+  // Build 83: the growth / exit-P/E experiment ranked stocks better in two runs (Spearman 0.16 -> 0.18 at 3Y)
+  // but missed its error rule. The real question for this tool is whether it PICKS better stocks, so CX runs
+  // arm C unchanged on the experiment's numbers and rankings, and CXQ adds quality 80+.
+  // Decision rule fixed in advance (README-build83): switch the live model to the experiment only if CX beats
+  // C after tax overall AND in both periods (after-tax excess, before and from 2022), with a max drawdown no
+  // more than 3 points worse.
+  if(Array.isArray(altSnapshotOutput)&&altSnapshotOutput.some(s=>(s.rows||[]).length)){
+    const VX=(name,o)=>simulateOwnerStrategy(altSnapshotOutput,historyByTicker,spyHistory,{name,entry:'shortlist',sizing:'conviction',maxPositions:15,transactionCostBps,...o},H);
+    arms.push(VX('CX · C picking with the experiment (long-run growth +1 pt, exit P/E follows growth)',{}),
+      VX('CXQ · CX with quality 80+',{entryOpts:{minQuality:80}}));
+  }
   // Build 68b: growth-list alternatives, same sleeve rules. Compare with G before switching anything on live.
   arms.push(simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name:'G1 · Growth sleeve without cyclicals',topN:10,keepRank:25,transactionCostBps,variant:'cyclical'},H),
     simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name:'G2 · Growth sleeve, lasting growth only (Build 68 rule)',topN:10,keepRank:25,transactionCostBps,variant:'durable'},H),
