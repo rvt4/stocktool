@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-11-14T03:39:16.189Z",
- "modelVersion": "build80c",
+ "generatedAt": "2026-11-14T10:33:25.483Z",
+ "modelVersion": "build82",
  "readMe": [
   "Revenue error = ln(actual/forecast); bias > 0 means the model forecast too LOW. Margin errors are in margin points (0.02 = 2 pts).",
   "skill = 1 - model median abs error / baseline median abs error. Positive = the model beats that naive forecast; negative = the naive forecast was more accurate.",
@@ -2570,15 +2570,15 @@
    },
    {
     "flag": "buybacks_limited_by_owner_cash",
-    "n": 3472,
-    "revenueBias": 0.0168,
-    "revenueSkillVsFade": 0.0268,
-    "revenueSkillVsFadeWhenOff": 0.0832,
-    "netMarginBias": 0.01,
-    "netMarginSkillVsMedian3": -0.0184,
-    "netMarginSkillVsMedian3WhenOff": 0.1199,
-    "fcfMarginBias": 0.0127,
-    "fcfMarginSkillVsMedian3": 0.0383
+    "n": 3470,
+    "revenueBias": 0.0167,
+    "revenueSkillVsFade": 0.0269,
+    "revenueSkillVsFadeWhenOff": 0.083,
+    "netMarginBias": 0.0096,
+    "netMarginSkillVsMedian3": -0.0168,
+    "netMarginSkillVsMedian3WhenOff": 0.1196,
+    "fcfMarginBias": 0.0126,
+    "fcfMarginSkillVsMedian3": 0.0393
    },
    {
     "flag": "full_operating_driver_reconciliation",
@@ -2666,15 +2666,27 @@
    },
    {
     "flag": "dividend_sanity_capped",
-    "n": 1398,
+    "n": 1396,
     "revenueBias": 0.0307,
-    "revenueSkillVsFade": -0.0156,
+    "revenueSkillVsFade": -0.023,
     "revenueSkillVsFadeWhenOff": 0.0759,
     "netMarginBias": 0.0402,
-    "netMarginSkillVsMedian3": -0.093,
-    "netMarginSkillVsMedian3WhenOff": 0.1045,
-    "fcfMarginBias": 0.0086,
-    "fcfMarginSkillVsMedian3": -0.0561
+    "netMarginSkillVsMedian3": -0.0955,
+    "netMarginSkillVsMedian3WhenOff": 0.105,
+    "fcfMarginBias": 0.0087,
+    "fcfMarginSkillVsMedian3": -0.0544
+   },
+   {
+    "flag": "one_off_share_issuance_capped",
+    "n": 922,
+    "revenueBias": -0.1039,
+    "revenueSkillVsFade": 0.0821,
+    "revenueSkillVsFadeWhenOff": 0.0688,
+    "netMarginBias": 0.0066,
+    "netMarginSkillVsMedian3": -0.047,
+    "netMarginSkillVsMedian3WhenOff": 0.0925,
+    "fcfMarginBias": -0.0022,
+    "fcfMarginSkillVsMedian3": 0.0754
    },
    {
     "flag": "structural_revenue_step_up_detected",
@@ -3365,58 +3377,58 @@
   "rows": [
    {
     "rank": "1-20",
-    "n": 368,
-    "medianForecastCAGR": 0.1184,
-    "medianActualCAGR": 0.0998,
-    "revenueBias": -0.0407,
-    "revenueSkillVsFade": 0.0372,
+    "n": 371,
+    "medianForecastCAGR": 0.1205,
+    "medianActualCAGR": 0.0992,
+    "revenueBias": -0.0469,
+    "revenueSkillVsFade": 0.1005,
     "netMarginBias": 0.0156,
-    "netMarginMedianAbsError": 0.0371,
-    "fcfMarginBias": -0.0095
+    "netMarginMedianAbsError": 0.037,
+    "fcfMarginBias": -0.0069
    },
    {
     "rank": "21-50",
-    "n": 533,
-    "medianForecastCAGR": 0.1265,
-    "medianActualCAGR": 0.0658,
-    "revenueBias": -0.14,
-    "revenueSkillVsFade": 0.0397,
-    "netMarginBias": 0.0066,
-    "netMarginMedianAbsError": 0.0432,
-    "fcfMarginBias": -0.0026
+    "n": 532,
+    "medianForecastCAGR": 0.1245,
+    "medianActualCAGR": 0.0673,
+    "revenueBias": -0.1364,
+    "revenueSkillVsFade": 0.0519,
+    "netMarginBias": 0.0051,
+    "netMarginMedianAbsError": 0.0424,
+    "fcfMarginBias": -0.0052
    },
    {
     "rank": "51-100",
     "n": 895,
-    "medianForecastCAGR": 0.0981,
-    "medianActualCAGR": 0.0471,
-    "revenueBias": -0.1417,
-    "revenueSkillVsFade": -0.0576,
-    "netMarginBias": -0.0048,
-    "netMarginMedianAbsError": 0.0388,
-    "fcfMarginBias": -0.0145
+    "medianForecastCAGR": 0.0998,
+    "medianActualCAGR": 0.046,
+    "revenueBias": -0.1483,
+    "revenueSkillVsFade": -0.0754,
+    "netMarginBias": -0.0044,
+    "netMarginMedianAbsError": 0.0398,
+    "fcfMarginBias": -0.0152
    },
    {
     "rank": "101-250",
-    "n": 2704,
-    "medianForecastCAGR": 0.0748,
-    "medianActualCAGR": 0.0435,
-    "revenueBias": -0.0931,
-    "revenueSkillVsFade": -0.023,
-    "netMarginBias": -0.0016,
-    "netMarginMedianAbsError": 0.0403,
-    "fcfMarginBias": -0.0097
+    "n": 2700,
+    "medianForecastCAGR": 0.0745,
+    "medianActualCAGR": 0.0432,
+    "revenueBias": -0.0906,
+    "revenueSkillVsFade": -0.0059,
+    "netMarginBias": -0.0021,
+    "netMarginMedianAbsError": 0.0399,
+    "fcfMarginBias": -0.0102
    },
    {
     "rank": "251+",
-    "n": 8568,
-    "medianForecastCAGR": 0.0657,
+    "n": 8571,
+    "medianForecastCAGR": 0.0659,
     "medianActualCAGR": 0.0741,
     "revenueBias": 0.0134,
-    "revenueSkillVsFade": 0.1106,
-    "netMarginBias": 0.0158,
-    "netMarginMedianAbsError": 0.0447,
-    "fcfMarginBias": 0.0007
+    "revenueSkillVsFade": 0.1069,
+    "netMarginBias": 0.016,
+    "netMarginMedianAbsError": 0.0449,
+    "fcfMarginBias": 0.0009
    }
   ]
  },
@@ -3957,6 +3969,7 @@
    "modelError": -2.5364,
    "flags": [
     "net_margin_capped_by_operations",
+    "one_off_share_issuance_capped",
     "growth_profitability_consistency_guardrail",
     "fcf_blended_with_3yr_median",
     "operating_driver_fallback",
@@ -4024,6 +4037,7 @@
    "modelError": -2.4664,
    "flags": [
     "net_margin_capped_by_operations",
+    "one_off_share_issuance_capped",
     "growth_profitability_consistency_guardrail",
     "fcf_blended_with_3yr_median",
     "operating_driver_fallback",
