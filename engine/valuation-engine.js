@@ -796,7 +796,9 @@ function economicScenarioOutcomes(methods, forecast, price, dividendValue, uncer
   return scenarios;
 }
 
-function valuate(stock,forecast,quality){
+function valuate(stock,forecast,quality,opts={}){
+  // Build 82: experiment hook (backtest only): how much of today's multiple persists into the exit.
+  const expPersist=Number.isFinite(opts.exitPersistence)?opts.exitPersistence:undefined;
   const rows=forecast.rows||[], f=rows.at(-1)||{}, years=stock.financials?.years||[], last=years.at(-1)||{};
   const price=finite(stock.price?.current), cfg=sectorConfig(stock.sector), req=requiredReturn(quality,forecast.category), intrinsicRate=intrinsicDiscountRate(quality,forecast);
   const shareInfo=inferShareCount(stock,forecast,years);
@@ -1001,7 +1003,23 @@ function valuate(stock,forecast,quality){
       return Math.max(1,fct/Math.pow(1.15,2));
     })();
     const sbcFrac=sbcAddBackFraction(forecast), epsX=sbcNeutralEPS(f,sbcFrac);
-    const anchorPE=anchorAbove(price>0&&normEPS>0?price/normEPS/consensusRecovery:null,4.5);
+    // Build 82: today's P/E anchor uses the EPS the operations earned. A one-off item below the operating
+    // line (META 2025: a ~$16B deferred-tax charge cut EPS from ~$29 to $23.49, so its "current P/E" read
+    // 27.7x and lifted the exit to 25x; AMZN/GOOGL investment gains do the opposite) is not the run-rate.
+    // Clean EPS = (latest operating margin + typical non-operating income) after the normal tax rate.
+    // Used only for the multiple anchor, and only when reported EPS is 15%+ away from it.
+    const peBaseEPS=(()=>{
+      const mg=forecast.forecastBridge?.margins||{}, rev=finite(last.revenue), op=finite(last.operatingIncome);
+      const sh=Number(shares0)>0?Number(shares0):null, t=clamp(finite(mg.normalizedTaxRate)??.21,0,.35);
+      if(!(rev>0)||!Number.isFinite(op)||!(op>0)||!sh||!(normEPS>0))return normEPS;
+      const clean=(op/rev+(finite(mg.nonOperatingMargin)??0))*(1-t)*rev/sh, ni=finite(last.netIncome);
+      if(!(clean>0)||!Number.isFinite(ni))return normEPS;
+      // Both the reported EPS and the normalized EPS must sit 15%+ from clean in the same direction:
+      // that means a below-the-line item the normalization didn't remove (not a basis difference).
+      const gap=normEPS/clean-1, gapReported=ni/sh/clean-1;
+      return Math.abs(gap)>.15&&Math.abs(gapReported)>.15&&Math.sign(gap)===Math.sign(gapReported)?clean:normEPS;
+    })();
+    const anchorPE=anchorAbove(price>0&&peBaseEPS>0?price/peBaseEPS/consensusRecovery:null,4.5);
     // Build 58c: today's FCF can be depressed by a capex or working-capital cycle (AMD 188x P/FCF vs
     // 96x P/E; ORCL, AMZN, GOOGL, LLY similar). The forecast already models FCF conversion recovering,
     // so carrying that inflated P/FCF into year 10 counted the recovery twice (AMD: 34.5x P/FCF exit vs
@@ -1014,7 +1032,7 @@ function valuate(stock,forecast,quality){
     let fcfExitForDCF=null;
 
     if(allowEnterpriseScopeMethods&&Number(f.fcfPerShare)>0&&normFCF>0){
-      const exit=coherentExits.FCF, m=persistentExit(anchorPFCF,exit.multiple,8,44,{floor:4.5}); fcfExitForDCF=m;
+      const exit=coherentExits.FCF, m=persistentExit(anchorPFCF,exit.multiple,8,44,{floor:4.5,persistence:expPersist}); fcfExitForDCF=m;
       const rel=methodReliability(stock,forecast,'FCF',normFCF,f.fcfPerShare,quality);
       // V11.4: an exit-multiple method values the business at the exit date. Do not also
       // add every interim dollar of FCF here. The forecast share path already reflects
@@ -1025,9 +1043,9 @@ function valuate(stock,forecast,quality){
       { const w=archetypeMethodWeight(archetype,'FCF',rel.score); if(w>0)addMethod(methods,{name:'FCF exit',target:terminalFCFValue,weight:w,reliability:rel.score,price,family:'cashflow',cashFlowInclusive:false,audit:{cashBuildPerShare:terminalCashBuildPS,builtCashInterestPerShare:terminalInterestPS,exitMultiple:m,currentMultiple:currentPFCF,anchorMultiple:anchorPFCF,rawAnchorMultiple:rawAnchorPFCF,exitPersistence:EXIT_MULTIPLE_PERSISTENCE,metric:f.fcfPerShare,normalizedCurrentMetric:normFCF,terminalExitValue:terminalFCFValue,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
     }
     if(Number(epsX)>0&&normEPS>0){
-      const exit=coherentExits.EPS, m=persistentExit(anchorPE,exit.multiple,8,49,{floor:4.5});
+      const exit=coherentExits.EPS, m=persistentExit(anchorPE,exit.multiple,8,49,{floor:4.5,persistence:expPersist});
       const rel=methodReliability(stock,forecast,'EPS',normEPS,epsX,quality);
-      { const w=archetypeMethodWeight(archetype,'EPS',rel.score); if(w>0)addMethod(methods,{name:'EPS exit',target:(epsX-terminalInterestPS)*m+terminalCashBuildPS,weight:w,reliability:rel.score,price,family:'earnings',audit:{cashBuildPerShare:terminalCashBuildPS,builtCashInterestPerShare:terminalInterestPS,exitMultiple:m,currentMultiple:currentPE,anchorMultiple:anchorPE,consensusRecoveryFactor:consensusRecovery,exitPersistence:EXIT_MULTIPLE_PERSISTENCE,metric:epsX,sbcAddBackFraction:sbcFrac,reportedYear10EPS:f.eps,normalizedCurrentMetric:normEPS,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
+      { const w=archetypeMethodWeight(archetype,'EPS',rel.score); if(w>0)addMethod(methods,{name:'EPS exit',target:(epsX-terminalInterestPS)*m+terminalCashBuildPS,weight:w,reliability:rel.score,price,family:'earnings',audit:{cashBuildPerShare:terminalCashBuildPS,builtCashInterestPerShare:terminalInterestPS,exitMultiple:m,currentMultiple:currentPE,anchorMultiple:anchorPE,peAnchorEPS:peBaseEPS,consensusRecoveryFactor:consensusRecovery,exitPersistence:EXIT_MULTIPLE_PERSISTENCE,metric:epsX,sbcAddBackFraction:sbcFrac,reportedYear10EPS:f.eps,normalizedCurrentMetric:normEPS,multipleProfile:exit.profile,historicalMultipleAnchor:exit.historicalAnchor,historicalMultipleSamples:exit.historicalSamples,historicalMultipleWeight:exit.historicalWeight,coherentMultipleReference:exit.coherentReference,gordonMultipleReference:exit.gordonReference,reliabilityReasons:rel.reasons,transitionRatio:rel.transitionRatio}}); }
     }
     if(allowEnterpriseScopeMethods&&Number(f.ebitda)>0&&Number(f.shares)>0&&normEBITDA>0){
       const exit=coherentExits.EBITDA;

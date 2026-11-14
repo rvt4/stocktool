@@ -136,7 +136,7 @@ function buildGrowthForecast(stock,years,cfg){
   const qualityHint=clamp((roic!=null?clamp(roic/.22,0,1):.45)*.55+(fcfM>0?.45:.15),0,1)||.5;
   const scale=Math.max(0,finite(last.revenue)||0);
   const scalePenalty=scale>100e9?.010:scale>30e9?.006:scale>10e9?.003:0;
-  const matureGrowth=clamp(cfg.terminalGrowth+(qualityHint-.5)*.012-scalePenalty,.012,TERMINAL_GROWTH_CAP);
+  const matureGrowth=clamp(cfg.terminalGrowth+(qualityHint-.5)*.012-scalePenalty,.012,TERMINAL_GROWTH_CAP+(cfg._capLift||0));
 
   // IMPORTANT: terminalGrowth is a steady-state valuation assumption, not the growth
   // rate a healthy company must reach by year 5. The old model forced year-5 growth
@@ -1047,7 +1047,11 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     const normN1=Number.isFinite(analystNet1)?Math.min(netCeiling,analystNet1+addN1):null;
     const n2Anchor=Number.isFinite(analystNet2Plain)?analystNet2Plain:analystNet2;
     const normN2=Number.isFinite(n2Anchor)?Math.min(netCeiling,n2Anchor+addN2):null;
-    if(Number.isFinite(normN1)&&Math.abs(normN1-currentNet)>.015) currentNet=clamp(currentNet+anchorW*(normN1-currentNet),-.10,netCeiling);
+    // Build 82: this fiscal year is mostly reported by the time consensus matures, so its estimate is far
+    // more reliable than next year's: weight it up to 85% (CELH: model $1.79 vs consensus $1.44 for a year
+    // ten months reported, because the 54% weight left the model's own 14.6% margin mostly in place).
+    const startW=Math.min(.85,anchorW+.35*clamp((covN-4)/8,0,1));
+    if(Number.isFinite(normN1)&&Math.abs(normN1-currentNet)>.015) currentNet=clamp(currentNet+startW*(normN1-currentNet),-.10,netCeiling);
     const nearAnchor=Number.isFinite(normN2)?normN2:normN1;
     if(Number.isFinite(nearAnchor)&&Math.abs(nearAnchor-targetNet)>.015) targetNet=clamp(targetNet+anchorW*(nearAnchor-targetNet),-.10,netCeiling);
     // Build 56: in a recovery analysts expect (BA: a loss this year, a profit next year), the year-5
@@ -1339,7 +1343,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     provenMarginRails:{net:netRail,operating:opRail,ebitda:ebitdaRail},
     steadyMarginClimb,marginTrendOn,
     peakMarginDiscipline:{applied:peakMarginApplied,baseReversion,reversionShare,durability,durabilityEvidence,elevatedYears,preBoomBaseline,provenNet,delta:peakMarginDelta},
-    crisisRecovery,analystMarginAnchor:{applied:analystAnchorApplied,weight:anchorW,revenueBaseMismatch,consensusBasis,consensusOneOff,sbcDeduction,analystNet1,analystNet2,provenNet,expectsImprovement:analystExpectsImprovement,delta:analystAnchorDelta},
+    crisisRecovery,analystMarginAnchor:{applied:analystAnchorApplied,weight:anchorW,startWeight:Math.min(.85,anchorW+.35*clamp((covN-4)/8,0,1)),revenueBaseMismatch,consensusBasis,consensusOneOff,sbcDeduction,analystNet1,analystNet2,provenNet,expectsImprovement:analystExpectsImprovement,delta:analystAnchorDelta},
     currentNormalizationAddback,targetNormalizationAddback,matureNormalizationAddback,
     grossNow,grossTarget,grossMature,rdNow,rdTarget,rdMature,sgaNow,sgaTarget,sgaMature,
     sbcNowForEarnings,sbcTarget,sbcMature,amortNow,amortTarget,amortMature,
@@ -1348,7 +1352,9 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
 }
 function buildForecast(stock,opts={}){
   const years=stock.financials?.years||[], last=years.at(-1)||{}, cfg=sectorConfig(stock.sector);
-  const growth=buildGrowthForecast(stock,years,cfg);
+  // Build 82: experiment hook (backtest only): lift the long-run growth rate the fade ends at.
+  const growthLift=finite(opts.matureGrowthLift)??0;
+  const growth=buildGrowthForecast(stock,years,growthLift?{...cfg,terminalGrowth:cfg.terminalGrowth+growthLift,_capLift:growthLift}:cfg);
   const margins=buildMarginForecast(stock,years,cfg,growth,opts);
 
   const shareGrowth=yoySeries(years.slice(-5),'sharesOutTTM').filter(x=>x>-.25&&x<.30);
@@ -1384,6 +1390,21 @@ function buildForecast(stock,opts={}){
     dilutionRate=clamp(.65*observedDilution+.35*supportedBuyback,-.025,0);
   }
 
+  // Build 82: a self-funding company (median FCF margin 5%+) doesn't need to sell stock, so net issuance well
+  // above what stock pay explains is usually a one-off (shares issued for an acquisition: CELH's Alani Nu deal
+  // put 2.8%/yr of dilution into every forecast year). Cap it at the stock-pay grant rate (stock pay / market
+  // cap) + 1 point. Real estate, utilities and financials are excluded: issuing equity to grow is their model.
+  let issuanceCapped=false;
+  {
+    const px=finite(stock.price?.current), sh=finite(last.sharesOutTTM), rev=finite(last.revenue);
+    const sbcM=Number.isFinite(sbcNow)?sbcNow:(Number.isFinite(sbcNormalized)?sbcNormalized:null);
+    const grant=px>0&&sh>0&&rev>0&&Number.isFinite(sbcM)?clamp(sbcM*rev/(px*sh),0,.06):null;
+    const issuerSector=['Real Estate','Utilities','Financials'].includes(stock.sector)||isFinancialLike(stock);
+    if(dilutionRate>0&&grant!=null&&!issuerSector&&Number.isFinite(ownerCash)&&ownerCash>=.05){
+      const cap=Math.max(.005,grant+.01);
+      if(dilutionRate>cap){dilutionRate=cap;issuanceCapped=true;}
+    }
+  }
   const matureDilutionRate=observedDilution>0
     ? clamp(sbcImpliedDilution*.55-buybackCapacity*.35,-.005,.018)
     : clamp(-buybackCapacity*.45,-.010,0);
@@ -1599,6 +1620,7 @@ function buildForecast(stock,opts={}){
   if(netMarginCeilingApplied)forecastFlags.push('net_margin_capped_by_operations');
   if(margins.steadyMarginClimb)forecastFlags.push('steady_margin_climb');
   if(margins.marginTrendOn)forecastFlags.push('steady_margin_climb_applied');
+  if(issuanceCapped)forecastFlags.push('one_off_share_issuance_capped');
   if(growth.structuralStepUp)forecastFlags.push('structural_revenue_step_up_detected');
   if(growth.structuralStepDown)forecastFlags.push('structural_revenue_step_down_detected');
   if(margins.abnormalCapexCycle)forecastFlags.push('abnormal_capex_cycle_normalized');

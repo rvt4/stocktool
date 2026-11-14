@@ -134,6 +134,27 @@ function buildSimplePath(stock, forecast, valuation) {
   let exitPE = finite(audit?.exitMultiple);
   if (!(exitPE > 0)) exitPE = finite(valuation?.tenYearPriceTarget) && eps10 > 0 ? valuation.tenYearPriceTarget / eps10 : 20;
   exitPE = clamp(exitPE, 8, 45);
+  // Build 82: the model's exit P/E is a P/E on REPORTED (GAAP) earnings, but this table's EPS is analysts'
+  // basis, which for many companies leaves out stock pay and/or acquisition amortization (CRM, ADBE, INTU).
+  // Copying the number re-rated CRM from 14x to 21x. Convert it to this table's basis with the same gap
+  // between the model's GAAP margin and this table's (analyst-basis) margin:
+  //   basisFactor = model GAAP net margin / table net margin, at year 10.
+  // Check (CRM, year 2): model P/E today 19.9x x 0.73 = 14.5x, the market's actual 14.3x on analyst EPS.
+  // Consensus that already includes stock pay (META, GOOGL, CELH) keeps factor 1. Where GAAP earnings are
+  // negative (SNOW) the factor is meaningless and the model's multiple is used as before.
+  const anchor = forecast?.forecastBridge?.margins?.analystMarginAnchor || null;
+  const rawExit = exitPE;
+  let basisFactor = 1;
+  // Measured at year 10, where the multiple is applied: stock pay usually shrinks relative to revenue, so
+  // the gap between analysts' and GAAP margins narrows over time (ZETA: 0.4 at year 2, wider later).
+  // Year-10 GAAP margin = the model's row; this table's year-10 margin carries analysts' basis.
+  // Only when the multiple IS the model's P/E on GAAP EPS (not the fallback used when no EPS method exists, ZETA).
+  if (finite(audit?.exitMultiple) > 0 && useConsensus && anchor && anchor.consensusBasis && anchor.consensusBasis !== 'includes_sbc' && years[9].netMargin > 0) {
+    const gaap10 = finite(rows[9].gaapNetMargin ?? rows[9].netMargin);
+    if (gaap10 > 0) basisFactor = clamp(gaap10 / years[9].netMargin, 0.4, 1);
+  }
+  exitPE = clamp(rawExit * basisFactor, 8, 45);
+  const exitBasis = basisFactor < 1 ? 'gaap_multiple_converted_to_analyst_basis' : 'model_multiple';
 
   // Last year's EPS on the same basis, so year 1 has a growth rate too: consensus this-year EPS / (1 + its
   // growth) when analysts give it, else the model's year-1 margin applied to last year's revenue and shares.
@@ -141,7 +162,7 @@ function buildSimplePath(stock, forecast, valuation) {
   let eps0 = useConsensus && aEps[0] > 0 && cyG !== null && cyG > -0.9 ? aEps[0] / (1 + cyG) : null;
   if (!(eps0 > 0)) eps0 = adjMargin[0] * rev0 / sh0;
   return {
-    version: 4,
+    version: 5,
     eps0,
     basis: useConsensus ? 'consensus_years_1_2' : 'model',
     analysts: n,
@@ -153,7 +174,7 @@ function buildSimplePath(stock, forecast, valuation) {
     nonOperatingMargin: finite(rows[9].nonOperatingMargin) ?? 0,
     taxRate: clamp(finite(rows[9].taxRate) ?? .21, 0, .35),
     peToday: years[0].eps > 0 ? price / years[0].eps : null,
-    exitPE,
+    exitPE, exitBasis, modelExitPE: rawExit, basisFactor,
     years,
   };
 }
@@ -196,7 +217,7 @@ function buildEpsOnlyPath(stock, rows, valuation, price, a, n, rev, sh) {
   const cyG = finite(a.epsGrowthCurrentYear);
   let eps0 = useConsensus && cyG !== null && cyG > -0.9 ? aEps[0] / (1 + cyG) : base;
   return {
-    version: 4, epsOnly: true, eps0, basis: useConsensus ? 'consensus_years_1_2' : 'model', analysts: n, oneOffYear1: null,
+    version: 5, epsOnly: true, eps0, basis: useConsensus ? 'consensus_years_1_2' : 'model', analysts: n, oneOffYear1: null,
     price, revenue0: rev0, shares0: sh0, netDebtNow: null, nonOperatingMargin: 0, taxRate: .21,
     peToday: years[0].eps > 0 ? price / years[0].eps : null,
     exitPE: clamp(finite(audit.exitMultiple) ?? 15, 6, 35), years,
