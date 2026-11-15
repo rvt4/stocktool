@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-11-15T06:36:11.089Z",
+ "generatedAt": "2026-11-15T14:22:41.931Z",
  "snapshots": 1,
  "firstSnapshot": "2026-11-13",
  "note": "error = actual reported revenue / forecast - 1. Positive = the model forecast too LOW (company grew faster). Based on monthly snapshots compared once the forecast year has been reported.",
@@ -21,7 +21,7 @@
    },
    "nextYear": {
     "n": 868,
-    "median": 0.004545080582701755
+    "median": 0.004482673324460951
    }
   },
   "revisionHistory": [
@@ -33,7 +33,7 @@
     },
     "nextYear": {
      "n": 868,
-     "median": 0.004545080582701755
+     "median": 0.004482673324460951
     }
    }
   ]
