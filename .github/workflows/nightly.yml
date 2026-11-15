@@ -41,5 +41,7 @@ jobs:
           git add data/results.json data/validation-report.json data/screener-diagnostics.json
           # Build 80c: keep the monthly forecast + consensus record (it was rebuilt from scratch every run)
           git add data/forecast-tracking.json data/forecast-accuracy.json 2>/dev/null || true
+          # Build 87: forward (out-of-sample) record of the frozen strategy
+          git add data/forward-record.json data/forward-report.json 2>/dev/null || true
           git diff --staged --quiet || git commit -m "Nightly screener update $(date -u +%Y-%m-%d)"
           git push
