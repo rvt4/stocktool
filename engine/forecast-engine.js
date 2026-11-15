@@ -1037,6 +1037,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     }
   }
   let analystAnchorApplied=false, analystAnchorDelta={start:0,target:0,mature:0};
+  let analystYear1Ratio=null; // Build 85: analysts' year-1 margin / the model's current margin, same basis
   if(anchorW>0&&!revenueBaseMismatch&&Number.isFinite(currentNet)&&Number.isFinite(targetNet)&&Number.isFinite(matureTargetNet)){
     const oldStart=currentNet,oldTarget=targetNet,oldMature=matureTargetNet;
     // Build 63: analystNet1/2 are GAAP-basis (consensus minus SBC), but currentNet/targetNet/matureTargetNet
@@ -1051,6 +1052,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     // more reliable than next year's: weight it up to 85% (CELH: model $1.79 vs consensus $1.44 for a year
     // ten months reported, because the 54% weight left the model's own 14.6% margin mostly in place).
     const startW=Math.min(.85,anchorW+.35*clamp((covN-4)/8,0,1));
+    if(Number.isFinite(normN1)&&currentNet>0)analystYear1Ratio=normN1/currentNet;
     if(Number.isFinite(normN1)&&Math.abs(normN1-currentNet)>.015) currentNet=clamp(currentNet+startW*(normN1-currentNet),-.10,netCeiling);
     const nearAnchor=Number.isFinite(normN2)?normN2:normN1;
     if(Number.isFinite(nearAnchor)&&Math.abs(nearAnchor-targetNet)>.015) targetNet=clamp(targetNet+anchorW*(nearAnchor-targetNet),-.10,netCeiling);
@@ -1088,8 +1090,16 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
       // Both directions (Build 48 rule: no optimism-only bias). Net is now tied to operating margin, so a
       // lower analyst EPS has to show up in operating margin too, or it would be cancelled.
       const pS=analystAnchorDelta.start,pT=analystAnchorDelta.target,pM=pT>0?Math.max(pT,analystAnchorDelta.mature):analystAnchorDelta.mature;
-      if(Number.isFinite(currentOperating)) currentOperating=clamp(currentOperating+pre(pS),-.10,opCeiling);
-      if(Number.isFinite(currentEBITDA)) currentEBITDA=clamp(currentEBITDA+pre(pS),-.05,ebitdaCeiling);
+      // Build 85: the part of a lower year-1 consensus that is just last year's unusual TAX (UBER: a tax
+      // benefit flattered 2025 net income, so consensus looked ~8 pts "below" today's net margin) is not an
+      // operating change. Only the rest moves the operating margin (it was cut from ~12% to 3-5%).
+      const lt=years[years.length-1]||{}, ltPre=finite(lt.pretaxIncome), ltTax=finite(lt.incomeTaxExpense), ltRev=finite(lt.revenue);
+      let taxLift=0;
+      if(ltPre>0&&Number.isFinite(ltTax)&&ltRev>0){const eff=ltTax/ltPre,tN=clamp(normalizedTaxRate,0,.35);
+        if(Math.abs(eff-tN)>=.08)taxLift=(tN-eff)*ltPre/ltRev;}   // > 0 when a tax benefit lifted net margin
+      const pSop=pS<0&&taxLift>0?Math.min(0,pS+taxLift):pS;
+      if(Number.isFinite(currentOperating)) currentOperating=clamp(currentOperating+pre(pSop),-.10,opCeiling);
+      if(Number.isFinite(currentEBITDA)) currentEBITDA=clamp(currentEBITDA+pre(pSop),-.05,ebitdaCeiling);
       targetOperating=clamp(targetOperating+pre(pT),-.10,opCeiling);
       matureOperating=clamp(matureOperating+pre(pM),-.10,opCeiling);
       if(Number.isFinite(targetEBITDA)) targetEBITDA=clamp(targetEBITDA+pre(pT),-.05,ebitdaCeiling);
@@ -1125,7 +1135,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     // reported net at 15.5% on a 12.7% operating margin) are not a margin peak. Test the margin the
     // operations earn: (latest operating margin + typical non-operating income) after tax, +1 pt slack.
     {const t=clamp(normalizedTaxRate,0,.35);
-     const npoT=(()=>{const v=years.slice(-5).map(y=>{const n=pctMargin(y,'netIncome'),o=pctMargin(y,'operatingIncome');return Number.isFinite(n)&&Number.isFinite(o)?n/(1-t)-o:null;}).filter(Number.isFinite);return v.length>=3?clamp(median(v),-.05,.03):0;})();
+     const npoT=(()=>{const v=years.slice(-5).map(y=>nonOperatingOf(y,t)).filter(Number.isFinite);return v.length>=3?clamp(median(v),-.05,.03):0;})();
      if(Number.isFinite(latestOp)){const clean=(latestOp+npoT)*(1-t)+.01;if(reportedNow>clean){reportedNow=clean;durabilityEvidence.push('one_off_gains_excluded');}}}
     const elevated=reportedNow>provenNet+.03&&reportedNow>Math.max(provenNet,.01)*1.4;
     if(elevated){
@@ -1265,12 +1275,18 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
   let adjBest3=null;
   for(let i=2;i<adjOpSeries.length;i++){const w=adjOpSeries.slice(i-2,i+1);if(w.every(Number.isFinite)){const avg=(w[0]+w[1]+w[2])/3;adjBest3=adjBest3==null?avg:Math.max(adjBest3,avg);}}
   const adjTypical=adjFinite.length>=3?median(adjFinite.slice(-5)):null;
+  // Build 85: analysts' EPS growth is measured from last year's REPORTED EPS. When last year's tax rate was
+  // unusual (UBER: a tax benefit), that base is distorted and the growth rate says "margins fall" when they
+  // don't. Restate growth from last year's EPS at the normal tax rate: (1+g) x (1-eff)/(1-normal).
+  const lastYearTaxFactor=(()=>{const lt=years[years.length-1]||{},pre=finite(lt.pretaxIncome),tx=finite(lt.incomeTaxExpense);
+    if(!(pre>0)||!Number.isFinite(tx))return 1;const eff=tx/pre,tN=clamp(normalizedTaxRate,0,.35);
+    return Math.abs(eff-tN)>=.08?clamp((1-clamp(eff,-.5,.6))/(1-tN),.5,2):1;})();
   const consensusMarginFactor=(()=>{
     const e=stock.analystEstimates||{};
     if((finite(e.numAnalysts)??0)<3)return null;
     const g=[finite(e.epsGrowthCurrentYear),finite(e.epsGrowthNextYear),finite(e.revenueGrowthCurrentYear),finite(e.revenueGrowthNextYear)];
     if(!g.every(Number.isFinite)||Math.min(...g)<=-.9)return null;
-    return clamp((1+Math.min(g[0],3))*(1+Math.min(g[1],3))/((1+g[2])*(1+g[3])),.3,2);
+    return clamp((1+Math.min(g[0],3))*lastYearTaxFactor*(1+Math.min(g[1],3))/((1+g[2])*(1+g[3])),.3,2);
   })();
   const adjConsensus=Number.isFinite(adjNow)&&Number.isFinite(consensusMarginFactor)?adjNow*consensusMarginFactor:null;
   const consensusContradicts=Number.isFinite(consensusMarginFactor)&&consensusMarginFactor<.80;
@@ -1284,7 +1300,14 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
   const nearTermDip=(()=>{
     if(!(Number.isFinite(consensusMarginFactor)&&consensusMarginFactor<.80))return null;
     const e=stock.analystEstimates||{}, e1=finite(e.epsGrowthCurrentYear), r1=finite(e.revenueGrowthCurrentYear);
-    const d1=Number.isFinite(e1)&&Number.isFinite(r1)?clamp((1+Math.min(e1,3))/(1+r1),.3,1):Math.sqrt(consensusMarginFactor);
+    // Build 85: year 1 measured on MARGINS (analysts' year-1 margin vs the model's current margin, same basis)
+    // when the anchor has them. The old EPS-growth test read a fall from a tax-flattered year as an operating
+    // collapse: UBER's 2025 EPS included a tax benefit, analysts' 2026 EPS is "down", so year 1 was cut by
+    // half (operating margin 4.6% vs ~12% actual) although consensus margins match today's. The year-1
+    // anchor (up to 85% weight) already moved the start, so only the part it left is applied here.
+    let d1=Number.isFinite(e1)&&Number.isFinite(r1)?clamp((1+Math.min(e1,3))*lastYearTaxFactor/(1+r1),.3,1):Math.sqrt(consensusMarginFactor);
+    if(Number.isFinite(analystYear1Ratio)){const sw=Math.min(.85,anchorW+.35*clamp((covN-4)/8,0,1));
+      d1=clamp(1-(1-Math.min(1,analystYear1Ratio))*(1-sw),.3,1);}
     const d2=clamp(consensusMarginFactor,.3,1);
     return [Math.min(1,d1),Math.min(1,d2),Math.min(1,(1+d2)/2)];
   })();
@@ -1332,10 +1355,10 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     matureGrowthReinvestmentShare,normalizedCFO:rawCFO,cashEconomicsTarget:matureTargetFCF,profitabilityConsistencyApplied,driverReconciliation,economicSbcCostNow,economicSbcCostTarget,economicSbcCostMature,
     structuralCapitalLightCashConversion,recurringFcfCfoRatio,fcfCeiling,crossMarginCoherenceApplied,structuralMarginGuardrailApplied,unsupportedMarginExpansionLimited,structuralTargetNetCeiling,structuralMatureNetCeiling,
     unexplainedFcfCompressionPrevented,broadCashCompressionEvidence,temporaryMarginReset,
-    recentNonOperatingMargin:(()=>{const t=clamp(normalizedTaxRate,0,.35),y=years.at(-1);const n=y?pctMargin(y,'netIncome'):null,o=y?pctMargin(y,'operatingIncome'):null;return Number.isFinite(n)&&Number.isFinite(o)?n/(1-t)-o:null;})(),
+    recentNonOperatingMargin:(()=>{const t=clamp(normalizedTaxRate,0,.35),y=years.at(-1);return y?nonOperatingOf(y,t):null;})(),
     currentOperatingStart:currentOperating,
     nonOperatingMargin:(()=>{ // Build 77: typical pre-tax non-operating income (interest, other) as a share of revenue
-      const t=clamp(normalizedTaxRate,0,.35);const v=years.slice(-5).map(y=>{const n=pctMargin(y,'netIncome'),o=pctMargin(y,'operatingIncome');return Number.isFinite(n)&&Number.isFinite(o)?n/(1-t)-o:null;}).filter(Number.isFinite);
+      const t=clamp(normalizedTaxRate,0,.35);const v=years.slice(-5).map(y=>nonOperatingOf(y,t)).filter(Number.isFinite);
       return v.length>=3?clamp(median(v),-.05,.03):0;})(),
     normalizedTaxRate,gaapCurrentNet,gaapTargetNet,gaapMatureTargetNet,
     oneTimeChargesLatest:oneTimeSeries.at(-1)??0,backlogCoverage:(()=>{const r=finite(years.at(-1)?.rpo),v=finite(years.at(-1)?.revenue);return r>0&&v>0?r/v:null;})(),
@@ -1350,6 +1373,11 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     driverTargetOperating,driverCoverage,driverModelReliable,driverResidual,leverageIntensity,residualOpexNow,residualDriverTargetOperating,residualDriverWeight
   };
 }
+// Build 85: non-operating income = pretax - operating income when pretax is reported. The old net/(1-t) form
+// counted an unusual tax year as non-operating income (UBER's tax benefit read as +8% of revenue).
+function nonOperatingOf(y,t){const r=finite(y?.revenue),pre=finite(y?.pretaxIncome),op=finite(y?.operatingIncome);
+  if(r>0&&Number.isFinite(pre)&&Number.isFinite(op))return (pre-op)/r;
+  const n=pctMargin(y,'netIncome'),o=pctMargin(y,'operatingIncome');return Number.isFinite(n)&&Number.isFinite(o)?n/(1-t)-o:null;}
 function buildForecast(stock,opts={}){
   const years=stock.financials?.years||[], last=years.at(-1)||{}, cfg=sectorConfig(stock.sector);
   // Build 82: experiment hook (backtest only): lift the long-run growth rate the fade ends at.

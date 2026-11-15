@@ -40,7 +40,7 @@ function interestInEarnings(cashBuilt, revenue, revenue0, nonOperatingMargin, ta
   return Math.min(nonOperatingMargin * (revenue - revenue0), CASH_YIELD * cashBuilt) * (1 - t);
 }
 
-function buildSimplePath(stock, forecast, valuation) {
+function buildAnalystPath(stock, forecast, valuation) {
   const rows = forecast?.rows || [];
   if (rows.length < 10) return null;
   const price = finite(stock?.price?.current ?? stock?.currentPrice ?? valuation?.currentPrice);
@@ -224,6 +224,79 @@ function buildEpsOnlyPath(stock, rows, valuation, price, a, n, rev, sh) {
   };
 }
 
+// Build 85: ONE forecast. The table's autofill is the model's own path: the model's revenue, share count and
+// EPS every year, and a year-10 P/E solved so the table's return equals the model's base return (which blends
+// its P/E, cash-flow, EV/EBITDA and DCF exits). The table is then simply "edit the model": change revenue
+// growth, EPS growth, share change, P/E or net debt and the price follows. Before this the table rebuilt its
+// own analyst-anchored forecast, and nearly every gap you found came from that second method (P/E basis,
+// double-counted non-operating recovery, carried-over trims). The analyst-anchored return is kept as a
+// reference line only (analystView).
+function buildSimplePath(stock, forecast, valuation) {
+  const ana = buildAnalystPath(stock, forecast, valuation);
+  if (!ana) return null;
+  const rows = forecast.rows, price = ana.price;
+  const target = finite(valuation?.expectedCAGR);
+  let sp = { ...ana, years: ana.years.map(y => ({ ...y })), oneOffYear1: null };
+  // Model EPS each year.
+  let modelEps = null;
+  if (ana.epsOnly) {
+    const audit = (valuation?.methods || []).find(m => m.name === 'Normalized EPS exit')?.audit;
+    const base = finite(audit?.normalizedEPSBase), path = audit?.epsGrowthPath;
+    if (base > 0 && Array.isArray(path) && path.length >= 10) { let e = base; modelEps = path.slice(0, 10).map(g => (e *= 1 + (finite(g) ?? 0))); }
+  } else {
+    const e = rows.map(r => finite(r.eps));
+    if (e.every(v => v !== null)) modelEps = e;
+  }
+  if (!modelEps) return withAnalystView(ana, ana, target);
+  for (let i = 0; i < 10; i++) {
+    const y = sp.years[i], r = rows[i];
+    const rv = finite(r.revenue), shv = finite(r.shares);
+    const prevRev = i ? finite(rows[i - 1].revenue) : ana.revenue0, prevSh = i ? finite(rows[i - 1].shares) : ana.shares0;
+    y.revenue = rv; y.shares = shv; y.revenueGrowth = rv / prevRev - 1; y.shareChange = shv / prevSh - 1;
+    y.eps = modelEps[i]; y.netMargin = modelEps[i] * shv / rv;
+    if (!ana.epsOnly) {
+      // Cash: the model's pre-stock-pay FCF per dollar of these (model) earnings.
+      const pre = finite(r.preSbcFcfMargin) ?? ((finite(r.fcfMargin) ?? 0) + Math.max(0, finite(r.sbcMargin) ?? 0));
+      y.cashConversion = y.netMargin > .02 ? clamp(pre / y.netMargin, -1, 2.5) : null;
+      y.fcfMarginFallback = pre;
+    }
+  }
+  // The model's net debt: today's, moving in a straight line to its year-10 figure.
+  const nd0 = finite(ana.netDebtNow), ndT = finite(valuation?.terminalNetDebt);
+  if (!ana.epsOnly && nd0 !== null && ndT !== null) {
+    sp.ndModel = Array.from({ length: 10 }, (_, i) => nd0 + (ndT - nd0) * (i + 1) / 10);
+    const auto = calculateSimple({ ...sp, ndModel: null });
+    if (auto) auto.years.forEach((y, i) => { sp.years[i].autoFlow = y.preFcf - y.dps * y.sh - y.sbc; });
+  }
+  const epsAudit = (valuation?.methods || []).find(m => /EPS exit/.test(m.name))?.audit;
+  const e0 = finite(epsAudit?.normalizedCurrentMetric);
+  sp.eps0 = e0 > 0 ? e0 : ana.eps0;
+  sp.basis = 'model';
+  sp.peToday = sp.years[0].eps > 0 ? price / sp.years[0].eps : null;
+  sp.basisFactor = 1; sp.exitBasis = 'solved_to_model_return';
+  // Solve the year-10 P/E so the return equals the model's base return (monotonic in P/E).
+  if (target !== null && sp.years[9].eps > 0) {
+    let lo = 1, hi = 300;
+    const f = pe => { const c = calculateSimple({ ...sp, exitPE: pe })?.cagr; return Number.isFinite(c) ? c : -Infinity; };
+    const flo = f(lo), fhi = f(hi);
+    if (Number.isFinite(flo) && Number.isFinite(fhi) && flo <= target && target <= fhi) {
+      for (let k = 0; k < 60; k++) { const mid = (lo + hi) / 2; if (f(mid) < target) lo = mid; else hi = mid; }
+      sp.exitPE = (lo + hi) / 2;
+    } else sp.exitBasis = 'model_multiple_unsolved';
+  } else sp.exitBasis = 'model_multiple_unsolved';
+  return withAnalystView(sp, ana, target);
+}
+function withAnalystView(sp, ana, target) {
+  const r = calculateSimple(ana);
+  sp.analystView = ana.basis === 'consensus_years_1_2' || ana.epsOnly ? {
+    cagr: r && Number.isFinite(r.cagr) ? r.cagr : null, analysts: ana.analysts,
+    eps: ana.years.slice(0, 2).map(y => y.eps), exitPE: ana.exitPE,
+  } : null;
+  sp.modelReturn = target;
+  sp.version = 6;
+  return sp;
+}
+
 // Same arithmetic the Research page uses, so tests can check the page and the nightly agree.
 function calculateSimple(sp, edits = {}) {
   if (!sp || !sp.years || sp.years.length < 10) return null;
@@ -247,6 +320,7 @@ function calculateSimple(sp, edits = {}) {
   const lnTot = e0 > 0 && e10 > 0 ? Math.log(e10 / e0) : 0;
   let nd = sp.netDebtNow ?? 0, prevSh = sp.shares0, divs = 0;
   const nd0 = nd;
+  let ndOffset = 0;
   out.forEach((y, i) => {
     const t = i === 9 ? 1 : (e0 > 0 && y.eps > 0 && Math.abs(lnTot) > 1e-6 ? clamp(Math.log(y.eps / e0) / lnTot, 0, 1) : (i + 1) / 10);
     const peSet = edits.pe && Number.isFinite(edits.pe[i]) && edits.pe[i] > 0 ? edits.pe[i] : null;
@@ -257,10 +331,18 @@ function calculateSimple(sp, edits = {}) {
     // Shares issued for stock pay ~ stock pay $ / price; net change = issued - bought.
     const px = Number.isFinite(y.opsPrice) && y.opsPrice > 0 ? y.opsPrice : null;
     const buyback = px ? Math.max(0, y.sbc - (y.sh - prevSh) * px) : y.sbc;
-    if (!sp.epsOnly) nd -= y.preFcf - y.dps * y.sh - buyback;
-    else { y.preFcf = NaN; y.ownerFcf = NaN; }
+    if (sp.epsOnly) { y.preFcf = NaN; y.ownerFcf = NaN; }
+    else if (Array.isArray(sp.ndModel)) {
+      // Build 85: follow the model's own net-debt path; your edits move it only by the change they make to
+      // this year's cash (FCF - dividends - stock pay) versus the autofill.
+      ndOffset -= (y.preFcf - y.dps * y.sh - y.sbc) - (sp.years[i].autoFlow ?? 0);
+      nd = sp.ndModel[i] + ndOffset;
+    } else nd -= y.preFcf - y.dps * y.sh - buyback;
     // A net debt you type replaces the rolled-forward figure; later years roll on from it.
-    if (edits.netDebt && Number.isFinite(edits.netDebt[i])) { nd = edits.netDebt[i]; y.netDebtSet = true; }
+    if (edits.netDebt && Number.isFinite(edits.netDebt[i])) {
+      if (Array.isArray(sp.ndModel)) ndOffset = edits.netDebt[i] - sp.ndModel[i];
+      nd = edits.netDebt[i]; y.netDebtSet = true;
+    }
     y.netDebt = nd;
     y.cashPS = (nd0 - nd) / y.sh;
     // Interest on that cash already in EPS: taken out at the P/E so the cash counts once, at $1.
@@ -274,5 +356,5 @@ function calculateSimple(sp, edits = {}) {
   return { years: out, exit: out[9].price, value, cagr: value > 0 ? Math.pow(value / price, .1) - 1 : NaN };
 }
 
-return { buildSimplePath, calculateSimple, interestInEarnings, CASH_YIELD, CONSENSUS_TRIM };
+return { buildSimplePath, buildAnalystPath, calculateSimple, interestInEarnings, CASH_YIELD, CONSENSUS_TRIM };
 });
