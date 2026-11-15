@@ -15,7 +15,9 @@ function yoy(years, field) {
 const fin=v=>(v===null||v===undefined||v==='')?NaN:Number(v);
 function stdev(a){const v=a.filter(Number.isFinite); if(v.length<2)return 0.15; const m=v.reduce((s,x)=>s+x,0)/v.length; return Math.sqrt(v.reduce((s,x)=>s+(x-m)**2,0)/v.length);}
 
-function computeQuality(stock, forecast) {
+function computeQuality(stock, forecast, opts = {}) {
+  // Build 86 experiment (backtest only unless adopted): financial-aware quality.
+  const v2 = opts.financialAware === true;
   const years = stock.financials?.years || [];
   const last = years[years.length - 1] || {};
   const revenueGrowth = yoy(years.slice(-5),'revenue').filter(x=>x>-0.8&&x<2);
@@ -36,14 +38,21 @@ function computeQuality(stock, forecast) {
 
   const isFinancial=stock.financials?.dataQuality?.financialLikeRevenue===true;
   const netMargins=years.slice(-4).map(y=>Number(y.revenue)>0&&Number.isFinite(fin(y.netIncome))?fin(y.netIncome)/Number(y.revenue):null).filter(Number.isFinite);
+  // Build 86 (v2): return on equity when ROIC is missing. Insurers and lenders run thin margins by design
+  // (UNH ~3-4% net margin scored profitability 30); ROE is the standard measure of their returns.
+  const roe = v2 ? median(years.slice(-3).map(y=>{const e=fin(y.stockholdersEquity),n=fin(y.netIncome);return e>0&&Number.isFinite(n)?n/e:NaN;}).filter(Number.isFinite)) : null;
+  const returnScore = Number.isFinite(roic) ? scoreBand(roic,-0.02,0.25)
+    : (v2 && Number.isFinite(roe) ? scoreBand(roe,0,0.22) : scoreBand(median(netMargins)??0,0,0.25));
   const profitability = isFinancial
-    ? Math.round(0.55*scoreBand(median(netMargins)??0,0,.25)+0.45*scoreBand(growthMed,-.05,.15))
-    : Math.round(0.55*(Number.isFinite(roic)?scoreBand(roic,-0.02,0.25):scoreBand(median(netMargins)??0,0,0.25))+0.45*scoreBand(median(fcfMargins)??-0.05,-0.05,0.20));
+    ? Math.round(0.55*(v2 && Number.isFinite(roe) ? scoreBand(roe,0,0.22) : scoreBand(median(netMargins)??0,0,.25))+0.45*scoreBand(growthMed,-.05,.15))
+    : Math.round(0.55*returnScore+0.45*scoreBand(median(fcfMargins)??-0.05,-0.05,0.20));
   const growthQuality = Math.round(0.60*scoreBand(growthMed,-0.05,0.18)+0.40*reverseBand(growthVol,0.05,0.35));
   const cashQuality = isFinancial ? 55 : Math.round(70*positiveFCF + 0.30*scoreBand(median(fcfMargins)??-0.05,-0.05,0.15));
   const balanceSheet = Math.round(netDebtToEbitda==null?55:reverseBand(netDebtToEbitda,-1,4));
   const dilutionScore = Math.round(0.65*reverseBand(dilution,-0.03,0.08)+0.35*reverseBand(Number.isFinite(sbc)?sbc:0.03,0.00,0.15));
-  const marginStability = reverseBand(stdev(opMargins),0.01,0.15);
+  // Build 86 (v2): lenders have no meaningful operating margin in SEC data (it swings wildly), so margin
+  // stability scored 0 for AXP and JPM; measure it on net margin for them.
+  const marginStability = v2 && isFinancial ? reverseBand(stdev(netMargins),0.01,0.15) : reverseBand(stdev(opMargins),0.01,0.15);
   const qualityScore = Math.round(0.28*profitability+0.20*growthQuality+0.20*cashQuality+0.14*balanceSheet+0.10*dilutionScore+0.08*marginStability);
 
   const moatScore = Math.round(0.45*profitability+0.20*marginStability+0.20*growthQuality+0.15*dilutionScore);
@@ -64,7 +73,7 @@ function computeQuality(stock, forecast) {
   return {
     qualityScore, moatScore, capitalAllocationScore, compounderScore, growthQualityScore:growthQuality,
     pricingPowerScore, protectionScore, confidenceScore:confidence,
-    diagnostics:{ profitability, cashQuality, balanceSheet, dilutionScore, marginStability, roic, growthMedian:growthMed, growthVolatility:growthVol, dilutionRate:dilution, positiveFCFHistory:positiveFCF, netDebtToEbitda }
+    diagnostics:{ financialAware:v2, roe, profitability, cashQuality, balanceSheet, dilutionScore, marginStability, roic, growthMedian:growthMed, growthVolatility:growthVol, dilutionRate:dilution, positiveFCFHistory:positiveFCF, netDebtToEbitda }
   };
 }
 module.exports={computeQuality};
