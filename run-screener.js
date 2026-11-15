@@ -271,7 +271,17 @@ async function run(){
   for(const s of stocks){if(s.newPositionAction==='BUY'&&!s.qualifiesForBuyList)throw new Error(`Inconsistent investment decision: ${s.ticker}`);}
   const validation=validateUniverse(stocks); writeJson('validation-report.json',validation); console.log(`Validation: ${validation.passed?'passed':'FAILED'} (${validation.issues.length} issue(s)).`);
   if(!validation.passed){throw new Error(`Validation failed: ${validation.issues.slice(0,10).map(x=>`${x.ticker}:${x.type}`).join(', ')}`);}
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'build85',stocks}; writeJson('results.json',output);
+  // Build 87: the backtest's measured map from projected to realized returns, so the page can show a
+  // calibrated return next to the model's (read from the last committed backtest summary; never blocks).
+  let returnCalibration=null;
+  try{const bs=JSON.parse(fs.readFileSync(path.join(__dirname,'data','backtest-owner-summary.json'),'utf8'));
+    const rc=bs.ownerStrategyLab?.returnCalibration;if(rc?.base)returnCalibration={modelVersion:bs.modelVersion,generatedAt:bs.generatedAt||null,base:rc.base};}catch(e){}
+  const RPx=require('./review-policy');
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'build87',strategy:RPx.STRATEGY,returnCalibration,stocks}; writeJson('results.json',output);
+  // Build 87: monthly forward record of the frozen strategy (never blocks the run).
+  try{const spyLast=spyHistory.length?spyHistory[spyHistory.length-1].close:null;
+    const fr=require('./forward-record').recordForward(output,{spyPrice:spyLast,strategy:RPx.STRATEGY.id,isCandidate:s=>RPx.shortlistEntry(s)});
+    console.log(`Forward record: ${fr.snapshots} monthly snapshot(s) since ${fr.firstSnapshot}.`);}catch(e){console.warn('Forward record skipped: '+e.message);}
   // Build 55: monthly forecast snapshots + accuracy report (never blocks the run).
   try{const rep=require('./track-forecasts').trackForecasts(output);console.log(`Forecast tracking: ${rep.snapshots} snapshot(s), ${rep.observations} forecast(s) checked against reported revenue.`);}catch(e){console.warn('Forecast tracking skipped:',e.message);}
   const historyFile=writeProspectiveSnapshot(__dirname,output);

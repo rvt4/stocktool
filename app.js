@@ -460,6 +460,24 @@ function simpleHistoryRows(){
   const nd=Number.isFinite(x.netDebt)?(x.netDebt/1e9).toFixed(1):'—';
   return `<tr class="hist-row"><td>${esc(x.period)} <span class="hist-tag">reported</span></td><td>${pct(g)}</td><td>${money(x.revenue/1e9)}B</td><td>${pct(eg)}</td><td>${Number.isFinite(e)?money(e):'—'}</td><td>${pct(d)}</td><td>${pct(nm)}</td><td>${Number.isFinite(fps)?money(fps):'—'}</td><td>${nd}</td><td>—</td><td>—</td><td>—</td></tr>`;}).join('');
 }
+// Build 87: map a projected return onto the backtest's measured outcomes for that projection range.
+function calibratedReturn(x){const c=window.__calibration;if(!c||!Number.isFinite(x))return null;
+ const pick=list=>(list||[]).find(b=>{const m=/below 0%/.test(b.bucket)?[-Infinity,0]:/\+$/.test(b.bucket)?[parseFloat(b.bucket)/100,Infinity]:b.bucket.split('-').map(v=>parseFloat(v)/100);return x>=m[0]&&x<m[1];});
+ const b3=pick(c.base?.['3Y']),b5=pick(c.base?.['5Y']);if(!b3||!Number.isFinite(b3.medianRealized))return null;
+ return {bucket:b3.bucket,realized3:b3.medianRealized,spy3:b3.medianSpy,realized5:b5?.medianRealized};}
+// Build 87: what would break the thesis: the year-10 P/E, or the uniform EPS shortfall, at which your
+// 10-year return drops to the hurdle (everything else as entered).
+function simpleBreakEven(a){
+ const st=a?.simple;if(!st||!window.SimplePath)return null;
+ const base={revenueGrowth:st.g,shareChange:st.d,netMargin:st.m,exitPE:st.exitPE,exitPESet:!!st.exitPESet,pe:st.pe||[],netDebt:st.nd||[]};
+ const cagr=e=>{const r=SimplePath.calculateSimple(st.sp,e);return r&&Number.isFinite(r.cagr)?r.cagr:-Infinity;};
+ const now=cagr(base);if(!Number.isFinite(now))return null;
+ const solve=(f,lo,hi)=>{if((f(lo)-HURDLE)*(f(hi)-HURDLE)>0)return null;for(let k=0;k<50;k++){const m=(lo+hi)/2;if((f(m)-HURDLE)*(f(lo)-HURDLE)>0)lo=m;else hi=m;}return (lo+hi)/2;};
+ const lastPE=(st.pe||[])[9];
+ const pe=solve(x=>cagr({...base,exitPE:x,exitPESet:true,pe:(st.pe||[]).map((v,i)=>i===9?undefined:v)}),1,200);
+ const k=solve(x=>cagr({...base,netMargin:st.m.map(v=>v*x)}),0.05,3);
+ return {now,pe,epsChange:k===null?null:k-1,currentPE:Number.isFinite(lastPE)?lastPE:st.exitPE};
+}
 function renderSimple(){
  const el=$('simplePanel');if(!el)return;const a=assumptions,st=a?.simple;
  if(!st){el.innerHTML='<h3>Your projection</h3><p class="muted small">No simple projection for this company yet (needs a 10-year model forecast). Use the advanced editor below.</p>';return;}
@@ -486,6 +504,11 @@ function renderSimple(){
    <div class="kpi"><small>${yr(9)} price</small><strong>${money(r.exit)}</strong><em>incl. ${money(ys[9].cashPS-ys[9].pe*(ys[9].interestPS||0))}/sh cash built (net of its interest)</em></div>
    <div class="kpi"><small>Price for ${Math.round(HURDLE*100)}%/yr</small><strong>${money(r.hurdle)}</strong><em>today ${money(price)}</em></div>
    <div class="kpi"><small>EPS growth, 10 yrs</small><strong>${ys[0].eps>0&&ys[9].eps>0?pct(Math.pow(ys[9].eps/ys[0].eps,1/9)-1):'—'}</strong><em>a year, ${yr(0)}–${yr(9)}</em></div></div>
+  ${(()=>{if(noValue)return '';const be=simpleBreakEven(a);if(!be)return '';const above=be.now>=HURDLE;
+    const peTxt=Number.isFinite(be.pe)?`a ${yr(9)} P/E of <b>${be.pe.toFixed(1)}×</b> (now ${Number(be.currentPE).toFixed(1)}×)`:null;
+    const epsTxt=Number.isFinite(be.epsChange)?`EPS <b>${Math.abs(be.epsChange*100).toFixed(0)}% ${be.epsChange<0?'lower':'higher'}</b> every year`:null;
+    const parts=[peTxt,epsTxt].filter(Boolean);if(!parts.length)return '';
+    return `<p class="small sp-break">${above?`<b>What would break it:</b> the return falls to ${Math.round(HURDLE*100)}% with ${parts.join(', or ')}.`:`<b>What it would take:</b> ${Math.round(HURDLE*100)}% a year needs ${parts.join(', or ')}.`}</p>`;})()}
   <div class="table-scroll"><table class="sp-table"><thead><tr><th>Year</th><th>Revenue growth %</th><th>Revenue</th><th>EPS growth %</th><th>EPS</th><th>Share chg %</th><th>Net margin</th><th>FCF / share</th><th>Net debt $B</th><th>P/E</th><th>Price*</th><th>CAGR if sold</th></tr></thead>
   <tbody>${simpleHistoryRows()}<tr class="today-row"><td>Starting point</td><td>—</td><td>${money(sp.revenue0/1e9)}B</td><td>—</td><td>${Number.isFinite(e0)?money(e0):'—'}</td><td>—</td><td>—</td><td>—</td><td>${Number.isFinite(sp.netDebtNow)?(sp.netDebtNow/1e9).toFixed(1):'—'}</td><td>${Number.isFinite(sp.peToday)?sp.peToday.toFixed(1)+'×':'—'}</td><td>${money(price)}</td><td>—</td></tr>${rowsHtml}</tbody></table></div>
   <p class="muted small">Grey rows are the last five reported years (SEC filings). Their EPS is <b>GAAP</b> (after stock pay and amortization), so it runs below the analyst-basis EPS in the Starting point row and the projection; growth rates and net margins are on the same GAAP basis. FCF/share there is after stock pay, like the projection.</p>
@@ -521,6 +544,9 @@ function renderValuation(){if(!current)return;$('noStock').hidden=true;$('valuat
   [['Base 10Y CAGR',pct(modelCagr),sc==='Base'?'Nightly screener valuation; not EPS × P/E':'Screener '+sc.toLowerCase()+' case; base forecast rows shown below'],['Underwritten 10Y CAGR',sc==='Base'?pct(underwritingCagr):'—','Conservative scenario used for buy price; not a probability-weighted forecast'],['Year-10 price',sc==='Base'?money(modelExit):'—',(()=>{const dv=valid(current.totalShareholderValue,NaN)-modelExit;return Number.isFinite(dv)&&dv>0.005?'Share price only. The CAGR also counts '+money(dv)+'/sh of dividends paid along the way':'Share price only; no dividends assumed';})()],[HURDLE_LABEL+' CAGR entry price',sc==='Base'?money(valid(current.hurdleReturnPrice,NaN)):'—','Native model; scenario-specific entry unavailable'],['Buy price with MOS',sc==='Base'?money(modelBuy):'—','Native '+HURDLE_LABEL+' + 10% MOS threshold']]:
   !r?null:(()=>{const mr=methodResults(a,r);return mr&&Number.isFinite(mr.cagr)?[['Blended 10Y CAGR',pct(mr.cagr),'Your inputs, all methods weighted'],['EPS × P/E 10Y CAGR',pct(r.cagr),'Table above on its own'],[HURDLE_LABEL+' CAGR entry price',money(mr.hurdle),'Blended, before margin of safety'],['Buy price with MOS',money(mr.buy),'Additional '+a.mos+'% discount']]:[['Expected 10Y CAGR',pct(r.cagr),'Custom EPS × P/E scenario'],['Year-10 exit price',money(r.exit),'EPS × terminal P/E'],[HURDLE_LABEL+' CAGR entry price',money(r.hurdle),'Before margin of safety'],['Buy price with MOS',money(r.buy),'Additional '+a.mos+'% discount']];})();
  if(headline&&native&&hasNative&&sc==='Base')headline.unshift(['Rating',esc(current.rating||'Unrated'),esc(ratingWhy(current))]);
+ // Build 87: what the backtest says this projected return has actually turned into.
+ const cal=calibratedReturn(modelCagr);
+ if(headline&&native&&hasNative&&sc==='Base'&&cal)headline.splice(2,0,['Backtest reality check',pct(cal.realized3),`Stocks the model projected at ${cal.bucket} returned a median ${pct(cal.realized3)} a year over the next 3 years${Number.isFinite(cal.realized5)?` and ${pct(cal.realized5)} over 5`:''} (SPY ${pct(cal.spy3)} over the same 3-year periods)`]);
  // Build 59: show whether the year-10 margin is supported by evidence.
  const me=current?.projectionAssumptions?.forecastBridge?.margins?.marginEvidence;
  if(headline&&native&&hasNative&&sc==='Base'&&me&&Number.isFinite(me.ceiling)){
@@ -697,7 +723,7 @@ function renderScreener(){
  document.querySelectorAll('#screenRows [data-ticker],#screenCards [data-ticker]').forEach(b=>b.onclick=()=>choose(b.dataset.ticker));
 }
 
-async function fetchData(){try{const response=await fetch('data/results.json?refresh='+Date.now());if(!response.ok)throw Error('HTTP '+response.status);const d=await response.json();window.__generatedAt=d.generatedAt||null;const candidates=Array.isArray(d)?d:(Array.isArray(d.stocks)?d.stocks:Array.isArray(d.results)?d.results:Array.isArray(d.companies)?d.companies:Array.isArray(d.data)?d.data:[]);stocks=candidates.filter(s=>s&&s.ticker);byTicker=new Map(stocks.map(s=>[s.ticker.toUpperCase(),s]));$('freshness').textContent=stocks.length?`${stocks.length} companies · nightly data ${d.generatedAt||'unknown date'} · ${d.modelVersion||''}`:'No screener results yet — run the nightly workflow';const sectors=[...new Set(stocks.map(s=>s.sector).filter(Boolean))].sort();$('sector').innerHTML='<option value="">All sectors</option>'+sectors.map(x=>`<option>${esc(x)}</option>`).join('');renderScreener();renderPortfolio();}catch(e){$('freshness').textContent='Could not load nightly screener: '+e.message;toast('Screener data unavailable');}}
+async function fetchData(){try{const response=await fetch('data/results.json?refresh='+Date.now());if(!response.ok)throw Error('HTTP '+response.status);const d=await response.json();window.__generatedAt=d.generatedAt||null;window.__calibration=d.returnCalibration||null;window.__strategy=d.strategy||null;const candidates=Array.isArray(d)?d:(Array.isArray(d.stocks)?d.stocks:Array.isArray(d.results)?d.results:Array.isArray(d.companies)?d.companies:Array.isArray(d.data)?d.data:[]);stocks=candidates.filter(s=>s&&s.ticker);byTicker=new Map(stocks.map(s=>[s.ticker.toUpperCase(),s]));$('freshness').textContent=stocks.length?`${stocks.length} companies · nightly data ${d.generatedAt||'unknown date'} · ${d.modelVersion||''}`:'No screener results yet — run the nightly workflow';const sectors=[...new Set(stocks.map(s=>s.sector).filter(Boolean))].sort();$('sector').innerHTML='<option value="">All sectors</option>'+sectors.map(x=>`<option>${esc(x)}</option>`).join('');renderScreener();renderPortfolio();}catch(e){$('freshness').textContent='Could not load nightly screener: '+e.message;toast('Screener data unavailable');}}
 function requireAuth(){if(!client){toast('Configure your Supabase public URL and anon key in config.js');return false;}if(!user){$('authModal').hidden=false;return false;}return true;}
 async function sync(){if(!user)return;try{const [p,h]=await Promise.all([client.from('stock_projections').select('*').order('updated_at',{ascending:false}),client.from('stock_holdings').select('*').order('updated_at',{ascending:false})]);if(p.error)throw p.error;if(h.error)throw h.error;saved=p.data||[];holdings=h.data||[];await loadSnapshots();renderPortfolio();}catch(e){toast('Cloud sync failed: '+e.message);}}
 const SNAP_KEY='stocktool-review-snapshots';

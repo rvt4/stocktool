@@ -364,7 +364,7 @@ function entryFunnel(snapshotOutput){
   return {summary,byQuarter:per};
 }
 
-function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers,{splitYear=2022,transactionCostBps=10,altSnapshotOutput=null}={}){
+function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers,{splitYear=2022,transactionCostBps=10,altSnapshotOutput=null,altLabel='quality'}={}){
   const H=helpers;
   const split=s=>{
     const ps=s.periods||[];
@@ -415,8 +415,13 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
   // more than 3 points worse.
   if(Array.isArray(altSnapshotOutput)&&altSnapshotOutput.some(s=>(s.rows||[]).length)){
     const VX=(name,o)=>simulateOwnerStrategy(altSnapshotOutput,historyByTicker,spyHistory,{name,entry:'shortlist',sizing:'conviction',maxPositions:15,transactionCostBps,...o},H);
-    arms.push(VX('CX · C picking with the experiment (long-run growth +1 pt, exit P/E follows growth)',{}),
+    // Build 86: the slot tests financial-aware quality by default (see backtest.js BACKTEST_EXPERIMENT).
+    // Decision rule fixed in advance (README-build86): adopt only if CQF beats C after tax overall AND in
+    // both periods, with max drawdown no more than 3 points worse.
+    if(altLabel==='growth')arms.push(VX('CX · C picking with the experiment (long-run growth +1 pt, exit P/E follows growth)',{}),
       VX('CXQ · CX with quality 80+',{entryOpts:{minQuality:80}}));
+    else arms.push(VX('CQF · C with financial-aware quality (ROE when ROIC is missing; lenders: net-margin stability)',{}),
+      VX('CQF75 · CQF with quality 75+',{entryOpts:{minQuality:75}}));
   }
   // Build 68b: growth-list alternatives, same sleeve rules. Compare with G before switching anything on live.
   arms.push(simulateGrowthSleeve(snapshotOutput,historyByTicker,spyHistory,{name:'G1 · Growth sleeve without cyclicals',topN:10,keepRank:25,transactionCostBps,variant:'cyclical'},H),
@@ -439,6 +444,12 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
     rankBuckets:rankBucketOutcomes(snapshotOutput),
     returnCalibration:returnCalibration(snapshotOutput),
     returnVariantTest:returnVariantTest(snapshotOutput),
+    // Build 87: the frozen-strategy change bar, applied to the experiment arm (CQF or CX).
+    experimentDecision:(()=>{const c=arms.find(a=>/^C ·/.test(a.name)),x=arms.find(a=>/^(CQF|CX) ·/.test(a.name));
+      if(!c||!x)return null;const t=a=>a.afterTax?.afterTaxLiquidatedCAGR,d=a=>a.afterTaxSplit?.developmentExcess,v=a=>a.afterTaxSplit?.validationExcess,dd=a=>a.periodEndMaxDrawdown;
+      const gaps={overall:t(x)-t(c),earlier:d(x)-d(c),later:v(x)-v(c),drawdown:dd(x)-dd(c)};
+      const adopt=[gaps.overall,gaps.earlier,gaps.later].every(g=>Number.isFinite(g)&&g>=.005)&&!(gaps.drawdown<-.03);
+      return {arm:x.name.split(' · ')[0],rule:'Adopt only with 0.5+ pts/yr after tax overall AND in both periods, drawdown no more than 3 pts worse (Build 87 frozen-strategy bar).',gaps,adopt};})(),
     growthBuckets:growthBucketOutcomes(snapshotOutput),
     benchmarks:{equalWeightUniverse:compact(universe)},
     arms:arms.map(compact),

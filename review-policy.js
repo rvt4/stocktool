@@ -367,6 +367,15 @@
   }
   const ADVICE_ORDER={Sell:0,'Sell some':1,'Buy more':2,Review:3,Hold:4};
 
-  const api={qualityBroke,isStaged,PEG,SELL,pegOf,pegEntry,valuationCheck,prevExpensive,holdingAdvice,ADVICE_ORDER,ENTRY,GARP,garpEntry,businessGrowthOf,entryWarnings,ttmRevenueGrowth,thesisMemo,BANDS,SIZING,convictionScore,targetWeight,sizeTier,shortlistEntry,entryEligible,planContribution,holdingStatus,buildSnapshot,shortlistPerformance,nextReviewDate};
+  // Build 87: the strategy is FROZEN. Every change so far was chosen on the same 2019-2025 history, so the
+  // only independent test left is the future: forward-record.js saves this version's calls monthly and
+  // data/forward-report.json scores them at 12 and 24 months. Change rules only for (a) a measurement bug,
+  // or (b) a backtest win of 0.5+ points a year after tax in BOTH periods, and bump the version when you do.
+  const STRATEGY={id:'C-v1',frozenOn:'2026-11-15',
+    rules:'Buy: model rank top 20, cautious return 11%+, quality 80+. Sell: quality falls below 70 after buying; '+
+      'or cautious return under 6.5% and 5-yr PEG over 2.5 (half at the first review, the rest at the next). Trim positions over 20% toward 15%.',
+    changePolicy:'Only for a measurement bug, or a backtest win of 0.5+ pts/yr after tax in both periods; bump the version.'};
+
+  const api={STRATEGY,qualityBroke,isStaged,PEG,SELL,pegOf,pegEntry,valuationCheck,prevExpensive,holdingAdvice,ADVICE_ORDER,ENTRY,GARP,garpEntry,businessGrowthOf,entryWarnings,ttmRevenueGrowth,thesisMemo,BANDS,SIZING,convictionScore,targetWeight,sizeTier,shortlistEntry,entryEligible,planContribution,holdingStatus,buildSnapshot,shortlistPerformance,nextReviewDate};
   if(typeof module!=='undefined'&&module.exports) module.exports=api; else root.ReviewPolicy=api;
 })(typeof window!=='undefined'?window:globalThis);

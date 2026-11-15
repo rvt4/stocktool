@@ -19,7 +19,7 @@ const snaps=dates.map((asOf,qi)=>({asOf,rows:Array.from({length:N},(_,i)=>{
     valuationConfidence:g?85:60,requiredReturnBuyPrice:g?120:80};
 })}));
 // Build 83: CX / CXQ run arm C on the experiment's snapshots. Identical inputs -> identical results.
-const lab=L.buildOwnerStrategyLab(snaps,hist,spy,H,{splitYear:2018,altSnapshotOutput:snaps});
+const lab=L.buildOwnerStrategyLab(snaps,hist,spy,H,{splitYear:2018,altSnapshotOutput:snaps,altLabel:'growth'});
 const arm=k=>lab.arms.find(a=>a.name.startsWith(k));
 assert.strictEqual(lab.arms.length,25,'C/CX arms: '+lab.arms.length);
 assert(arm('CX ·')&&arm('CXQ ·'));
