@@ -40,7 +40,8 @@ console.log('build80 tests passed');
 
 // Build 80b (2): lenders and insurers get an EPS-only simple table.
 {
-  const {buildSimplePath,calculateSimple}=require('./engine/simple-path');
+  // Build 85: these check the analyst path, kept for the reference line.
+const {buildAnalystPath:buildSimplePath,calculateSimple}=require('./engine/simple-path');
   const rows=[];let R=50e9,S=700e6;
   for(let i=0;i<10;i++){R*=1.07;S*=.98;rows.push({year:2026+i,revenue:R,revenueGrowth:.07,shares:S,actualDilution:-.02,dividendPerShare:3+i*.2});}
   const path=Array(10).fill(.08);

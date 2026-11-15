@@ -1,7 +1,8 @@
 'use strict';
 // Build 78: simple projection — revenue growth, EPS, share change, exit P/E in; everything else derived.
 const assert=require('assert');
-const {buildSimplePath,calculateSimple}=require('./engine/simple-path');
+// Build 85: these check the analyst path, kept for the reference line.
+const {buildAnalystPath:buildSimplePath,calculateSimple}=require('./engine/simple-path');
 const near=(a,b,e=1e-6)=>Math.abs(a-b)<e;
 
 // Model rows: revenue +10%/yr from 100B, shares -1%/yr from 1B, GAAP net 20%, SBC 3%, amortization 1%, tax 20%,

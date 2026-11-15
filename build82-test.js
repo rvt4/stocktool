@@ -2,7 +2,8 @@
 // Build 82: exit P/E on the table's EPS basis, clean P/E anchor, current-year consensus weight, one-off
 // share issuance cap, and the growth / exit-multiple experiment.
 const assert=require('assert');
-const {buildSimplePath,calculateSimple}=require('./engine/simple-path');
+// Build 85: these check the analyst path, kept for the reference line.
+const {buildAnalystPath:buildSimplePath,calculateSimple}=require('./engine/simple-path');
 const {buildForecast}=require('./engine/forecast-engine');
 const {returnVariantTest}=require('./owner-strategy-lab');
 

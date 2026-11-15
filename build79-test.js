@@ -2,7 +2,8 @@
 // Build 79: cash the company keeps counts once, at $1 per $1. The interest on it that is already in EPS
 // (growth in non-operating income, capped at a 4% yield on the cash) is taken out before the P/E.
 const assert=require('assert');
-const {buildSimplePath,calculateSimple,interestInEarnings}=require('./engine/simple-path');
+// Build 85: these check the analyst path, kept for the reference line.
+const {buildAnalystPath:buildSimplePath,calculateSimple,interestInEarnings}=require('./engine/simple-path');
 const near=(a,b,e=1e-6)=>Math.abs(a-b)<e;
 
 // helper
