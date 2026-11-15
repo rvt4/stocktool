@@ -1,7 +1,7 @@
 'use strict';
 // Quarterly review policy for long-horizon holdings (Build 35).
 // Different bars for buying and for selling, so ordinary model noise does not cause churn:
-//   Add candidate : passes the backtested entry rule (model rank top 20, return >= hurdle, quality >= 75) and is below target size.
+//   Add candidate : passes the backtested entry rule (model rank top 20, return >= hurdle, quality >= 80) and is below target size.
 //   Hold          : default. Falling in rank is NOT a reason to sell.
 //   Review        : something worth a look (first low-return reading, quality slipping, unrated).
 //   Sell candidate: quality broke (<70) OR expected return stayed below the floor two reviews running.
@@ -91,12 +91,14 @@
     return Math.round(w*200)/200; // nearest 0.5%
   }
   function sizeTier(w){return w>=.075?'High conviction':w>=.05?'Standard':'Starter';}
-  // A stock you would buy today (not merely keep): above hurdle, quality 75+, rated Buy or better
+  // A stock you would buy today (not merely keep): above hurdle, quality 80+ (Build 84), rated Buy or better
   // and at/below the hurdle + MOS buy price.
   // The entry rule the Build 36 backtest validated (arm C). One definition, used by the app and the backtest.
   // Build 72: the live entry settings. Defaults = arm C. The owner backtest runs the variants (C35, C50, CW, CQ,
   // C35W); change these only to a variant that beat C in BOTH periods (see README-build72).
-  const ENTRY={maxRank:20,minQuality:75,blockSplit:false,blockCycleAtPeak:false};
+  // Build 84: quality 80+ (arm CQ beat C overall and in BOTH periods, after tax, in the Build 80c and 82b/83
+  // backtests: 23.1% vs 22.7%; the Build 72 rule for entry variants). The quality SELL rule is unchanged (<70).
+  const ENTRY={maxRank:20,minQuality:80,blockSplit:false,blockCycleAtPeak:false};
   // Build 72: the GARP list (owner's style). Quality 75+, revenue growing 10%+ a year (average of trailing-12-month
   // growth and the 3-year CAGR), any model rank (the rank leans to cheapness and hid MSFT, GOOG, FIX at #175-220).
   // App list: underwritten return 7%+ (watch zone); buy zone and backtest arm CG: 9%+.

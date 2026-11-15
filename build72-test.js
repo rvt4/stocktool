@@ -4,7 +4,7 @@ const assert=require('assert');
 const RP=require('./review-policy');
 const s=(o)=>({ticker:'X',rating:'Watch',overallRank:10,underwrittenCAGR:.12,qualityScore:80,...o});
 // Live defaults are arm C.
-assert.deepStrictEqual(RP.ENTRY,{maxRank:20,minQuality:75,blockSplit:false,blockCycleAtPeak:false});
+assert.deepStrictEqual(RP.ENTRY,{maxRank:20,minQuality:80,blockSplit:false,blockCycleAtPeak:false}); // Build 84: CQ (quality 80+) became the live entry
 assert(RP.shortlistEntry(s()));
 assert(!RP.shortlistEntry(s({overallRank:25})));assert(RP.shortlistEntry(s({overallRank:25}),{maxRank:35}));
 assert(!RP.shortlistEntry(s({qualityScore:78}),{minQuality:80}));

@@ -396,7 +396,7 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
    arms.push(V('C35 · C with the top-35 rank cutoff',{maxRank:35}),
      V('C50 · C with the top-50 rank cutoff',{maxRank:50}),
      V('CW · C skipping split valuations and cyclicals at a peak',{entryOpts:{blockSplit:true,blockCycleAtPeak:true}}),
-     V('CQ · C with quality 80+',{entryOpts:{minQuality:80}}),
+     V('CQ75 · C with the previous quality 75+ entry (live rule is 80+ since Build 84)',{entryOpts:{minQuality:75}}),
      V('C35W · top-35 cutoff + warning blocks',{maxRank:35,entryOpts:{blockSplit:true,blockCycleAtPeak:true}}),
      V('CG · GARP: quality 75+, revenue growth 10%+, return 9%+, any rank; best return first',{maxRank:Infinity,garp:true,entryOpts:{minReturn:RP.GARP.minReturn,minQuality:RP.GARP.minQuality,minGrowth:RP.GARP.minGrowth}}));}
   // Build 75: 5-year PEG (the model's own EPS path, identical live and here) and sell-rule variants.

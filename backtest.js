@@ -40,7 +40,7 @@ const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {buildOwnerStrategyLab}=require('./owner-strategy-lab');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='build83';
+const MODEL_VERSION='build84';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -2042,7 +2042,8 @@ async function main(){
           // ownerStrategyLab.returnVariantTest against realized returns; nothing live uses it.
           // Build 83: every snapshot (not just year-end), and a full alternative row so a strategy arm can
           // pick stocks with the experiment's numbers and rankings (arm CX). Roughly doubles model run time.
-          try{const f2=buildForecast(stock,{matureGrowthLift:.01}),q2=computeQuality(stock,f2),v2=valuate(stock,f2,q2,{exitPersistence:.30}),d2=rateStock(stock,f2,q2,v2);
+          // Build 84: experiment retired (CX lost the later period in Build 83); set BACKTEST_EXPERIMENT=1 to rerun it.
+          if(process.env.BACKTEST_EXPERIMENT==='1')try{const f2=buildForecast(stock,{matureGrowthLift:.01}),q2=computeQuality(stock,f2),v2=valuate(stock,f2,q2,{exitPersistence:.30}),d2=rateStock(stock,f2,q2,v2);
             if(Number.isFinite(v2.expectedCAGR)){row.altExpectedCAGR=v2.expectedCAGR;const alt=compactModel(stock,f2,q2,v2,d2);alt.growth=growth;attachRealized(alt,history,spyHistory,asOf);altSnapshots.get(asOf).push(alt);}}catch(e){}
           attachRealized(row,history,spyHistory,asOf); snapshots.get(asOf).push(row); diagnostics.modeledObservations++;
         }catch(e){diagnostics.modelFailures++;growthOnly();errors.push({ticker,asOf,error:e.message}); if(skipExamples.length<20)skipExamples.push({ticker,asOf,reason:'model_failure',error:e.message});}
