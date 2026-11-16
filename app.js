@@ -674,7 +674,23 @@ function growthCard(s){
  <p class="muted small">Growth signals find runs that have started, not before they start. They work on average across many names and can crash together; size these smaller than value positions.</p></section>`;
 }
 function growthWhy(s){const g=s.growth||{};const up=(g.reasonsUp||[]).slice(0,2),dn=(g.reasonsDown||[]).slice(0,1);return `<strong>Growth score ${esc(g.score)}</strong>${up.length?'<div class="small">'+up.map(esc).join('<br>')+'</div>':''}${dn.length?'<div class="screen-card-flags">Watch: '+esc(dn[0])+'</div>':''}${g.exit?.exit?'<div class="screen-card-flags">Exit rule: '+esc(g.exit.reason)+'</div>':''}`;}
+// Build 89: stocks that miss the buy rule on exactly ONE test, by a little. Not part of the tested rule:
+// a wider menu for your own judgment.
+function nearMissHtml(){
+ const R=window.ReviewPolicy,E=R.ENTRY,h=R.SIZING.hurdle;
+ const fam=new Set(stocks.filter(s=>R.shortlistEntry(s)).map(s=>companyFamily(s.ticker))),seen=new Set();
+ const groups=[
+  ['Ranked just outside the top 20 (21–30)',s=>R.shortlistEntry(s,{maxRank:30})&&!R.shortlistEntry(s)],
+  [`Cautious return just short (${pct(h-.01)}–${pct(h)})`,s=>R.shortlistEntry(s,{minReturn:h-.01})&&!R.shortlistEntry(s)],
+  [`Quality just short (${E.minQuality-5}–${E.minQuality-1})`,s=>R.shortlistEntry(s,{minQuality:E.minQuality-5})&&!R.shortlistEntry(s)],
+ ];
+ const rows=groups.map(([label,test])=>{const list=stocks.filter(s=>{const f=companyFamily(s.ticker);if(fam.has(f)||seen.has(f)||!test(s))return false;seen.add(f);return true;}).sort((a,b)=>(num(a.overallRank)??9e9)-(num(b.overallRank)??9e9));
+  return list.length?`<tr><td colspan="6" class="muted small"><b>${esc(label)}</b></td></tr>`+list.map(s=>`<tr><td><b>${esc(s.ticker)}</b><br><span class="muted">${esc(s.name||'')}</span></td><td>${esc(s.sector||'—')}</td><td>${returnSummary(s)}</td><td>${esc(s.qualityScore??'—')}</td><td>${esc(s.overallRank??'—')}</td><td><button class="ghost" data-ticker="${esc(s.ticker)}">Research →</button></td></tr>`).join(''):'';}).join('');
+ if(!rows)return '';
+ return `<h3>Near misses</h3><p class="muted small">These miss the buy rule on one test, by a small margin. They are <b>not</b> part of the backtested rule; use your own judgment.</p><div class="table-scroll"><table><thead><tr><th>Company</th><th>Sector</th><th>Return</th><th>Quality</th><th>Rank</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
 function renderScreener(){
+ if($('nearMiss'))$('nearMiss').innerHTML='';
  const minCap=Number($('minCap')?.value||0);try{localStorage.setItem('stocktool-mincap',String(minCap))}catch(e){}
  const q=$('search').value.toLowerCase(),sector=$('sector').value,positive=$('positive').checked,sort=$('sort').value;
  let arr=stocks.filter(s=>(s.ticker+' '+(s.name||'')).toLowerCase().includes(q)&&(!sector||s.sector===sector)&&(!minCap||num(s.marketCap,0)>=minCap)&&(!positive||present(s.underwrittenCAGR??s.expectedReturn)&&Number(s.underwrittenCAGR??s.expectedReturn)>0));
@@ -714,6 +730,7 @@ function renderScreener(){
   $('screenCards').innerHTML=top.map(s=>{const st=status(s);return `<article class="screen-card compact"><div class="screen-card-head"><div><strong>${esc(s.ticker)} <span class="muted">${esc(s.name||'')}</span></strong></div><span class="action ${st.buy?'act-buy':'act-review'}">${st.label}</span></div><div class="screen-card-stats"><span>PEG <b>${pegTxt(s)}</b></span><span>Return <b>${returnSummary(s)}</b></span><span>Growth <b>${pct(R.businessGrowthOf(s))}</b></span><span>Quality <b>${esc(s.qualityScore??'—')}</b></span><span>Price <b>${money(getPrice(s))}</b></span></div><div class="screen-card-footer"><span class="muted small">${esc(st.sub)}</span><button class="ghost" data-ticker="${esc(s.ticker)}">Research →</button></div></article>`}).join('');
   if(sort==='peg')$('count').textContent=`${arr.length} quality growers: quality 75+, revenue growing 10%+, 5-yr PEG 2.0 or less, cheapest for its growth first. Buy zone = 1.5 or less. 5-yr PEG = next year’s P/E ÷ the model’s revenue-per-share growth per year over 5 years (margins held flat; dilution counts).`;
   if(sort==='garp')$('count').textContent=`${arr.length} quality growers: quality 75+, revenue growing 10%+ a year, expected return 7%+. Buy zone = 9%+ a year.`;
+  if(sort==='candidates'&&$('nearMiss')){$('nearMiss').innerHTML=nearMissHtml();$('nearMiss').querySelectorAll('[data-ticker]').forEach(b=>b.onclick=()=>choose(b.dataset.ticker));}
   document.querySelectorAll('#screenRows [data-ticker],#screenCards [data-ticker]').forEach(b=>b.onclick=()=>choose(b.dataset.ticker));
   return;
  }
@@ -723,9 +740,9 @@ function renderScreener(){
  document.querySelectorAll('#screenRows [data-ticker],#screenCards [data-ticker]').forEach(b=>b.onclick=()=>choose(b.dataset.ticker));
 }
 
-async function fetchData(){try{const response=await fetch('data/results.json?refresh='+Date.now());if(!response.ok)throw Error('HTTP '+response.status);const d=await response.json();window.__generatedAt=d.generatedAt||null;window.__calibration=d.returnCalibration||null;window.__strategy=d.strategy||null;const candidates=Array.isArray(d)?d:(Array.isArray(d.stocks)?d.stocks:Array.isArray(d.results)?d.results:Array.isArray(d.companies)?d.companies:Array.isArray(d.data)?d.data:[]);stocks=candidates.filter(s=>s&&s.ticker);byTicker=new Map(stocks.map(s=>[s.ticker.toUpperCase(),s]));$('freshness').textContent=stocks.length?`${stocks.length} companies · nightly data ${d.generatedAt||'unknown date'} · ${d.modelVersion||''}`:'No screener results yet — run the nightly workflow';const sectors=[...new Set(stocks.map(s=>s.sector).filter(Boolean))].sort();$('sector').innerHTML='<option value="">All sectors</option>'+sectors.map(x=>`<option>${esc(x)}</option>`).join('');renderScreener();renderPortfolio();}catch(e){$('freshness').textContent='Could not load nightly screener: '+e.message;toast('Screener data unavailable');}}
+async function fetchData(){try{const response=await fetch('data/results.json?refresh='+Date.now());if(!response.ok)throw Error('HTTP '+response.status);const d=await response.json();window.__generatedAt=d.generatedAt||null;window.__calibration=d.returnCalibration||null;window.__spyPrice=d.spyPrice??null;window.__strategy=d.strategy||null;const candidates=Array.isArray(d)?d:(Array.isArray(d.stocks)?d.stocks:Array.isArray(d.results)?d.results:Array.isArray(d.companies)?d.companies:Array.isArray(d.data)?d.data:[]);stocks=candidates.filter(s=>s&&s.ticker);byTicker=new Map(stocks.map(s=>[s.ticker.toUpperCase(),s]));$('freshness').textContent=stocks.length?`${stocks.length} companies · nightly data ${d.generatedAt||'unknown date'} · ${d.modelVersion||''}`:'No screener results yet — run the nightly workflow';const sectors=[...new Set(stocks.map(s=>s.sector).filter(Boolean))].sort();$('sector').innerHTML='<option value="">All sectors</option>'+sectors.map(x=>`<option>${esc(x)}</option>`).join('');renderScreener();renderPortfolio();loadForwardRecord().then(()=>{autoMonthlySnapshot();if(typeof renderDashboard==='function')renderDashboard();});}catch(e){$('freshness').textContent='Could not load nightly screener: '+e.message;toast('Screener data unavailable');}}
 function requireAuth(){if(!client){toast('Configure your Supabase public URL and anon key in config.js');return false;}if(!user){$('authModal').hidden=false;return false;}return true;}
-async function sync(){if(!user)return;try{const [p,h]=await Promise.all([client.from('stock_projections').select('*').order('updated_at',{ascending:false}),client.from('stock_holdings').select('*').order('updated_at',{ascending:false})]);if(p.error)throw p.error;if(h.error)throw h.error;saved=p.data||[];holdings=h.data||[];await loadSnapshots();renderPortfolio();}catch(e){toast('Cloud sync failed: '+e.message);}}
+async function sync(){if(!user)return;try{const [p,h]=await Promise.all([client.from('stock_projections').select('*').order('updated_at',{ascending:false}),client.from('stock_holdings').select('*').order('updated_at',{ascending:false})]);if(p.error)throw p.error;if(h.error)throw h.error;saved=p.data||[];holdings=h.data||[];await loadSnapshots();renderPortfolio();await loadForwardRecord();await autoMonthlySnapshot();renderDashboard();}catch(e){toast('Cloud sync failed: '+e.message);}}
 const SNAP_KEY='stocktool-review-snapshots';
 function localSnapshots(){try{return JSON.parse(localStorage.getItem(SNAP_KEY)||'[]')}catch(e){return []}}
 async function loadSnapshots(){
@@ -804,6 +821,35 @@ if($('plannerCash'))$('plannerCash').addEventListener('input',renderPlanner);
 // ===== Build 73: Dashboard =====
 // One screen: portfolio value, what to do with each holding and why, and the best new ideas (GARP buy zone).
 const ACTION_CLASS={'Buy more':'act-buy',Hold:'act-hold','Sell some':'act-trim',Sell:'act-sell',Review:'act-review'};
+// Build 89: your picks vs the strategy. Each monthly snapshot of your holdings (saved automatically, below)
+// is compared with the strategy's buy list from the forward record nearest that date, and with SPY. Price
+// returns only, as if each snapshot's portfolio and buy list were simply held since that date.
+async function loadForwardRecord(){if(window.__forward!==undefined)return window.__forward;try{const r=await fetch('data/forward-record.json?refresh='+Date.now());window.__forward=r.ok?await r.json():null;}catch(e){window.__forward=null;}return window.__forward;}
+function picksVsStrategyHtml(){
+ const fr=window.__forward,spyNow=num(window.__spyPrice);
+ const snaps=(snapshots||[]).filter(x=>(x.holdings||[]).length&&Date.now()-Date.parse(x.takenAt)>=30*864e5).slice(0,6);
+ const intro=`<p class="muted small">Your portfolio as saved each month vs the strategy's full buy list from the same date and SPY, as if each were just held since then (prices only). It shows whether your choices from the list add value. A snapshot of your holdings saves automatically once a month while you're signed in.</p>`;
+ if(!snaps.length)return `<section class="dash-section"><div class="section-head"><h2>Your picks vs the strategy</h2></div>${intro}<p class="muted small">First comparison appears 30 days after your first monthly snapshot.</p></section>`;
+ const rows=snaps.map(sn=>{const d=String(sn.takenAt).slice(0,10);
+  let v0=0,v1=0;for(const h of sn.holdings){const p0=num(h.price),p1=getPrice(byTicker.get(h.ticker)),sh=num(h.shares);if(p0>0&&p1>0&&sh>0){v0+=sh*p0;v1+=sh*p1;}}
+  const you=v0>0?v1/v0-1:null;
+  const fs=(fr?.snapshots||[]).filter(f=>f.asOf<=d||Date.parse(f.asOf)-Date.parse(d)<=5*864e5).sort((a,b)=>Math.abs(Date.parse(a.asOf)-Date.parse(d))-Math.abs(Date.parse(b.asOf)-Date.parse(d)))[0];
+  let list=null,spy=null;
+  if(fs&&Math.abs(Date.parse(fs.asOf)-Date.parse(d))<=20*864e5){const r=fs.buyList.map(b=>{const p1=getPrice(byTicker.get(b.ticker));return b.price>0&&p1>0?p1/b.price-1:null;}).filter(Number.isFinite);
+   list=r.length?r.reduce((a,x)=>a+x,0)/r.length:null;spy=fs.spyPrice>0&&spyNow>0?spyNow/fs.spyPrice-1:null;}
+  const c=x=>Number.isFinite(x)?`<span class="${x>=0?'pos':'neg'}">${pct(x)}</span>`:'—';
+  return `<tr><td>${esc(d)}</td><td>${c(you)}</td><td>${c(list)}</td><td>${c(spy)}</td></tr>`;}).join('');
+ return `<section class="dash-section"><div class="section-head"><h2>Your picks vs the strategy</h2></div>${intro}<div class="table-scroll"><table><thead><tr><th>Since</th><th>Your holdings</th><th>Strategy buy list</th><th>SPY</th></tr></thead><tbody>${rows}</tbody></table></div><p class="muted small">"—" for the buy list or SPY means that date is before the forward record started (Nov 2026).</p></section>`;
+}
+// Build 89: one snapshot a month, automatically, while signed in with holdings (the review's "previous
+// snapshot" logic and the comparison above both use it).
+async function autoMonthlySnapshot(){
+ if(!(client&&user)||!holdings.length||!stocks.length)return;
+ const last=(snapshots||[])[0];if(last&&Date.now()-Date.parse(last.takenAt)<28*864e5)return;
+ const snap=window.ReviewPolicy.buildSnapshot({stocks,holdings,shortlist:rankedList(),prev:priorSnapshot(),generatedAt:window.__generatedAt||null});
+ const {error}=await client.from('review_snapshots').insert({user_id:user.id,taken_at:snap.takenAt,data:snap});
+ if(!error){await loadSnapshots();toast('Monthly snapshot of your holdings saved');renderDashboard();}
+}
 function renderDashboard(){
  const el=$('dashboard');if(!el||!window.ReviewPolicy)return;
  const RP=window.ReviewPolicy,prior=priorSnapshot();
@@ -853,9 +899,10 @@ function renderDashboard(){
    ${s?`<button class="ghost" data-dticker="${esc(r.t)}">Open research →</button>`:''}
   </article>`;};
  const heldFam=new Set(rows.map(r=>companyFamily(r.t)));
- const ideas=stocks.filter(s=>RP.pegEntry(s)&&!heldFam.has(companyFamily(s.ticker))).sort((a,b)=>RP.pegOf(a).peg-RP.pegOf(b).peg);
+ // Build 89: the live (backtested, frozen) buy rule, best-ranked first; not the PEG list.
+ const ideas=stocks.filter(s=>RP.shortlistEntry(s)&&!heldFam.has(companyFamily(s.ticker))).sort((a,b)=>(num(a.overallRank)??9e9)-(num(b.overallRank)??9e9));
  const seenI=new Set(),ideaList=ideas.filter(s=>{const f=companyFamily(s.ticker);if(seenI.has(f))return false;seenI.add(f);return true;}).slice(0,8);
- const idea=s=>{const w=RP.entryWarnings(s),rv=s.estimateRevision?.level;return `<button class="idea" data-dticker="${esc(s.ticker)}"><span class="idea-t">${esc(s.ticker)}</span><span class="idea-n">${esc(s.name||'')}</span><span class="idea-m">${RP.pegOf(s).peg.toFixed(2)}<small>PEG</small></span><span class="idea-m">${pct(RP.businessGrowthOf(s))}<small>growth</small></span><span class="idea-m">${esc(s.qualityScore)}<small>quality</small></span>${w.length||rv?`<span class="idea-warn">${[rv?'estimate cut':'',w.includes('split')?'valuation split':'',w.includes('cycle_peak')?'cyclical peak':''].filter(Boolean).join(' · ')}</span>`:''}</button>`;};
+ const idea=s=>{const w=RP.entryWarnings(s),rv=s.estimateRevision?.level;return `<button class="idea" data-dticker="${esc(s.ticker)}"><span class="idea-t">${esc(s.ticker)}</span><span class="idea-n">${esc(s.name||'')}</span><span class="idea-m">${pct(num(s.underwrittenCAGR))}<small>cautious</small></span><span class="idea-m">${(()=>{const p=RP.pegOf(s);return p&&p.peg!==null?p.peg.toFixed(2):'—';})()}<small>PEG</small></span><span class="idea-m">${pct(RP.businessGrowthOf(s))}<small>growth</small></span><span class="idea-m">${esc(s.qualityScore)}<small>quality</small></span>${w.length||rv?`<span class="idea-warn">${[rv?'estimate cut':'',w.includes('split')?'valuation split':'',w.includes('cycle_peak')?'cyclical peak':''].filter(Boolean).join(' · ')}</span>`:''}</button>`;};
  const signedOut=!user;
  el.innerHTML=`
   <div class="kpis">${kpis.map(([k,v,sub])=>`<div class="kpi"><small>${k}</small><strong>${v}</strong><em>${sub}</em></div>`).join('')}</div>
@@ -864,8 +911,9 @@ function renderDashboard(){
    ${signedOut?`<div class="empty"><p>Sign in to see buy / hold / sell advice for your holdings.</p><button class="primary" id="dashSignIn">Sign in</button></div>`
     :rows.length?`<div class="hgrid">${rows.map(card).join('')}</div>`:`<div class="empty"><p>No holdings yet. Add them under Portfolio.</p><button class="primary" data-goto="portfolio">Add holdings</button></div>`}
   </section>
+  ${signedOut?'':picksVsStrategyHtml()}
   <section class="dash-section"><div class="section-head"><h2>Ideas for new money</h2><button class="ghost" data-goto="screener">See all ideas →</button></div>
-   <p class="muted small">PEG buy zone: quality 75+, revenue growing 10%+, 5-yr PEG 1.5 or less. Cheapest for its growth first; you don’t own these yet.</p>
+   <p class="muted small">Buy candidates you don’t own yet (your strategy’s rule: model rank top 20, cautious return ${HURDLE_LABEL}+, quality ${RP.ENTRY.minQuality}+), best-ranked first.</p>
    ${ideaList.length?`<div class="ideas">${ideaList.map(idea).join('')}</div>`:'<div class="empty"><p>Nothing in the buy zone tonight. Holding cash or an index fund until prices improve is fine.</p></div>'}
   </section>
   <p class="disclaimer">Advice comes from the model’s backtested rules applied to tonight’s data. It is a prompt to do your own research, not financial advice. Expected returns are estimates, and the backtest (2019–2025, before taxes) leaned on a handful of big winners.</p>`;
