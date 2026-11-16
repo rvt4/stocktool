@@ -50,9 +50,10 @@ function computeQuality(stock, forecast, opts = {}) {
   const cashQuality = isFinancial ? 55 : Math.round(70*positiveFCF + 0.30*scoreBand(median(fcfMargins)??-0.05,-0.05,0.15));
   const balanceSheet = Math.round(netDebtToEbitda==null?55:reverseBand(netDebtToEbitda,-1,4));
   const dilutionScore = Math.round(0.65*reverseBand(dilution,-0.03,0.08)+0.35*reverseBand(Number.isFinite(sbc)?sbc:0.03,0.00,0.15));
-  // Build 86 (v2): lenders have no meaningful operating margin in SEC data (it swings wildly), so margin
-  // stability scored 0 for AXP and JPM; measure it on net margin for them.
-  const marginStability = v2 && isFinancial ? reverseBand(stdev(netMargins),0.01,0.15) : reverseBand(stdev(opMargins),0.01,0.15);
+  // Build 88: LIVE for lenders (a measurement-bug fix under the C-v1 change policy; the Build 86 backtest
+  // showed it changes no strategy picks). Their SEC operating margin is meaningless, so stability is measured
+  // on net margin. The ROE part above stays experimental (opts.financialAware).
+  const marginStability = isFinancial ? reverseBand(stdev(netMargins),0.01,0.15) : reverseBand(stdev(opMargins),0.01,0.15);
   const qualityScore = Math.round(0.28*profitability+0.20*growthQuality+0.20*cashQuality+0.14*balanceSheet+0.10*dilutionScore+0.08*marginStability);
 
   const moatScore = Math.round(0.45*profitability+0.20*marginStability+0.20*growthQuality+0.15*dilutionScore);
