@@ -1,19 +1,71 @@
 {
- "generatedAt": "2026-11-16T07:35:48.586Z",
+ "generatedAt": "2026-11-16T16:24:53.547Z",
  "snapshots": 1,
  "firstSnapshot": "2026-11-13",
  "note": "error = actual reported revenue / forecast - 1. Positive = the model forecast too LOW (company grew faster). Based on monthly snapshots compared once the forecast year has been reported.",
- "observations": 0,
- "byHorizon": {},
- "byForecastGrowth": {},
- "byEvidence": {},
- "bySector": {},
- "worstMisses": [],
+ "observations": 1,
+ "byHorizon": {
+  "year 1": {
+   "n": 1,
+   "meanError": 0.010263187361082782,
+   "medianError": 0.010263187361082782,
+   "shareTooLow": 1
+  }
+ },
+ "byForecastGrowth": {
+  "year 1 · 0-10%": {
+   "n": 1,
+   "meanError": 0.010263187361082782,
+   "medianError": 0.010263187361082782,
+   "shareTooLow": 1
+  }
+ },
+ "byEvidence": {
+  "neither": {
+   "n": 1,
+   "meanError": 0.010263187361082782,
+   "medianError": 0.010263187361082782,
+   "shareTooLow": 1
+  }
+ },
+ "bySector": {
+  "Consumer Staples": {
+   "n": 1,
+   "meanError": 0.010263187361082782,
+   "medianError": 0.010263187361082782,
+   "shareTooLow": 1
+  }
+ },
+ "worstMisses": [
+  {
+   "ticker": "TSN",
+   "asOf": "2026-11-13",
+   "horizon": 1,
+   "forecastGrowth": 0.025804883145984912,
+   "error": 0.010263187361082782
+  }
+ ],
  "consensusEps": {
   "note": "error = actual EPS (analyst basis) / saved consensus - 1. Negative = analysts too optimistic. suggestedTrim needs 150+ observations; compare with CONSENSUS_TRIM in engine/simple-path.js ([this year, next year, ...]).",
-  "observations": 0,
-  "byHorizon": {},
-  "worstMisses": [],
+  "observations": 1,
+  "byHorizon": {
+   "this year": {
+    "n": 1,
+    "medianError": -0.01888883570266331,
+    "meanErrorClipped": -0.01888883570266331,
+    "shareTooHigh": 1,
+    "suggestedTrim": null
+   }
+  },
+  "worstMisses": [
+   {
+    "ticker": "TSN",
+    "asOf": "2026-11-13",
+    "horizon": "this year",
+    "fy": 2026,
+    "error": -0.01888883570266331
+   }
+  ],
   "revisions90dToday": {
    "thisYear": {
     "n": 845,
@@ -21,7 +73,7 @@
    },
    "nextYear": {
     "n": 868,
-    "median": 0.004361489412817554
+    "median": 0.004180702579378748
    }
   },
   "revisionHistory": [
@@ -33,7 +85,7 @@
     },
     "nextYear": {
      "n": 868,
-     "median": 0.004361489412817554
+     "median": 0.004180702579378748
     }
    }
   ]
