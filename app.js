@@ -684,18 +684,20 @@ function nearMissHtml(){
   [`Cautious return just short (${pct(h-.01)}–${pct(h)})`,s=>R.shortlistEntry(s,{minReturn:h-.01})&&!R.shortlistEntry(s)],
   [`Quality just short (${E.minQuality-5}–${E.minQuality-1})`,s=>R.shortlistEntry(s,{minQuality:E.minQuality-5})&&!R.shortlistEntry(s)],
  ];
- const rows=groups.map(([label,test])=>{const list=stocks.filter(s=>{const f=companyFamily(s.ticker);if(fam.has(f)||seen.has(f)||!test(s))return false;seen.add(f);return true;}).sort((a,b)=>(num(a.overallRank)??9e9)-(num(b.overallRank)??9e9));
+ const rows=groups.map(([label,test])=>{const list=stocks.filter(s=>{const f=companyFamily(s.ticker);if(fam.has(f)||seen.has(f)||!test(s))return false;seen.add(f);return true;}).sort((a,b)=>rankOf(a)-rankOf(b));
   return list.length?`<tr><td colspan="6" class="muted small"><b>${esc(label)}</b></td></tr>`+list.map(s=>`<tr><td><b>${esc(s.ticker)}</b><br><span class="muted">${esc(s.name||'')}</span></td><td>${esc(s.sector||'—')}</td><td>${returnSummary(s)}</td><td>${esc(s.qualityScore??'—')}</td><td>${esc(s.overallRank??'—')}</td><td><button class="ghost" data-ticker="${esc(s.ticker)}">Research →</button></td></tr>`).join(''):'';}).join('');
  if(!rows)return '';
  return `<h3>Near misses</h3><p class="muted small">These miss the buy rule on one test, by a small margin. They are <b>not</b> part of the backtested rule; use your own judgment.</p><div class="table-scroll"><table><thead><tr><th>Company</th><th>Sector</th><th>Return</th><th>Quality</th><th>Rank</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
+// Build 90: unranked companies (no valuation yet: loss-makers) sort LAST; num(null) is 0, which put them first.
+function rankOf(s){return present(s?.overallRank)?Number(s.overallRank):99999;}
 function renderScreener(){
  if($('nearMiss'))$('nearMiss').innerHTML='';
  const minCap=Number($('minCap')?.value||0);try{localStorage.setItem('stocktool-mincap',String(minCap))}catch(e){}
  const q=$('search').value.toLowerCase(),sector=$('sector').value,positive=$('positive').checked,sort=$('sort').value;
  let arr=stocks.filter(s=>(s.ticker+' '+(s.name||'')).toLowerCase().includes(q)&&(!sector||s.sector===sector)&&(!minCap||num(s.marketCap,0)>=minCap)&&(!positive||present(s.underwrittenCAGR??s.expectedReturn)&&Number(s.underwrittenCAGR??s.expectedReturn)>0));
  const cached=new Map(arr.map(s=>[s,opportunity(s)]));
- arr.sort((a,b)=>sort==='opportunity'?cached.get(b).score-cached.get(a).score:sort==='return'?num(b.underwrittenCAGR??b.expectedReturn,-999)-num(a.underwrittenCAGR??a.expectedReturn,-999):sort==='quality'?num(b.qualityScore,-1)-num(a.qualityScore,-1):sort==='cap'?num(b.marketCap,-1)-num(a.marketCap,-1):num(a.overallRank,99999)-num(b.overallRank,99999));
+ arr.sort((a,b)=>sort==='opportunity'?cached.get(b).score-cached.get(a).score:sort==='return'?num(b.underwrittenCAGR??b.expectedReturn,-999)-num(a.underwrittenCAGR??a.expectedReturn,-999):sort==='quality'?num(b.qualityScore,-1)-num(a.qualityScore,-1):sort==='cap'?num(b.marketCap,-1)-num(a.marketCap,-1):rankOf(a)-rankOf(b));
  // Build 72: Buy candidates = the backtested entry rule (arm C: top-20 rank, underwritten return >= 11%, quality
  // 80+ since Build 84), the same rule the backtest and the new-money planner use. Replaces the strict "Buy" rating as the list to
  // act on (that rule, arm D, roughly matched SPY). Warnings are shown, not hidden.
@@ -900,7 +902,7 @@ function renderDashboard(){
   </article>`;};
  const heldFam=new Set(rows.map(r=>companyFamily(r.t)));
  // Build 89: the live (backtested, frozen) buy rule, best-ranked first; not the PEG list.
- const ideas=stocks.filter(s=>RP.shortlistEntry(s)&&!heldFam.has(companyFamily(s.ticker))).sort((a,b)=>(num(a.overallRank)??9e9)-(num(b.overallRank)??9e9));
+ const ideas=stocks.filter(s=>RP.shortlistEntry(s)&&!heldFam.has(companyFamily(s.ticker))).sort((a,b)=>rankOf(a)-rankOf(b));
  const seenI=new Set(),ideaList=ideas.filter(s=>{const f=companyFamily(s.ticker);if(seenI.has(f))return false;seenI.add(f);return true;}).slice(0,8);
  const idea=s=>{const w=RP.entryWarnings(s),rv=s.estimateRevision?.level;return `<button class="idea" data-dticker="${esc(s.ticker)}"><span class="idea-t">${esc(s.ticker)}</span><span class="idea-n">${esc(s.name||'')}</span><span class="idea-m">${pct(num(s.underwrittenCAGR))}<small>cautious</small></span><span class="idea-m">${(()=>{const p=RP.pegOf(s);return p&&p.peg!==null?p.peg.toFixed(2):'—';})()}<small>PEG</small></span><span class="idea-m">${pct(RP.businessGrowthOf(s))}<small>growth</small></span><span class="idea-m">${esc(s.qualityScore)}<small>quality</small></span>${w.length||rv?`<span class="idea-warn">${[rv?'estimate cut':'',w.includes('split')?'valuation split':'',w.includes('cycle_peak')?'cyclical peak':''].filter(Boolean).join(' · ')}</span>`:''}</button>`;};
  const signedOut=!user;
