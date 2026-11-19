@@ -1,23 +1,23 @@
 {
- "generatedAt": "2026-11-19T03:20:07.438Z",
+ "generatedAt": "2026-11-19T16:10:14.177Z",
  "snapshots": 1,
  "firstSnapshot": "2026-11-13",
  "note": "error = actual reported revenue / forecast - 1. Positive = the model forecast too LOW (company grew faster). Based on monthly snapshots compared once the forecast year has been reported.",
- "observations": 10,
+ "observations": 11,
  "byHorizon": {
   "year 1": {
-   "n": 10,
-   "meanError": 0.014858373366436528,
-   "medianError": 0.0055680817071714905,
-   "shareTooLow": 0.6
+   "n": 11,
+   "meanError": 0.017731309003223547,
+   "medianError": 0.009622151302270732,
+   "shareTooLow": 0.6363636363636364
   }
  },
  "byForecastGrowth": {
   "year 1 · 0-10%": {
-   "n": 7,
-   "meanError": -0.021199663037215415,
-   "medianError": 0.009622151302270732,
-   "shareTooLow": 0.5714285714285714
+   "n": 8,
+   "meanError": -0.012742121986176774,
+   "medianError": 0.009942669331676757,
+   "shareTooLow": 0.625
   },
   "year 1 · <0%": {
    "n": 1,
@@ -46,10 +46,10 @@
    "shareTooLow": 0.6666666666666666
   },
   "backlog only": {
-   "n": 4,
-   "meanError": -0.03913653910029924,
-   "medianError": -0.03237920037556358,
-   "shareTooLow": 0.5
+   "n": 5,
+   "meanError": -0.022017098206020647,
+   "medianError": 0.0015140121120722494,
+   "shareTooLow": 0.6
   }
  },
  "bySector": {
@@ -57,6 +57,12 @@
    "n": 1,
    "meanError": 0.012979721389786869,
    "medianError": 0.012979721389786869,
+   "shareTooLow": 1
+  },
+  "Materials": {
+   "n": 1,
+   "meanError": 0.04646066537109372,
+   "medianError": 0.04646066537109372,
    "shareTooLow": 1
   },
   "Consumer Discretionary": {
@@ -113,6 +119,13 @@
    "error": -0.0662724128631994
   },
   {
+   "ticker": "APD",
+   "asOf": "2026-11-13",
+   "horizon": 1,
+   "forecastGrowth": 0.03130529306793395,
+   "error": 0.04646066537109372
+  },
+  {
    "ticker": "FFIV",
    "asOf": "2026-11-13",
    "horizon": 1,
@@ -164,13 +177,13 @@
  ],
  "consensusEps": {
   "note": "error = actual EPS (analyst basis) / saved consensus - 1. Negative = analysts too optimistic. suggestedTrim needs 150+ observations; compare with CONSENSUS_TRIM in engine/simple-path.js ([this year, next year, ...]).",
-  "observations": 10,
+  "observations": 11,
   "byHorizon": {
    "this year": {
-    "n": 10,
-    "medianError": -0.006466436728407188,
-    "meanErrorClipped": -0.010324503008744735,
-    "shareTooHigh": 0.5,
+    "n": 11,
+    "medianError": -0.018828771891982177,
+    "meanErrorClipped": -0.015212081623286295,
+    "shareTooHigh": 0.5454545454545454,
     "suggestedTrim": null
    }
   },
@@ -211,6 +224,13 @@
     "error": -0.06672888474101712
    },
    {
+    "ticker": "APD",
+    "asOf": "2026-11-13",
+    "horizon": "this year",
+    "fy": 2026,
+    "error": -0.06413851739205534
+   },
+   {
     "ticker": "FFIV",
     "asOf": "2026-11-13",
     "horizon": "this year",
@@ -229,31 +249,31 @@
     "asOf": "2026-11-13",
     "horizon": "this year",
     "fy": 2026,
-    "error": 0.012564945419949458
+    "error": 0.012522902927240454
    },
    {
     "ticker": "DLB",
     "asOf": "2026-11-13",
     "horizon": "this year",
     "fy": 2026,
-    "error": 0.008630909334839343
+    "error": 0.008708945937434986
    },
    {
     "ticker": "ACM",
     "asOf": "2026-11-13",
     "horizon": "this year",
     "fy": 2026,
-    "error": 0.005895898435167801
+    "error": 0.0059105539486346
    }
   ],
   "revisions90dToday": {
    "thisYear": {
     "n": 852,
-    "median": 0.011679853243833027
+    "median": 0.01167680964979867
    },
    "nextYear": {
     "n": 874,
-    "median": 0.0037577445946034294
+    "median": 0.003984113911150944
    }
   },
   "revisionHistory": [
@@ -261,11 +281,11 @@
     "asOf": "2026-11-19",
     "thisYear": {
      "n": 852,
-     "median": 0.011679853243833027
+     "median": 0.01167680964979867
     },
     "nextYear": {
      "n": 874,
-     "median": 0.0037577445946034294
+     "median": 0.003984113911150944
     }
    }
   ]
