@@ -192,6 +192,26 @@ function ttmForTag(arr) {
   if (!prior || !fy) return null;
   return { val: Number(fy.val) + Number(ytd.val) - Number(prior.val), end: latestEnd, fyEnd: fy.end, ytdDays: Math.round(ytdDays) };
 }
+// Build 93: say WHY a TTM could not be built (GOOGL, JPM, ABBV... showed no overlay with no reason).
+function ttmFailReason(arr) {
+  const DAY = 86400000, dur = x => (new Date(x.end) - new Date(x.start)) / DAY;
+  const rows = (arr || []).filter(x => x && x.start && x.end && Number.isFinite(Number(x.val)));
+  if (!rows.length) return 'no_duration_rows';
+  const q = rows.filter(x => x.form === '10-Q' && dur(x) >= 80 && dur(x) <= 285);
+  if (!q.length) return 'no_10q_rows';
+  const latestEnd = q.map(x => x.end).sort().at(-1);
+  const ytd = q.filter(x => x.end === latestEnd).sort((a, b) => dur(b) - dur(a))[0];
+  const ytdDays = dur(ytd), target = new Date(latestEnd) - 365 * DAY;
+  const prior = rows.filter(x => Math.abs(new Date(x.end) - target) <= 20 * DAY && Math.abs(dur(x) - ytdDays) <= 20);
+  if (!prior.length) return `no_prior_ytd(latest ${latestEnd}, ${Math.round(ytdDays)}d)`;
+  const fy = rows.filter(x => /^10-K/.test(x.form || '') && dur(x) >= 350 && dur(x) <= 380 && x.end < latestEnd).map(x => x.end).sort().at(-1);
+  return `no_fiscal_year(latest ${latestEnd}, last 10-K FY ${fy || 'none'})`;
+}
+function ttmDiagnostics(facts) {
+  const usGaap = facts?.facts?.['us-gaap'] || {}, out = {};
+  for (const tag of TTM_TAGS.revenue) { const u = usGaap[tag]?.units; if (u) out[tag] = ttmForTag(u.USD || Object.values(u)[0]) ? 'ok' : ttmFailReason(u.USD || Object.values(u)[0]); }
+  return Object.keys(out).length ? out : { revenue: 'no_revenue_tag' };
+}
 function parseTrailingTwelveMonths(facts) {
   const usGaap = facts?.facts?.['us-gaap'] || {};
   const out = {};
@@ -1202,7 +1222,12 @@ async function buildStockRecord(ticker, sector, analystEstimate = null) {
   if (splitEventRepair.rejectedByConsensus) console.log(`[split ${secTicker}] x${splitEventRepair.factor.toFixed(3)} rejected: EPS ${splitEventRepair.epsBefore.toFixed(2)} -> ${splitEventRepair.epsAfter.toFixed(2)} moves away from consensus prior-year EPS ${splitEventRepair.consensusEPS.toFixed(2)}`);
   if (splitEventRepair.applied) console.log(`[split ${secTicker}] share basis rebased x${splitEventRepair.factor.toFixed(3)} (${splitEventRepair.steps.map(x=>x.case+': '+x.splits.map(y=>y.date+' '+y.ratio).join(',')).join('; ')})`);
   // Build 70: fold the latest 10-Q profits and cash flow into the last fiscal year (see applyTtmOverlay).
-  let ttmOverlay = null; try { ttmOverlay = applyTtmOverlay(years, parseTrailingTwelveMonths(facts)); } catch (e) { ttmOverlay = { error: e.message }; }
+  let ttmOverlay = null; try {
+    const ttm = parseTrailingTwelveMonths(facts);
+    ttmOverlay = applyTtmOverlay(years, ttm);
+    // Build 93: record why no overlay was applied, so silent misses show up in results.json
+    if (!ttmOverlay) ttmOverlay = ttm ? { skipped: 'no_new_quarters_or_fields', ttmEnd: ttm.end, fyEnd: ttm.fyEnd, lastYear: years.at(-1)?.year } : { skipped: 'no_ttm', revenueTags: ttmDiagnostics(facts) };
+  } catch (e) { ttmOverlay = { error: e.message }; }
   const last = years[years.length - 1] || {};
   const currentPrice = quote?.c || (priceHistory.length ? priceHistory[priceHistory.length - 1].close : null);
 
