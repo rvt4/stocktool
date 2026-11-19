@@ -908,12 +908,18 @@ function renderDashboard(){
  const seenI=new Set(),ideaList=ideas.filter(s=>{const f=companyFamily(s.ticker);if(seenI.has(f))return false;seenI.add(f);return true;}).slice(0,8);
  const idea=s=>{const w=RP.entryWarnings(s),rv=s.estimateRevision?.level;return `<button class="idea" data-dticker="${esc(s.ticker)}"><span class="idea-t">${esc(s.ticker)}</span><span class="idea-n">${esc(s.name||'')}</span><span class="idea-m">${pct(num(s.underwrittenCAGR))}<small>cautious</small></span><span class="idea-m">${(()=>{const p=RP.pegOf(s);return p&&p.peg!==null?p.peg.toFixed(2):'—';})()}<small>PEG</small></span><span class="idea-m">${pct(RP.businessGrowthOf(s))}<small>growth</small></span><span class="idea-m">${esc(s.qualityScore)}<small>quality</small></span>${w.length||rv?`<span class="idea-warn">${[rv?'estimate cut':'',w.includes('split')?'valuation split':'',w.includes('cycle_peak')?'cyclical peak':''].filter(Boolean).join(' · ')}</span>`:''}</button>`;};
  const signedOut=!user;
+ // Build 91: compact holdings table (full width; zoom out on a phone), with a Cards view for the details.
+ let hView='table';try{hView=localStorage.getItem('stocktool-holdings-view')||'table'}catch(e){}
+ const tableView=()=>{const ret=s=>{const b=s?(s.expectedCAGR??s.expectedReturn):null;return b==null?'—':pct(Number(b));};
+  return `<div class="table-scroll"><table class="htable"><thead><tr><th>Ticker</th><th>Action</th><th>Value</th><th>Weight</th><th>Gain</th><th>Price</th><th>5Y PEG</th><th>Return</th><th>Cautious</th><th>Quality</th><th>Rank</th><th>Why</th></tr></thead><tbody>${rows.map(r=>{const a=r.advice,s=r.s,g=r.value!==null&&r.cost>0?r.value/r.cost-1:null,pg=RP.pegOf(s);
+   return `<tr><td><button class="linkish" data-dticker="${esc(r.t)}"><b>${esc(r.t)}</b></button></td><td><span class="action ${ACTION_CLASS[a.action]||''}">${esc(a.action)}</span></td><td>${money(r.value)}</td><td>${r.weight===null?'—':pct(r.weight)}${a.action==='Buy more'&&a.target!=null?` <span class="muted small">→ ${pct(a.target)}</span>`:''}</td><td class="${g!==null&&g>=0?'positive':'negative'}">${g===null?'—':(g>=0?'+':'')+pct(g)}</td><td>${money(r.px)}</td><td>${pg&&pg.peg!==null?pg.peg.toFixed(2):'—'}</td><td>${ret(s)}</td><td>${s&&s.underwrittenCAGR!=null?pct(Number(s.underwrittenCAGR)):'—'}</td><td>${esc(s?.qualityScore??'—')}</td><td>${esc(s?.overallRank??'—')}</td><td class="small htable-why">${esc(a.headline||'')}</td></tr>`;}).join('')}</tbody></table></div>`;};
+ const viewToggle=`<div class="seg" role="group"><button class="${hView==='table'?'active':''}" data-hview="table">Table</button><button class="${hView==='cards'?'active':''}" data-hview="cards">Cards</button></div>`;
  el.innerHTML=`
   <div class="kpis">${kpis.map(([k,v,sub])=>`<div class="kpi"><small>${k}</small><strong>${v}</strong><em>${sub}</em></div>`).join('')}</div>
-  <section class="dash-section"><div class="section-head"><h2>Your holdings</h2><span class="muted small">Sorted by what needs attention first</span></div>
+  <section class="dash-section"><div class="section-head"><h2>Your holdings</h2>${!signedOut&&rows.length?viewToggle:''}</div><p class="muted small" style="margin-top:-4px">Sorted by what needs attention first.</p>
    ${rows.some(r=>/Sell/.test(r.advice.action))?'<p class="muted small">Before selling in a taxable account: shares held under a year are taxed at the higher short-term rate, so check the purchase date. Selling part now and the rest after it turns a year old can be cheaper.</p>':''}
    ${signedOut?`<div class="empty"><p>Sign in to see buy / hold / sell advice for your holdings.</p><button class="primary" id="dashSignIn">Sign in</button></div>`
-    :rows.length?`<div class="hgrid">${rows.map(card).join('')}</div>`:`<div class="empty"><p>No holdings yet. Add them under Portfolio.</p><button class="primary" data-goto="portfolio">Add holdings</button></div>`}
+    :rows.length?(hView==='table'?tableView():`<div class="hgrid">${rows.map(card).join('')}</div>`):`<div class="empty"><p>No holdings yet. Add them under Portfolio.</p><button class="primary" data-goto="portfolio">Add holdings</button></div>`}
   </section>
   ${signedOut?'':picksVsStrategyHtml()}
   <section class="dash-section"><div class="section-head"><h2>Ideas for new money</h2><button class="ghost" data-goto="screener">See all ideas →</button></div>
@@ -923,6 +929,7 @@ function renderDashboard(){
   <p class="disclaimer">Advice comes from the model’s backtested rules applied to tonight’s data. It is a prompt to do your own research, not financial advice. Expected returns are estimates, and the backtest (2019–2025, before taxes) leaned on a handful of big winners.</p>`;
  el.querySelectorAll('[data-dticker]').forEach(b=>b.onclick=()=>choose(b.dataset.dticker));
  el.querySelectorAll('[data-goto]').forEach(b=>b.onclick=()=>page(b.dataset.goto));
+ el.querySelectorAll('[data-hview]').forEach(b=>b.onclick=()=>{try{localStorage.setItem('stocktool-holdings-view',b.dataset.hview)}catch(e){}renderDashboard();});
  if($('dashSignIn'))$('dashSignIn').onclick=()=>requireAuth();
 }
 
