@@ -685,10 +685,12 @@ function nearMissHtml(){
   [`Quality just short (${E.minQuality-5}–${E.minQuality-1})`,s=>R.shortlistEntry(s,{minQuality:E.minQuality-5})&&!R.shortlistEntry(s)],
  ];
  const rows=groups.map(([label,test])=>{const list=stocks.filter(s=>{const f=companyFamily(s.ticker);if(fam.has(f)||seen.has(f)||!test(s))return false;seen.add(f);return true;}).sort((a,b)=>rankOf(a)-rankOf(b));
-  return list.length?`<tr><td colspan="6" class="muted small"><b>${esc(label)}</b></td></tr>`+list.map(s=>`<tr><td><b>${esc(s.ticker)}</b><br><span class="muted">${esc(s.name||'')}</span></td><td>${esc(s.sector||'—')}</td><td>${returnSummary(s)}</td><td>${esc(s.qualityScore??'—')}</td><td>${esc(s.overallRank??'—')}</td><td><button class="ghost" data-ticker="${esc(s.ticker)}">Research →</button></td></tr>`).join(''):'';}).join('');
+  return list.length?`<tr><td colspan="6" class="muted small"><b>${esc(label)}</b></td></tr>`+list.map(s=>`<tr><td><b>${esc(s.ticker)}</b><br><span class="muted">${esc(s.name||'')}</span></td><td>${esc(s.sector||'—')}</td><td>${nearMissReturn(s)}</td><td>${esc(s.qualityScore??'—')}</td><td>${esc(s.overallRank??'—')}</td><td><button class="ghost" data-ticker="${esc(s.ticker)}">Research →</button></td></tr>`).join(''):'';}).join('');
  if(!rows)return '';
  return `<h3>Near misses</h3><p class="muted small">These miss the buy rule on one test, by a small margin. They are <b>not</b> part of the backtested rule; use your own judgment.</p><div class="table-scroll"><table><thead><tr><th>Company</th><th>Sector</th><th>Return</th><th>Quality</th><th>Rank</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
+// Build 91: near-miss return text (returnSummary lives inside renderScreener, so it was undefined here).
+function nearMissReturn(s){const b=present(s.expectedCAGR??s.expectedReturn)?Number(s.expectedCAGR??s.expectedReturn):null,c=present(s.underwrittenCAGR)?Number(s.underwrittenCAGR):null;if(b===null&&c===null)return '—';return b!==null&&c!==null&&Math.abs(b-c)>=.005?`${pct(b)} <span class="muted small">(cautious ${pct(c)})</span>`:pct(b??c);}
 // Build 90: unranked companies (no valuation yet: loss-makers) sort LAST; num(null) is 0, which put them first.
 function rankOf(s){return present(s?.overallRank)?Number(s.overallRank):99999;}
 function renderScreener(){
