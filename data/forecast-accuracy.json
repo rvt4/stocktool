@@ -1,55 +1,55 @@
 {
- "generatedAt": "2026-11-19T16:10:14.177Z",
+ "generatedAt": "2026-11-19T23:37:18.239Z",
  "snapshots": 1,
  "firstSnapshot": "2026-11-13",
  "note": "error = actual reported revenue / forecast - 1. Positive = the model forecast too LOW (company grew faster). Based on monthly snapshots compared once the forecast year has been reported.",
- "observations": 11,
+ "observations": 15,
  "byHorizon": {
   "year 1": {
-   "n": 11,
-   "meanError": 0.017731309003223547,
-   "medianError": 0.009622151302270732,
-   "shareTooLow": 0.6363636363636364
+   "n": 15,
+   "meanError": 0.01422779056414137,
+   "medianError": 0.010263187361082782,
+   "shareTooLow": 0.6666666666666666
   }
  },
  "byForecastGrowth": {
   "year 1 · 0-10%": {
-   "n": 8,
-   "meanError": -0.012742121986176774,
-   "medianError": 0.009942669331676757,
-   "shareTooLow": 0.625
+   "n": 9,
+   "meanError": -0.016259550442709644,
+   "medianError": 0.009622151302270732,
+   "shareTooLow": 0.5555555555555556
   },
   "year 1 · <0%": {
-   "n": 1,
-   "meanError": -0.004361273448517777,
-   "medianError": -0.004361273448517777,
-   "shareTooLow": 0
+   "n": 2,
+   "meanError": 0.007617659474619065,
+   "medianError": 0.007617659474619065,
+   "shareTooLow": 0.5
+  },
+  "year 1 · 10-20%": {
+   "n": 3,
+   "meanError": 0.014896285745316836,
+   "medianError": 0.014305867852271836,
+   "shareTooLow": 1
   },
   "year 1 · 30%+": {
    "n": 1,
    "meanError": 0.2998286362613187,
    "medianError": 0.2998286362613187,
    "shareTooLow": 1
-  },
-  "year 1 · 10-20%": {
-   "n": 1,
-   "meanError": 0.0015140121120722494,
-   "medianError": 0.0015140121120722494,
-   "shareTooLow": 1
   }
  },
  "byEvidence": {
   "neither": {
-   "n": 6,
-   "meanError": 0.050854981677593704,
-   "medianError": 0.009942669331676757,
+   "n": 9,
+   "meanError": 0.03273704135784637,
+   "medianError": 0.010263187361082782,
    "shareTooLow": 0.6666666666666666
   },
   "backlog only": {
-   "n": 5,
-   "meanError": -0.022017098206020647,
-   "medianError": 0.0015140121120722494,
-   "shareTooLow": 0.6
+   "n": 6,
+   "meanError": -0.013536085626416136,
+   "medianError": 0.015191494691839336,
+   "shareTooLow": 0.6666666666666666
   }
  },
  "bySector": {
@@ -66,16 +66,22 @@
    "shareTooLow": 1
   },
   "Consumer Discretionary": {
-   "n": 1,
-   "meanError": -0.004361273448517777,
-   "medianError": -0.004361273448517777,
-   "shareTooLow": 0
+   "n": 2,
+   "meanError": 0.0049722972018770295,
+   "medianError": 0.0049722972018770295,
+   "shareTooLow": 0.5
   },
   "Utilities": {
-   "n": 1,
-   "meanError": -0.023202532800379094,
-   "medianError": -0.023202532800379094,
-   "shareTooLow": 0
+   "n": 2,
+   "meanError": -0.0018029702013115934,
+   "medianError": -0.0018029702013115934,
+   "shareTooLow": 0.5
+  },
+  "Industrials": {
+   "n": 4,
+   "meanError": -0.03974447168162387,
+   "medianError": -0.03237920037556358,
+   "shareTooLow": 0.5
   },
   "Technology": {
    "n": 3,
@@ -84,16 +90,10 @@
    "shareTooLow": 1
   },
   "Consumer Staples": {
-   "n": 1,
-   "meanError": 0.010263187361082782,
-   "medianError": 0.010263187361082782,
-   "shareTooLow": 1
-  },
-  "Industrials": {
-   "n": 3,
-   "meanError": -0.06261562133270064,
-   "medianError": -0.0662724128631994,
-   "shareTooLow": 0.3333333333333333
+   "n": 2,
+   "meanError": -0.01706789536694492,
+   "medianError": -0.01706789536694492,
+   "shareTooLow": 0.5
   }
  },
  "worstMisses": [
@@ -126,6 +126,13 @@
    "error": 0.04646066537109372
   },
   {
+   "ticker": "POST",
+   "asOf": "2026-11-13",
+   "horizon": 1,
+   "forecastGrowth": 0.041574644764937836,
+   "error": -0.04439897809497262
+  },
+  {
    "ticker": "FFIV",
    "asOf": "2026-11-13",
    "horizon": 1,
@@ -133,11 +140,32 @@
    "error": 0.03130070759690495
   },
   {
+   "ticker": "WWD",
+   "asOf": "2026-11-13",
+   "horizon": 1,
+   "forecastGrowth": 0.18715960362161604,
+   "error": 0.028868977271606422
+  },
+  {
    "ticker": "ATO",
    "asOf": "2026-11-13",
    "horizon": 1,
    "forecastGrowth": 0.08416264590910655,
    "error": -0.023202532800379094
+  },
+  {
+   "ticker": "UGI",
+   "asOf": "2026-11-13",
+   "horizon": 1,
+   "forecastGrowth": -0.02339233359919488,
+   "error": 0.019596592397755908
+  },
+  {
+   "ticker": "VVV",
+   "asOf": "2026-11-13",
+   "horizon": 1,
+   "forecastGrowth": 0.18995785158832296,
+   "error": 0.014305867852271836
   },
   {
    "ticker": "DIS",
@@ -177,13 +205,13 @@
  ],
  "consensusEps": {
   "note": "error = actual EPS (analyst basis) / saved consensus - 1. Negative = analysts too optimistic. suggestedTrim needs 150+ observations; compare with CONSENSUS_TRIM in engine/simple-path.js ([this year, next year, ...]).",
-  "observations": 11,
+  "observations": 15,
   "byHorizon": {
    "this year": {
-    "n": 11,
-    "medianError": -0.018828771891982177,
-    "meanErrorClipped": -0.015212081623286295,
-    "shareTooHigh": 0.5454545454545454,
+    "n": 15,
+    "medianError": -0.002229240576838709,
+    "meanErrorClipped": -0.0077843561291869685,
+    "shareTooHigh": 0.5333333333333333,
     "suggestedTrim": null
    }
   },
@@ -210,6 +238,13 @@
     "error": 0.12524955856008457
    },
    {
+    "ticker": "UGI",
+    "asOf": "2026-11-13",
+    "horizon": "this year",
+    "fy": 2026,
+    "error": 0.07531259302361604
+   },
+   {
     "ticker": "TTEK",
     "asOf": "2026-11-13",
     "horizon": "this year",
@@ -231,11 +266,25 @@
     "error": -0.06413851739205534
    },
    {
+    "ticker": "POST",
+    "asOf": "2026-11-13",
+    "horizon": "this year",
+    "fy": 2026,
+    "error": -0.05428409305844517
+   },
+   {
     "ticker": "FFIV",
     "asOf": "2026-11-13",
     "horizon": "this year",
     "fy": 2026,
     "error": -0.04049126847054296
+   },
+   {
+    "ticker": "WWD",
+    "asOf": "2026-11-13",
+    "horizon": "this year",
+    "fy": 2026,
+    "error": 0.03176829653001256
    },
    {
     "ticker": "TSN",
@@ -264,6 +313,13 @@
     "horizon": "this year",
     "fy": 2026,
     "error": 0.0059105539486346
+   },
+   {
+    "ticker": "VVV",
+    "asOf": "2026-11-13",
+    "horizon": "this year",
+    "fy": 2026,
+    "error": -0.002229240576838709
    }
   ],
   "revisions90dToday": {
