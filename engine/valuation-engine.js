@@ -1,5 +1,5 @@
 'use strict';
-const { HORIZON_YEARS, MARKET_RETURN, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, EXIT_MULTIPLE_PERSISTENCE, EXIT_PREMIUM_BAND, EXIT_ANCHOR_MAX_MULTIPLE, DCF_EXIT_TV_WEIGHT, INVESTOR_MARGIN_OF_SAFETY, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, isFinancialLike, sectorConfig, clamp, median, rate } = require('./config');
+const { HORIZON_YEARS, MARKET_RETURN, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, EXIT_MULTIPLE_PERSISTENCE, EXIT_PREMIUM_BAND, EXIT_ANCHOR_MAX_MULTIPLE, DCF_EXIT_TV_WEIGHT, INVESTOR_MARGIN_OF_SAFETY, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, ANALYST_BLEND_MAX_LIFT, isFinancialLike, sectorConfig, clamp, median, rate } = require('./config');
 
 function cagr(p,f){if(!(p>0)||!(f>0))return null;return Math.pow(f/p,1/HORIZON_YEARS)-1;}
 function pv(v,r,n){return v/Math.pow(1+r,n);}
@@ -1259,10 +1259,14 @@ function valuate(stock,forecast,quality,opts={}){
     if(Number.isFinite(dispersion)&&dispersion>1.0)w*=.6;
     let blended=Math.exp((1-w)*Math.log(modelFair0)+w*Math.log(impliedToday));
     blended=clamp(blended,impliedToday*ANALYST_BLEND_RANGE[0],impliedToday*ANALYST_BLEND_RANGE[1]);
-    analystBlendFactor=blended/modelFair0; analystBlendWeight=w;
+    // Build 94: never lift the model's own value by more than ANALYST_BLEND_MAX_LIFT. A bigger lift means the
+    // model failed on this name; the blend would hide that, so cap it and mark limited support below.
+    const uncappedBlendFactor=blended/modelFair0;
+    const liftCapped=uncappedBlendFactor>ANALYST_BLEND_MAX_LIFT;
+    analystBlendFactor=liftCapped?ANALYST_BLEND_MAX_LIFT:uncappedBlendFactor; analystBlendWeight=w;
     total=total*analystBlendFactor; expected=cagr(price,total);
     analystCheck={target:aTarget,upsideToTarget:aTarget/price-1,numAnalysts:aCount,modelFairValue:modelFair0,
-      fairValueToTarget:modelFair0/aTarget,blendWeight:w,blendFactor:analystBlendFactor,
+      fairValueToTarget:modelFair0/aTarget,blendWeight:w,blendFactor:analystBlendFactor,uncappedBlendFactor,liftCapped,
       divergence:modelFair0/aTarget>2?'model_far_above_analysts':(modelFair0/aTarget<.4?'model_far_below_analysts':null)};
   }
 
@@ -1382,6 +1386,8 @@ function valuate(stock,forecast,quality,opts={}){
   // Build 71: methods split into two camps (e.g. cash-flow/earnings vs EV/EBITDA/DCF ~2x apart). The blend is
   // now stable, but a value halfway between two disagreeing answers cannot carry a Buy.
   if(consensus?.methodsSplit&&modelSupport==='standard'){modelSupport='limited';modelSupportReason=`Valuation methods split into two camps about ${Number(consensus.campRatio||2).toFixed(1)}x apart; the fair value is a blend of both and cannot support a Buy`;valuationConfidence=Math.min(valuationConfidence,50);}
+  // Build 94: the model's own value was far below what analysts imply, and the blend was capped (see above).
+  if(analystCheck?.liftCapped&&modelSupport==='standard'){modelSupport='limited';modelSupportReason=`The model's own value ($${modelFair0.toFixed(2)}) is far below what analysts imply; the consensus blend was capped at +${Math.round((ANALYST_BLEND_MAX_LIFT-1)*100)}% instead of lifting it ${analystCheck.uncappedBlendFactor.toFixed(1)}x, so this value can't support a Buy`;valuationConfidence=Math.min(valuationConfidence,45);}
   // Build 71: balance-sheet businesses the model cannot value (crypto treasuries, mortgage REITs) are never rated.
   if(stock?.valuationExclusion?.reason){modelSupport='unsupported';modelSupportReason=stock.valuationExclusion.reason;valuationConfidence=Math.min(valuationConfidence,20);}
   // Investor-style return attribution. Contributions are annualized approximations,

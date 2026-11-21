@@ -47,6 +47,11 @@ const MANUAL_CORPORATE_ACTIONS = {};
 // and the band, as a multiple of the analyst-implied value, the blended value must stay inside.
 const ANALYST_BLEND_MAX_WEIGHT = 0.35;
 const ANALYST_BLEND_RANGE = [0.45, 2.2];
+// Build 94: the most the blend may RAISE the model's own value (1.5 = +50%). The band above is measured against
+// analysts, so a broken model value ($10.51 vs a $180 price for ALAB) used to be lifted 13x to near consensus.
+// When the blend would lift more than this, the value is capped here and the name gets 'limited' support:
+// it can't be rated Buy or enter the buy list.
+const ANALYST_BLEND_MAX_LIFT = 1.5;
 // Retained only for legacy diagnostics that explicitly need a generic market-return assumption.
 const MARKET_RETURN = 0.10;
 
@@ -111,4 +116,4 @@ const FCF_MEDIAN_BLEND = { start: 0, year5: 0.40, mature: 0.40 };
 // with the effect off so the two can be compared on the same companies and dates.
 const MARGIN_TREND = { enabled: false,  // Build 76: OFF — failed its scorecard test (rule closer only 30-37% of the time)
   minRise: 0.03, maxStepDrop: 0.015, minOpMargin: 0.03, currentWeight: 0.85, durabilityBoost: 0.35, fcfBlendScale: 0.4 };
-module.exports = { GROWTH_CALIBRATION, FCF_MEDIAN_BLEND, MARGIN_TREND, SECTOR, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, EXIT_MULTIPLE_PERSISTENCE, EXIT_PREMIUM_BAND, EXIT_ANCHOR_MAX_MULTIPLE, DCF_EXIT_TV_WEIGHT, INVESTOR_MARGIN_OF_SAFETY, MANUAL_CORPORATE_ACTIONS, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, MARKET_RETURN, isStructuralFinancial, isFinancialLike, sectorConfig, clamp, rate, median, avg };
+module.exports = { GROWTH_CALIBRATION, FCF_MEDIAN_BLEND, MARGIN_TREND, SECTOR, HORIZON_YEARS, EXPLICIT_FORECAST_YEARS, INVESTOR_ALPHA_HURDLE, TERMINAL_GROWTH_CAP, EXIT_PRICE_ANCHOR_WEIGHT, EXIT_MULTIPLE_PERSISTENCE, EXIT_PREMIUM_BAND, EXIT_ANCHOR_MAX_MULTIPLE, DCF_EXIT_TV_WEIGHT, INVESTOR_MARGIN_OF_SAFETY, MANUAL_CORPORATE_ACTIONS, ANALYST_BLEND_MAX_WEIGHT, ANALYST_BLEND_RANGE, ANALYST_BLEND_MAX_LIFT, MARKET_RETURN, isStructuralFinancial, isFinancialLike, sectorConfig, clamp, rate, median, avg };
