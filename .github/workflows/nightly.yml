@@ -25,8 +25,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
-      - name: Verify model invariants
-        run: node model-smoke-test.js
+      - name: Run all tests (Build 94; any failure stops the run before results are written)
+        run: node run-all-tests.js
       - name: Run simplified screener
         env:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
