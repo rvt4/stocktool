@@ -116,6 +116,8 @@
   }
   function shortlistEntry(s,{rankField='overallRank',maxRank=ENTRY.maxRank,minQuality=ENTRY.minQuality,blockSplit=ENTRY.blockSplit,blockCycleAtPeak=ENTRY.blockCycleAtPeak,minReturn=SIZING.hurdle,minGrowth=null}={}){
     if(!s||s.rating==='Unrated') return false;
+    // Build 94 (C-v2): a name whose value had to be capped in the analyst blend is off the list (the model failed on it).
+    if(s.analystCheck&&s.analystCheck.liftCapped===true) return false;
     const u=returnOf(s), q=num(s.qualityScore), rk=num(s[rankField]);
     if(!((maxRank===Infinity||(rk!==null&&rk<=maxRank))&&u!==null&&u>=minReturn&&q!==null&&q>=minQuality)) return false;
     if(minGrowth!==null){const g=businessGrowthOf(s);if(g===null||g<minGrowth) return false;}
@@ -123,6 +125,18 @@
     if(blockSplit&&w.includes('split')) return false;
     if(blockCycleAtPeak&&w.includes('cycle_peak')) return false;
     return true;
+  }
+  // Build 94: one line on why a stock is or isn't on the buy list (the first test it fails), for the research page.
+  function buyListReason(s){
+    if(!s) return 'Not in the data';
+    if(shortlistEntry(s)) return 'On the buy list: top-'+ENTRY.maxRank+' rank, cautious return '+pctTxt(returnOf(s))+', quality '+num(s.qualityScore);
+    if(s.rating==='Unrated') return 'Not on the buy list: the model can\u2019t value it';
+    if(s.analystCheck&&s.analystCheck.liftCapped===true) return 'Not on the buy list: the model\u2019s own value is far below analysts\u2019, so it isn\u2019t trusted';
+    const u=returnOf(s), q=num(s.qualityScore), rk=num(s.overallRank);
+    if(rk===null||rk>ENTRY.maxRank) return 'Not on the buy list: rank '+(rk??'\u2014')+' (needs top '+ENTRY.maxRank+')';
+    if(u===null||u<SIZING.hurdle) return 'Not on the buy list: cautious return '+(u===null?'\u2014':pctTxt(u))+' (needs '+pctTxt(SIZING.hurdle)+')';
+    if(q===null||q<ENTRY.minQuality) return 'Not on the buy list: quality '+(q??'\u2014')+' (needs '+ENTRY.minQuality+')';
+    return 'Not on the buy list';
   }
   // Stricter legacy rule (Buy rating + below buy price). Kept for comparison; historically it almost never fired.
   function garpEntry(s,{rankField='overallRank',minReturn=GARP.minReturn}={}){
@@ -319,7 +333,7 @@
   //   Sell some : position over 20% of the portfolio (trim to ~15%); quality under 70 alone (the backtest sells
   //               these; the dashboard takes some off and asks for a thesis check); expensive two reviews running
   //               on a great business (keep a core); or expensive and above its target size
-  //   Buy more  : passes the C or GARP buy rule, more than 1 pt under its target size, no severe estimate cut
+  //   Buy more  : on the buy list (rule C; Build 94: GARP/PEG no longer count), more than 1 pt under target, no severe estimate cut
   //   Review    : not in the data, or the model cannot value it
   //   Hold      : everything else (a lower rank alone is never a reason to sell)
   // Build 75: advice follows the tested rules only (same decisions as holdingStatus, in plain English).
@@ -356,10 +370,11 @@
     if(lowU&&staged) return out('Sell some','trim','Sell half: expensive now; sell the rest if it still is next review');
     if(weight!==null&&weight>SIZING.trimAbove) return out('Sell some','trim',`Sell some: trim from ${p1(weight)} toward about ${p0(SIZING.trimTo)} of the portfolio`,[`One position this big can swing the whole portfolio (limit ${p0(SIZING.trimAbove)})`]);
     if(lowQ) return out('Hold','hold','Hold, but don’t add: below the model’s quality bar',['Not a sell: the tested quality sell is for quality that drops after you buy, and this was already low']);
-    const buyable=shortlistEntry(s)||garpEntry(s)||pegEntry(s);
+    // Build 94: one buy list. Only the live rule (C) says Buy more; GARP and PEG are research views.
+    const buyable=shortlistEntry(s);
     if(buyable&&weight!==null&&target!==null&&weight<target-0.01){
       if(rev&&rev.level==='severe') return out('Hold','hold','Hold: would be a buy, but analysts just cut estimates sharply; wait a quarter');
-      return out('Buy more','buy',`Buy more: up to about ${p1(target)} of the portfolio (now ${p1(weight)})`,[shortlistEntry(s)?'Passes the backtested buy rule':pegEntry(s)?`On the PEG buy list (quality growth, 5-yr PEG ${PEG.buyMax} or less)`:'In the GARP buy zone (quality growth at a fair price)']);
+      return out('Buy more','buy',`Buy more: up to about ${p1(target)} of the portfolio (now ${p1(weight)})`,['On the buy list (the backtested rule)']);
     }
     if(lowU) return out('Hold','hold','Hold, but don’t add: priced ahead of its value',['Becomes a sell if it is still this expensive next review']);
     if(q!==null&&q<BANDS.reviewQuality) return out('Hold','hold','Hold and keep an eye on quality');
@@ -371,11 +386,14 @@
   // only independent test left is the future: forward-record.js saves this version's calls monthly and
   // data/forward-report.json scores them at 12 and 24 months. Change rules only for (a) a measurement bug,
   // or (b) a backtest win of 0.5+ points a year after tax in BOTH periods, and bump the version when you do.
-  const STRATEGY={id:'C-v1',frozenOn:'2026-11-15',
-    rules:'Buy: model rank top 20, cautious return 11%+, quality 80+. Sell: quality falls below 70 after buying; '+
+  // Build 94 -> C-v2 (measurement bug): the analyst blend may no longer lift the model's own value more than 1.5x;
+  // names that needed more are excluded from the buy list. The shortlist is now the only buy list (Buy more advice
+  // and the starter portfolio both use it). C-v1 ran 2026-11-15 to 2026-11-21; its forward snapshots keep their label.
+  const STRATEGY={id:'C-v2',frozenOn:'2026-11-21',previous:[{id:'C-v1',frozenOn:'2026-11-15'}],
+    rules:'Buy: model rank top 20, cautious return 11%+, quality 80+, and the model\u2019s own value not far below analysts\u2019 (blend lift 1.5x or less). Sell: quality falls below 70 after buying; '+
       'or cautious return under 6.5% and 5-yr PEG over 2.5 (half at the first review, the rest at the next). Trim positions over 20% toward 15%.',
     changePolicy:'Only for a measurement bug, or a backtest win of 0.5+ pts/yr after tax in both periods; bump the version.'};
 
-  const api={STRATEGY,qualityBroke,isStaged,PEG,SELL,pegOf,pegEntry,valuationCheck,prevExpensive,holdingAdvice,ADVICE_ORDER,ENTRY,GARP,garpEntry,businessGrowthOf,entryWarnings,ttmRevenueGrowth,thesisMemo,BANDS,SIZING,convictionScore,targetWeight,sizeTier,shortlistEntry,entryEligible,planContribution,holdingStatus,buildSnapshot,shortlistPerformance,nextReviewDate};
+  const api={STRATEGY,qualityBroke,isStaged,PEG,SELL,pegOf,pegEntry,valuationCheck,prevExpensive,holdingAdvice,ADVICE_ORDER,ENTRY,GARP,garpEntry,businessGrowthOf,entryWarnings,ttmRevenueGrowth,thesisMemo,BANDS,SIZING,convictionScore,targetWeight,sizeTier,shortlistEntry,buyListReason,entryEligible,planContribution,holdingStatus,buildSnapshot,shortlistPerformance,nextReviewDate};
   if(typeof module!=='undefined'&&module.exports) module.exports=api; else root.ReviewPolicy=api;
 })(typeof window!=='undefined'?window:globalThis);

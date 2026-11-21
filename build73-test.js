@@ -28,8 +28,8 @@ const h=A(s({underwrittenCAGR:.05}),null,.005);assert.strictEqual(h.action,'Hold
 // Buyable and underweight -> Buy more; severe estimate cut -> Hold
 const b=A(s(),null,.01);assert.strictEqual(b.action,'Buy more');assert.strictEqual(b.tone,'buy');
 assert.strictEqual(A(s({estimateRevision:{level:'severe',label:'Analysts cut estimates 20%'}}),null,.01).action,'Hold');
-// GARP-only names (rank outside top 20) can also be Buy more
-assert.strictEqual(A(s({overallRank:300,underwrittenCAGR:.095}),null,.005).action,'Buy more');
+// Build 94: one buy list. GARP-only names (rank outside top 20) no longer say Buy more (was 'Buy more' before Build 94).
+assert.notStrictEqual(A(s({overallRank:300,underwrittenCAGR:.095}),null,.005).action,'Buy more');
 // Reasons: plain, capped, no duplicates, no tax boilerplate
 for(const r of [b,big,core,h]){assert(r.reasons.length<=8);assert.strictEqual(new Set(r.reasons).size,r.reasons.length);assert(!r.reasons.some(x=>/Taxable/.test(x)));}
 assert(b.reasons.some(x=>/12\.0% a year/.test(x)));

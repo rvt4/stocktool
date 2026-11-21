@@ -28,7 +28,9 @@ const {computeQuality}=require('./engine/quality-engine');
     fcf:null,sharesOutTTM:1e9*(1-.02*i),sbcIntensity:.02});}
   const st={financials:{years,dataQuality:{financialLikeRevenue:true}},analystEstimates:{numAnalysts:20}};
   const q1=computeQuality(st,{}),q2=computeQuality(st,{},{financialAware:true});
-  assert.strictEqual(q1.diagnostics.marginStability,0,'old: wild operating margins score 0');
+  // Build 88 made net-margin stability LIVE for lenders, so the default path no longer scores their wild SEC
+  // operating margins (this used to assert 0). Build 94: updated to the live behaviour.
+  assert(q1.diagnostics.marginStability>=90,'live (Build 88): lender stability on steady net margin: '+q1.diagnostics.marginStability);
   assert(q2.diagnostics.marginStability>=90,'v2: steady net margin scores high: '+q2.diagnostics.marginStability);
   assert(q2.qualityScore>q1.qualityScore,'lender quality rises');
   assert(Math.abs(q2.diagnostics.roe-.18)<1e-9,'ROE measured');

@@ -3,7 +3,7 @@
 const assert=require('assert');const fs=require('fs'),os=require('os'),path=require('path');
 const RP=require('./review-policy');
 const {recordForward}=require('./forward-record');
-assert.strictEqual(RP.STRATEGY.id,'C-v1');assert(RP.STRATEGY.rules&&RP.STRATEGY.changePolicy);
+assert.strictEqual(RP.STRATEGY.id,'C-v2');  // Build 94 bumped C-v1 -> C-v2 under the change policyassert(RP.STRATEGY.rules&&RP.STRATEGY.changePolicy);
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'fwd-'));
 const out=px=>({stocks:[{ticker:'AAA',currentPrice:px.a,expectedCAGR:.14,underwrittenCAGR:.12,qualityScore:90,overallRank:1,sector:'Tech'},
   {ticker:'BBB',currentPrice:px.b,expectedCAGR:.05,underwrittenCAGR:.04,qualityScore:60,overallRank:300}]});

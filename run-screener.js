@@ -192,13 +192,17 @@ function enforceMutuallyExclusiveShareClasses(stocks){
   }
 }
 
+// Build 94: the starter portfolio is built from THE buy list (review-policy shortlistEntry, strategy C), the same
+// list the app shows as Buy candidates and the forward record scores. It used to take the top 15 rating-Buys,
+// a different list. Weights = conviction target sizes (3-10%), scaled to sum to 100%. The valuation rating's
+// BUY (newPositionAction) is kept as a research view only.
 function applyStarterPortfolioWeights(stocks,topN=15){
-  const candidates=(stocks||[]).filter(s=>s.newPositionAction==='BUY').sort((a,b)=>(a.overallRank||Infinity)-(b.overallRank||Infinity)||(b.expectedAlpha||-Infinity)-(a.expectedAlpha||-Infinity));
+  const RP=require('./review-policy');
+  for(const s of stocks||[]){s.buyList=RP.shortlistEntry(s);s.buyListReason=RP.buyListReason(s);}
+  const candidates=(stocks||[]).filter(s=>s.buyList).sort((a,b)=>(a.overallRank||Infinity)-(b.overallRank||Infinity)||(b.underwrittenCAGR||-Infinity)-(a.underwrittenCAGR||-Infinity));
   const selected=[];const seen=new Set();
   for(const s of candidates){const g=economicSecurityGroup(s.ticker);if(!g||seen.has(g))continue;seen.add(g);selected.push(s);if(selected.length>=topN)break;}
-  // v12.52 keeps the evidence-backed mild-Alpha sizing control. Valuation Rating
-  // is context, not a hidden near-zero weight for Watch-rated eligible names.
-  const raw=selected.map(s=>Math.max(.0001,Number(s.portfolioPolicy?.rawSizingPoints)||4.5));
+  const raw=selected.map(s=>RP.targetWeight(s));
   const total=raw.reduce((a,b)=>a+b,0);
   for(const s of stocks||[]){s.starterPortfolio=false;s.suggestedInitialWeight=null;}
   selected.forEach((s,i)=>{
@@ -206,7 +210,7 @@ function applyStarterPortfolioWeights(stocks,topN=15){
     s.suggestedInitialWeight=total>0?raw[i]/total:null;
     s.portfolioPolicy={...(s.portfolioPolicy||{}),starterPortfolio:true,suggestedInitialWeight:s.suggestedInitialWeight};
     s.decisionDashboard=s.decisionDashboard||{};
-    s.decisionDashboard.positionTier=s.rating==='Exceptional Buy'?'Exceptional':s.rating==='Strong Buy'?'Strong':'Buy';
+    s.decisionDashboard.positionTier=RP.sizeTier(raw[i]);
     s.decisionDashboard.suggestedWeight=Number.isFinite(s.suggestedInitialWeight)?`${(s.suggestedInitialWeight*100).toFixed(1)}% starter weight`:'—';
   });
   return selected;
@@ -277,7 +281,7 @@ async function run(){
   try{const bs=JSON.parse(fs.readFileSync(path.join(__dirname,'data','backtest-owner-summary.json'),'utf8'));
     const rc=bs.ownerStrategyLab?.returnCalibration;if(rc?.base)returnCalibration={modelVersion:bs.modelVersion,generatedAt:bs.generatedAt||null,base:rc.base};}catch(e){}
   const RPx=require('./review-policy');
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'build93',strategy:RPx.STRATEGY,returnCalibration,spyPrice:spyHistory.length?spyHistory[spyHistory.length-1].close:null,stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'build94',strategy:RPx.STRATEGY,returnCalibration,spyPrice:spyHistory.length?spyHistory[spyHistory.length-1].close:null,stocks}; writeJson('results.json',output);
   // Build 87: monthly forward record of the frozen strategy (never blocks the run).
   try{const spyLast=spyHistory.length?spyHistory[spyHistory.length-1].close:null;
     const fr=require('./forward-record').recordForward(output,{spyPrice:spyLast,strategy:RPx.STRATEGY.id,isCandidate:s=>RPx.shortlistEntry(s)});
