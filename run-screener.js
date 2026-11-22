@@ -281,7 +281,7 @@ async function run(){
   try{const bs=JSON.parse(fs.readFileSync(path.join(__dirname,'data','backtest-owner-summary.json'),'utf8'));
     const rc=bs.ownerStrategyLab?.returnCalibration;if(rc?.base)returnCalibration={modelVersion:bs.modelVersion,generatedAt:bs.generatedAt||null,base:rc.base};}catch(e){}
   const RPx=require('./review-policy');
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'build94',strategy:RPx.STRATEGY,returnCalibration,spyPrice:spyHistory.length?spyHistory[spyHistory.length-1].close:null,stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'build95',strategy:RPx.STRATEGY,returnCalibration,spyPrice:spyHistory.length?spyHistory[spyHistory.length-1].close:null,stocks}; writeJson('results.json',output);
   // Build 87: monthly forward record of the frozen strategy (never blocks the run).
   try{const spyLast=spyHistory.length?spyHistory[spyHistory.length-1].close:null;
     const fr=require('./forward-record').recordForward(output,{spyPrice:spyLast,strategy:RPx.STRATEGY.id,isCandidate:s=>RPx.shortlistEntry(s)});

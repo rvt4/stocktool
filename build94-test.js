@@ -25,9 +25,9 @@ const withTarget=mult=>{const t=stock({});Object.assign(t.analystEstimates,{anal
   assert(ac.uncappedBlendFactor>ANALYST_BLEND_MAX_LIFT,'uncapped factor recorded');
   assert(Math.abs(ac.blendFactor-ANALYST_BLEND_MAX_LIFT)<1e-9,'factor capped at the max lift');
   assert(r.v.fairValueEstimate<=base.v.fairValueEstimate*ANALYST_BLEND_MAX_LIFT*1.0001,'fair value lifted more than the cap: '+r.v.fairValueEstimate/base.v.fairValueEstimate);
-  assert.strictEqual(r.v.modelSupport,'limited');
-  assert(/far below what analysts imply/.test(r.v.modelSupportReason));
-  assert(!['Buy','Strong Buy','Exceptional Buy'].includes(r.d.rating),'capped name rated '+r.d.rating);
+  assert.strictEqual(r.v.modelSupport,'unsupported');  // Build 95: was 'limited'
+  assert(/can't value this/.test(r.v.modelSupportReason));
+  assert.strictEqual(r.d.rating,'Unrated','capped name rated '+r.d.rating);
   if(Number.isFinite(r.v.bearCAGR))assert(r.v.bearCAGR<=r.v.baseCAGR+1e-9&&r.v.bullCAGR>=r.v.baseCAGR-1e-9,'scenarios out of order');
 }
 // 2) Small lift (analysts 1.2x): blends normally, not capped.
