@@ -1387,7 +1387,9 @@ function valuate(stock,forecast,quality,opts={}){
   // now stable, but a value halfway between two disagreeing answers cannot carry a Buy.
   if(consensus?.methodsSplit&&modelSupport==='standard'){modelSupport='limited';modelSupportReason=`Valuation methods split into two camps about ${Number(consensus.campRatio||2).toFixed(1)}x apart; the fair value is a blend of both and cannot support a Buy`;valuationConfidence=Math.min(valuationConfidence,50);}
   // Build 94: the model's own value was far below what analysts imply, and the blend was capped (see above).
-  if(analystCheck?.liftCapped&&modelSupport==='standard'){modelSupport='limited';modelSupportReason=`The model's own value ($${modelFair0.toFixed(2)}) is far below what analysts imply; the consensus blend was capped at +${Math.round((ANALYST_BLEND_MAX_LIFT-1)*100)}% instead of lifting it ${analystCheck.uncappedBlendFactor.toFixed(1)}x, so this value can't support a Buy`;valuationConfidence=Math.min(valuationConfidence,45);}
+  // Build 95: 'unsupported' (Unrated, never ranked), not 'limited'. As 'limited' the capped value still produced
+  // confident Sell/Avoid ratings (TSLA Sell at 0.19x price) when the honest answer is that the model can't value it.
+  if(analystCheck?.liftCapped&&modelSupport!=='unsupported'){modelSupport='unsupported';modelSupportReason=`The model can't value this: its own value ($${modelFair0.toFixed(2)}) is far below what analysts imply (the blend would have had to lift it ${analystCheck.uncappedBlendFactor.toFixed(1)}x)`;valuationConfidence=Math.min(valuationConfidence,45);}
   // Build 71: balance-sheet businesses the model cannot value (crypto treasuries, mortgage REITs) are never rated.
   if(stock?.valuationExclusion?.reason){modelSupport='unsupported';modelSupportReason=stock.valuationExclusion.reason;valuationConfidence=Math.min(valuationConfidence,20);}
   // Investor-style return attribution. Contributions are annualized approximations,
