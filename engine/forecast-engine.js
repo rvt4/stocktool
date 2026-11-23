@@ -597,8 +597,24 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     .reduce((x,g)=>x*(1+(Number.isFinite(g)?g:0)),1);
   const fullRevenueScale=(growthInfo.growthPath||[]).slice(0,HORIZON_YEARS)
     .reduce((x,g)=>x*(1+(Number.isFinite(g)?g:0)),1);
-  const sbcTarget=Number.isFinite(sbcNowForEarnings)?clamp(sbcNowForEarnings*(1-.15*leverageIntensity),0,.25):null;
-  const sbcMature=Number.isFinite(sbcTarget)?clamp(sbcTarget*(1-.12*leverageIntensity),0,.22):null;
+  let sbcTarget=Number.isFinite(sbcNowForEarnings)?clamp(sbcNowForEarnings*(1-.15*leverageIntensity),0,.25):null;
+  let sbcMature=Number.isFinite(sbcTarget)?clamp(sbcTarget*(1-.12*leverageIntensity),0,.22):null;
+  // Build 96 experiment (backtest only, opts.sbcFade; nothing live passes it): stock pay above 8% of revenue fades
+  // halfway to 8% by year 5 and 90% of the way by year 10, as it has for maturing software companies. Still a
+  // full cost. The pre-SBC operating margin is held fixed, so whatever SBC no longer costs lands in GAAP margin
+  // (operating, and net after tax). It never raises SBC above the default path.
+  let sbcFadeApplied=null;
+  if(opts.sbcFade&&Number.isFinite(sbcNowForEarnings)&&Number.isFinite(sbcTarget)&&Number.isFinite(sbcMature)){
+    const floor=finite(opts.sbcFadeFloor)??.08, excess=Math.max(0,sbcNowForEarnings-floor);
+    const fT=Math.min(sbcTarget,sbcNowForEarnings-.5*excess), fM=Math.min(sbcMature,sbcNowForEarnings-.9*excess);
+    const dT=sbcTarget-fT, dM=sbcMature-fM;
+    if(dT>0||dM>0){
+      const tax=clamp(medianRecent(taxSeries.filter(Number.isFinite),5)??.21,.08,.32);
+      targetOperating=clamp(targetOperating+dT,-.10,opCeiling); matureOperating=clamp(matureOperating+dM,-.10,opCeiling);
+      targetNet=clamp(targetNet+dT*(1-tax),-.10,netCeiling); matureTargetNet=clamp(matureTargetNet+dM*(1-tax),-.10,netCeiling);
+      sbcFadeApplied={from:[sbcTarget,sbcMature],to:[fT,fM]}; sbcTarget=fT; sbcMature=fM;
+    }
+  }
   const amortTarget=Number.isFinite(amortNow)?clamp(amortNow*.90/Math.max(1,explicitRevenueScale),0,.15):null;
   const amortMature=Number.isFinite(amortNow)?clamp(amortNow*.80/Math.max(1,fullRevenueScale),0,.10):null;
   const afterTax=x=>Number.isFinite(x)?x*(1-normalizedTaxRate):0;
@@ -1369,7 +1385,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     crisisRecovery,analystMarginAnchor:{applied:analystAnchorApplied,weight:anchorW,startWeight:Math.min(.85,anchorW+.35*clamp((covN-4)/8,0,1)),revenueBaseMismatch,consensusBasis,consensusOneOff,sbcDeduction,analystNet1,analystNet2,provenNet,expectsImprovement:analystExpectsImprovement,delta:analystAnchorDelta},
     currentNormalizationAddback,targetNormalizationAddback,matureNormalizationAddback,
     grossNow,grossTarget,grossMature,rdNow,rdTarget,rdMature,sgaNow,sgaTarget,sgaMature,
-    sbcNowForEarnings,sbcTarget,sbcMature,amortNow,amortTarget,amortMature,
+    sbcNowForEarnings,sbcTarget,sbcMature,sbcFadeApplied,amortNow,amortTarget,amortMature,
     driverTargetOperating,driverCoverage,driverModelReliable,driverResidual,leverageIntensity,residualOpexNow,residualDriverTargetOperating,residualDriverWeight
   };
 }
