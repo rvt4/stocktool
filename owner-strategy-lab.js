@@ -418,7 +418,12 @@ function buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,helpers
     // Build 86: the slot tests financial-aware quality by default (see backtest.js BACKTEST_EXPERIMENT).
     // Decision rule fixed in advance (README-build86): adopt only if CQF beats C after tax overall AND in
     // both periods, with max drawdown no more than 3 points worse.
-    if(altLabel==='growth')arms.push(VX('CX · C picking with the experiment (long-run growth +1 pt, exit P/E follows growth)',{}),
+    // Build 96: stock-pay fade (SBC above 8% of revenue fades toward 8% by year 10; the saving lands in GAAP margin).
+    // Decision rule fixed in advance (README-build96): adopt only if SF beats C after tax overall AND in both periods
+    // (after-tax excess, before and from 2022), with max drawdown no more than 3 points worse. Nothing else is tuned
+    // on this run, and the fade's numbers (8% floor, half by year 5, 90% by year 10) are not adjusted after seeing it.
+    if(altLabel==='sbcfade')arms.push(VX('SF · C picking with the stock-pay fade (SBC fades toward 8% of revenue)',{}));
+    else if(altLabel==='growth')arms.push(VX('CX · C picking with the experiment (long-run growth +1 pt, exit P/E follows growth)',{}),
       VX('CXQ · CX with quality 80+',{entryOpts:{minQuality:80}}));
     else arms.push(VX('CQF · C with financial-aware quality (ROE when ROIC is missing; lenders: net-margin stability)',{}),
       VX('CQF75 · CQF with quality 75+',{entryOpts:{minQuality:75}}));

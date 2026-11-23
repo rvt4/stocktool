@@ -40,7 +40,7 @@ const {applyModelDRanking,percentileRanks}=require('./engine/ranking-engine');
 const {buildOwnerStrategyLab}=require('./owner-strategy-lab');
 const {isValuationBuyRating,ratingAlphaSizingTarget}=require('./engine/portfolio-policy');
 
-const MODEL_VERSION='build87';
+const MODEL_VERSION='build96';
 const watchlist=JSON.parse(fs.readFileSync(path.join(__dirname,'watchlist.json'),'utf8'));
 const START=Number(process.env.BACKTEST_START||2016);
 const END=Number(process.env.BACKTEST_END||new Date().getUTCFullYear()-1);
@@ -2044,9 +2044,12 @@ async function main(){
           // pick stocks with the experiment's numbers and rankings (arm CX). Roughly doubles model run time.
           // Build 86: the alternative-model slot now tests financial-aware quality (BACKTEST_EXPERIMENT=quality,
           // the default). BACKTEST_EXPERIMENT=growth reruns the retired Build 83 growth / exit-P/E test; =off skips.
-          const EXP=process.env.BACKTEST_EXPERIMENT||'quality';
-          if(EXP!=='off')try{const growthExp=EXP==='growth'||EXP==='1';
-            const f2=growthExp?buildForecast(stock,{matureGrowthLift:.01}):f,q2=computeQuality(stock,f2,{financialAware:!growthExp}),
+          // Build 96: BACKTEST_EXPERIMENT=sbcfade (now the default) tests stock pay fading toward 8% of revenue as
+          // companies mature (engine/forecast-engine.js opts.sbcFade). =quality reruns the Build 86 test.
+          const EXP=process.env.BACKTEST_EXPERIMENT||'sbcfade';
+          if(EXP!=='off')try{const growthExp=EXP==='growth'||EXP==='1', fadeExp=EXP==='sbcfade';
+            const f2=growthExp?buildForecast(stock,{matureGrowthLift:.01}):fadeExp?buildForecast(stock,{sbcFade:true}):f,
+              q2=fadeExp?computeQuality(stock,f2):computeQuality(stock,f2,{financialAware:!growthExp}),
               v2=growthExp?valuate(stock,f2,q2,{exitPersistence:.30}):valuate(stock,f2,q2),d2=rateStock(stock,f2,q2,v2);
             if(Number.isFinite(v2.expectedCAGR)){row.altExpectedCAGR=v2.expectedCAGR;const alt=compactModel(stock,f2,q2,v2,d2);alt.growth=growth;attachRealized(alt,history,spyHistory,asOf);altSnapshots.get(asOf).push(alt);}}catch(e){}
           attachRealized(row,history,spyHistory,asOf); snapshots.get(asOf).push(row); diagnostics.modeledObservations++;
@@ -2090,7 +2093,7 @@ async function main(){
   let ownerStrategyLab=null;
   try{
     ownerStrategyLab=FREQUENCY==='quarterly'
-      ?buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,{adjustedReturnBetween,portfolioStats},{transactionCostBps:Math.max(0,finite(process.env.BACKTEST_TRANSACTION_COST_BPS)??10),altSnapshotOutput,altLabel:['growth','1'].includes(process.env.BACKTEST_EXPERIMENT)?'growth':'quality'})
+      ?buildOwnerStrategyLab(snapshotOutput,historyByTicker,spyHistory,{adjustedReturnBetween,portfolioStats},{transactionCostBps:Math.max(0,finite(process.env.BACKTEST_TRANSACTION_COST_BPS)??10),altSnapshotOutput,altLabel:['growth','1'].includes(process.env.BACKTEST_EXPERIMENT)?'growth':process.env.BACKTEST_EXPERIMENT==='quality'?'quality':'sbcfade'})
       :{skipped:'Owner strategy lab needs BACKTEST_FREQUENCY=quarterly'};
   }catch(e){ownerStrategyLab={error:e.message};console.error('Owner strategy lab failed:',e);}
   {
