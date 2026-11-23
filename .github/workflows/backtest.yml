@@ -17,6 +17,9 @@ on:
       limit:
         description: 'Ticker limit for a quick trial run (0 = all)'
         default: '0'
+      experiment:
+        description: 'Alternative model tested alongside the live one (sbcfade = Build 96 stock-pay fade; quality; growth; off)'
+        default: 'sbcfade'
 permissions:
   contents: write
 jobs:
@@ -28,31 +31,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
       - name: Unit tests
-        run: |
-          node model-smoke-test.js
-          node review-policy-test.js
-          node owner-strategy-lab-test.js
-          node build66-test.js
-          node build67-test.js
-          node build68-test.js
-          node build69-test.js
-          node build70-test.js
-          node build71-test.js
-          node build72-test.js
-          node build73-test.js
-          node build74-test.js
-          node build75-test.js
-          node build76-test.js
-          node build77-test.js
-          node build78-test.js
-          node build79-test.js
-          node build80-test.js
-          node build81-test.js
-          node build82-test.js
-          node build83-test.js
-          node build85-test.js
-          node build86-test.js
-          node build87-test.js
+        run: node run-all-tests.js
       - name: Run backtest
         env:
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
@@ -62,6 +41,7 @@ jobs:
           BACKTEST_END: ${{ inputs.end_year }}
           BACKTEST_LIMIT: ${{ inputs.limit }}
           BACKTEST_OWNER_ONLY: ${{ inputs.owner_only && '1' || '0' }}
+          BACKTEST_EXPERIMENT: ${{ inputs.experiment }}
         run: node backtest.js
       - name: Upload results
         if: always()
