@@ -20,7 +20,7 @@ const { rateStock } = require('./engine/rating-engine');
 const { validateUniverse } = require('./engine/validation');
 const { writeProspectiveSnapshot } = require('./engine/history-snapshot');
 const { livePortfolioGuidance } = require('./engine/portfolio-policy');
-const { applyModelDRanking, compareRank } = require('./engine/ranking-engine');
+const { applyModelDRanking, applyResearchRank, compareRank } = require('./engine/ranking-engine');
 
 const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'),'utf8'));
 const RATE_LIMIT_DELAY_MS = Number(process.env.RATE_LIMIT_DELAY_MS || 1100);
@@ -143,6 +143,8 @@ function rank(stocks){
   // by the exact frozen Model-D blend; below-gate names remain behind them and are
   // ordered by expected return, so business quality cannot rescue an inadequate return.
   applyModelDRanking(stocks,{rankField:'overallRank',universeSizeField:'globalUniverseSize',reliability:true});
+  // Build 97: one-scale research rank for display (no 11% gate); the buy rule keeps overallRank.
+  applyResearchRank(stocks);
   const q=[...stocks].sort((a,b)=>(b.qualityScore||0)-(a.qualityScore||0)); q.forEach((s,i)=>s.qualityRank=i+1);
   const o=[...stocks].sort((a,b)=>(b.expectedReturn||-99)-(a.expectedReturn||-99)); // raw return order; overallRank is the evidence-adjusted one o.forEach((s,i)=>s.opportunityRank=i+1);
   const groups={}; for(const s of stocks)(groups[s.category]??=[]).push(s);
@@ -281,7 +283,7 @@ async function run(){
   try{const bs=JSON.parse(fs.readFileSync(path.join(__dirname,'data','backtest-owner-summary.json'),'utf8'));
     const rc=bs.ownerStrategyLab?.returnCalibration;if(rc?.base)returnCalibration={modelVersion:bs.modelVersion,generatedAt:bs.generatedAt||null,base:rc.base};}catch(e){}
   const RPx=require('./review-policy');
-  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'build95',strategy:RPx.STRATEGY,returnCalibration,spyPrice:spyHistory.length?spyHistory[spyHistory.length-1].close:null,stocks}; writeJson('results.json',output);
+  const output={generatedAt:new Date().toISOString(),count:stocks.length,modelVersion:'build97',strategy:RPx.STRATEGY,returnCalibration,spyPrice:spyHistory.length?spyHistory[spyHistory.length-1].close:null,stocks}; writeJson('results.json',output);
   // Build 87: monthly forward record of the frozen strategy (never blocks the run).
   try{const spyLast=spyHistory.length?spyHistory[spyHistory.length-1].close:null;
     const fr=require('./forward-record').recordForward(output,{spyPrice:spyLast,strategy:RPx.STRATEGY.id,isCandidate:s=>RPx.shortlistEntry(s)});
