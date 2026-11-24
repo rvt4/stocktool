@@ -1,15 +1,15 @@
 {
- "generatedAt": "2026-11-23T18:29:33.327Z",
+ "generatedAt": "2026-11-24T01:33:02.560Z",
  "snapshots": 1,
  "firstSnapshot": "2026-11-13",
  "note": "error = actual reported revenue / forecast - 1. Positive = the model forecast too LOW (company grew faster). Based on monthly snapshots compared once the forecast year has been reported.",
- "observations": 18,
+ "observations": 19,
  "byHorizon": {
   "year 1": {
-   "n": 18,
-   "meanError": 0.012082582580655329,
-   "medianError": 0.009942669331676757,
-   "shareTooLow": 0.6111111111111112
+   "n": 19,
+   "meanError": 0.018077309907242347,
+   "medianError": 0.010263187361082782,
+   "shareTooLow": 0.631578947368421
   }
  },
  "byForecastGrowth": {
@@ -26,10 +26,10 @@
    "shareTooLow": 0.5
   },
   "year 1 · 10-20%": {
-   "n": 4,
-   "meanError": 0.004549333374625875,
-   "medianError": 0.007909939982172043,
-   "shareTooLow": 0.75
+   "n": 5,
+   "meanError": 0.028835947056862432,
+   "medianError": 0.014305867852271836,
+   "shareTooLow": 0.8
   },
   "year 1 · 30%+": {
    "n": 1,
@@ -52,10 +52,10 @@
    "shareTooLow": 0.6
   },
   "backlog only": {
-   "n": 8,
-   "meanError": -0.006331920253921805,
-   "medianError": 0.015191494691839336,
-   "shareTooLow": 0.625
+   "n": 9,
+   "meanError": 0.008369671083826025,
+   "medianError": 0.028868977271606422,
+   "shareTooLow": 0.6666666666666666
   }
  },
  "bySector": {
@@ -84,10 +84,10 @@
    "shareTooLow": 0.3333333333333333
   },
   "Industrials": {
-   "n": 5,
-   "meanError": -0.011744681427465676,
-   "medianError": 0.0015140121120722494,
-   "shareTooLow": 0.6
+   "n": 6,
+   "meanError": 0.011209832441413381,
+   "medianError": 0.015191494691839336,
+   "shareTooLow": 0.6666666666666666
   },
   "Technology": {
    "n": 4,
@@ -109,6 +109,13 @@
    "horizon": 1,
    "forecastGrowth": 0.37475717448756335,
    "error": 0.2998286362613187
+  },
+  {
+   "ticker": "J",
+   "asOf": "2026-11-13",
+   "horizon": 1,
+   "forecastGrowth": 0.1647451956159688,
+   "error": 0.12598240178580866
   },
   {
    "ticker": "TTEK",
@@ -232,13 +239,13 @@
  ],
  "consensusEps": {
   "note": "error = actual EPS (analyst basis) / saved consensus - 1. Negative = analysts too optimistic. suggestedTrim needs 150+ observations; compare with CONSENSUS_TRIM in engine/simple-path.js ([this year, next year, ...]).",
-  "observations": 16,
+  "observations": 17,
   "byHorizon": {
    "this year": {
-    "n": 16,
-    "medianError": -0.009227581116611483,
-    "meanErrorClipped": -0.010353188138827532,
-    "shareTooHigh": 0.5625,
+    "n": 17,
+    "medianError": -0.002154919589545612,
+    "meanErrorClipped": -0.009311653693186232,
+    "shareTooHigh": 0.5294117647058824,
     "suggestedTrim": null
    }
   },
@@ -297,7 +304,7 @@
     "asOf": "2026-11-13",
     "horizon": "this year",
     "fy": 2026,
-    "error": -0.06421989015446916
+    "error": -0.06417140220708073
    },
    {
     "ticker": "FFIV",
@@ -318,21 +325,21 @@
     "asOf": "2026-11-13",
     "horizon": "this year",
     "fy": 2026,
-    "error": -0.018828771891982177
+    "error": -0.018815489112836148
    },
    {
     "ticker": "POST",
     "asOf": "2026-11-13",
     "horizon": "this year",
     "fy": 2026,
-    "error": -0.016300242643677354
+    "error": -0.01634871668463178
    },
    {
     "ticker": "DIS",
     "asOf": "2026-11-13",
     "horizon": "this year",
     "fy": 2026,
-    "error": 0.0126000081095059
+    "error": 0.01256755865618464
    },
    {
     "ticker": "DLB",
@@ -342,33 +349,33 @@
     "error": 0.008708945937434986
    },
    {
-    "ticker": "ACM",
+    "ticker": "J",
     "asOf": "2026-11-13",
     "horizon": "this year",
     "fy": 2026,
-    "error": 0.005917625927052583
+    "error": 0.007401064221206344
    }
   ],
   "revisions90dToday": {
    "thisYear": {
     "n": 850,
-    "median": 0.011168450251986428
+    "median": 0.010993356121931419
    },
    "nextYear": {
-    "n": 872,
-    "median": 0.003957581545256161
+    "n": 873,
+    "median": 0.003790928338517574
    }
   },
   "revisionHistory": [
    {
-    "asOf": "2026-11-23",
+    "asOf": "2026-11-24",
     "thisYear": {
      "n": 850,
-     "median": 0.011168450251986428
+     "median": 0.010993356121931419
     },
     "nextYear": {
-     "n": 872,
-     "median": 0.003957581545256161
+     "n": 873,
+     "median": 0.003790928338517574
     }
    }
   ]
