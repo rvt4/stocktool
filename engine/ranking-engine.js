@@ -224,6 +224,24 @@ function applyModelDRanking(rows,{rankField='overallRank',universeSizeField='glo
   return sorted;
 }
 
+// Build 97: research rank. Every stock the model can value gets ranked on ONE scale: the same 50/50 blend
+// (reliability-adjusted return percentile + quality/moat/growth-quality/compounder basket) and the same
+// value-trap cut, with no 11% gate. The gated overallRank put every sub-11% stock behind every 11%+ stock and
+// sorted them by return alone, so quality counted for nothing below ~#290 (AXP #655, V #551 at quality 90).
+// Display only: the frozen buy rule, backtest and forward record still use overallRank / liveRank.
+function applyResearchRank(rows,{rankField='researchRank',scoreField='researchScore'}={}){
+  const list=rows||[];
+  const unval=r=>r.modelSupport==='unsupported'||!!r.valuationExclusion;
+  const clones=list.map(r=>({...r}));
+  buildModelDScores(clones,{alphaGate:-Infinity,reliability:true});
+  const scored=list.map((r,i)=>({r,s:clones[i].rankEligible===true?finite(clones[i].rankScore):null,a:finite(r.expectedAlpha)}))
+    .filter(x=>x.s!=null&&!unval(x.r))
+    .sort((x,y)=>(y.s-x.s)||((y.a??-Infinity)-(x.a??-Infinity))||String(x.r.ticker||'').localeCompare(String(y.r.ticker||'')));
+  for(const r of list){r[rankField]=null;r[scoreField]=null;}
+  scored.forEach((x,i)=>{x.r[rankField]=i+1;x.r[scoreField]=x.s;});
+  return scored.map(x=>x.r);
+}
+
 // Build 74: trailing earnings profile for the PEG list. P/E = market cap / latest net income;
 // EPS growth = 3-year CAGR of net income per share (null when either end is not positive).
 function earningsProfile(years,marketCap){
@@ -237,4 +255,4 @@ function earningsProfile(years,marketCap){
     if(ea>0&&eb>0){const g=Math.pow(eb/ea,1/lb)-1;if(Number.isFinite(g))epsCAGR3=g;}}
   return {peTTM,epsCAGR3};
 }
-module.exports={earningsProfile,REVISION,estimateRevision,CYCLE_PENALTY,cycleProfile,cyclePenalty,VALUE_TRAP,revenueCagr3,businessGrowth,valueTrapPenalty,stressedAlpha,ALPHA_GATE,reliabilityAdjustedAlpha,percentileRanks,buildModelDScores,compareRank,applyModelDRanking};
+module.exports={applyResearchRank,earningsProfile,REVISION,estimateRevision,CYCLE_PENALTY,cycleProfile,cyclePenalty,VALUE_TRAP,revenueCagr3,businessGrowth,valueTrapPenalty,stressedAlpha,ALPHA_GATE,reliabilityAdjustedAlpha,percentileRanks,buildModelDScores,compareRank,applyModelDRanking};
