@@ -47,7 +47,9 @@ assert(d1[0]<s0[0]-.02,'analyst-below should lower the start: '+s0[0]+' -> '+d1[
 
 // 5) Thin coverage (<5 analysts) changes nothing
 const t3=m(run(stock({ticker:'T3',netPath:turnHist,analyst:{n:3,net1:.01,net2:.04}})));
-t3.forEach((x,i)=>assert(Math.abs(x-a0[i])<1e-9,'thin coverage should not anchor'));
+// Build 98: interest is now dollars on today's net debt, so a slightly different revenue path (thin coverage still
+// informs revenue growth) moves net margin by ~0.01pt. The margin anchor itself must stay off: tolerance 0.1pt.
+t3.forEach((x,i)=>assert(Math.abs(x-a0[i])<1e-3,'thin coverage should not anchor'));
 
 // 6) The valuation stays internally consistent (validation-style invariants)
 for(const r of [withA,run(stock({ticker:'R1',netPath:reset,growth:.15,analyst:{n:24,net1:.11,net2:.13}}))]){

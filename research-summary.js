@@ -14,8 +14,11 @@
     boom_cycle_margin_reversion:'Profits look like a cyclical peak; the model expects margins to fall back',
     growth_accelerates_beyond_history:'The forecast needs faster growth than the company has ever had'};
 
+  // Build 98: a beat or miss of more than 50% is almost always a one-time item (investment gains, tax), not the
+  // business beating or missing. Shown in the table, left out of the beat/miss count.
+  function oneTimeReport(r){const x=num(r?.surprise);return x!==null&&Math.abs(x)>.5;}
   function beats(s){
-    const r=(s?.research?.earnings?.reports||[]).filter(x=>num(x.actual)!==null&&num(x.estimate)!==null);
+    const r=(s?.research?.earnings?.reports||[]).filter(x=>num(x.actual)!==null&&num(x.estimate)!==null&&!oneTimeReport(x));
     return r.length?{n:r.length,beat:r.filter(x=>x.actual>=x.estimate).length,avgSurprise:r.reduce((a,x)=>a+(num(x.surprise)??0),0)/r.length}:null;
   }
   function revision(s){
@@ -86,6 +89,31 @@
     return bits.length?bits.join(', '):'';
   }
 
-  const api={prosCons,verdict,zoneTone,scenarioStory,beats,revision,fmt:{pct,spct,money}};
+  // Build 98: model EPS (model basis) vs consensus for this year and next, with the most likely reason for a gap.
+  function consensusGap(s){
+    const ae=s?.analystEstimates||{},vp=Array.isArray(s?.valuationProjection)?s.valuationProjection:[];
+    const a=s?.projectionAssumptions?.forecastBridge?.margins?.analystMarginAnchor||{};
+    const basis={excludes_sbc_and_amortization:'analysts\u2019 EPS leaves out stock pay and acquisition amortization; the model counts them',
+      excludes_sbc:'analysts\u2019 EPS leaves out stock pay; the model counts it as a cost',
+      excludes_amortization:'analysts\u2019 EPS leaves out amortization from acquisitions; the model counts most of it'}[a.consensusBasis];
+    const out=[];
+    [['This year',num(ae.epsCurrentYear),vp[0]],['Next year',num(ae.epsNextYear),vp[1]]].forEach(([label,c,row],i)=>{
+      const m=num(row?.eps);if(!(c>0)||m===null)return;
+      const gap=m/c-1;let reason='';
+      if(Math.abs(gap)>=.05){
+        const r=[];
+        if(i===0&&a.consensusOneOff)r.push('consensus includes one-time items (gains or charges) that the model leaves out');
+        if(basis&&gap<0)r.push(basis);
+        if(i===1&&gap<0)r.push('the model only goes part of the way to next year\u2019s consensus and trims it for typical analyst optimism');
+        if(!r.length)r.push(gap<0?'the model\u2019s own margin, tax or interest assumptions are below what analysts use':'the model\u2019s own margin, tax or interest assumptions are above what analysts use');
+        reason=r.slice(0,2).join('; ');
+        reason=reason[0].toUpperCase()+reason.slice(1)+'.';
+      }
+      out.push({label,model:m,consensus:c,gap,reason});
+    });
+    return out;
+  }
+
+  const api={consensusGap,oneTimeReport,prosCons,verdict,zoneTone,scenarioStory,beats,revision,fmt:{pct,spct,money}};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ResearchSummary=api;
 })(typeof window!=='undefined'?window:globalThis);

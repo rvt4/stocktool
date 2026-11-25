@@ -389,7 +389,9 @@
   // Build 94 -> C-v2 (measurement bug): the analyst blend may no longer lift the model's own value more than 1.5x;
   // names that needed more are excluded from the buy list. The shortlist is now the only buy list (Buy more advice
   // and the starter portfolio both use it). C-v1 ran 2026-11-15 to 2026-11-21; its forward snapshots keep their label.
-  const STRATEGY={id:'C-v2',frozenOn:'2026-11-21',previous:[{id:'C-v1',frozenOn:'2026-11-15'}],
+  // Build 98 -> C-v3 (measurement bugs in the earnings forecast): tax rate normalized without one-off tax years,
+  // stale interest capped by today's debt, and the near-term margin dip no longer counted twice. Rules unchanged.
+  const STRATEGY={id:'C-v3',frozenOn:'2026-11-24',previous:[{id:'C-v1',frozenOn:'2026-11-15'},{id:'C-v2',frozenOn:'2026-11-21'}],
     rules:'Buy: model rank top 20, cautious return 11%+, quality 80+, and the model\u2019s own value not far below analysts\u2019 (blend lift 1.5x or less). Sell: quality falls below 70 after buying; '+
       'or cautious return under 6.5% and 5-yr PEG over 2.5 (half at the first review, the rest at the next). Trim positions over 20% toward 15%.',
     changePolicy:'Only for a measurement bug, or a backtest win of 0.5+ pts/yr after tax in both periods; bump the version.'};
