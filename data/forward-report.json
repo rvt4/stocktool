@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-11-25T01:35:04.355Z",
- "strategy": "C-v2",
+ "generatedAt": "2026-11-25T03:25:04.705Z",
+ "strategy": "C-v3",
  "snapshots": 1,
  "firstSnapshot": "2026-11-16",
  "readMe": "Out-of-sample check of the frozen strategy. excess = buy list equal-weight price return minus SPY over the same dates. Nothing here was used to tune the rules.",
