@@ -590,7 +590,11 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
   // the share-count model still charges the shareholder for SBC via dilution. Amortization
   // is modeled mainly as a fixed-dollar legacy charge, so its margin naturally falls as
   // revenue grows rather than remaining a permanent percentage of sales.
-  const normalizedTaxRate=clamp(medianRecent(taxSeries.filter(Number.isFinite),5)??.21,.08,.32);
+  // Build 98 (C-v3): the old rule was the median of the last 5 effective rates, clamped 8-32%. One-off tax years
+  // dragged it far from what companies pay: UBER sat at the 8% floor (valuation-allowance releases) and VRT at
+  // 28%; ~250 names were under 12% or over 26%. Now: drop near-zero/negative years (allowance releases, one-off
+  // benefits), take the median of the last 3 usable years, and when the history is erratic pull halfway to 21%.
+  const normalizedTaxRate=normalizeTaxRate(taxSeries);
   const sbcNowForEarnings=medianRecent(sbcSeriesForEarnings.filter(Number.isFinite),3);
   const amortNow=medianRecent(amortSeries.filter(Number.isFinite),3);
   const explicitRevenueScale=(growthInfo.growthPath||[]).slice(0,EXPLICIT_FORECAST_YEARS)
@@ -1052,7 +1056,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
       }
     }
   }
-  let analystAnchorApplied=false, analystAnchorDelta={start:0,target:0,mature:0};
+  let analystAnchorApplied=false, analystAnchorDelta={start:0,target:0,mature:0}, analystAnchorNormN2=null;
   let analystYear1Ratio=null; // Build 85: analysts' year-1 margin / the model's current margin, same basis
   if(anchorW>0&&!revenueBaseMismatch&&Number.isFinite(currentNet)&&Number.isFinite(targetNet)&&Number.isFinite(matureTargetNet)){
     const oldStart=currentNet,oldTarget=targetNet,oldMature=matureTargetNet;
@@ -1089,6 +1093,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
       if(crisisRecovery&&analystExpectsImprovement&&Number.isFinite(recoveryFloor)) {crisisRecovery.applied=true;recoveryFloor=Math.max(recoveryFloor,crisisRecovery.proven+matureNormalizationAddback);}
       if(Number.isFinite(recoveryFloor)) matureTargetNet=Math.max(matureTargetNet,targetNet,Math.min(recoveryFloor,netCeiling));
     }
+    analystAnchorNormN2=Number.isFinite(normN2)?normN2:null;
     analystAnchorDelta={start:currentNet-oldStart,target:targetNet-oldTarget,mature:matureTargetNet-oldMature};
     analystAnchorApplied=[analystAnchorDelta.start,analystAnchorDelta.target,analystAnchorDelta.mature].some(d=>Math.abs(d)>.0005);
     // Keep one economic story: the same profit change flows to operating, EBITDA and owner cash.
@@ -1376,7 +1381,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     nonOperatingMargin:(()=>{ // Build 77: typical pre-tax non-operating income (interest, other) as a share of revenue
       const t=clamp(normalizedTaxRate,0,.35);const v=years.slice(-5).map(y=>nonOperatingOf(y,t)).filter(Number.isFinite);
       return v.length>=3?clamp(median(v),-.05,.03):0;})(),
-    normalizedTaxRate,gaapCurrentNet,gaapTargetNet,gaapMatureTargetNet,
+    normalizedTaxRate,analystAnchorNormN2,gaapCurrentNet,gaapTargetNet,gaapMatureTargetNet,
     oneTimeChargesLatest:oneTimeSeries.at(-1)??0,backlogCoverage:(()=>{const r=finite(years.at(-1)?.rpo),v=finite(years.at(-1)?.revenue);return r>0&&v>0?r/v:null;})(),
     marginEvidence,
     provenMarginRails:{net:netRail,operating:opRail,ebitda:ebitdaRail},
@@ -1391,6 +1396,15 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
 }
 // Build 85: non-operating income = pretax - operating income when pretax is reported. The old net/(1-t) form
 // counted an unusual tax year as non-operating income (UBER's tax benefit read as +8% of revenue).
+// Build 98: see buildMarginForecast. Exported for tests.
+function normalizeTaxRate(series){
+  const valid=(series||[]).filter(Number.isFinite).slice(-5);
+  const usable=valid.filter(r=>r>=.08);
+  if(usable.length<2)return .21;
+  const base=median(usable.slice(-3));
+  const erratic=usable.length<3||Math.max(...usable)-Math.min(...usable)>.12;
+  return clamp(erratic?(base+.21)/2:base,.10,.30);
+}
 function nonOperatingOf(y,t){const r=finite(y?.revenue),pre=finite(y?.pretaxIncome),op=finite(y?.operatingIncome);
   if(r>0&&Number.isFinite(pre)&&Number.isFinite(op))return (pre-op)/r;
   const n=pctMargin(y,'netIncome'),o=pctMargin(y,'operatingIncome');return Number.isFinite(n)&&Number.isFinite(o)?n/(1-t)-o:null;}
@@ -1527,7 +1541,7 @@ function buildForecast(stock,opts={}){
   if(margins.marginTrendOn&&Number.isFinite(margins.currentFCF)&&Number.isFinite(margins.targetFCF)&&margins.targetFCF<margins.currentFCF){
     const d=margins.currentFCF-margins.targetFCF;margins.targetFCF=margins.currentFCF;if(Number.isFinite(margins.targetCFO))margins.targetCFO+=d;
   }
-  let netMarginCeilingApplied=false;
+  let netMarginCeilingApplied=false, interestNetDebt=null;
   for(let i=0;i<HORIZON_YEARS;i++){
     if(revenue!=null)revenue*=1+growth.growthPath[i]; dividend*=1+dividendGrowth;
     // Two-stage margin path: years 1-5 move toward the near/medium-term normalized
@@ -1557,7 +1571,15 @@ function buildForecast(stock,opts={}){
     const rowFcfCeiling=Number.isFinite(margins.fcfCeiling)?margins.fcfCeiling:cfg.maxFCFMargin;
     let fcfMargin=Number.isFinite(modeledFcfMargin)?clamp(modeledFcfMargin,-.10,rowFcfCeiling):modeledFcfMargin;
     // Build 60c: consensus-contradicted near-term dip (see marginEvidence.nearTermDip).
-    const dip=margins.marginEvidence?.nearTermDip?.[i];
+    let dip=margins.marginEvidence?.nearTermDip?.[i];
+    // Build 98 (C-v3): when the analyst anchor already pulled the margin path toward consensus, years 2-3 only
+    // dip as far as analysts' next-year margin (year 3 halfway back). Applying the full consensus fall on top of
+    // the anchored path counted it twice: META's 2027 net margin went to 22.5% vs ~27% consensus, then bounced.
+    const aN2=finite(margins.analystAnchorNormN2);
+    if(Number.isFinite(dip)&&dip<1&&(i===1||i===2)&&Number.isFinite(aN2)&&aN2>0&&Number.isFinite(netMargin)&&netMargin>0){
+      const floorNet=i===1?aN2:(aN2+netMargin)/2;
+      dip=Math.max(dip,Math.min(1,floorNet/netMargin));
+    }
     if(Number.isFinite(dip)&&dip<1&&Number.isFinite(netMargin)&&netMargin>0){
       const dNet=netMargin*(dip-1), dOp=dNet/(1-clamp(margins.normalizedTaxRate??.21,0,.35));
       netMargin+=dNet; if(Number.isFinite(gaapNetMargin))gaapNetMargin+=dNet;
@@ -1575,7 +1597,16 @@ function buildForecast(stock,opts={}){
       const t=clamp(margins.normalizedTaxRate??.21,0,.35), typ=finite(margins.nonOperatingMargin)??0;
       const recent=finite(margins.recentNonOperatingMargin);
       const fade=i===0?.5:i===1?.25:0;
-      const npo=Number.isFinite(recent)?typ+(clamp(recent,-.08,.08)-typ)*fade:typ;
+      // Build 98 (C-v3): the long-run non-operating cost (the 5-year typical share of revenue) can't be more than
+      // 1 pt of revenue worse than what TODAY's net debt implies (5% on net debt, 3% earned on net cash). VRT kept
+      // paying 2.5% of revenue in interest from its older, bigger debt while the model had it holding net cash.
+      // The 1 pt leaves room for real non-interest costs (minority interests, pensions, equity-method losses).
+      // Interest is on today's net debt in dollars, so it shrinks as a share of a growing revenue; later paydown or
+      // cash build isn't credited here because the EPS and FCF exits already add the cash build to value.
+      if(i===0)interestNetDebt=Number.isFinite(projectedNetDebt)?projectedNetDebt:null;
+      const dNow=revenue>0&&Number.isFinite(interestNetDebt)?clamp(interestNetDebt>0?-.05*interestNetDebt/revenue:.03*(-interestNetDebt)/revenue,-.08,.03):null;
+      const longRun=Number.isFinite(dNow)?Math.max(typ,dNow-.01):typ;
+      const npo=Number.isFinite(recent)?longRun+(clamp(recent,-.08,.08)-longRun)*fade:longRun;
       rowNonOperating=npo;
       const lo=(operatingMargin+npo-.01)*(1-t), hi=(operatingMargin+npo+.01)*(1-t);
       const gap=Number.isFinite(netMargin)?netMargin-gaapNetMargin:0;
@@ -1691,4 +1722,4 @@ function buildForecast(stock,opts={}){
 
   return {horizonYears:HORIZON_YEARS,category,rows,terminalGrowth:growth.matureGrowth,year5OperatingGrowth:growth.year5Growth,revenueGrowthAnchor:growth.y1,sustainableGrowth,historicalGrowth:growth.historicalAnchor,dilutionRate:ownerDilutionPath[0],matureDilutionRate:matureDilutionRate>0?Math.max(0,matureDilutionRate-sbcDilution):matureDilutionRate,dilutionPath:ownerDilutionPath,grossDilutionRate:dilutionRate,grossDilutionPath:dilutionPath,sbcDilution,earningsBasis:'owner_sbc_expensed',capitalAllocation:{startingNetDebt:startingDebt-startingCash,terminalNetDebt:projectedNetDebt,startingLeverage:debtBurden,leverageGuard,annual:rows.map(r=>({year:r.year,netDebt:r.netDebt,buybackSpend:r.buybackSpend,debtRepayment:r.debtRepayment,requestedDilution:r.requestedDilution,actualDilution:r.actualDilution}))},startRevenue:finite(last.revenue),startShares:inferredShares,shareCountSource:shareInfo.source,marginAssumptions:{fcf:margins.currentFCF,ebitda:margins.currentEBITDA,net:margins.currentNet},marginTargets:{fcf:margins.targetFCF,ebitda:margins.targetEBITDA,net:margins.targetNet,matureFCF:margins.matureTargetFCF,matureEBITDA:margins.matureTargetEBITDA,matureNet:margins.matureTargetNet},analystUsed:growth.analystUsed,forecastReliabilityScore:growth.forecastReliabilityScore,historyReliability:growth.historyReliability,reinvestmentPersistence:growth.reinvestmentPersistence,historyGrowthDispersion:growth.histDispersion,forecastBridge,forecastFlags};
 }
-module.exports={buildForecast};
+module.exports={buildForecast,normalizeTaxRate};
