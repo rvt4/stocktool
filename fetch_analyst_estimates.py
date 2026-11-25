@@ -108,6 +108,102 @@ def _row_value(df, period, field):
         return None
 
 
+# Build 97: extra research data for the research page (estimate trend and revisions, the last four
+# earnings reports vs estimates, the analyst rating mix and recent upgrades/downgrades). Stored as one
+# JSON column (research_extras) so new fields never need another Supabase column. Every part is optional.
+def _col(df, *names):
+    cols = list(getattr(df, "columns", []))
+    low = {str(c).lower(): c for c in cols}
+    for n in names:
+        if n in cols: return n
+        if n.lower() in low: return low[n.lower()]
+    return None
+
+
+def _date_str(x):
+    try:
+        return str(x)[:10]
+    except Exception:
+        return None
+
+
+def fetch_research_extras(t):
+    out = {}
+    try:
+        trend = t.get_eps_trend()
+        if trend is not None and len(trend):
+            rows = {}
+            for period in ("0q", "+1q", "0y", "+1y"):
+                if period in trend.index:
+                    rows[period] = {k: clean_number(trend.loc[period].get(k)) for k in ("current", "7daysAgo", "30daysAgo", "60daysAgo", "90daysAgo")}
+            if rows: out["epsTrend"] = rows
+    except Exception as e:
+        log.info(f"eps trend extras failed ({e})")
+    try:
+        rev = t.get_eps_revisions()
+        if rev is not None and len(rev):
+            rows = {}
+            for period in ("0q", "+1q", "0y", "+1y"):
+                if period in rev.index:
+                    r = rev.loc[period]
+                    def g(*names):
+                        c = _col(rev, *names)
+                        return clean_number(r.get(c)) if c is not None else None
+                    rows[period] = {"up7": g("upLast7days"), "up30": g("upLast30days"),
+                                    "down7": g("downLast7Days", "downLast7days"), "down30": g("downLast30days", "downLast30Days")}
+            if rows: out["epsRevisions"] = rows
+    except Exception as e:
+        log.info(f"eps revisions extras failed ({e})")
+    try:
+        eh = t.get_earnings_history()
+        if eh is not None and len(eh):
+            ca, ce, cs = _col(eh, "epsActual"), _col(eh, "epsEstimate"), _col(eh, "surprisePercent")
+            hist = []
+            for idx, r in eh.iterrows():
+                hist.append({"quarter": _date_str(idx), "actual": clean_number(r.get(ca)) if ca else None,
+                             "estimate": clean_number(r.get(ce)) if ce else None,
+                             "surprise": clean_number(r.get(cs)) if cs else None})
+            hist = [h for h in hist if h["actual"] is not None]
+            hist.sort(key=lambda h: h["quarter"] or "")
+            if hist: out["earningsHistory"] = hist[-4:]
+    except Exception as e:
+        log.info(f"earnings history extras failed ({e})")
+    try:
+        rec = t.get_recommendations()
+        if rec is not None and len(rec):
+            cp = _col(rec, "period")
+            rows = []
+            for _, r in rec.iterrows():
+                rows.append({"period": str(r.get(cp)) if cp else None,
+                             **{k: clean_number(r.get(_col(rec, k))) if _col(rec, k) else None for k in ("strongBuy", "buy", "hold", "sell", "strongSell")}})
+            if rows: out["ratings"] = rows[:4]
+    except Exception as e:
+        log.info(f"recommendations extras failed ({e})")
+    try:
+        ud = t.get_upgrades_downgrades()
+        if ud is not None and len(ud):
+            cutoff = datetime.now(timezone.utc).timestamp() - 90 * 86400
+            ca, cpta = _col(ud, "Action"), _col(ud, "priceTargetAction")
+            counts = {"upgrades": 0, "downgrades": 0, "targetRaises": 0, "targetCuts": 0, "total": 0}
+            for idx, r in ud.iterrows():
+                try:
+                    ts = idx.timestamp() if hasattr(idx, "timestamp") else None
+                except Exception:
+                    ts = None
+                if ts is None or ts < cutoff: continue
+                counts["total"] += 1
+                a = str(r.get(ca) or "").lower() if ca else ""
+                pa = str(r.get(cpta) or "").lower() if cpta else ""
+                if a == "up": counts["upgrades"] += 1
+                elif a == "down": counts["downgrades"] += 1
+                if pa.startswith("rais"): counts["targetRaises"] += 1
+                elif pa.startswith("lower"): counts["targetCuts"] += 1
+            out["analystActions90d"] = counts
+    except Exception as e:
+        log.info(f"upgrades/downgrades extras failed ({e})")
+    return out or None
+
+
 def fetch_one(ticker):
     """Pull current-year and next-year revenue/EPS consensus plus price targets.
 
@@ -192,6 +288,12 @@ def fetch_one(ticker):
         except Exception as e:
             log.warning(f"{ticker}: price target fetch failed ({e})")
 
+        research_extras = None
+        try:
+            research_extras = fetch_research_extras(t)
+        except Exception as e:
+            log.info(f"{ticker}: research extras failed ({e})")
+
         usable = [
             revenue_growth_current_year, revenue_growth_next_year,
             revenue_current_year, revenue_next_year,
@@ -224,6 +326,7 @@ def fetch_one(ticker):
             "analyst_target_low": analyst_target_low,
             "analyst_target_high": analyst_target_high,
             "num_analysts": num_analysts,
+            "research_extras": research_extras,
             "source": "yfinance",
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -249,7 +352,7 @@ def upsert_batch(rows):
     # losing the whole night's estimates.
     # Build 54/71: if a newer column hasn't been added in Supabase yet, retry without it instead of
     # losing the whole night's estimates (see README-build71 for the SQL).
-    optional = ("eps_growth_long_term", "eps_current_year_90d_ago", "eps_next_year_90d_ago")
+    optional = ("eps_growth_long_term", "eps_current_year_90d_ago", "eps_next_year_90d_ago", "research_extras")
     for _ in range(len(optional)):
         if resp.status_code in (200, 201, 204): break
         missing = [c for c in optional if c in resp.text and rows and c in rows[0]]
@@ -257,7 +360,7 @@ def upsert_batch(rows):
             # PostgREST names one missing column at a time; drop every optional one as a last resort
             missing = [c for c in optional if rows and c in rows[0]]
             if not missing: break
-        log.warning(f"Column(s) {missing} missing in Supabase; upserting without them. Run the SQL in README-build71.txt.")
+        log.warning(f"Column(s) {missing} missing in Supabase; upserting without them. Run the SQL in README-build71.txt / README-build97.txt.")
         rows = [{k: v for k, v in r.items() if k not in missing} for r in rows]
         resp = requests.post(url, headers=headers, json=rows, timeout=30)
     if resp.status_code not in (200, 201, 204):

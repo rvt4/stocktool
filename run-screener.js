@@ -9,6 +9,7 @@
  * Monte Carlo overrides, or competing fair-value engines in the publication path.
  */
 const fs = require('fs');
+const {researchData}=require('./engine/research-data');
 const path = require('path');
 const { buildStockRecord, fetchBacktestHistory } = require('./data-fetchers');
 const {growthSignals,scoreGrowthUniverse,growthExit}=require('./engine/growth-engine');
@@ -20,7 +21,7 @@ const { rateStock } = require('./engine/rating-engine');
 const { validateUniverse } = require('./engine/validation');
 const { writeProspectiveSnapshot } = require('./engine/history-snapshot');
 const { livePortfolioGuidance } = require('./engine/portfolio-policy');
-const { applyModelDRanking, applyResearchRank, compareRank } = require('./engine/ranking-engine');
+const { applyModelDRanking, compareRank } = require('./engine/ranking-engine');
 
 const watchlist = JSON.parse(fs.readFileSync(path.join(__dirname, 'watchlist.json'),'utf8'));
 const RATE_LIMIT_DELAY_MS = Number(process.env.RATE_LIMIT_DELAY_MS || 1100);
@@ -46,7 +47,7 @@ async function loadAnalystEstimates(){
   for(const r of rows){const t=normalizeTicker(r.ticker);if(!t)continue;map.set(t,{
     revenueGrowthFwd:r.revenue_growth_fwd??null,revenueGrowthCurrentYear:r.revenue_growth_current_year??r.revenue_growth_fwd??null,revenueGrowthNextYear:r.revenue_growth_next_year??null,
     revenueCurrentYear:r.revenue_current_year??null,revenueNextYear:r.revenue_next_year??null,epsGrowthFwd:r.eps_growth_fwd??null,epsGrowthCurrentYear:r.eps_growth_current_year??r.eps_growth_fwd??null,epsGrowthNextYear:r.eps_growth_next_year??null,
-    epsCurrentYear:r.eps_current_year??null,epsNextYear:r.eps_next_year??null,epsGrowthLongTerm:r.eps_growth_long_term??null,epsCurrentYear90dAgo:r.eps_current_year_90d_ago??null,epsNextYear90dAgo:r.eps_next_year_90d_ago??null,analystTargetMean:r.analyst_target_mean??null,analystTargetLow:r.analyst_target_low??null,analystTargetHigh:r.analyst_target_high??null,numAnalysts:r.num_analysts??null,source:r.source??null,updatedAt:r.updated_at??null
+    epsCurrentYear:r.eps_current_year??null,epsNextYear:r.eps_next_year??null,epsGrowthLongTerm:r.eps_growth_long_term??null,epsCurrentYear90dAgo:r.eps_current_year_90d_ago??null,researchExtras:r.research_extras??null,epsNextYear90dAgo:r.eps_next_year_90d_ago??null,analystTargetMean:r.analyst_target_mean??null,analystTargetLow:r.analyst_target_low??null,analystTargetHigh:r.analyst_target_high??null,numAnalysts:r.num_analysts??null,source:r.source??null,updatedAt:r.updated_at??null
   });}
   console.log(`Mapped ${map.size} analyst records.`); return map;
 }
@@ -143,8 +144,6 @@ function rank(stocks){
   // by the exact frozen Model-D blend; below-gate names remain behind them and are
   // ordered by expected return, so business quality cannot rescue an inadequate return.
   applyModelDRanking(stocks,{rankField:'overallRank',universeSizeField:'globalUniverseSize',reliability:true});
-  // Build 97: one-scale research rank for display (no 11% gate); the buy rule keeps overallRank.
-  applyResearchRank(stocks);
   const q=[...stocks].sort((a,b)=>(b.qualityScore||0)-(a.qualityScore||0)); q.forEach((s,i)=>s.qualityRank=i+1);
   const o=[...stocks].sort((a,b)=>(b.expectedReturn||-99)-(a.expectedReturn||-99)); // raw return order; overallRank is the evidence-adjusted one o.forEach((s,i)=>s.opportunityRank=i+1);
   const groups={}; for(const s of stocks)(groups[s.category]??=[]).push(s);
@@ -262,6 +261,9 @@ async function run(){
       rec.economicCrosscheck.status='review';
     }
     rec.momentum=liveMomentum(stock.priceHistory||[],spyHistory);
+    // Build 97: research-page summary data (display only; nothing here feeds the rating, rank or buy list).
+    try{rec.research=researchData(stock,forecast,valuation,rec);}catch(e){rec.research={error:e.message};}
+    if(rec.analystEstimates&&rec.analystEstimates.researchExtras){const {researchExtras,...ae}=rec.analystEstimates;rec.analystEstimates=ae;}
     // Build 65: Growth Inflection signals (same function the backtest uses point-in-time)
     try{rec.growth=growthSignals(stock,stock.priceHistory||[],null);}catch(e){rec.growth={eligible:false,why:'error: '+e.message,reasonsUp:[],reasonsDown:[]};}
     stocks.push(rec);
