@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-11-25T17:42:30.022Z",
+ "generatedAt": "2026-11-26T17:20:34.711Z",
  "snapshots": 1,
  "firstSnapshot": "2026-11-13",
  "note": "error = actual reported revenue / forecast - 1. Positive = the model forecast too LOW (company grew faster). Based on monthly snapshots compared once the forecast year has been reported.",
@@ -7,7 +7,7 @@
  "byHorizon": {
   "year 1": {
    "n": 27,
-   "meanError": 0.0032157020826549232,
+   "meanError": 0.0032157020826549315,
    "medianError": 0.0015140121120722494,
    "shareTooLow": 0.5185185185185185
   }
@@ -33,7 +33,7 @@
   },
   "year 1 · 10-20%": {
    "n": 7,
-   "meanError": 0.010728075350364399,
+   "meanError": 0.010728075350364432,
    "medianError": 0.0015140121120722494,
    "shareTooLow": 0.5714285714285714
   },
@@ -53,7 +53,7 @@
   },
   "backlog only": {
    "n": 10,
-   "meanError": 0.003108366190382883,
+   "meanError": 0.003108366190382905,
    "medianError": 0.015191494691839336,
    "shareTooLow": 0.6
   }
@@ -103,7 +103,7 @@
   },
   "Industrials": {
    "n": 7,
-   "meanError": 0.0032879452568392704,
+   "meanError": 0.0032879452568393024,
    "medianError": 0.0015140121120722494,
    "shareTooLow": 0.5714285714285714
   },
@@ -134,7 +134,7 @@
    "asOf": "2026-11-13",
    "horizon": 1,
    "forecastGrowth": 0.1647451956159688,
-   "error": 0.12598240178580866
+   "error": 0.12598240178580888
   },
   {
    "ticker": "TTEK",
@@ -298,7 +298,7 @@
    "this year": {
     "n": 24,
     "medianError": -0.017582102898733964,
-    "meanErrorClipped": -0.019271432309652184,
+    "meanErrorClipped": -0.01927271909687327,
     "shareTooHigh": 0.5833333333333334,
     "suggestedTrim": null
    }
@@ -344,7 +344,7 @@
     "asOf": "2026-11-13",
     "horizon": "this year",
     "fy": 2026,
-    "error": -0.0840525549223834
+    "error": -0.08401163324575422
    },
    {
     "ticker": "UGI",
@@ -379,7 +379,7 @@
     "asOf": "2026-11-13",
     "horizon": "this year",
     "fy": 2026,
-    "error": -0.06417140220708073
+    "error": -0.06417465777037479
    },
    {
     "ticker": "FFIV",
@@ -407,29 +407,29 @@
     "asOf": "2026-11-13",
     "horizon": "this year",
     "fy": 2026,
-    "error": -0.02125132526767104
+    "error": -0.021251673700500295
    }
   ],
   "revisions90dToday": {
    "thisYear": {
-    "n": 851,
+    "n": 849,
     "median": 0.010943419244940467
    },
    "nextYear": {
-    "n": 874,
-    "median": 0.003777869469133166
+    "n": 871,
+    "median": 0.0036648874819626975
    }
   },
   "revisionHistory": [
    {
-    "asOf": "2026-11-25",
+    "asOf": "2026-11-26",
     "thisYear": {
-     "n": 851,
+     "n": 849,
      "median": 0.010943419244940467
     },
     "nextYear": {
-     "n": 874,
-     "median": 0.003777869469133166
+     "n": 871,
+     "median": 0.0036648874819626975
     }
    }
   ]
