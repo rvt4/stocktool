@@ -58,6 +58,6 @@ assert(/quality 78/.test(RP.buyListReason({...good,qualityScore:78})));
   assert.strictEqual(RP.holdingAdvice({...good,expectedCAGR:.14},null,{weight:.01}).action,'Buy more');
 }
 // 6) Strategy version bumped under the change policy.
-assert(['C-v2','C-v3'].includes(RP.STRATEGY.id));  // Build 98 bumped to C-v3
+assert(/^C-v[2-9]$/.test(RP.STRATEGY.id));  // Build 98: C-v3; Build 99: C-v4
 assert(RP.STRATEGY.previous.some(p=>p.id==='C-v1'));
 console.log('build94 tests passed');

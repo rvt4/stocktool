@@ -41,7 +41,12 @@ function co({op,nonop,taxes,debt,cash,g=.2,cy,ny,rg1=.25,rg2=.2,n=30,nm=null,cap
  const consNet2=ae.epsNextYear*shares/r2;
  assert(f.forecastBridge.margins.marginEvidence.nearTermDip,'fixture should trigger the dip rule');
  assert(f.rows[1].netMargin>=consNet2-.01,'year-2 margin no longer far below consensus: '+f.rows[1].netMargin+' vs '+consNet2);
- assert(f.rows[1].eps>=ae.epsNextYear*.95,'year-2 EPS within 5% of consensus: '+f.rows[1].eps+' vs '+ae.epsNextYear);}
+ assert(f.rows[1].eps>=ae.epsNextYear*.95,'year-2 EPS within 5% of consensus: '+f.rows[1].eps+' vs '+ae.epsNextYear);
+ // Build 99: the expected fall is kept, once (Build 98 removed it and META ended 9% above consensus).
+ assert(f.rows[1].netMargin<f.rows[0].netMargin-.01,'year-2 margin should still fall: '+f.rows[0].netMargin+' -> '+f.rows[1].netMargin);
+ assert(f.rows[1].eps<=ae.epsNextYear*1.03,'year-2 EPS not above consensus: '+f.rows[1].eps+' vs '+ae.epsNextYear);}
+// Build 99: erratic low-tax history moves a third of the way to 21%, not half.
+{const t=normalizeTaxRate([.19,.05,.04,.09,.15]);assert(t<.17,'AMD-like erratic low payer: '+t);}
 
 // 4) Display: consensus comparison and one-time quarters
 {const s={analystEstimates:{epsCurrentYear:12.8,epsNextYear:10.66},valuationProjection:[{eps:8.57},{eps:10.07}],
@@ -50,5 +55,5 @@ function co({op,nonop,taxes,debt,cash,g=.2,cy,ny,rg1=.25,rg2=.2,n=30,nm=null,cap
 assert(RS.oneTimeReport({surprise:2.15})&&!RS.oneTimeReport({surprise:.2}));
 {const b=RS.beats({research:{earnings:{reports:[{actual:1,estimate:1.1,surprise:-.09},{actual:5.75,estimate:1.82,surprise:2.15},{actual:1,estimate:.9,surprise:.11}]}}});
  assert.strictEqual(b.n,2,'one-time quarter left out of the beat count');}
-assert.strictEqual(RP.STRATEGY.id,'C-v3');
+assert(['C-v3','C-v4'].includes(RP.STRATEGY.id));  // Build 99: C-v4
 console.log('build98 tests passed');
