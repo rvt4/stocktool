@@ -593,7 +593,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
   // Build 98 (C-v3): the old rule was the median of the last 5 effective rates, clamped 8-32%. One-off tax years
   // dragged it far from what companies pay: UBER sat at the 8% floor (valuation-allowance releases) and VRT at
   // 28%; ~250 names were under 12% or over 26%. Now: drop near-zero/negative years (allowance releases, one-off
-  // benefits), take the median of the last 3 usable years, and when the history is erratic pull halfway to 21%.
+  // benefits), take the median of the last 3 usable years, and when the history is erratic pull a third of the way to 21%.
   const normalizedTaxRate=normalizeTaxRate(taxSeries);
   const sbcNowForEarnings=medianRecent(sbcSeriesForEarnings.filter(Number.isFinite),3);
   const amortNow=medianRecent(amortSeries.filter(Number.isFinite),3);
@@ -1056,7 +1056,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
       }
     }
   }
-  let analystAnchorApplied=false, analystAnchorDelta={start:0,target:0,mature:0}, analystAnchorNormN2=null;
+  let analystAnchorApplied=false, analystAnchorDelta={start:0,target:0,mature:0}, analystAnchorNormN2=null, analystAnchorNormN1=null;
   let analystYear1Ratio=null; // Build 85: analysts' year-1 margin / the model's current margin, same basis
   if(anchorW>0&&!revenueBaseMismatch&&Number.isFinite(currentNet)&&Number.isFinite(targetNet)&&Number.isFinite(matureTargetNet)){
     const oldStart=currentNet,oldTarget=targetNet,oldMature=matureTargetNet;
@@ -1093,7 +1093,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
       if(crisisRecovery&&analystExpectsImprovement&&Number.isFinite(recoveryFloor)) {crisisRecovery.applied=true;recoveryFloor=Math.max(recoveryFloor,crisisRecovery.proven+matureNormalizationAddback);}
       if(Number.isFinite(recoveryFloor)) matureTargetNet=Math.max(matureTargetNet,targetNet,Math.min(recoveryFloor,netCeiling));
     }
-    analystAnchorNormN2=Number.isFinite(normN2)?normN2:null;
+    analystAnchorNormN2=Number.isFinite(normN2)?normN2:null; analystAnchorNormN1=Number.isFinite(normN1)?normN1:null;
     analystAnchorDelta={start:currentNet-oldStart,target:targetNet-oldTarget,mature:matureTargetNet-oldMature};
     analystAnchorApplied=[analystAnchorDelta.start,analystAnchorDelta.target,analystAnchorDelta.mature].some(d=>Math.abs(d)>.0005);
     // Keep one economic story: the same profit change flows to operating, EBITDA and owner cash.
@@ -1381,7 +1381,7 @@ function buildMarginForecast(stock,years,cfg,growthInfo,opts={}){
     nonOperatingMargin:(()=>{ // Build 77: typical pre-tax non-operating income (interest, other) as a share of revenue
       const t=clamp(normalizedTaxRate,0,.35);const v=years.slice(-5).map(y=>nonOperatingOf(y,t)).filter(Number.isFinite);
       return v.length>=3?clamp(median(v),-.05,.03):0;})(),
-    normalizedTaxRate,analystAnchorNormN2,gaapCurrentNet,gaapTargetNet,gaapMatureTargetNet,
+    normalizedTaxRate,analystAnchorNormN1,analystAnchorNormN2,gaapCurrentNet,gaapTargetNet,gaapMatureTargetNet,
     oneTimeChargesLatest:oneTimeSeries.at(-1)??0,backlogCoverage:(()=>{const r=finite(years.at(-1)?.rpo),v=finite(years.at(-1)?.revenue);return r>0&&v>0?r/v:null;})(),
     marginEvidence,
     provenMarginRails:{net:netRail,operating:opRail,ebitda:ebitdaRail},
@@ -1403,7 +1403,9 @@ function normalizeTaxRate(series){
   if(usable.length<2)return .21;
   const base=median(usable.slice(-3));
   const erratic=usable.length<3||Math.max(...usable)-Math.min(...usable)>.12;
-  return clamp(erratic?(base+.21)/2:base,.10,.30);
+  // Build 99: erratic histories move a third of the way to 21% (Build 98 moved half; AMD and AMZN went from
+  // the 8% floor to ~19%, above what low-tax companies like them pay).
+  return clamp(erratic?base+(.21-base)/3:base,.10,.30);
 }
 function nonOperatingOf(y,t){const r=finite(y?.revenue),pre=finite(y?.pretaxIncome),op=finite(y?.operatingIncome);
   if(r>0&&Number.isFinite(pre)&&Number.isFinite(op))return (pre-op)/r;
@@ -1541,7 +1543,7 @@ function buildForecast(stock,opts={}){
   if(margins.marginTrendOn&&Number.isFinite(margins.currentFCF)&&Number.isFinite(margins.targetFCF)&&margins.targetFCF<margins.currentFCF){
     const d=margins.currentFCF-margins.targetFCF;margins.targetFCF=margins.currentFCF;if(Number.isFinite(margins.targetCFO))margins.targetCFO+=d;
   }
-  let netMarginCeilingApplied=false, interestNetDebt=null;
+  let netMarginCeilingApplied=false, interestNetDebt=null, y1PathNet=null;
   for(let i=0;i<HORIZON_YEARS;i++){
     if(revenue!=null)revenue*=1+growth.growthPath[i]; dividend*=1+dividendGrowth;
     // Two-stage margin path: years 1-5 move toward the near/medium-term normalized
@@ -1572,12 +1574,15 @@ function buildForecast(stock,opts={}){
     let fcfMargin=Number.isFinite(modeledFcfMargin)?clamp(modeledFcfMargin,-.10,rowFcfCeiling):modeledFcfMargin;
     // Build 60c: consensus-contradicted near-term dip (see marginEvidence.nearTermDip).
     let dip=margins.marginEvidence?.nearTermDip?.[i];
-    // Build 98 (C-v3): when the analyst anchor already pulled the margin path toward consensus, years 2-3 only
-    // dip as far as analysts' next-year margin (year 3 halfway back). Applying the full consensus fall on top of
-    // the anchored path counted it twice: META's 2027 net margin went to 22.5% vs ~27% consensus, then bounced.
-    const aN2=finite(margins.analystAnchorNormN2);
-    if(Number.isFinite(dip)&&dip<1&&(i===1||i===2)&&Number.isFinite(aN2)&&aN2>0&&Number.isFinite(netMargin)&&netMargin>0){
-      const floorNet=i===1?aN2:(aN2+netMargin)/2;
+    // Build 98/99 (C-v3): when the analyst anchor already pulled the margin path toward consensus, years 2-3 apply
+    // consensus's own year-1 -> year-2 margin change ONCE, starting from the model's year-1 margin (year 3 halfway
+    // back to the path). Build 97 applied the full fall on top of the anchored path (META 2027: 22.5% vs ~27%
+    // consensus, then a bounce); Build 98 floored at consensus's level on the model's basis, which removed the fall
+    // entirely (META flat at 30%, EPS 9% above consensus). The ratio keeps the fall and is basis-neutral.
+    const aN1=finite(margins.analystAnchorNormN1),aN2=finite(margins.analystAnchorNormN2),y1Net=finite(y1PathNet);
+    if(Number.isFinite(dip)&&dip<1&&(i===1||i===2)&&aN1>0&&aN2>0&&y1Net>0&&Number.isFinite(netMargin)&&netMargin>0){
+      const target=y1Net*Math.min(1,aN2/aN1);
+      const floorNet=i===1?target:(target+netMargin)/2;
       dip=Math.max(dip,Math.min(1,floorNet/netMargin));
     }
     if(Number.isFinite(dip)&&dip<1&&Number.isFinite(netMargin)&&netMargin>0){
@@ -1586,6 +1591,8 @@ function buildForecast(stock,opts={}){
       if(Number.isFinite(operatingMargin))operatingMargin+=dOp; if(Number.isFinite(ebitdaMargin))ebitdaMargin+=dOp;
       if(Number.isFinite(fcfMargin))fcfMargin+=dNet;
     }
+    // Year-1 path margin before the GAAP tie below, so years 2-3 compare like with like.
+    if(i===0)y1PathNet=Number.isFinite(netMargin)?netMargin:null;
     // Build 77c: ONE P&L. GAAP net margin is tied to operating margin every year:
     //   net = (operating margin + non-operating income) x (1 - tax), within +/-1 pt pre-tax.
     // Non-operating income starts at the latest year's actual (interest, gains) and fades to the company's
